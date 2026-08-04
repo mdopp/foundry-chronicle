@@ -1,0 +1,22 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# Autoloop: ephemerer Laufzeit-Cache, rekonstruierbar aus GitHub
+.claude/state/
+.claude/worktrees/
+.claude/settings.local.json
+
+# Lokale Daten und Aufnahmen — gehoeren nie ins Repo
+data/
+*.db
+*.sqlite3
+recordings/
+*.wav
+*.flac
+*.ogg
+.env

@@ -1,0 +1,29 @@
+{
+  "standardsVersion": 3,
+  "appliedAt": "2026-08-04",
+  "source": "ServiceBay assist: generic-project-standards",
+  "applied": {
+    "conventional-commits": 1,
+    "claude-md": 1,
+    "issue-hygiene": 1,
+    "autoloop-issues": 3,
+    "secret-hygiene": 1,
+    "scripts-over-prose": 1,
+    "ci": 0,
+    "pre-commit-hooks": 0,
+    "release-please": 0,
+    "diff-coverage": 0
+  },
+  "readinessGates": {
+    "coverage": "declared in CLAUDE.md (70% diff floor) — NOT enforced until #2 ships CI",
+    "security": "not present — no scanner configured yet",
+    "dependency": "not present",
+    "humanReview": "present — the security:true draft gate in the autoloop builder",
+    "performance": "skipped — batch processing, no latency budget by design"
+  },
+  "notes": [
+    "Greenfield 2026-08-04. Nur die Standards, die ohne Code gelten koennen, sind gesetzt; CI, pre-commit, release-please und die Coverage-Durchsetzung kommen mit #2 bzw. spaeter.",
+    "Der autoloop-issues-Skill wurde aus mdopp/solarisbay portiert: queue.py unveraendert (kein hartkodiertes Repo), die vier Markdown-Dateien angepasst. verify.md ist neu geschrieben und meldet ehrlich 'owed', solange #12 kein deployfaehiges Artefakt liefert.",
+    "Kein Upstream-Plattform-Repo: das Label autoloop:upstream-wait ist hier unbenutzt."
+  ]
+}
