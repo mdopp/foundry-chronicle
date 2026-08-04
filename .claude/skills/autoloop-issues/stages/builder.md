@@ -35,7 +35,7 @@ The diff-coverage check fails the seal if changed lines fall below the **70 %** 
 - **Ambiguous** (planner missed it) → don't guess: post the specific question (comment hygiene) via `queue.py park <issue> refinement --comment "<question>"`, revert partial work, return.
 
 ### 4. Implement — scope discipline
-Smallest change that satisfies `acceptance`. **No** drive-by refactors / new abstractions / "improve while I'm here". `[Refactor]` units stay within the named module; a needed neighbouring change is a separate unit. Comments only for a non-obvious *why* (per `CLAUDE.md`). When a bug/feature touches `voice-gatekeeper/src/gatekeeper/`, add or extend a test under `voice-gatekeeper/tests/` so the change is covered (and the diff-coverage floor is met).
+Smallest change that satisfies `acceptance`. **No** drive-by refactors / new abstractions / "improve while I'm here". `[Refactor]` units stay within the named module; a needed neighbouring change is a separate unit. Comments only for a non-obvious *why* (per `CLAUDE.md`). When a bug or feature touches source, add or extend a test next to it so the change can't silently regress.
 
 ### 5. Fast gate (per unit)
 Run the fast gate (table above) for the paths this unit touched. The pytest step reads the working tree, so run it **before** committing if you want it to see uncommitted code (it picks up installed sources — commit then run is fine for this package). A real failure → fix the root cause; never mock around or skip it. Lint must stay clean.
