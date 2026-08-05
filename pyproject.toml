@@ -3,7 +3,7 @@ name = "foundry-chronicle"
 version = "0.1.0"
 description = "Sitzungsprotokolle für Tisch-Rollenspiel — eine Instanz pro Gruppe"
 requires-python = ">=3.12"
-dependencies = ["flask>=3.0"]
+dependencies = ["flask>=3.0", "requests>=2.31", "python-socketio[client]>=5.11"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "pytest-cov>=5.0", "ruff>=0.6", "pre-commit>=3.7"]

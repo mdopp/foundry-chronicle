@@ -1,7 +1,11 @@
+from conftest import GM_FIGUR, UNSER_KONTO
+
 import chronicle.__main__ as entry
 from chronicle import db
 from chronicle.app import create_app
 from chronicle.config import Config
+from chronicle.foundry import service
+from chronicle.foundry.client import FoundryUnreachable
 
 PASSWORT = "passwort-taucht-nirgends-auf"
 BOT_TOKEN = "bot-token-taucht-nirgends-auf"
@@ -55,6 +59,38 @@ def test_legt_die_datenbank_beim_start_an(tmp_path):
 def test_zeigt_den_schema_stand(tmp_path):
     html = seite(Config(data_dir=tmp_path)).get_data(as_text=True)
     assert f"<dd>{db.SCHEMA_VERSION}</dd>" in html
+
+
+class Abgleich:
+    def __init__(self, welt=None, fehler=None):
+        self._welt = welt
+        self._fehler = fehler
+
+    def fetch_world(self):
+        if self._fehler is not None:
+            raise self._fehler
+        return UNSER_KONTO, self._welt
+
+
+def test_ohne_abgleich_steht_da_warum_nichts_zu_sehen_ist(tmp_path):
+    html = seite(Config(data_dir=tmp_path)).get_data(as_text=True)
+    assert "Noch kein Abgleich" in html
+
+
+def test_zeigt_den_umfang_des_letzten_abgleichs(config, welt):
+    service.sync(config, client=Abgleich(welt))
+    html = seite(config).get_data(as_text=True)
+    assert "Stand vom" in html
+    assert "daggerheart" in html
+    assert GM_FIGUR not in html
+
+
+def test_bei_ausgefallenem_foundry_erklaert_die_seite_den_alten_stand(config, welt):
+    service.sync(config, client=Abgleich(welt))
+    service.sync(config, client=Abgleich(fehler=FoundryUnreachable("keine Antwort")))
+    html = seite(config).get_data(as_text=True)
+    assert "nicht erreichbar" in html
+    assert "Angezeigt wird der Stand" in html
 
 
 def test_main_liest_host_und_port_aus_der_umgebung(monkeypatch):
