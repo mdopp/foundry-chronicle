@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block titel %}Sitzungen — Foundry Chronicle{% endblock %}
+{% block inhalt %}
+
+<section class="karte">
+  <h2>Neue Sitzung</h2>
+  <form method="post" action="{{ url_for('neue_sitzung') }}">
+    <div class="reihe">
+      <div>
+        <label for="played_on">Gespielt am</label>
+        <input type="date" id="played_on" name="played_on" value="{{ heute }}">
+      </div>
+      <div>
+        <label for="title">Titel <span class="gedaempft">optional</span></label>
+        <input type="text" id="title" name="title" placeholder="Der Keller unter dem Krummen Ast">
+      </div>
+    </div>
+    <div class="absenden"><button type="submit">Sitzung beginnen</button></div>
+  </form>
+  <p class="gedaempft absenden">Die erste Szene steht danach sofort bereit.</p>
+</section>
+
+<section class="karte">
+  <h2>Bisher</h2>
+  {% if sitzungen %}
+  <ul class="liste">
+    {% for s in sitzungen %}
+    <li>
+      <a href="{{ url_for('sitzung', sitzung_id=s.id) }}">
+        <strong>{{ s.title or "Sitzung vom " ~ s.played_on }}</strong>
+        <span class="gedaempft">{% if s.title %}{{ s.played_on }} — {% endif %}{{ s.scene_count }} {{ "Szene" if s.scene_count == 1 else "Szenen" }}, {{ s.note_count }} {{ "Notiz" if s.note_count == 1 else "Notizen" }}</span>
+      </a>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="gedaempft">Noch keine Sitzung — die erste beginnt oben.</p>
+  {% endif %}
+</section>
+
+{% endblock %}

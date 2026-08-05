@@ -12,7 +12,7 @@ BOT_TOKEN = "bot-token-taucht-nirgends-auf"
 
 
 def seite(config):
-    return create_app(config).test_client().get("/")
+    return create_app(config).test_client().get("/status")
 
 
 def test_startet_ohne_foundry_und_erklaert_was_fehlt(tmp_path):
@@ -91,6 +91,49 @@ def test_bei_ausgefallenem_foundry_erklaert_die_seite_den_alten_stand(config, we
     html = seite(config).get_data(as_text=True)
     assert "nicht erreichbar" in html
     assert "Angezeigt wird der Stand" in html
+
+
+def bewacht(tmp_path):
+    return create_app(Config(data_dir=tmp_path, require_remote_user=True)).test_client()
+
+
+def test_ohne_remote_user_kommt_niemand_durch(tmp_path):
+    antwort = bewacht(tmp_path).get("/")
+    assert antwort.status_code == 403
+    assert "Kein Zugang" in antwort.get_data(as_text=True)
+
+
+def test_auch_kein_lan_bypass_auf_die_unterseiten(tmp_path):
+    client = bewacht(tmp_path)
+    assert client.get("/status").status_code == 403
+    assert client.post("/", data={}).status_code == 403
+    assert client.post("/szenen/1/notizen", data={"text": "x"}).status_code == 403
+
+
+def test_mit_remote_user_geht_es_weiter(tmp_path):
+    antwort = bewacht(tmp_path).get("/", headers={"Remote-User": "mira"})
+    assert antwort.status_code == 200
+
+
+def test_healthz_bleibt_am_proxy_vorbei_erreichbar(tmp_path):
+    assert bewacht(tmp_path).get("/healthz").status_code == 200
+
+
+def test_ohne_erzwingung_laeuft_es_lokal_weiter(tmp_path):
+    assert create_app(Config(data_dir=tmp_path)).test_client().get("/").status_code == 200
+
+
+def test_status_erklaert_die_ungesicherte_lage(tmp_path):
+    html = seite(Config(data_dir=tmp_path)).get_data(as_text=True)
+    assert "Header-Prüfung ist aus" in html
+    assert "CHRONICLE_REQUIRE_REMOTE_USER" in html
+
+
+def test_status_nennt_den_angemeldeten_menschen(tmp_path):
+    antwort = bewacht(tmp_path).get("/status", headers={"Remote-User": "mira"})
+    html = antwort.get_data(as_text=True)
+    assert "mira" in html
+    assert "Ein eigenes Login gibt es nicht" in html
 
 
 def test_main_liest_host_und_port_aus_der_umgebung(monkeypatch):

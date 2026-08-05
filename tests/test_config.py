@@ -62,6 +62,17 @@ def test_from_env_nutzt_ohne_argument_die_prozessumgebung(monkeypatch):
     assert Config.from_env().foundry_url == "https://foundry.example"
 
 
+def test_remote_user_wird_standardmaessig_nicht_erzwungen():
+    assert not Config.from_env({}).require_remote_user
+
+
+def test_remote_user_erzwingen_laesst_sich_schalten():
+    for wert in ("1", "true", "TRUE", "yes", "on"):
+        assert Config.from_env({"CHRONICLE_REQUIRE_REMOTE_USER": wert}).require_remote_user
+    for wert in ("0", "false", "nein", "", "  "):
+        assert not Config.from_env({"CHRONICLE_REQUIRE_REMOTE_USER": wert}).require_remote_user
+
+
 def test_repr_maskiert_passwort_und_token():
     text = repr(Config.from_env(VOLLSTAENDIG))
     assert "passwort-aus-der-umgebung" not in text

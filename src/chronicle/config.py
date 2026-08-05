@@ -16,6 +16,8 @@ MASK = "***"
 
 FOUNDRY_VARIABLES = ("FOUNDRY_URL", "FOUNDRY_USER", "FOUNDRY_PASSWORD")
 
+REMOTE_USER_VARIABLE = "CHRONICLE_REQUIRE_REMOTE_USER"
+
 DEFAULT_DATA_DIR = "data"
 
 DATABASE_NAME = "chronicle.sqlite3"
@@ -29,6 +31,10 @@ def _value(env: Mapping[str, str], name: str) -> str | None:
     return (env.get(name) or "").strip() or None
 
 
+def _flag(env: Mapping[str, str], name: str) -> bool:
+    return (env.get(name) or "").strip().lower() in ("1", "true", "yes", "on")
+
+
 @dataclass(frozen=True, repr=False)
 class Config:
     foundry_url: str | None = None
@@ -36,6 +42,7 @@ class Config:
     foundry_password: str | None = None
     discord_bot_token: str | None = None
     data_dir: Path = Path(DEFAULT_DATA_DIR)
+    require_remote_user: bool = False
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> Config:
@@ -46,6 +53,7 @@ class Config:
             foundry_password=_value(env, "FOUNDRY_PASSWORD"),
             discord_bot_token=_value(env, "DISCORD_BOT_TOKEN"),
             data_dir=Path(_value(env, "CHRONICLE_DATA_DIR") or DEFAULT_DATA_DIR),
+            require_remote_user=_flag(env, REMOTE_USER_VARIABLE),
         )
 
     @property
@@ -73,5 +81,6 @@ class Config:
             f"foundry_user={self.foundry_user!r}, "
             f"foundry_password={masked(self.foundry_password)}, "
             f"discord_bot_token={masked(self.discord_bot_token)}, "
-            f"data_dir={str(self.data_dir)!r})"
+            f"data_dir={str(self.data_dir)!r}, "
+            f"require_remote_user={self.require_remote_user!r})"
         )
