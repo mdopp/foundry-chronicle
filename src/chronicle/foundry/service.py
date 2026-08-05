@@ -11,7 +11,7 @@ import logging
 import sqlite3
 from datetime import UTC, datetime
 
-from chronicle import db
+from chronicle import db, settings
 from chronicle.config import Config
 from chronicle.foundry import store
 from chronicle.foundry.client import FoundryClient, FoundryError
@@ -76,7 +76,8 @@ def sync(config: Config, *, client: FoundryClient | None = None) -> SyncState:
     connection = _open(config)
     try:
         try:
-            user_id, raw = (client or FoundryClient(config)).fetch_world()
+            zugang = settings.effective(config)
+            user_id, raw = (client or FoundryClient(zugang)).fetch_world()
         except FoundryError as fehler:
             grund = str(fehler)
             logger.warning("Foundry-Abgleich fehlgeschlagen: %s", grund)

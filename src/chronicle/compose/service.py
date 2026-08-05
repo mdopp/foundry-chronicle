@@ -13,7 +13,7 @@ from __future__ import annotations
 import sqlite3
 from datetime import UTC, datetime
 
-from chronicle import db
+from chronicle import db, settings
 from chronicle.compose import client
 from chronicle.compose.client import TextModel
 from chronicle.compose.composer import Composition, SceneMaterial, SessionMaterial, compose
@@ -92,7 +92,8 @@ def compose_session(
         stoff = material(connection, session_id)
         if stoff is None:
             return None
-        ergebnis = compose(stoff, model if model is not None else client.from_config(config))
+        gewaehlt = model if model is not None else client.from_config(settings.effective(config))
+        ergebnis = compose(stoff, gewaehlt)
         save(connection, session_id, ergebnis.text, _now())
         return ergebnis
     finally:

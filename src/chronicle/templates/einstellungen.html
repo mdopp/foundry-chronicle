@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block titel %}Einstellungen — Foundry Chronicle{% endblock %}
+{% block inhalt %}
+
+<form method="post" action="{{ url_for('einstellungen_speichern') }}">
+
+  <section class="karte">
+    <h2>Foundry</h2>
+    <p class="gedaempft">Foundry kennt keinen API-Token: es braucht die Adresse sowie
+      Benutzername und Passwort eines echten Kontos. Das Protokoll sieht danach genau so
+      viel wie dieser Mensch — am besten ein eigenes Spielerkonto ohne Spielleitungsrechte.</p>
+
+    <div class="feld">
+      <label for="foundry_url">Adresse</label>
+      <input id="foundry_url" name="foundry_url" type="url" value="{{ foundry_url }}"
+             placeholder="http://127.0.0.1:30000">
+    </div>
+
+    <div class="feld">
+      <label for="foundry_user">Benutzer</label>
+      <input id="foundry_user" name="foundry_user" value="{{ foundry_user }}">
+    </div>
+
+    <div class="feld">
+      <label for="foundry_password">Passwort</label>
+      <input id="foundry_password" name="foundry_password" type="password" value=""
+             autocomplete="new-password"
+             placeholder="{{ 'gesetzt' if passwort_gesetzt else 'nicht gesetzt' }}">
+      {% if passwort_gesetzt %}
+        <p class="gedaempft">Das Passwort ist <span class="steht">gesetzt</span> und wird nie
+          angezeigt. Feld leer lassen heißt: unverändert.</p>
+      {% else %}
+        <p class="gedaempft">Noch kein Passwort gesetzt.</p>
+      {% endif %}
+    </div>
+  </section>
+
+  <section class="karte">
+    <h2>Sprachmodell</h2>
+    <p class="gedaempft">Ohne Sprachmodell entsteht die Chronik trotzdem, dann geordnet
+      statt formuliert.</p>
+
+    <div class="feld">
+      <label for="ollama_url">Ollama-Adresse</label>
+      <input id="ollama_url" name="ollama_url" type="url" value="{{ ollama_url }}"
+             placeholder="{{ ollama_url }}">
+    </div>
+
+    <div class="feld">
+      <label for="ollama_model">Modell</label>
+      {% if modelle %}
+        <select id="ollama_model" name="ollama_model">
+          <option value="">— keins, dann wird nur geordnet —</option>
+          {% for name in modelle %}
+          <option value="{{ name }}"{% if name == ollama_model %} selected{% endif %}>{{ name }}</option>
+          {% endfor %}
+        </select>
+      {% else %}
+        <input id="ollama_model" name="ollama_model" value="{{ ollama_model }}">
+      {% endif %}
+      <p class="gedaempft">{{ modell_hinweis }}</p>
+    </div>
+  </section>
+
+  <section class="karte">
+    <h2>Woher die Werte kommen</h2>
+    <dl>
+      <dt>Foundry-Adresse</dt><dd>{{ quellen.foundry_url }}</dd>
+      <dt>Foundry-Benutzer</dt><dd>{{ quellen.foundry_user }}</dd>
+      <dt>Foundry-Passwort</dt><dd>{{ quellen.foundry_password }}</dd>
+      <dt>Ollama-Adresse</dt><dd>{{ quellen.ollama_url }}</dd>
+      <dt>Ollama-Modell</dt><dd>{{ quellen.ollama_model }}</dd>
+    </dl>
+    <p class="gedaempft absenden">Was hier gespeichert wird, schlägt die Umgebung. Ein leer
+      abgesendetes Feld — außer dem Passwort — nimmt den Wert zurück, dann gilt wieder die
+      Umgebung.</p>
+  </section>
+
+  <div class="absenden"><button type="submit">Speichern</button></div>
+</form>
+
+{% endblock %}

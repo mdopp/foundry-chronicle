@@ -1,8 +1,11 @@
+import pytest
 from conftest import GM_FIGUR, UNSER_KONTO
 
 import chronicle.__main__ as entry
-from chronicle import db, notes
+from chronicle import db, notes, settings
 from chronicle.app import create_app
+from chronicle.compose import client as sprachmodell
+from chronicle.compose.client import ModelUnreachable
 from chronicle.compose.service import compose_session
 from chronicle.config import Config
 from chronicle.foundry import service
@@ -10,6 +13,16 @@ from chronicle.foundry.client import FoundryUnreachable
 
 PASSWORT = "passwort-taucht-nirgends-auf"
 BOT_TOKEN = "bot-token-taucht-nirgends-auf"
+
+
+@pytest.fixture(autouse=True)
+def kein_ollama_im_netz(monkeypatch):
+    """Kein Test darf an einem echten Ollama hängen bleiben."""
+
+    def weg(adresse, **kwargs):
+        raise ModelUnreachable(f"{adresse}/api/tags nicht erreichbar: ConnectionError")
+
+    monkeypatch.setattr(sprachmodell, "installed_models", weg)
 
 
 def seite(config):
@@ -229,6 +242,110 @@ def test_die_protokollansicht_steht_hinter_demselben_tuersteher(tmp_path):
     client = bewacht(tmp_path)
     assert client.get("/protokolle").status_code == 403
     assert client.get("/sitzungen/1/protokoll").status_code == 403
+
+
+def test_die_einstellungsseite_zeigt_die_fuenf_werte(tmp_path):
+    config = Config(
+        foundry_url="https://foundry.example",
+        foundry_user="chronist",
+        foundry_password=PASSWORT,
+        data_dir=tmp_path,
+    )
+    html = gelesen(config, "/einstellungen")
+    assert "https://foundry.example" in html
+    assert 'name="foundry_user"' in html
+    assert 'name="ollama_url"' in html
+    assert 'name="ollama_model"' in html
+
+
+def test_das_passwort_steht_in_keiner_antwort(tmp_path):
+    config = Config(foundry_password=PASSWORT, data_dir=tmp_path)
+    client = create_app(config).test_client()
+    for pfad in ("/einstellungen", "/status"):
+        assert PASSWORT not in client.get(pfad).get_data(as_text=True)
+    antwort = client.post("/einstellungen", data={"foundry_password": PASSWORT})
+    assert antwort.status_code == 302
+    assert PASSWORT not in antwort.get_data(as_text=True)
+    assert PASSWORT not in antwort.headers["Location"]
+    assert PASSWORT not in client.get("/einstellungen").get_data(as_text=True)
+
+
+def test_die_seite_sagt_nur_ob_ein_passwort_gesetzt_ist(tmp_path):
+    ohne = gelesen(Config(data_dir=tmp_path / "ohne"), "/einstellungen")
+    assert "Noch kein Passwort gesetzt" in ohne
+    mit = gelesen(Config(foundry_password=PASSWORT, data_dir=tmp_path / "mit"), "/einstellungen")
+    assert "Das Passwort ist" in mit
+
+
+def test_gespeichertes_schlaegt_die_umgebung(tmp_path):
+    config = Config(
+        foundry_url="https://umgebung.example",
+        foundry_user="umgebungs-konto",
+        foundry_password=PASSWORT,
+        data_dir=tmp_path,
+    )
+    client = create_app(config).test_client()
+    client.post("/einstellungen", data={"foundry_url": "https://frontend.example"})
+    assert settings.effective(config).foundry_url == "https://frontend.example"
+    for pfad in ("/status", "/einstellungen"):
+        html = client.get(pfad).get_data(as_text=True)
+        assert "https://frontend.example" in html
+        assert "https://umgebung.example" not in html
+
+
+def test_ein_leeres_passwortfeld_behaelt_das_passwort(tmp_path):
+    config = Config(data_dir=tmp_path)
+    client = create_app(config).test_client()
+    client.post("/einstellungen", data={"foundry_password": PASSWORT})
+    client.post("/einstellungen", data={"foundry_user": "chronist", "foundry_password": ""})
+    aktuell = settings.effective(config)
+    assert aktuell.foundry_password == PASSWORT
+    assert aktuell.foundry_user == "chronist"
+
+
+def test_status_nennt_je_wert_die_quelle(tmp_path):
+    config = Config(foundry_user="umgebungs-konto", data_dir=tmp_path)
+    client = create_app(config).test_client()
+    client.post("/einstellungen", data={"foundry_url": "https://frontend.example"})
+    html = client.get("/status").get_data(as_text=True)
+    assert f"<dd>{settings.FRONTEND}</dd>" in html
+    assert f"<dd>{settings.UMGEBUNG}</dd>" in html
+    assert f"<dd>{settings.UNGESETZT}</dd>" in html
+
+
+def test_die_einstellungen_stehen_hinter_demselben_tuersteher(tmp_path):
+    client = bewacht(tmp_path)
+    assert client.get("/einstellungen").status_code == 403
+    assert (
+        client.post("/einstellungen", data={"foundry_url": "https://frontend.example"}).status_code
+        == 403
+    )
+    assert settings.stored(Config(data_dir=tmp_path).database_path) == {}
+
+
+def test_erreichbares_ollama_bietet_die_modelle_zur_auswahl(tmp_path, monkeypatch):
+    monkeypatch.setattr(sprachmodell, "installed_models", lambda adresse, **k: ("gemma4:12b",))
+    html = gelesen(Config(data_dir=tmp_path), "/einstellungen")
+    assert "<select" in html
+    assert '<option value="gemma4:12b"' in html
+
+
+def test_ohne_ollama_bleibt_ein_textfeld_und_ein_ehrlicher_satz(tmp_path):
+    html = gelesen(Config(data_dir=tmp_path), "/einstellungen")
+    assert "<select" not in html
+    assert 'name="ollama_model"' in html
+    assert "nicht erreichbar" in html
+    assert settings.DEFAULT_OLLAMA_URL in html
+
+
+def test_ein_kaputtes_ollama_bricht_die_seite_nicht(tmp_path, monkeypatch):
+    def platzt(adresse, **kwargs):
+        raise ModelUnreachable("kein JSON")
+
+    monkeypatch.setattr(sprachmodell, "installed_models", platzt)
+    assert (
+        create_app(Config(data_dir=tmp_path)).test_client().get("/einstellungen").status_code == 200
+    )
 
 
 def test_main_liest_host_und_port_aus_der_umgebung(monkeypatch):

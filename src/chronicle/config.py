@@ -1,4 +1,8 @@
-"""Konfiguration — ausschließlich aus der Umgebung.
+"""Konfiguration aus der Umgebung — die Vorgabe, nicht das letzte Wort.
+
+Die Umgebung ist der Deploy-Weg und der Stand beim ersten Start; die fünf Werte für
+Foundry und Ollama lassen sich in der Oberfläche überschreiben. Wer sie braucht, nimmt
+deshalb ``chronicle.settings.effective`` und nicht dieses Objekt direkt.
 
 Foundry kennt keinen API-Token: der Zugang ist Benutzer und Passwort eines echten
 Kontos (siehe docs/foundry-zugriff.md). Passwort und Bot-Token verlassen dieses

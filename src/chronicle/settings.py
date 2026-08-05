@@ -1,0 +1,88 @@
+"""Die fünf Werte, die in der Oberfläche gepflegt werden.
+
+Die Umgebung ist die Vorgabe beim ersten Start und bleibt der Deploy-Weg; **ein in der
+Oberfläche gesetzter Wert gewinnt.** Damit das keine zwei Wahrheiten werden, liest kein
+Aufrufer diese fünf Werte mehr selbst aus der Umgebung — er nimmt ``effective``.
+
+Das Foundry-Passwort liegt dadurch im Klartext in der SQLite. Aus diesem Modul kommt es
+nur dahin zurück, wo es hingehört: in den Anmelde-Aufruf. Für die Anzeige gibt es
+``is_set`` — *ob* etwas gesetzt ist, nie *was*.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Mapping
+from dataclasses import replace
+from pathlib import Path
+
+from chronicle import db
+from chronicle.config import Config
+
+KEYS = (
+    "foundry_url",
+    "foundry_user",
+    "foundry_password",
+    "ollama_url",
+    "ollama_model",
+)
+
+SECRET_KEYS = ("foundry_password",)
+
+# Der Box-Standard: unser Pod läuft im Host-Netz, Ollama hört daneben auf 11434.
+DEFAULT_OLLAMA_URL = "http://127.0.0.1:11434"
+
+FRONTEND = "Frontend"
+UMGEBUNG = "Umgebung"
+UNGESETZT = "nicht gesetzt"
+
+
+def stored(database_path: Path) -> dict[str, str]:
+    connection = db.connect(database_path)
+    try:
+        zeilen = connection.execute("SELECT key, value FROM settings").fetchall()
+    finally:
+        connection.close()
+    return {z["key"]: z["value"] for z in zeilen if z["key"] in KEYS and z["value"].strip()}
+
+
+def effective(config: Config) -> Config:
+    return replace(config, **stored(config.database_path))
+
+
+def sources(config: Config) -> dict[str, str]:
+    gespeichert = stored(config.database_path)
+    return {
+        name: FRONTEND
+        if name in gespeichert
+        else (UMGEBUNG if getattr(config, name) else UNGESETZT)
+        for name in KEYS
+    }
+
+
+def is_set(config: Config, name: str) -> bool:
+    return bool(getattr(effective(config), name))
+
+
+def save(database_path: Path, values: Mapping[str, str | None]) -> None:
+    """Leerer Wert heißt: Eintrag weg, die Umgebung gilt wieder.
+
+    Ein Geheimnis, das unverändert bleiben soll, gehört deshalb gar nicht erst in
+    ``values`` — sonst löscht ein leer abgesendetes Formularfeld es.
+    """
+    connection = db.connect(database_path)
+    try:
+        with connection:
+            for name, wert in values.items():
+                if name not in KEYS:
+                    continue
+                sauber = (wert or "").strip()
+                if sauber:
+                    connection.execute(
+                        "INSERT INTO settings (key, value) VALUES (?, ?) "
+                        "ON CONFLICT (key) DO UPDATE SET value = excluded.value",
+                        (name, sauber),
+                    )
+                else:
+                    connection.execute("DELETE FROM settings WHERE key = ?", (name,))
+    finally:
+        connection.close()
