@@ -92,5 +92,13 @@ CREATE TABLE IF NOT EXISTS protocol (
     UNIQUE (session_id, kind)
 );
 
-INSERT INTO meta (key, value) VALUES ('schema_version', '3')
+-- Die fünf Werte aus der Oberfläche. Was hier steht, schlägt die Umgebung; die bleibt
+-- die Vorgabe beim ersten Start. Das Foundry-Passwort liegt damit im Klartext in dieser
+-- Datei und geht mit ins Backup — bewusste Abwägung, siehe CLAUDE.md.
+CREATE TABLE IF NOT EXISTS settings (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+
+INSERT INTO meta (key, value) VALUES ('schema_version', '4')
 ON CONFLICT (key) DO UPDATE SET value = excluded.value;

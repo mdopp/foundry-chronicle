@@ -5,10 +5,12 @@ import requests
 
 from chronicle.compose.client import (
     CHAT_PATH,
+    TAGS_PATH,
     ModelNotConfigured,
     ModelUnreachable,
     OllamaClient,
     from_config,
+    installed_models,
 )
 from chronicle.config import Config
 
@@ -42,6 +44,9 @@ class Http:
         if self._fehler is not None:
             raise self._fehler
         return self._antwort
+
+    def get(self, url, **kwargs):
+        return self.post(url, **kwargs)
 
 
 def config(tmp_path, *, url=ADRESSE, model=MODELL):
@@ -107,3 +112,48 @@ def test_der_name_ist_das_konfigurierte_modell(tmp_path):
 def test_from_config_liefert_ohne_konfiguration_kein_modell(tmp_path):
     assert from_config(Config(data_dir=tmp_path)) is None
     assert from_config(config(tmp_path)).name == MODELL
+
+
+TAGS = {
+    "models": [
+        {"name": "gemma4:e4b"},
+        {"name": "gemma4:12b"},
+        {"name": "nomic-embed-text:latest"},
+        {},
+    ]
+}
+
+
+def test_die_installierten_modelle_kommen_aus_api_tags():
+    http = Http(Antwort(TAGS))
+    namen = installed_models(ADRESSE, http=lambda: http)
+
+    url, kwargs = http.aufrufe[0]
+    assert url == f"http://ollama.example:11434{TAGS_PATH}"
+    assert kwargs["timeout"] <= 5
+    # Einbettungsmodelle schreiben keinen Text und werden nicht angeboten.
+    assert namen == ("gemma4:12b", "gemma4:e4b")
+
+
+def test_ein_abgeschaltetes_ollama_ist_eine_verstaendliche_meldung():
+    http = Http(fehler=requests.ConnectionError("weg"))
+    with pytest.raises(ModelUnreachable) as fehler:
+        installed_models(ADRESSE, http=lambda: http)
+    assert "nicht erreichbar" in str(fehler.value)
+
+
+def test_ein_fehlerstatus_auf_tags_zaehlt_ebenfalls_als_unerreichbar():
+    with pytest.raises(ModelUnreachable):
+        installed_models(ADRESSE, http=lambda: Http(Antwort(fehler=requests.HTTPError("500"))))
+
+
+@pytest.mark.parametrize("rumpf", [None, {}, {"models": "keine Liste"}])
+def test_eine_unerwartete_antwort_ist_keine_modellliste(rumpf):
+    antwort = Antwort() if rumpf is None else Antwort(rumpf)
+    with pytest.raises(ModelUnreachable):
+        installed_models(ADRESSE, http=lambda: Http(antwort))
+
+
+def test_ein_ollama_ohne_textmodelle_liefert_eine_leere_liste():
+    http = Http(Antwort({"models": [{"name": "nomic-embed-text"}]}))
+    assert installed_models(ADRESSE, http=lambda: http) == ()

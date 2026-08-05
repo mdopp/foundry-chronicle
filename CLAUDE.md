@@ -59,8 +59,21 @@ erzeugt, trennt sichtbar zwischen Belegtem und Verbindungssätzen.
 
 Im Repo stehen **keine echten Geheimnisse** — keine Tokens, Passwörter, Schlüssel, auch
 nicht in Tests, Fixtures oder Doku. Die Foundry-Zugangsdaten und der Discord-Bot-Token
-werden zur Laufzeit injiziert; Platzhalter sind in Ordnung, konkrete Werte nicht. Das
+werden zur Laufzeit gesetzt; Platzhalter sind in Ordnung, konkrete Werte nicht. Das
 gilt auch für die **Foundry-Adresse** — die gehört in die Konfiguration, nicht ins Repo.
+
+**Operator-Entscheidung 2026-08-06 — das Foundry-Passwort liegt in der SQLite.** Die
+fünf Werte für Foundry und Ollama werden in der Oberfläche gepflegt (#25); ein dort
+gesetzter Wert schlägt die Umgebung, die als Vorgabe beim ersten Start bleibt. Damit
+liegt das Passwort **im Klartext in `chronicle.sqlite3` — und die geht ins Backup.** Das
+ist bewusst so entschieden: eine Homelab-Instanz, Backup auf eigenem NAS, und der
+Betrieb wäre sonst nur über ServiceBay-Template-Variablen zu ändern. Die Abwägung hängt
+an drei Bedingungen, die nicht wegfallen dürfen:
+
+- Die Seite steht **hinter Authelia und dem `Remote-User`-Guard** wie jede andere.
+- Der Wert wird **nirgends angezeigt** — nicht im Formular, nicht auf `/status`, nicht in
+  `repr`, Log oder Fehlermeldung; angezeigt wird nur, *ob* er gesetzt ist.
+- Übertragen wird **nur per POST**, nie in einer URL; ein leeres Feld heißt unverändert.
 
 Fixtures aus einem echten Foundry-Dump sind **personenbezogen**: der Weltabzug enthält
 die Klarnamen aller Beteiligten. Vor jedem Einchecken anonymisieren.

@@ -125,7 +125,7 @@
       label { color: var(--text-muted); display: block; font-size: .875rem; margin-bottom: var(--space-1); }
 
       /* 1rem verhindert, dass iOS beim Fokus in ein Feld hineinzoomt. */
-      input, textarea {
+      input, textarea, select {
         background: var(--surface-2);
         border: 1px solid var(--border);
         border-radius: var(--r-card);
@@ -135,10 +135,10 @@
         padding: var(--space-3);
         width: 100%;
       }
-      input { min-height: 44px; }
+      input, select { min-height: 44px; }
       textarea { min-height: 7rem; resize: vertical; }
       input::placeholder, textarea::placeholder { color: var(--text-subtle); }
-      input:focus, textarea:focus { border-color: var(--border-strong); }
+      input:focus, textarea:focus, select:focus { border-color: var(--border-strong); }
 
       button {
         background: var(--accent);
@@ -158,6 +158,10 @@
       button.leise:hover { background: var(--surface-2); }
 
       :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+      .feld { margin-bottom: var(--space-4); }
+      .feld:last-child { margin-bottom: 0; }
+      .feld p { margin: var(--space-1) 0 0; }
 
       .reihe { display: flex; flex-wrap: wrap; gap: var(--space-3); }
       .reihe > * { flex: 1 1 12rem; }
@@ -253,6 +257,8 @@
              {% if request.path == url_for('sitzungen') %}aria-current="page"{% endif %}>Sitzungen</a>
           <a href="{{ url_for('protokolle') }}"
              {% if request.endpoint in ['protokolle', 'protokoll'] %}aria-current="page"{% endif %}>Protokolle</a>
+          <a href="{{ url_for('einstellungen') }}"
+             {% if request.endpoint in ['einstellungen', 'einstellungen_speichern'] %}aria-current="page"{% endif %}>Einstellungen</a>
           <a href="{{ url_for('status') }}"
              {% if request.path == url_for('status') %}aria-current="page"{% endif %}>Status</a>
         </nav>

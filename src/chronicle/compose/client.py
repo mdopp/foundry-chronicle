@@ -20,8 +20,16 @@ logger = logging.getLogger(__name__)
 
 CHAT_PATH = "/api/chat"
 
+TAGS_PATH = "/api/tags"
+
 # Stapelbetrieb: ein Modell auf CPU darf für eine Szene Minuten brauchen.
 DEFAULT_TIMEOUT = 600.0
+
+# Die Einstellungsseite fragt damit im Request-Pfad: lieber ein Textfeld als eine Seite,
+# die auf ein abgeschaltetes Ollama wartet.
+TAGS_TIMEOUT = 2.0
+
+EMBEDDING_MARKER = "embed"
 
 
 class ModelError(RuntimeError):
@@ -105,3 +113,34 @@ class OllamaClient:
 
 def from_config(config: Config) -> OllamaClient | None:
     return OllamaClient(config) if config.ollama_configured else None
+
+
+def installed_models(
+    base_url: str,
+    *,
+    http: Callable[[], object] = _http_session,
+    timeout: float = TAGS_TIMEOUT,
+) -> tuple[str, ...]:
+    """Was auf diesem Ollama liegt — für die Auswahl in der Oberfläche.
+
+    Wirft ``ModelUnreachable``; der Aufrufer zeigt dann ein Textfeld statt einer Liste.
+    """
+    basis = base_url.rstrip("/")
+    try:
+        antwort = http().get(basis + TAGS_PATH, timeout=timeout)
+        antwort.raise_for_status()
+        rumpf = antwort.json()
+    except (requests.RequestException, ValueError) as fehler:
+        raise ModelUnreachable(
+            f"{basis}{TAGS_PATH} nicht erreichbar: {type(fehler).__name__}"
+        ) from None
+    eintraege = rumpf.get("models") if isinstance(rumpf, Mapping) else None
+    if not isinstance(eintraege, list):
+        raise ModelUnreachable(f"{basis}{TAGS_PATH} hat keine Modellliste geliefert")
+    namen = (
+        str(eintrag.get("name"))
+        for eintrag in eintraege
+        if isinstance(eintrag, Mapping) and eintrag.get("name")
+    )
+    # Einbettungsmodelle schreiben keinen Text; sie zur Auswahl zu stellen wäre eine Falle.
+    return tuple(sorted(name for name in namen if EMBEDDING_MARKER not in name.lower()))

@@ -19,16 +19,19 @@
   <h2>Foundry</h2>
   {% if config.foundry_configured %}
     <p class="steht">Konfiguriert als <code>{{ config.foundry_user }}</code> auf
-      <code>{{ config.foundry_url }}</code>. Das Passwort steht in der Umgebung.</p>
+      <code>{{ config.foundry_url }}</code>. Das Passwort wird nirgends angezeigt.</p>
   {% else %}
     <p class="fehlt">Nicht konfiguriert — der Dienst läuft, holt aber nichts aus Foundry.</p>
-    <p>Diese Umgebungsvariablen fehlen:</p>
-    <ul>
-      {% for name in config.missing_foundry_variables %}<li><code>{{ name }}</code></li>{% endfor %}
-    </ul>
     <p>Foundry hat keinen API-Token: es braucht die Adresse sowie Benutzername und Passwort
       eines echten Kontos. Das Protokoll sieht danach genau so viel wie dieser Mensch.</p>
   {% endif %}
+  <dl>
+    <dt><code>FOUNDRY_URL</code></dt><dd>{{ quellen.foundry_url }}</dd>
+    <dt><code>FOUNDRY_USER</code></dt><dd>{{ quellen.foundry_user }}</dd>
+    <dt><code>FOUNDRY_PASSWORD</code></dt><dd>{{ quellen.foundry_password }}</dd>
+  </dl>
+  <p class="gedaempft">Ein in den <a href="{{ url_for('einstellungen') }}">Einstellungen</a>
+    gesetzter Wert schlägt die gleichnamige Umgebungsvariable.</p>
 </section>
 
 <section class="karte">
@@ -48,11 +51,12 @@
       <code>{{ config.ollama_model }}</code>.</p>
   {% else %}
     <p>Kein Sprachmodell — die Chronik entsteht trotzdem, dann geordnet statt formuliert:
-      Notizen nach Szenen, Foundry-Fakten wörtlich, keine Prosa. Es fehlen:</p>
-    <ul>
-      {% for name in config.missing_ollama_variables %}<li><code>{{ name }}</code></li>{% endfor %}
-    </ul>
+      Notizen nach Szenen, Foundry-Fakten wörtlich, keine Prosa.</p>
   {% endif %}
+  <dl>
+    <dt><code>OLLAMA_URL</code></dt><dd>{{ quellen.ollama_url }}</dd>
+    <dt><code>OLLAMA_MODEL</code></dt><dd>{{ quellen.ollama_model }}</dd>
+  </dl>
 </section>
 
 <section class="karte">

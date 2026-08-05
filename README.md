@@ -27,10 +27,13 @@ python -m chronicle          # http://127.0.0.1:8000
 Unter `/` wird mitgeschrieben — Sitzung, Szenen, Notizen; `/status` sagt, was
 konfiguriert ist und wann zuletzt mit Foundry abgeglichen wurde.
 
-Die Konfiguration kommt ausschließlich aus der Umgebung: `FOUNDRY_URL`, `FOUNDRY_USER`,
-`FOUNDRY_PASSWORD`, dazu optional `DISCORD_BOT_TOKEN` und `CHRONICLE_DATA_DIR` (Vorgabe
-`./data`). Fehlt die Foundry-Konfiguration, startet der Dienst trotzdem und erklärt auf
-`/status`, was fehlt.
+Foundry-Adresse, -Benutzer und -Passwort sowie Ollama-Adresse und -Modell werden unter
+`/einstellungen` gepflegt und liegen in der SQLite. Die Umgebung — `FOUNDRY_URL`,
+`FOUNDRY_USER`, `FOUNDRY_PASSWORD`, `OLLAMA_URL`, `OLLAMA_MODEL` — bleibt die Vorgabe
+beim ersten Start und der Deploy-Weg; **ein in der Oberfläche gesetzter Wert gewinnt**,
+und `/status` zeigt je Wert, woher er kommt. Rein aus der Umgebung kommen weiterhin
+`DISCORD_BOT_TOKEN` und `CHRONICLE_DATA_DIR` (Vorgabe `./data`). Fehlt die
+Foundry-Konfiguration, startet der Dienst trotzdem und erklärt auf `/status`, was fehlt.
 
 Ein eigenes Login gibt es nicht: angemeldet wird am Proxy (ServiceBay-ADR 0001), der
 `Remote-User` setzt. Auf der Box gehört deshalb `CHRONICLE_REQUIRE_REMOTE_USER=1` in die
