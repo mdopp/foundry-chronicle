@@ -56,6 +56,24 @@ def test_legt_die_datenbank_beim_start_an(tmp_path):
     assert config.database_path.is_file()
 
 
+def test_ohne_sprachmodell_sagt_der_status_was_die_chronik_dann_wird(tmp_path):
+    html = seite(Config(data_dir=tmp_path)).get_data(as_text=True)
+    assert "geordnet statt formuliert" in html
+    for name in ("OLLAMA_URL", "OLLAMA_MODEL"):
+        assert name in html
+
+
+def test_mit_sprachmodell_zeigt_der_status_adresse_und_modell(tmp_path):
+    config = Config(
+        ollama_url="http://ollama.example:11434",
+        ollama_model="chronist-modell",
+        data_dir=tmp_path,
+    )
+    html = seite(config).get_data(as_text=True)
+    assert "http://ollama.example:11434" in html
+    assert "chronist-modell" in html
+
+
 def test_zeigt_den_schema_stand(tmp_path):
     html = seite(Config(data_dir=tmp_path)).get_data(as_text=True)
     assert f"<dd>{db.SCHEMA_VERSION}</dd>" in html

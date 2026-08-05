@@ -7,6 +7,8 @@ VOLLSTAENDIG = {
     "FOUNDRY_USER": "chronist",
     "FOUNDRY_PASSWORD": "passwort-aus-der-umgebung",
     "DISCORD_BOT_TOKEN": "bot-token-aus-der-umgebung",
+    "OLLAMA_URL": "http://ollama.example:11434",
+    "OLLAMA_MODEL": "chronist-modell",
     "CHRONICLE_DATA_DIR": "/srv/chronik",
 }
 
@@ -48,6 +50,28 @@ def test_discord_darf_fehlen():
     config = Config.from_env(ohne_bot)
     assert config.foundry_configured
     assert not config.discord_configured
+
+
+def test_ollama_kommt_aus_der_umgebung():
+    config = Config.from_env(VOLLSTAENDIG)
+    assert config.ollama_url == "http://ollama.example:11434"
+    assert config.ollama_model == "chronist-modell"
+    assert config.ollama_configured
+
+
+def test_ollama_darf_fehlen_und_nennt_dann_beide_variablen():
+    config = Config.from_env({})
+    assert not config.ollama_configured
+    assert config.missing_ollama_variables == ("OLLAMA_URL", "OLLAMA_MODEL")
+
+
+def test_ohne_modellnamen_ist_ollama_unkonfiguriert():
+    config = Config.from_env(dict(VOLLSTAENDIG, OLLAMA_MODEL=" "))
+    assert config.missing_ollama_variables == ("OLLAMA_MODEL",)
+
+
+def test_die_ollama_adresse_ist_konfiguration_und_wird_nicht_maskiert():
+    assert "http://ollama.example:11434" in repr(Config.from_env(VOLLSTAENDIG))
 
 
 def test_datenverzeichnis_hat_eine_vorgabe():

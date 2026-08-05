@@ -42,6 +42,20 @@
 </section>
 
 <section class="karte">
+  <h2>Sprachmodell</h2>
+  {% if config.ollama_configured %}
+    <p class="steht">Ollama unter <code>{{ config.ollama_url }}</code>, Modell
+      <code>{{ config.ollama_model }}</code>.</p>
+  {% else %}
+    <p>Kein Sprachmodell — die Chronik entsteht trotzdem, dann geordnet statt formuliert:
+      Notizen nach Szenen, Foundry-Fakten wörtlich, keine Prosa. Es fehlen:</p>
+    <ul>
+      {% for name in config.missing_ollama_variables %}<li><code>{{ name }}</code></li>{% endfor %}
+    </ul>
+  {% endif %}
+</section>
+
+<section class="karte">
   <h2>Abgleich</h2>
   <p class="{{ 'fehlt' if abgleich.stale else 'steht' }}">{{ abgleich.message }}</p>
   {% if abgleich.snapshot %}
