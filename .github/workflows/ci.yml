@@ -29,3 +29,52 @@ jobs:
         with:
           fetch-depth: 0
       - run: python3 scripts/check_commit_subjects.py "origin/${{ github.base_ref }}..HEAD"
+
+  pfade:
+    name: Geänderte Pfade
+    runs-on: ubuntu-latest
+    outputs:
+      python: ${{ steps.filter.outputs.python }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            python:
+              - '**/*.py'
+              - '**/*.sql'
+              - 'pyproject.toml'
+              - '.github/workflows/ci.yml'
+
+  lint:
+    name: Lint
+    needs: pfade
+    if: needs.pfade.outputs.python == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -e ".[dev]"
+      - run: ruff check .
+      - run: ruff format --check .
+
+  test:
+    name: Tests und Diff-Coverage
+    needs: pfade
+    if: needs.pfade.outputs.python == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -e ".[dev]"
+      - run: pytest -q --cov --cov-report=xml
+      - name: Diff-Coverage
+        if: github.event_name == 'pull_request'
+        run: python3 scripts/check_diff_coverage.py --base "origin/${{ github.base_ref }}"

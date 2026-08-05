@@ -44,14 +44,16 @@ erzeugt, trennt sichtbar zwischen Belegtem und Verbindungssätzen.
   `CHANGELOG.md` aus den Commits ableitet. **Diesen PR zu mergen** schneidet das Release.
 - **Niemals** von Hand Versionen bumpen oder Tags setzen. Ein Release zu schneiden ist
   eine menschliche Entscheidung.
-- **Eingerichtet wird release-please mit #2** (`release-type: python` gegen
-  `pyproject.toml`). Bis dahin gibt es nichts zu releasen — die Regel gilt ab dann.
+- Eingerichtet in `release-please-config.json` mit `release-type: python` gegen
+  `pyproject.toml`; der Workflow läuft bei jedem Push nach `main`.
 
 ## Tests
 
 - Neuer und geänderter Code trägt Tests. **Diff-Coverage-Untergrenze 70 %** auf den
   geänderten Zeilen.
 - Jedes Abnahmekriterium bekommt möglichst einen Test, damit es nicht still zurückfällt.
+- Gemessen wird mit `pytest -q --cov --cov-report=xml`, geprüft von
+  `scripts/check_diff_coverage.py` gegen den PR-Base — im `test`-Job der CI.
 
 ## Geheimnisse
 

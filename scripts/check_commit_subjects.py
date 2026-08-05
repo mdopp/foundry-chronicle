@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Prüft Commit-Subjects gegen CLAUDE.md » Commits.
 
-    scripts/check_commit_subjects.py origin/main..HEAD
-    scripts/check_commit_subjects.py --message-file .git/COMMIT_EDITMSG
+scripts/check_commit_subjects.py origin/main..HEAD
+scripts/check_commit_subjects.py --message-file .git/COMMIT_EDITMSG
 """
 
 import re
@@ -58,7 +58,10 @@ def main(argv):
         print(f"✗ {subject}\n  {found}", file=sys.stderr)
 
     if failed:
-        print(f"\n{len(failed)} von {len(subjects)} Subjects verletzen die Hausregel.", file=sys.stderr)
+        print(
+            f"\n{len(failed)} von {len(subjects)} Subjects verletzen die Hausregel.",
+            file=sys.stderr,
+        )
         return 1
 
     print(f"{len(subjects)} Subject(s) in Ordnung.")

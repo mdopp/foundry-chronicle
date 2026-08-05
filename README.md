@@ -14,3 +14,19 @@ Discord-Bot-Token — alles andere kommt aus Foundry.
 
 > Status: Aufbau. Issues #2–#12 sind die erste Ausbaustufe; die Präsenz-Variante
 > (#2–#7) läuft ohne Audio, ohne Bot und ohne Grafikkarte.
+
+## Entwickeln
+
+```bash
+python3 -m venv .venv && . .venv/bin/activate
+pip install -e ".[dev]"
+pre-commit install
+python -m chronicle          # http://127.0.0.1:8000
+```
+
+Die Konfiguration kommt ausschließlich aus der Umgebung: `FOUNDRY_URL`, `FOUNDRY_USER`,
+`FOUNDRY_PASSWORD`, dazu optional `DISCORD_BOT_TOKEN` und `CHRONICLE_DATA_DIR` (Vorgabe
+`./data`). Fehlt die Foundry-Konfiguration, startet der Dienst trotzdem und erklärt auf
+`/`, was fehlt.
+
+Prüfen wie die CI: `ruff check . && ruff format --check . && pytest -q`.
