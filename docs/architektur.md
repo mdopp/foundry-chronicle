@@ -109,6 +109,9 @@ passiert ist** — und Teile davon nacherzählen können.
 
 - Alle Web-Kästen — Notiz-Eingabe, Upload, Ansicht, Suche, Register — sind **eine**
   schlanke, serverseitig gerenderte Oberfläche (#2), kein Frontend-Gerüst.
+- **Die Haustür stellt die Plattform:** Subdomain hinter Authelia-Forward-Auth
+  (ServiceBay-ADR 0001). Die Oberfläche selbst kennt kein Login und keine Konten —
+  sie erzwingt nur den `Remote-User`-Header, sobald echte Inhalte drinstehen.
 - Die **Personen-Zuordnung** Discord ↔ Foundry entsteht einmalig: automatisch
   vorgeschlagen, vom Menschen bestätigt, danach im Speicher.
 - **Foundry ist eine harte Abhängigkeit.** Ist es beim Einrichten aus, bleibt das

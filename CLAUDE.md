@@ -99,6 +99,32 @@ Deterministische, wiederholbare Schritte gehören in ein eingechecktes Skript, n
 Prosa, die ein Agent bei jedem Lauf neu auslegt. Menschliches Urteil ist für *was* zu
 prüfen ist und *warum* etwas fehlschlug — die Mechanik macht ein Skript.
 
+## ServiceBay ist die Zielplattform — ihre ADRs binden uns
+
+Deployt wird auf eine ServiceBay-Box (#12). Deren ADRs und Bau-Standards liegen
+**nicht** in diesem Repo, sondern auf dem ServiceBay-MCP (Server `servicebay` in der
+lokalen Claude-Konfiguration; Adresse und Token gehören nicht ins Repo). **Vor jeder
+Architekturentscheidung:** `get_service_standards` abrufen und die dort verlinkten
+Assists (`get_assist`) lesen. Dieser Abschnitt ist der Extrakt, nicht der Ersatz.
+
+- **ADR 0001 — SSO:** user-facing läuft auf einer Subdomain hinter
+  Authelia-Forward-Auth. Die App baut **kein eigenes Login**; sobald echte Inhalte
+  angezeigt werden (#5/#7), erzwingt sie den `Remote-User`-Header und testet, dass
+  ohne ihn abgelehnt wird — kein LAN-Bypass. „Keine Zugriffskontrolle" weiter unten
+  meint Mandantentrennung, nicht die Haustür.
+- **`/healthz` → 200** ist Test-Seam und Install-Gate der Box.
+- **SQLite läuft im WAL-Modus** — Plattform-Lektion gegen „database is locked".
+- **CI gatet den Image-Publish auf grüne Tests** (`needs: test`); eine CI, die nur
+  baut, ist non-compliant. Kommt mit #12, ebenso pinned Tags statt `:latest`.
+- **UI folgt dem ServiceBay-Design-Standard** (`get_assist service-ui-design-standard`).
+- **Läufe über ~10 s sind server-eigene, beobachtbare Jobs** — abbrechbar, neustartfest,
+  Wiederanbindung über Job-Id (`get_assist long-running-process`).
+- **Erklärte Abweichung:** Flask + Jinja statt des empfohlenen FastAPI. Grund: SSR für
+  eine Handvoll Ansichten, synchron reicht; Bot und Stapel werden eigene Prozesse.
+  Der Standard erlaubt begründete Abweichungen — das hier ist die Begründung.
+- **Standards-Lücken werden zurückgemeldet:** `standards-gap`-Issue in
+  `mdopp/servicebay` (`get_assist report-standards-gaps`).
+
 ## Foundry ist eine harte Abhängigkeit
 
 - Nur **flach andocken**: Chat-Log, Aktoren, Kampfzustand.

@@ -40,6 +40,12 @@ def test_konfiguriert_zeigt_url_und_benutzer_aber_kein_geheimnis(tmp_path):
     assert BOT_TOKEN not in html
 
 
+def test_healthz_meldet_ok(tmp_path):
+    antwort = create_app(Config(data_dir=tmp_path)).test_client().get("/healthz")
+    assert antwort.status_code == 200
+    assert antwort.get_json() == {"status": "ok"}
+
+
 def test_legt_die_datenbank_beim_start_an(tmp_path):
     config = Config(data_dir=tmp_path / "noch-nicht-da")
     create_app(config)

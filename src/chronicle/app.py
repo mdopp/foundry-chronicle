@@ -27,4 +27,9 @@ def create_app(config: Config | None = None) -> Flask:
             schema_version=db.current_schema_version(settings.database_path),
         )
 
+    # Test-Seam und Install-Gate der ServiceBay-Box (servicebay.healthcheck).
+    @app.get("/healthz")
+    def healthz() -> dict[str, str]:
+        return {"status": "ok"}
+
     return app
