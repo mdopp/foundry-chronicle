@@ -1,0 +1,73 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: daggerheart-chronik
+  labels:
+    app: daggerheart-chronik
+  annotations:
+    servicebay.label: "Daggerheart-Chronik"
+    servicebay.schema-version: "1"
+    servicebay.ports: "{{CHRONICLE_PORT}}/tcp"
+    # nginx liefert den Proxy-Host, auth die Authelia-Forward-Auth davor. Beide müssen
+    # stehen, bevor dieser Dienst installiert wird — sonst zeigt die Subdomain ins Leere.
+    servicebay.dependencies: "nginx,auth"
+    # Install-Gate der Box: /healthz antwortet 200, sobald Flask das Schema angelegt hat.
+    # Der Poller fragt am Proxy vorbei, deshalb ist der Endpunkt vom Remote-User-Zwang
+    # ausgenommen (siehe chronicle/app.py).
+    servicebay.healthcheck: |
+      url: http://localhost:{{CHRONICLE_PORT}}/healthz
+      interval: 30s
+      timeout: 5s
+      startup_timeout: 5m
+spec:
+  # hostNetwork, damit der Dienst Foundry und ein Ollama auf der Box über 127.0.0.1
+  # erreicht und NPM ihn ohne veröffentlichten hostPort findet.
+  hostNetwork: true
+  containers:
+  - name: chronik
+    image: ghcr.io/mdopp/foundry-chronicle:{{CHRONICLE_IMAGE_TAG}}
+    # Container-uid 0 ist unter rootless Podman der unprivilegierte Host-Benutzer, dem
+    # {{DATA_DIR}} gehört; ohne das scheitert das Anlegen der SQLite-Datei mit EPERM.
+    securityContext:
+      runAsUser: 0
+      runAsGroup: 0
+    env:
+      - name: CHRONICLE_HOST
+        value: "0.0.0.0"
+      - name: CHRONICLE_PORT
+        value: "{{CHRONICLE_PORT}}"
+      - name: CHRONICLE_DATA_DIR
+        value: "/data"
+      # Die Haustür steht am Proxy (ADR 0001). Ohne Remote-User antwortet der Dienst 403,
+      # damit ein direkter Zugriff aus dem LAN die Anmeldung nicht überspringt.
+      - name: CHRONICLE_REQUIRE_REMOTE_USER
+        value: "1"
+      # Muss {{PUBLIC_DOMAIN}} referenzieren, sonst injiziert der Assembler die Variable
+      # nicht und der Proxy-Host wird still übersprungen — Assist
+      # footgun-subdomain-needs-public-domain.
+      - name: CHRONICLE_PUBLIC_URL
+        value: "https://{{CHRONICLE_SUBDOMAIN}}.{{PUBLIC_DOMAIN}}"
+      - name: FOUNDRY_URL
+        value: "{{FOUNDRY_URL}}"
+      - name: FOUNDRY_USER
+        value: "{{FOUNDRY_USER}}"
+      - name: FOUNDRY_PASSWORD
+        value: "{{FOUNDRY_PASSWORD}}"
+      - name: DISCORD_BOT_TOKEN
+        value: "{{DISCORD_BOT_TOKEN}}"
+      - name: OLLAMA_URL
+        value: "{{OLLAMA_URL}}"
+      - name: OLLAMA_MODEL
+        value: "{{OLLAMA_MODEL}}"
+    ports:
+      - containerPort: {{CHRONICLE_PORT}}
+    volumeMounts:
+      - mountPath: /data
+        name: chronik-daten
+  volumes:
+  # Die SQLite-Datei liegt hier und läuft im WAL-Modus; sie ist klein und enthält alles
+  # Unersetzliche. Audiospuren daneben gehören nicht ins Backup.
+  - name: chronik-daten
+    hostPath:
+      path: {{DATA_DIR}}/daggerheart
+      type: DirectoryOrCreate

@@ -38,3 +38,22 @@ Umgebung — dann wird jeder Request ohne diesen Header abgewiesen. Lokal bleibt
 Variable aus, sonst kommt man ohne Proxy nicht hinein.
 
 Prüfen wie die CI: `ruff check . && ruff format --check . && pytest -q`.
+
+## Betrieb auf ServiceBay
+
+Dieses Repo ist zugleich eine **ServiceBay-Registry**: unter [`templates/`](templates/)
+liegt das Pod-Template `daggerheart-chronik`. Auf der Box wird das Repo einmal in
+`config.registries[]` eingetragen (Git-URL dieses Repos), danach steht das Template im
+Installations-Assistenten neben den mitgelieferten.
+
+Das Image baut [`.github/workflows/build-images.yml`](.github/workflows/build-images.yml)
+und veröffentlicht es nach GHCR — der Publish-Job hängt an `needs: test`, es wird also
+nichts veröffentlicht, was nicht grün war. Für den Rollout wird ein fester Tag gepinnt
+(`sha-<kurz>` oder die Release-Version), nicht `:latest`.
+
+Im Container läuft `waitress`, nicht der Flask-Entwicklungsserver:
+
+```bash
+podman build -t foundry-chronicle .
+podman run --rm -p 8000:8000 foundry-chronicle    # /healthz antwortet 200
+```
