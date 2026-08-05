@@ -33,6 +33,8 @@ pythonpath = ["src"]
 [tool.coverage.run]
 source = ["src/chronicle", "scripts"]
 relative_files = true
+# Ohne Thread-Coverage zeigt Worker-Code eine falsch-niedrige Zahl (ServiceBay-Standard).
+concurrency = ["thread"]
 
 [tool.coverage.report]
 show_missing = true

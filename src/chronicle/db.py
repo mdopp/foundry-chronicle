@@ -21,6 +21,9 @@ def connect(database_path: Path) -> sqlite3.Connection:
     connection = sqlite3.connect(database_path)
     connection.row_factory = sqlite3.Row
     connection.execute("PRAGMA foreign_keys = ON")
+    # WAL vermeidet »database is locked« bei gleichzeitigen Lese- und Schreibzugriffen —
+    # eine wiederholt bezahlte Lektion der Zielplattform (ServiceBay-Standard).
+    connection.execute("PRAGMA journal_mode = WAL")
     return connection
 
 
