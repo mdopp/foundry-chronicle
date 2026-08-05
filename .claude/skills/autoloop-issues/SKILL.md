@@ -132,7 +132,8 @@ Set `model` on each Agent call. A weak model on real code *costs* time (rework);
 |---|---|
 | Builder — real code (`cluster`/`issue`) | `opus` |
 | Builder — `lint-sweep` unit | `haiku` |
-| Planner | `sonnet` |
+| Planner — maintenance clustering (bugs by region, park/refine) | `sonnet` |
+| Planner — greenfield / epic decomposition (unit boundaries for foundational work) | `opus` |
 | Verify | `sonnet` |
 
 The orchestrator itself is pure dispatch and runs at the session model — a light model is fine for it.
