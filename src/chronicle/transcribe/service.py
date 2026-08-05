@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from chronicle import db
+from chronicle import db, recordings
 from chronicle.config import Config
 from chronicle.transcribe import vocabulary
 from chronicle.transcribe.client import FasterWhisper, Segment, SpeechModel
@@ -175,3 +175,56 @@ def transcribe_session(
         model_name=erkenner.name,
         vocabulary_names=len(eigennamen),
     )
+
+
+def run_queue(
+    config: Config,
+    *,
+    model: SpeechModel | None = None,
+    delete_audio: bool = False,
+) -> tuple[str, ...]:
+    """Arbeitet die wartenden Spuren ab — der Stapel, den die Oberfläche befüllt.
+
+    Das Modell wird erst geladen, wenn wirklich etwas wartet: ein leerer Lauf soll
+    nichts kosten, damit er stündlich stehen darf.
+    """
+    db.init(config.database_path)
+    wartend = recordings.pending(config.database_path)
+    if not wartend:
+        return ()
+
+    erkenner = model if model is not None else model_from_config(config)
+    meldungen = []
+    for aufnahme in wartend:
+        recordings.mark(config.database_path, aufnahme.id, recordings.LAEUFT)
+        meldung, gelungen = _eine_spur(config, aufnahme, erkenner, delete_audio)
+        stand = recordings.FERTIG if gelungen else recordings.GESCHEITERT
+        recordings.mark(config.database_path, aufnahme.id, stand, meldung)
+        meldungen.append(meldung)
+    return tuple(meldungen)
+
+
+def _eine_spur(
+    config: Config,
+    aufnahme: recordings.Recording,
+    erkenner: SpeechModel,
+    delete_audio: bool,
+) -> tuple[str, bool]:
+    pfad = recording_path(config, aufnahme.filename)
+    if not pfad.is_file():
+        return f"Spur »{aufnahme.source}«: {pfad} liegt nicht mehr da.", False
+    try:
+        transkript = transcribe_session(
+            config,
+            aufnahme.session_id,
+            pfad,
+            model=erkenner,
+            source=aufnahme.source,
+            delete_audio=delete_audio,
+        )
+        return transkript.message, True
+    # Eine kaputte Spur — abgebrochene Aufnahme, umbenannte Textdatei — darf die übrigen
+    # Jobs der Nacht nicht mitnehmen.
+    except Exception as fehler:  # noqa: BLE001
+        logger.warning("Spur %s: %s", aufnahme.source, fehler)
+        return f"Spur »{aufnahme.source}«: {fehler}", False

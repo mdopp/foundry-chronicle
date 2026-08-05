@@ -103,6 +103,24 @@ CREATE TABLE IF NOT EXISTS transcript (
     UNIQUE (session_id, source)
 );
 
+-- Die Warteschlange der Stufe: eine Zeile je Spur, die transkribiert werden will. Sie
+-- ist der Job — ``id`` ist die Job-Id, ``status`` der einzige Fortschritt, den es hier
+-- ehrlich zu melden gibt. Der Diktat-Upload reiht sich hier ein, der Recorder-Bot
+-- später ebenso; einen zweiten Verarbeitungsweg gibt es nicht.
+CREATE TABLE IF NOT EXISTS recording (
+    id          INTEGER PRIMARY KEY,
+    session_id  INTEGER NOT NULL REFERENCES session (id) ON DELETE CASCADE,
+    filename    TEXT NOT NULL UNIQUE,
+    source      TEXT NOT NULL,
+    uploaded_at TEXT NOT NULL,
+    status      TEXT NOT NULL
+                CHECK (status IN ('wartet', 'laeuft', 'fertig', 'gescheitert')),
+    detail      TEXT,
+    updated_at  TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS recording_sitzung ON recording (session_id);
+
 -- Zeitstempel in Millisekunden ab Spurbeginn: die Zusammenführung legt später mehrere
 -- Spuren auf eine Zeitachse, und Fließkomma-Sekunden wären dabei die falsche Einheit.
 CREATE TABLE IF NOT EXISTS transcript_segment (
@@ -192,5 +210,5 @@ INSERT INTO search_index (text, kind, ref_id, session_id, scene_id)
 SELECT s.text, 'transkript', s.transcript_id, t.session_id, NULL
 FROM transcript_segment s JOIN transcript t ON t.id = s.transcript_id;
 
-INSERT INTO meta (key, value) VALUES ('schema_version', '6')
+INSERT INTO meta (key, value) VALUES ('schema_version', '7')
 ON CONFLICT (key) DO UPDATE SET value = excluded.value;

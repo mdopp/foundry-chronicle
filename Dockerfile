@@ -9,6 +9,9 @@ FROM python:3.12-slim
 
 COPY --from=bau /fertig /usr/local
 
+# Kein ffmpeg im Image: faster-whisper dekodiert über PyAV, und dessen Wheel bringt die
+# FFmpeg-Bibliotheken mit — m4a/AAC und ogg/opus vom Telefon gehen ohne ein Systempaket.
+#
 # /aufnahmen liegt neben /data und nicht darin: nur /data wird gesichert, und die
 # Audiospuren gehören nie ins Backup. Ein eigenes Volume dafür bekommt das
 # ServiceBay-Template, sobald etwas auf der Box Spuren ablegt (Recorder-Bot, Upload).

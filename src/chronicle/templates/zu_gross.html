@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block titel %}Zu groß — Foundry Chronicle{% endblock %}
+{% block inhalt %}
+
+<section class="karte">
+  <h2>Die Datei ist zu groß</h2>
+  <p class="fehlt">Angenommen werden bis zu {{ grenze }} MB je Spur.</p>
+  <p class="gedaempft">Das reicht für einen ganzen Sitzungsabend als AAC. Ist die Aufnahme
+    unkomprimiert — WAV oder AIFF —, wandelt sie die Sprachmemo-App vor dem Hochladen um.</p>
+  <p><a href="{{ url_for('sitzungen') }}">Zurück zu den Sitzungen</a></p>
+</section>
+
+{% endblock %}

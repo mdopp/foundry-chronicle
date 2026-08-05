@@ -10,7 +10,7 @@ import pytest
 from conftest import UNSER_KONTO
 
 import chronicle.transcribe.__main__ as entry
-from chronicle import db, search
+from chronicle import db, recordings, search
 from chronicle.config import Config
 from chronicle.foundry import store
 from chronicle.foundry.world import project
@@ -383,11 +383,27 @@ def test_der_stapelaufruf_loescht_die_spur_nur_mit_schalter(
 def test_der_stapelaufruf_weist_falsche_argumente_ab(config, connection, spur, monkeypatch, capsys):
     monkeypatch.setattr(entry.Config, "from_env", classmethod(lambda cls: config))
 
-    assert entry.main([]) == 2
     assert entry.main(["1"]) == 2
     assert entry.main(["keine-zahl", "mira.ogg"]) == 2
     assert entry.main(["1", "fehlt.ogg"]) == 2
     assert "gibt es nicht" in capsys.readouterr().out
+
+
+def test_ohne_argumente_wird_die_warteschlange_abgearbeitet(
+    config, connection, spur, monkeypatch, capsys
+):
+    sitzung_id = sitzung(connection)
+    monkeypatch.setattr(entry.Config, "from_env", classmethod(lambda cls: config))
+    monkeypatch.setattr(service, "model_from_config", lambda _config: Erkenner())
+
+    assert entry.main([]) == 0
+    assert entry.LEER in capsys.readouterr().out
+
+    recordings.enqueue(config.database_path, sitzung_id, spur.name)
+    assert entry.main([]) == 0
+
+    assert "2 Segmente" in capsys.readouterr().out
+    assert len(segmente(connection, sitzung_id)) == 2
 
 
 def test_der_stapelaufruf_meldet_eine_unbekannte_sitzung(config, spur, monkeypatch, capsys):

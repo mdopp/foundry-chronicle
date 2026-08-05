@@ -49,9 +49,18 @@ Aus einer Audiospur wird Text mit Zeitstempeln — im Stapel nach der Sitzung, a
 
 ```bash
 pip install -e ".[dev,transcribe]"          # faster-whisper ist ein eigenes Extra
+python -m chronicle.transcribe              # die Warteschlange — der nächtliche Aufruf
 python -m chronicle.transcribe 1 mira.ogg   # Sitzung 1, Spur aus ./recordings
 python -m chronicle.transcribe 1 mira.ogg --loeschen   # Aufnahme danach entfernen
 ```
+
+Ohne Argumente wird abgearbeitet, was über die Oberfläche hochgeladen wurde und noch
+wartet: auf der Sitzungsseite lädt ein **Diktat** — eine Sprachnotiz aus der
+Sprachmemo-App des Telefons — eine Spur hoch und reiht sie in dieselbe Warteschlange ein.
+Die Seite zeigt den Stand dieses Jobs, nie einen geratenen Fortschritt; ist er fertig,
+steht das Transkript dort und lässt sich einer Szene als Notiz übernehmen. Aufgenommen
+wird **nicht** im Browser: Mikrofonzugriff braucht HTTPS und wäre im Heimnetz über HTTP
+tot, und die Sprachmemo-App übersteht Bildschirmsperre und Anruf.
 
 Der Dateiname wird die Quellenkennung der Spur; ein zweiter Lauf ersetzt sie, statt zu
 verdoppeln. Erkannt wird `small` auf CPU mit int8 — grob das Zwei- bis Fünffache der

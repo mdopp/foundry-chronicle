@@ -1,4 +1,8 @@
-"""python -m chronicle.transcribe <sitzung> <spur> — eine Audiospur, im Stapel.
+"""python -m chronicle.transcribe — Audiospuren zu Text, im Stapel.
+
+Ohne Argumente wird die Warteschlange abgearbeitet: alles, was über die Oberfläche
+hochgeladen wurde und noch wartet. Das ist der nächtliche Aufruf. Mit Sitzung und
+Dateiname läuft eine von Hand abgelegte Spur — dieselbe Stufe, nur ohne Warteschlange.
 
 Ein relativer Dateiname liegt im Aufnahmeverzeichnis (``CHRONICLE_RECORDINGS_DIR``,
 Vorgabe ``recordings/``) — bewusst neben dem Datenverzeichnis und nicht darin, denn die
@@ -18,11 +22,17 @@ import sys
 
 from chronicle.config import Config
 from chronicle.transcribe.client import TranscriberError
-from chronicle.transcribe.service import recording_path, transcribe_session
+from chronicle.transcribe.service import recording_path, run_queue, transcribe_session
 
-AUFRUF = "Aufruf: python -m chronicle.transcribe <sitzungs-id> <audiodatei> [--loeschen]"
+AUFRUF = (
+    "Aufruf: python -m chronicle.transcribe [--loeschen]                       "
+    "— die Warteschlange\n"
+    "        python -m chronicle.transcribe <sitzungs-id> <audiodatei> [--loeschen]"
+)
 
 LOESCHEN = "--loeschen"
+
+LEER = "Nichts in der Warteschlange."
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -30,6 +40,8 @@ def main(argv: list[str] | None = None) -> int:
     args = sys.argv[1:] if argv is None else argv
     loeschen = LOESCHEN in args
     stellen = [wert for wert in args if wert != LOESCHEN]
+    if not stellen:
+        return _warteschlange(loeschen)
     if len(stellen) != 2 or not stellen[0].isdigit():
         print(AUFRUF)
         return 2
@@ -49,6 +61,17 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Sitzung {stellen[0]} gibt es nicht.")
         return 2
     print(transkript.message)
+    return 0
+
+
+def _warteschlange(loeschen: bool) -> int:
+    try:
+        meldungen = run_queue(Config.from_env(), delete_audio=loeschen)
+    except TranscriberError as fehler:
+        print(str(fehler))
+        return 2
+    for zeile in meldungen or (LEER,):
+        print(zeile)
     return 0
 
 

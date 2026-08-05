@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from flask import Flask, Response, abort, redirect, render_template, request, url_for
 
-from chronicle import db, foundry, notes, protocol, search, settings
+from chronicle import db, foundry, notes, protocol, recordings, search, settings
 from chronicle.compose import client as sprachmodell
 from chronicle.compose.client import ModelError
 from chronicle.compose.service import RUECKBLICK
@@ -30,6 +30,7 @@ def create_app(config: Config | None = None) -> Flask:
     app = Flask(__name__)
     basis = config if config is not None else Config.from_env()
     app.config["CHRONICLE"] = basis
+    app.config["MAX_CONTENT_LENGTH"] = recordings.MAX_BYTES
     db.init(basis.database_path)
 
     @app.before_request
@@ -58,12 +59,20 @@ def create_app(config: Config | None = None) -> Flask:
         )
         return redirect(url_for("sitzung", sitzung_id=sitzung_id))
 
-    @app.get("/sitzungen/<int:sitzung_id>")
-    def sitzung(sitzung_id: int) -> str:
+    def sitzungsseite(sitzung_id: int, diktat_fehler: str | None = None) -> str:
         daten = notes.session(basis.database_path, sitzung_id)
         if daten is None:
             abort(404)
-        return render_template("sitzung.html", sitzung=daten)
+        return render_template(
+            "sitzung.html",
+            sitzung=daten,
+            aufnahmen=recordings.for_session(basis.database_path, sitzung_id),
+            diktat_fehler=diktat_fehler,
+        )
+
+    @app.get("/sitzungen/<int:sitzung_id>")
+    def sitzung(sitzung_id: int) -> str:
+        return sitzungsseite(sitzung_id)
 
     @app.post("/sitzungen/<int:sitzung_id>/szenen")
     def neue_szene(sitzung_id: int) -> Response:
@@ -81,6 +90,36 @@ def create_app(config: Config | None = None) -> Flask:
             abort(404)
         notes.add_note(basis.database_path, szene_id, request.form.get("text", ""))
         return redirect(url_for("sitzung", sitzung_id=sitzung_id, _anchor=f"szene-{szene_id}"))
+
+    @app.post("/sitzungen/<int:sitzung_id>/diktat")
+    def neues_diktat(sitzung_id: int) -> Response | tuple[str, int]:
+        if notes.session(basis.database_path, sitzung_id) is None:
+            abort(404)
+        try:
+            recordings.accept(basis, sitzung_id, request.files.get("datei"))
+        except recordings.Rejected as fehler:
+            return sitzungsseite(sitzung_id, diktat_fehler=str(fehler)), 400
+        return redirect(url_for("sitzung", sitzung_id=sitzung_id, _anchor="diktat"))
+
+    @app.post("/aufnahmen/<int:aufnahme_id>/notiz")
+    def diktat_uebernehmen(aufnahme_id: int) -> Response:
+        aufnahme = recordings.get(basis.database_path, aufnahme_id)
+        if aufnahme is None or not aufnahme.text:
+            abort(404)
+        gewaehlt = request.form.get("scene_id", "")
+        if not gewaehlt.isdigit():
+            abort(404)
+        szene_id = int(gewaehlt)
+        if notes.session_of_scene(basis.database_path, szene_id) != aufnahme.session_id:
+            abort(404)
+        notes.add_note(basis.database_path, szene_id, aufnahme.text)
+        return redirect(
+            url_for("sitzung", sitzung_id=aufnahme.session_id, _anchor=f"szene-{szene_id}")
+        )
+
+    @app.errorhandler(413)
+    def zu_gross(_fehler: object) -> tuple[str, int]:
+        return render_template("zu_gross.html", grenze=recordings.MAX_BYTES // (1024 * 1024)), 413
 
     @app.get("/protokolle")
     def protokolle() -> str:
