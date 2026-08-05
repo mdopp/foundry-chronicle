@@ -1,0 +1,16 @@
+.git
+.github
+.claude
+.venv
+.pytest_cache
+.ruff_cache
+.coverage
+coverage.xml
+data
+docs
+scripts
+templates
+tests
+**/__pycache__
+**/*.pyc
+**/*.egg-info

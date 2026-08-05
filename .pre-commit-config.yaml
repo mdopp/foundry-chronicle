@@ -7,6 +7,9 @@ repos:
       - id: end-of-file-fixer
       - id: trailing-whitespace
       - id: check-yaml
+        # Das Pod-Template ist Mustache und erst nach dem Rendern gültiges YAML. Geprüft
+        # wird es gerendert in tests/test_template.py.
+        exclude: ^templates/
       - id: check-merge-conflict
       # Audiospuren und die SQLite-Datei gehören nie ins Repo.
       - id: check-added-large-files
