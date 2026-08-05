@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block titel %}Foundry Chronicle{% endblock %}</title>
+    <style>
+      body {
+        font-family: system-ui, sans-serif;
+        line-height: 1.5;
+        margin: 0 auto;
+        max-width: 46rem;
+        padding: 2rem 1rem;
+      }
+      h1 { font-size: 1.6rem; margin-bottom: 0; }
+      h2 { font-size: 1.1rem; margin-top: 2rem; }
+      p.leitsatz { color: #555; margin-top: .25rem; }
+      dl { display: grid; grid-template-columns: max-content 1fr; gap: .3rem 1rem; }
+      dt { font-weight: 600; }
+      dd { margin: 0; }
+      .fehlt { color: #8a1f11; }
+      .steht { color: #1f6b2c; }
+      code { background: #f2f2f2; padding: 0 .2rem; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Foundry Chronicle</h1>
+      <p class="leitsatz">Sitzungsprotokolle für Tisch-Rollenspiel — eine Instanz pro Gruppe.</p>
+    </header>
+    <main>{% block inhalt %}{% endblock %}</main>
+  </body>
+</html>

@@ -11,13 +11,13 @@
     "scripts-over-prose": 1,
     "ci": 1,
     "pre-commit-hooks": 1,
-    "release-please": 0,
-    "diff-coverage": 0
+    "release-please": 1,
+    "diff-coverage": 1
   },
   "readinessGates": {
-    "coverage": "declared in CLAUDE.md (70% diff floor) — NOT enforced; braucht coverage.xml, also #2",
-    "security": "partial — gitleaks auf jedem PR und Push; SAST und CVE-Scan kommen mit #2, wenn es Abhaengigkeiten gibt",
-    "dependency": "not present — kein Lockfile, weil es noch keine Abhaengigkeiten gibt (#2)",
+    "coverage": "enforced — pytest --cov erzeugt coverage.xml, scripts/check_diff_coverage.py haelt die 70-%-Untergrenze im test-Job",
+    "security": "partial — gitleaks auf jedem PR und Push; SAST und CVE-Scan fehlen weiterhin",
+    "dependency": "not present — kein Lockfile; die Abhaengigkeiten stehen in pyproject.toml",
     "humanReview": "present — die security:true-Draft-Sperre im Autoloop-Builder",
     "performance": "skipped — Stapelverarbeitung, per Entwurf kein Latenzbudget"
   },
@@ -26,7 +26,7 @@
     "Der autoloop-issues-Skill wurde aus mdopp/solarisbay portiert: queue.py unveraendert (kein hartkodiertes Repo), die vier Markdown-Dateien angepasst. verify.md ist neu geschrieben und meldet ehrlich 'owed', solange #12 kein deployfaehiges Artefakt liefert.",
     "Kein Upstream-Plattform-Repo: das Label autoloop:upstream-wait ist hier unbenutzt.",
     "2026-08-04, zweiter Lauf: die stack-unabhaengige Phase 0 angewendet. CI = zwei Jobs (gitleaks + Commit-Subjects); pre-commit = generische Hooks plus commit-msg. Die Sprachjobs (ruff, pytest, Diff-Coverage) fehlen bewusst, es gibt noch keinen Toolchain.",
-    "OFFEN fuer #2: (a) ruff/pytest/Coverage-Jobs in ci.yml, (b) ruff-Hooks in .pre-commit-config.yaml, (c) scripts/check_diff_coverage.py fuer die 70-%-Untergrenze — builder.md nennt diesen Check bereits im Full-Gate, das Skript existiert noch nicht, (d) release-please mit release-type python.",
+    "2026-08-05, mit #2 erledigt: ruff-/pytest-/Diff-Coverage-Jobs in ci.yml (pfadgefiltert ueber dorny/paths-filter, weil GitHub Actions nur je Workflow filtert), ruff-Hooks in .pre-commit-config.yaml, scripts/check_diff_coverage.py, release-please mit release-type python ab 0.1.0.",
     "gitleaks-action ist fuer persoenliche Konten frei; unter einer GitHub-Organisation braeuchte es GITLEAKS_LICENSE. Ob Fundstellen im Log redigiert werden, beim ersten roten Lauf pruefen (CLAUDE.md: kein Token in einer Logzeile).",
     "Defekt behoben: .github/ISSUE_TEMPLATE/bug_report.md trug einen halben ServiceBay-Satz aus der Portierung im Repro-Block."
   ]

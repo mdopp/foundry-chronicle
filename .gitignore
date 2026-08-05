@@ -5,6 +5,9 @@ venv/
 *.egg-info/
 .pytest_cache/
 .ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
 
 # Autoloop: ephemerer Laufzeit-Cache, rekonstruierbar aus GitHub
 .claude/state/

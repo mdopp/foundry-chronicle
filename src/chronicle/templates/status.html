@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block titel %}Status — Foundry Chronicle{% endblock %}
+{% block inhalt %}
+
+<h2>Foundry</h2>
+{% if config.foundry_configured %}
+  <p class="steht">Konfiguriert als <code>{{ config.foundry_user }}</code> auf
+    <code>{{ config.foundry_url }}</code>. Das Passwort steht in der Umgebung.</p>
+{% else %}
+  <p class="fehlt">Nicht konfiguriert — der Dienst läuft, holt aber nichts aus Foundry.</p>
+  <p>Diese Umgebungsvariablen fehlen:</p>
+  <ul>
+    {% for name in config.missing_foundry_variables %}<li><code>{{ name }}</code></li>{% endfor %}
+  </ul>
+  <p>Foundry hat keinen API-Token: es braucht die Adresse sowie Benutzername und Passwort
+    eines echten Kontos. Das Protokoll sieht danach genau so viel wie dieser Mensch.</p>
+{% endif %}
+
+<h2>Discord</h2>
+{% if config.discord_configured %}
+  <p class="steht">Bot-Token gesetzt.</p>
+{% else %}
+  <p>Kein Bot-Token — das ist in Ordnung. Eine Gruppe, die nur vor Ort spielt, braucht
+    ihn nicht; ohne ihn entfallen Aufnahme und Zustellung.</p>
+{% endif %}
+
+<h2>Speicher</h2>
+<dl>
+  <dt>Datenbank</dt><dd><code>{{ config.database_path }}</code></dd>
+  <dt>Schema-Stand</dt><dd>{{ schema_version }}</dd>
+  <dt>Letzter Abgleich</dt><dd>noch keiner — die Foundry-Anbindung ist noch nicht eingebaut</dd>
+</dl>
+
+{% endblock %}
