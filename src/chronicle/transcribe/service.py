@@ -1,0 +1,177 @@
+"""Der Stapellauf: Spur lesen, Namen vorspannen, Segmente ablegen.
+
+Ein Lauf ist eine Spur. Er läuft eine gute Stunde je Sitzungsstunde und darf jederzeit
+abgebrochen und **von vorn** wiederholt werden: das Transkript einer Spur wird im
+Ganzen ersetzt, ein zweiter Lauf hinterlässt also keine Dubletten. Mitten in einer Spur
+weiterzumachen ginge nur mit einem zweiten, geschnittenen Modelllauf — und genau davon
+lebt die Erkennung nicht.
+
+Gemeldet wird, wo im Band der Lauf steht, nicht wann er fertig ist. Eine Restzeit wäre
+geraten, und geraten wird hier nichts.
+
+Die Audiodatei bleibt liegen. Gelöscht wird sie nur, wenn der Aufrufer es ausdrücklich
+verlangt — eine Aufnahme still zu entfernen wäre der teuerste stille Fehler.
+"""
+
+from __future__ import annotations
+
+import logging
+import sqlite3
+from collections.abc import Iterable, Iterator
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from pathlib import Path
+
+from chronicle import db
+from chronicle.config import Config
+from chronicle.transcribe import vocabulary
+from chronicle.transcribe.client import FasterWhisper, Segment, SpeechModel
+
+logger = logging.getLogger(__name__)
+
+KIND = "transkript"
+
+# So viele Sekunden Audio liegen zwischen zwei Fortschrittsmeldungen.
+MELDEABSTAND = 60.0
+
+
+@dataclass(frozen=True)
+class Transcript:
+    session_id: int
+    source: str
+    segment_count: int
+    audio_seconds: float
+    model_name: str
+    vocabulary_names: int
+
+    @property
+    def message(self) -> str:
+        return (
+            f"Spur »{self.source}«: {self.segment_count} Segmente bis "
+            f"{zeitmarke(self.audio_seconds)}, erkannt mit {self.model_name}, "
+            f"{self.vocabulary_names} Namen vorgespannt."
+        )
+
+
+def _now() -> str:
+    return datetime.now(UTC).isoformat(timespec="seconds")
+
+
+def zeitmarke(seconds: float) -> str:
+    ganze = int(seconds)
+    return f"{ganze // 3600}:{ganze // 60 % 60:02d}:{ganze % 60:02d}"
+
+
+def recording_path(config: Config, name: str) -> Path:
+    """Ein relativer Name liegt im Aufnahmeverzeichnis, nicht im Datenverzeichnis."""
+    pfad = Path(name)
+    return pfad if pfad.is_absolute() else config.recordings_dir / pfad
+
+
+def names(connection: sqlite3.Connection, session_id: int) -> tuple[str, ...]:
+    """Erst die Namen, die in dieser Sitzung gesprochen haben, dann der Zwischenspeicher."""
+    gesprochen = connection.execute(
+        "SELECT DISTINCT m.speaker_alias AS name FROM scene_foundry_message v "
+        "JOIN scene c ON c.id = v.scene_id "
+        "JOIN foundry_message m ON m.id = v.message_id "
+        "WHERE c.session_id = ? AND m.speaker_alias IS NOT NULL "
+        "ORDER BY m.speaker_alias",
+        (session_id,),
+    ).fetchall()
+    bekannt = connection.execute("SELECT name FROM foundry_character ORDER BY name").fetchall()
+    return tuple(zeile["name"] for zeile in (*gesprochen, *bekannt))
+
+
+def segment_rows(segments: Iterable[Segment]) -> tuple[tuple[int, int, str], ...]:
+    """Sekunden werden Millisekunden; leere Segmente fallen weg.
+
+    Ein Ende vor dem Anfang kommt aus dem Modell und nicht aus der Wirklichkeit — es
+    wird auf den Anfang gezogen, damit die Zusammenführung später eine Zeitachse hat.
+    """
+    zeilen = []
+    for teil in segments:
+        text = teil.text.strip()
+        if not text:
+            continue
+        beginn = max(0, round(teil.start * 1000))
+        zeilen.append((beginn, max(beginn, round(teil.end * 1000)), text))
+    return tuple(zeilen)
+
+
+def _mit_fortschritt(segments: Iterator[Segment], source: str) -> Iterator[Segment]:
+    gemeldet = 0.0
+    for teil in segments:
+        if teil.end - gemeldet >= MELDEABSTAND:
+            gemeldet = teil.end
+            logger.info("Spur %s: transkribiert bis %s", source, zeitmarke(teil.end))
+        yield teil
+
+
+def store(
+    connection: sqlite3.Connection,
+    session_id: int,
+    source: str,
+    rows: tuple[tuple[int, int, str], ...],
+    at: str,
+) -> int:
+    with connection:
+        connection.execute(
+            "DELETE FROM transcript WHERE session_id = ? AND source = ?", (session_id, source)
+        )
+        cursor = connection.execute(
+            "INSERT INTO transcript (session_id, source, created_at) VALUES (?, ?, ?)",
+            (session_id, source, at),
+        )
+        transcript_id = int(cursor.lastrowid)
+        connection.executemany(
+            "INSERT INTO transcript_segment (transcript_id, start_ms, end_ms, text) "
+            "VALUES (?, ?, ?, ?)",
+            [(transcript_id, *zeile) for zeile in rows],
+        )
+    return transcript_id
+
+
+def model_from_config(config: Config) -> SpeechModel:
+    return FasterWhisper(config.whisper_model)
+
+
+def transcribe_session(
+    config: Config,
+    session_id: int,
+    audio_path: Path,
+    *,
+    model: SpeechModel | None = None,
+    source: str | None = None,
+    delete_audio: bool = False,
+) -> Transcript | None:
+    db.init(config.database_path)
+    connection = db.connect(config.database_path)
+    try:
+        bekannt = connection.execute("SELECT 1 FROM session WHERE id = ?", (session_id,)).fetchone()
+        if bekannt is None:
+            return None
+        eigennamen = vocabulary.capped(names(connection, session_id))
+        vorspann = vocabulary.prompt(eigennamen)
+        spur = source or audio_path.stem
+        erkenner = model if model is not None else model_from_config(config)
+
+        logger.info("Spur %s: %s beginnt, %s Namen vorgespannt", spur, audio_path, len(eigennamen))
+        segmente = segment_rows(
+            _mit_fortschritt(erkenner.transcribe(audio_path, vocabulary=vorspann), spur)
+        )
+        store(connection, session_id, spur, segmente, _now())
+    finally:
+        connection.close()
+
+    if delete_audio:
+        audio_path.unlink()
+        logger.info("Spur %s: %s auf Verlangen gelöscht", spur, audio_path)
+
+    return Transcript(
+        session_id=session_id,
+        source=spur,
+        segment_count=len(segmente),
+        audio_seconds=segmente[-1][1] / 1000 if segmente else 0.0,
+        model_name=erkenner.name,
+        vocabulary_names=len(eigennamen),
+    )

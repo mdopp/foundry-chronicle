@@ -21,11 +21,18 @@ from markupsafe import Markup, escape
 
 from chronicle import db
 from chronicle.compose.service import KIND, RUECKBLICK
+from chronicle.transcribe.service import KIND as TRANSKRIPT
 
 NOTIZ = "notiz"
 
-# Die Reihenfolge ist die Reihenfolge der Ergebnisgruppen auf der Seite.
-LABELS = {NOTIZ: "Notizen", KIND: "Chronik", RUECKBLICK: "Rückblick"}
+# Die Reihenfolge ist die Reihenfolge der Ergebnisgruppen auf der Seite. Das Transkript
+# steht zuletzt: es ist das Rohmaterial, aus dem die anderen entstanden sind.
+LABELS = {
+    NOTIZ: "Notizen",
+    KIND: "Chronik",
+    RUECKBLICK: "Rückblick",
+    TRANSKRIPT: "Transkripte",
+}
 
 TREFFER = 50
 

@@ -92,6 +92,30 @@ CREATE TABLE IF NOT EXISTS protocol (
     UNIQUE (session_id, kind)
 );
 
+-- Eine Spur, ein Transkript: ``source`` sagt, welche Spur es war — der Dateiname der
+-- Aufnahme, beim Recorder-Bot später der Sprecher. Mehr Sprecher-Felder braucht eine
+-- einzelne Spur nicht; die Zuordnung zu Personen kommt mit dem Bot.
+CREATE TABLE IF NOT EXISTS transcript (
+    id         INTEGER PRIMARY KEY,
+    session_id INTEGER NOT NULL REFERENCES session (id) ON DELETE CASCADE,
+    source     TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE (session_id, source)
+);
+
+-- Zeitstempel in Millisekunden ab Spurbeginn: die Zusammenführung legt später mehrere
+-- Spuren auf eine Zeitachse, und Fließkomma-Sekunden wären dabei die falsche Einheit.
+CREATE TABLE IF NOT EXISTS transcript_segment (
+    id            INTEGER PRIMARY KEY,
+    transcript_id INTEGER NOT NULL REFERENCES transcript (id) ON DELETE CASCADE,
+    start_ms      INTEGER NOT NULL,
+    end_ms        INTEGER NOT NULL,
+    text          TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS transcript_segment_zeit
+    ON transcript_segment (transcript_id, start_ms);
+
 -- Die fünf Werte aus der Oberfläche. Was hier steht, schlägt die Umgebung; die bleibt
 -- die Vorgabe beim ersten Start. Das Foundry-Passwort liegt damit im Klartext in dieser
 -- Datei und geht mit ins Backup — bewusste Abwägung, siehe CLAUDE.md.
@@ -136,6 +160,23 @@ CREATE TRIGGER IF NOT EXISTS protocol_search_delete AFTER DELETE ON protocol BEG
     DELETE FROM search_index WHERE kind = old.kind AND ref_id = old.id;
 END;
 
+-- Gesucht wird im Segment, gefunden wird das Transkript: ``ref_id`` zeigt deshalb auf
+-- das Transkript und nicht auf die einzelne Zeile. Segmente werden nur im Ganzen
+-- ersetzt, also darf der Löschtrigger über den Text gehen — zwei gleichlautende Zeilen
+-- verschwinden ohnehin zusammen.
+CREATE TRIGGER IF NOT EXISTS transcript_search_insert
+AFTER INSERT ON transcript_segment BEGIN
+    INSERT INTO search_index (text, kind, ref_id, session_id, scene_id)
+    VALUES (new.text, 'transkript', new.transcript_id,
+            (SELECT session_id FROM transcript WHERE id = new.transcript_id), NULL);
+END;
+
+CREATE TRIGGER IF NOT EXISTS transcript_search_delete
+AFTER DELETE ON transcript_segment BEGIN
+    DELETE FROM search_index
+    WHERE kind = 'transkript' AND ref_id = old.transcript_id AND text = old.text;
+END;
+
 -- Der Index ist abgeleitet: die Trigger halten ihn im Betrieb aktuell, dieser Neuaufbau
 -- holt beim Start, was vor ihnen entstanden ist — eine Datenbank aus Schema 4.
 DELETE FROM search_index;
@@ -147,5 +188,9 @@ FROM note n JOIN scene c ON c.id = n.scene_id;
 INSERT INTO search_index (text, kind, ref_id, session_id, scene_id)
 SELECT p.text, p.kind, p.id, p.session_id, NULL FROM protocol p;
 
-INSERT INTO meta (key, value) VALUES ('schema_version', '5')
+INSERT INTO search_index (text, kind, ref_id, session_id, scene_id)
+SELECT s.text, 'transkript', s.transcript_id, t.session_id, NULL
+FROM transcript_segment s JOIN transcript t ON t.id = s.transcript_id;
+
+INSERT INTO meta (key, value) VALUES ('schema_version', '6')
 ON CONFLICT (key) DO UPDATE SET value = excluded.value;
