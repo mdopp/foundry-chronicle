@@ -11,8 +11,8 @@ labels: bug
 
 ## Repro
 
-<!-- Minimal steps to trigger it. Which install path (the ServiceBay
-     which part: Foundry adapter, note entry, composition, Discord recorder, transcription), and what input. -->
+<!-- Minimal steps to trigger it: which part — Foundry adapter, note entry,
+     composition, Discord recorder, transcription — and what input. -->
 
 ## Starting-point files
 
