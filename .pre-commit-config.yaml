@@ -1,0 +1,21 @@
+default_install_hook_types: [pre-commit, commit-msg]
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: check-yaml
+      - id: check-merge-conflict
+      # Audiospuren und die SQLite-Datei gehören nie ins Repo.
+      - id: check-added-large-files
+        args: [--maxkb=512]
+
+  - repo: local
+    hooks:
+      - id: commit-subjects
+        name: Commit-Subject (Conventional Commits, keine Klammern)
+        entry: python3 scripts/check_commit_subjects.py --message-file
+        language: system
+        stages: [commit-msg]
