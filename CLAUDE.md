@@ -35,6 +35,8 @@ erzeugt, trennt sichtbar zwischen Belegtem und Verbindungssätzen.
   `feat(discord):`, `docs:`.
 - **Keine Klammern im Subject** außer dem konventionellen `(scope)`. Ein verirrtes
   `(...)` lässt Release-Werkzeuge grün laufen und trotzdem kein Release schneiden.
+- Beides prüft `scripts/check_commit_subjects.py` — im `commit-msg`-Hook und in CI.
+  Nach dem Klonen einmal `pre-commit install` ausführen, sonst greift der Hook nicht.
 
 ## Releases
 
@@ -42,6 +44,8 @@ erzeugt, trennt sichtbar zwischen Belegtem und Verbindungssätzen.
   `CHANGELOG.md` aus den Commits ableitet. **Diesen PR zu mergen** schneidet das Release.
 - **Niemals** von Hand Versionen bumpen oder Tags setzen. Ein Release zu schneiden ist
   eine menschliche Entscheidung.
+- **Eingerichtet wird release-please mit #2** (`release-type: python` gegen
+  `pyproject.toml`). Bis dahin gibt es nichts zu releasen — die Regel gilt ab dann.
 
 ## Tests
 
@@ -52,8 +56,12 @@ erzeugt, trennt sichtbar zwischen Belegtem und Verbindungssätzen.
 ## Geheimnisse
 
 Im Repo stehen **keine echten Geheimnisse** — keine Tokens, Passwörter, Schlüssel, auch
-nicht in Tests, Fixtures oder Doku. Der Foundry-Token und der Discord-Bot-Token werden
-zur Laufzeit injiziert; Platzhalter sind in Ordnung, konkrete Werte nicht.
+nicht in Tests, Fixtures oder Doku. Die Foundry-Zugangsdaten und der Discord-Bot-Token
+werden zur Laufzeit injiziert; Platzhalter sind in Ordnung, konkrete Werte nicht. Das
+gilt auch für die **Foundry-Adresse** — die gehört in die Konfiguration, nicht ins Repo.
+
+Fixtures aus einem echten Foundry-Dump sind **personenbezogen**: der Weltabzug enthält
+die Klarnamen aller Beteiligten. Vor jedem Einchecken anonymisieren.
 
 Und: **kein Token in einer Logzeile.** Das ist hier der wahrscheinlichste Weg, wie einer
 doch nach draußen gelangt.
@@ -91,11 +99,20 @@ prüfen ist und *warum* etwas fehlschlug — die Mechanik macht ein Skript.
 
 ## Foundry ist eine harte Abhängigkeit
 
-- Nur **flach andocken**: Chat-Log, Aktoren, Kampfzustand. Keine Regelwerks-Interna —
-  D&D 5e und PF2e unterscheiden sich und ändern sich.
+- Nur **flach andocken**: Chat-Log, Aktoren, Kampfzustand.
+- **Regelwerks-Interna enden am Adapter.** Sie ganz zu vermeiden geht nicht — die Zahlen
+  eines Wurfs stehen in `message.system.roll`, und dessen Form bestimmt das System
+  (Daggerheart legt dort `hope`/`fear` ab, 5e und PF2e etwas anderes). Also ein dünner
+  Adapter je System auf ein gemeinsames Modell; dahinter weiß nichts mehr, was gespielt
+  wurde.
+- **Der Server filtert nicht.** Foundry schickt jedem angemeldeten Benutzer die
+  komplette Welt, GM-Inhalte und Klarnamen inklusive. Die Berechtigungsfilterung ist
+  unsere Aufgabe und gehört **vor** den Speicher, nicht vor die Anzeige.
 - **Zwischenspeichern.** Foundry ist zwischen den Sitzungen oft aus; ein Protokoll, das
   dann nicht angezeigt wird, ist kaputt.
 - Bei Nichterreichbarkeit eine **verständliche Meldung**, keine leere Liste ohne Erklärung.
+- Der Handschlag ist aus dem Client nachgebaut, kein dokumentiertes API — siehe
+  `docs/foundry-zugriff.md`. Ein Foundry-Hauptversionssprung kann ihn brechen.
 
 ## Niemals
 
@@ -105,8 +122,8 @@ prüfen ist und *warum* etwas fehlschlug — die Mechanik macht ein Skript.
 ## Issues
 
 Symptom + Repro + Startpunkt-Dateien — kein Fix-Plan. Der Fix wird im PR entschieden.
-**Ausnahme:** die Aufbau-Issues #2–#12 beschreiben ein *Ergebnis*, weil es bei einem
-leeren Repo weder Symptome noch Startpunkte gibt.
+**Ausnahme:** die Aufbau-Issues aus Epic #1 beschreiben ein *Ergebnis*, weil es bei
+einem leeren Repo weder Symptome noch Startpunkte gibt.
 
 ## Autoloop
 
