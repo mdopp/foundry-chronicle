@@ -1,0 +1,98 @@
+"""Rohdump → gefiltertes Modell. Diese Stufe liegt vor dem Zwischenspeicher.
+
+Zwei Reduktionen greifen hier, keine später: die Berechtigungsstufe des angemeldeten
+Kontos entscheidet, *was* übernommen wird, und eine feste Feldauswahl entscheidet,
+*wieviel* davon. Der Rohdump enthält die Klarnamen aller Konten der Welt — gespeichert
+werden nur die Konten, denen eine sichtbare Figur gehört.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Mapping
+
+from chronicle.foundry import permissions, systems
+from chronicle.foundry.model import Character, ChatMessage, Player, WorldSnapshot
+
+UNKNOWN_SYSTEM = "unbekannt"
+
+
+def _system_id(raw: Mapping) -> str:
+    system = raw.get("system")
+    if isinstance(system, Mapping):
+        return str(system.get("id") or UNKNOWN_SYSTEM)
+    return str(system or UNKNOWN_SYSTEM)
+
+
+def _documents(raw: Mapping, name: str) -> list[Mapping]:
+    return [eintrag for eintrag in (raw.get(name) or []) if isinstance(eintrag, Mapping)]
+
+
+def _id(document: Mapping) -> str:
+    return str(document.get("_id") or document.get("id") or "")
+
+
+def _player(user: Mapping) -> Player:
+    role = user.get("role")
+    return Player(
+        id=_id(user),
+        name=str(user.get("name") or ""),
+        role=role if isinstance(role, int) and not isinstance(role, bool) else 0,
+        is_gm=permissions.is_gm(user),
+    )
+
+
+def _character(actor: Mapping, user_id: str, gm: bool) -> Character | None:
+    ownership = actor.get("ownership")
+    stufe = permissions.OWNER if gm else permissions.effective_level(ownership, user_id)
+    if stufe == permissions.NONE:
+        return None
+    name = str(actor.get("name") or "")
+    if stufe == permissions.LIMITED:
+        return Character(id=_id(actor), name=name, limited=True)
+    return Character(
+        id=_id(actor),
+        name=name,
+        type=str(actor.get("type") or "") or None,
+        owner_ids=permissions.owner_ids(ownership),
+    )
+
+
+def _message(message: Mapping, system: str) -> ChatMessage:
+    speaker = message.get("speaker")
+    speaker = speaker if isinstance(speaker, Mapping) else {}
+    timestamp = message.get("timestamp")
+    return ChatMessage(
+        id=_id(message),
+        timestamp=int(timestamp) if isinstance(timestamp, int | float) else 0,
+        speaker_actor=str(speaker.get("actor")) if speaker.get("actor") else None,
+        speaker_alias=str(speaker.get("alias")) if speaker.get("alias") else None,
+        content=str(message.get("content") or ""),
+        roll=systems.read_roll(system, message),
+    )
+
+
+def project(raw: Mapping, user_id: str, *, fetched_at: str) -> WorldSnapshot:
+    system = _system_id(raw)
+    users = _documents(raw, "users")
+    gm = any(_id(user) == user_id and permissions.is_gm(user) for user in users)
+
+    characters = tuple(
+        figur
+        for figur in (_character(actor, user_id, gm) for actor in _documents(raw, "actors"))
+        if figur is not None
+    )
+    beteiligt = {user_id}
+    for figur in characters:
+        beteiligt.update(figur.owner_ids)
+
+    return WorldSnapshot(
+        system=system,
+        fetched_at=fetched_at,
+        players=tuple(_player(user) for user in users if _id(user) in beteiligt),
+        characters=characters,
+        messages=tuple(
+            _message(message, system)
+            for message in _documents(raw, "messages")
+            if permissions.message_visible(message, user_id, gm)
+        ),
+    )

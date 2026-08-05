@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from flask import Flask, render_template
 
-from chronicle import db
+from chronicle import db, foundry
 from chronicle.config import Config
 
 
@@ -25,6 +25,7 @@ def create_app(config: Config | None = None) -> Flask:
             "status.html",
             config=settings,
             schema_version=db.current_schema_version(settings.database_path),
+            abgleich=foundry.current(settings),
         )
 
     # Test-Seam und Install-Gate der ServiceBay-Box (servicebay.healthcheck).
