@@ -1,0 +1,216 @@
+"""Der Rückblick verdichtet — und Verdichtung ist die Stelle mit dem höchsten Erfindungsrisiko."""
+
+import random
+
+from chronicle.compose.client import ModelUnreachable
+from chronicle.compose.composer import (
+    BELEG_TITEL,
+    NOTIZEN_TITEL,
+    OHNE_MODELL,
+    VERBINDUNG_TITEL,
+    numbers,
+)
+from chronicle.compose.recap import (
+    CHRONIK_TITEL,
+    FAEDEN_TITEL,
+    HERGANG_TITEL,
+    KEIN_FADEN,
+    MAX_FAEDEN,
+    VERWORFEN,
+    RecapMaterial,
+    digest,
+    recap,
+)
+
+WURF = "Brok Eisenfaust — Knowledge Roll: Summe 7 · Formel 1d12 + 1d12 + 3 · Modifikator 3"
+
+CHRONIK = "\n".join(
+    [
+        "# Chronik — Sitzung vom 2026-08-05: Der Keller",
+        "",
+        "_Verbindungstexte stammen vom Sprachmodell `chronist-test`._",
+        "",
+        "## Szene 1 — Aufbruch",
+        "",
+        NOTIZEN_TITEL,
+        "- Wir brechen bei Sonnenaufgang auf.",
+        "",
+        VERBINDUNG_TITEL,
+        "Die Runde bricht auf.",
+        "",
+        "## Szene 2 — Der Keller",
+        "",
+        BELEG_TITEL,
+        f"- {WURF}",
+        "",
+        VERBINDUNG_TITEL,
+        "Brok sinnt über den Keller nach.",
+        "",
+    ]
+)
+
+FRUEHER = "\n".join(
+    [
+        "# Rückblick — Sitzung vom 2026-07-29: Der Hafen",
+        "",
+        CHRONIK_TITEL,
+        "- Die Wirtin nannte einen Preis von 90 Silber.",
+        "",
+    ]
+)
+
+FAEDEN = "- Die Wirtin wartet auf Antwort.\n- Im Keller steht eine Tür offen."
+
+
+class Modell:
+    def __init__(self, *antworten, name="chronist-test"):
+        self.name = name
+        self._antworten = list(antworten)
+        self.prompts = []
+
+    def write(self, *, system, prompt):
+        self.prompts.append(prompt)
+        antwort = self._antworten.pop(0) if self._antworten else FAEDEN
+        if isinstance(antwort, Exception):
+            raise antwort
+        return antwort
+
+
+def stoff(*, chronicle=CHRONIK, previous=(), title="Der Keller"):
+    return RecapMaterial(
+        session_id=1,
+        played_on="2026-08-05",
+        title=title,
+        chronicle=chronicle,
+        previous=previous,
+    )
+
+
+def abschnitt(text, titel):
+    return text.split(titel)[1].split("\n###")[0].strip()
+
+
+def test_die_szenen_und_die_fakten_kommen_aus_der_chronik_zurueck():
+    szenen, fakten = digest(CHRONIK)
+    assert szenen == ("Szene 1 — Aufbruch", "Szene 2 — Der Keller")
+    assert fakten == (WURF,)
+
+
+def test_ohne_modell_steht_die_geordnete_fassung_da():
+    ergebnis = recap(stoff())
+
+    assert ergebnis.reason == OHNE_MODELL
+    assert ergebnis.thread_count == 0
+    assert "geordnet statt erzählt" in ergebnis.text
+    assert HERGANG_TITEL not in ergebnis.text
+    # Ohne Modell gibt es keine Deutung — also auch keinen Abschnitt, der eine vortäuscht.
+    assert FAEDEN_TITEL not in ergebnis.text
+    belegt = abschnitt(ergebnis.text, CHRONIK_TITEL)
+    assert "Szene 1 — Aufbruch" in belegt
+    assert WURF in belegt
+
+
+def test_die_offenen_faeden_sind_als_deutung_gekennzeichnet():
+    ergebnis = recap(stoff(), Modell("Die Runde stieg in den Keller.", FAEDEN))
+
+    assert "Deutung des Modells, keine Fakten" in ergebnis.text
+    assert ergebnis.thread_count == 2
+    assert abschnitt(ergebnis.text, FAEDEN_TITEL) == FAEDEN
+    assert abschnitt(ergebnis.text, HERGANG_TITEL) == "Die Runde stieg in den Keller."
+
+
+def test_eine_zahl_die_nicht_in_der_chronik_steht_kommt_nicht_in_den_rueckblick():
+    modell = Modell("Die Runde erschlug 12 Wachen und fand 400 Gold.", FAEDEN)
+
+    ergebnis = recap(stoff(), modell)
+
+    assert abschnitt(ergebnis.text, HERGANG_TITEL) == VERWORFEN
+    assert "Wachen" not in ergebnis.text
+    assert "400" not in ergebnis.text
+
+
+def test_auch_ein_erfundener_faden_faellt_an_der_zahlenschranke():
+    ergebnis = recap(stoff(), Modell("Die Runde stieg hinab.", "- Es warten 30 Söldner."))
+
+    assert abschnitt(ergebnis.text, FAEDEN_TITEL) == VERWORFEN
+    assert ergebnis.thread_count == 0
+    assert "Söldner" not in ergebnis.text
+
+
+def test_keine_zahl_im_rueckblick_die_nicht_in_der_chronik_steht():
+    """Property-Test: was das Modell auch erfindet, der Rückblick übernimmt es nicht."""
+    wuerfel = random.Random(20260806)
+    belegt = numbers(CHRONIK)
+    for _ in range(25):
+        erfunden = " ".join(
+            f"{wort} {wuerfel.randint(1, 999)}"
+            for wort in ("Wachen", "Goldstücke", "Tage", "Meilen")
+        )
+        ergebnis = recap(stoff(), Modell(f"Die Runde zählte {erfunden}.", FAEDEN))
+        assert numbers(abschnitt(ergebnis.text, HERGANG_TITEL)) <= belegt
+
+
+def test_eine_belegte_zahl_darf_der_rueckblick_aufgreifen():
+    ergebnis = recap(stoff(), Modell("Broks Wissenswurf kam auf Summe 7.", FAEDEN))
+
+    assert "Summe 7" in abschnitt(ergebnis.text, HERGANG_TITEL)
+
+
+def test_eine_zahl_aus_einem_frueheren_rueckblick_gilt_als_belegt():
+    modell = Modell("Der Preis von 90 Silber steht weiter im Raum.", FAEDEN)
+
+    ergebnis = recap(stoff(previous=(FRUEHER,)), modell)
+
+    assert "90 Silber" in abschnitt(ergebnis.text, HERGANG_TITEL)
+
+
+def test_der_aufruf_bekommt_die_chronik_und_die_vorigen_rueckblicke():
+    modell = Modell("Die Runde stieg hinab.", FAEDEN)
+
+    recap(stoff(previous=(FRUEHER,)), modell)
+
+    assert len(modell.prompts) == 2
+    for prompt in modell.prompts:
+        assert "Chronik der Sitzung vom 2026-08-05" in prompt
+        assert "Rückblicke der vorigen Sitzungen" in prompt
+        assert "Die Wirtin nannte einen Preis" in prompt
+
+
+def test_ein_ausfall_des_modells_faellt_auf_die_geordnete_fassung_zurueck():
+    ergebnis = recap(stoff(), Modell(ModelUnreachable("Ollama antwortet nicht")))
+
+    assert "Ollama antwortet nicht" in ergebnis.reason
+    assert HERGANG_TITEL not in ergebnis.text
+    assert WURF in ergebnis.text
+
+
+def test_ohne_erkennbaren_faden_sagt_der_rueckblick_das():
+    ergebnis = recap(stoff(), Modell("Die Runde stieg hinab.", "keine"))
+
+    assert abschnitt(ergebnis.text, FAEDEN_TITEL) == KEIN_FADEN
+    assert ergebnis.thread_count == 0
+
+
+def test_mehr_faeden_als_erlaubt_werden_gekappt():
+    zu_viele = "\n".join(f"- Faden {wort}" for wort in "abcdefg")
+
+    ergebnis = recap(stoff(), Modell("Die Runde stieg hinab.", zu_viele))
+
+    assert ergebnis.thread_count == MAX_FAEDEN
+
+
+def test_eine_chronik_ohne_szene_traegt_den_rueckblick_trotzdem():
+    ergebnis = recap(stoff(chronicle="# Chronik — Sitzung vom 2026-08-05\n"))
+
+    assert ergebnis.scene_count == 0
+    assert ergebnis.fact_count == 0
+    assert "weder Szene noch Foundry-Fakt" in ergebnis.text
+
+
+def test_der_satz_zum_lauf_nennt_umfang_und_betriebsart():
+    ohne = recap(stoff())
+    assert ohne.message == (
+        f"Rückblick aus 2 Szenen, 1 Foundry-Fakten — geordnet, nicht erzählt: {OHNE_MODELL}"
+    )
+    mit = recap(stoff(), Modell("Die Runde stieg hinab.", FAEDEN))
+    assert mit.message == "Rückblick aus 2 Szenen, 1 Foundry-Fakten — 2 Fäden als Deutung markiert."

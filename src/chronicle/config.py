@@ -27,7 +27,15 @@ REMOTE_USER_VARIABLE = "CHRONICLE_REQUIRE_REMOTE_USER"
 
 DEFAULT_DATA_DIR = "data"
 
+# Bewusst ein Geschwister von ``data`` und nicht darin: die SQLite geht ins Backup, die
+# Audiospuren nie — sie sind das Einzige, was groß wird, und nach dem Lauf entbehrlich.
+DEFAULT_RECORDINGS_DIR = "recordings"
+
 DATABASE_NAME = "chronicle.sqlite3"
+
+# Der Kompromiss aus Erkennung und Laufzeit auf CPU. Größer geht über die Umgebung;
+# ein Feld in der Oberfläche braucht es dafür nicht — der Wert wird einmal gesetzt.
+DEFAULT_WHISPER_MODEL = "small"
 
 
 def masked(secret: str | None) -> str:
@@ -51,6 +59,8 @@ class Config:
     ollama_url: str | None = None
     ollama_model: str | None = None
     data_dir: Path = Path(DEFAULT_DATA_DIR)
+    recordings_dir: Path = Path(DEFAULT_RECORDINGS_DIR)
+    whisper_model: str = DEFAULT_WHISPER_MODEL
     require_remote_user: bool = False
 
     @classmethod
@@ -64,6 +74,8 @@ class Config:
             ollama_url=_value(env, "OLLAMA_URL"),
             ollama_model=_value(env, "OLLAMA_MODEL"),
             data_dir=Path(_value(env, "CHRONICLE_DATA_DIR") or DEFAULT_DATA_DIR),
+            recordings_dir=Path(_value(env, "CHRONICLE_RECORDINGS_DIR") or DEFAULT_RECORDINGS_DIR),
+            whisper_model=_value(env, "CHRONICLE_WHISPER_MODEL") or DEFAULT_WHISPER_MODEL,
             require_remote_user=_flag(env, REMOTE_USER_VARIABLE),
         )
 
@@ -104,5 +116,7 @@ class Config:
             f"ollama_url={self.ollama_url!r}, "
             f"ollama_model={self.ollama_model!r}, "
             f"data_dir={str(self.data_dir)!r}, "
+            f"recordings_dir={str(self.recordings_dir)!r}, "
+            f"whisper_model={self.whisper_model!r}, "
             f"require_remote_user={self.require_remote_user!r})"
         )

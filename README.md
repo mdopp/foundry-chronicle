@@ -32,7 +32,8 @@ Foundry-Adresse, -Benutzer und -Passwort sowie Ollama-Adresse und -Modell werden
 `FOUNDRY_USER`, `FOUNDRY_PASSWORD`, `OLLAMA_URL`, `OLLAMA_MODEL` — bleibt die Vorgabe
 beim ersten Start und der Deploy-Weg; **ein in der Oberfläche gesetzter Wert gewinnt**,
 und `/status` zeigt je Wert, woher er kommt. Rein aus der Umgebung kommen weiterhin
-`DISCORD_BOT_TOKEN` und `CHRONICLE_DATA_DIR` (Vorgabe `./data`). Fehlt die
+`DISCORD_BOT_TOKEN`, `CHRONICLE_DATA_DIR` (Vorgabe `./data`), `CHRONICLE_RECORDINGS_DIR`
+(Vorgabe `./recordings`) und `CHRONICLE_WHISPER_MODEL` (Vorgabe `small`). Fehlt die
 Foundry-Konfiguration, startet der Dienst trotzdem und erklärt auf `/status`, was fehlt.
 
 Ein eigenes Login gibt es nicht: angemeldet wird am Proxy (ServiceBay-ADR 0001), der
@@ -41,6 +42,41 @@ Umgebung — dann wird jeder Request ohne diesen Header abgewiesen. Lokal bleibt
 Variable aus, sonst kommt man ohne Proxy nicht hinein.
 
 Prüfen wie die CI: `ruff check . && ruff format --check . && pytest -q`.
+
+## Transkription
+
+Aus einer Audiospur wird Text mit Zeitstempeln — im Stapel nach der Sitzung, auf CPU:
+
+```bash
+pip install -e ".[dev,transcribe]"          # faster-whisper ist ein eigenes Extra
+python -m chronicle.transcribe              # die Warteschlange — der nächtliche Aufruf
+python -m chronicle.transcribe 1 mira.ogg   # Sitzung 1, Spur aus ./recordings
+python -m chronicle.transcribe 1 mira.ogg --loeschen   # Aufnahme danach entfernen
+```
+
+Ohne Argumente wird abgearbeitet, was über die Oberfläche hochgeladen wurde und noch
+wartet: auf der Sitzungsseite lädt ein **Diktat** — eine Sprachnotiz aus der
+Sprachmemo-App des Telefons — eine Spur hoch und reiht sie in dieselbe Warteschlange ein.
+Die Seite zeigt den Stand dieses Jobs, nie einen geratenen Fortschritt; ist er fertig,
+steht das Transkript dort und lässt sich einer Szene als Notiz übernehmen. Aufgenommen
+wird **nicht** im Browser: Mikrofonzugriff braucht HTTPS und wäre im Heimnetz über HTTP
+tot, und die Sprachmemo-App übersteht Bildschirmsperre und Anruf.
+
+Der Dateiname wird die Quellenkennung der Spur; ein zweiter Lauf ersetzt sie, statt zu
+verdoppeln. Erkannt wird `small` auf CPU mit int8 — grob das Zwei- bis Fünffache der
+Echtzeit, also **keine Grafikkarte**; `CHRONICLE_WHISPER_MODEL` setzt eine andere Größe,
+ein Feld in der Oberfläche gibt es dafür nicht. Als Vokabular werden die Eigennamen
+dieser Sitzung vorgespannt — erst, wer im Chat-Log gesprochen hat, dann der übrige
+Foundry-Zwischenspeicher, hart auf rund 224 Token gekappt.
+
+`faster-whisper` steckt im Extra `transcribe`: das Image bringt es mit, eine
+Dev-Installation muss es nicht laden. Die Tests setzen ein erfundenes Modell ein und
+laden nie ein echtes herunter.
+
+**Die Aufnahmen liegen neben dem Datenverzeichnis, nicht darin** (`recordings/` gegen
+`data/`, im Image `/aufnahmen` gegen `/data`). Gesichert wird die SQLite; Audiospuren
+gehören nie ins Backup und werden nach einem erfolgreichen Lauf entbehrlich — gelöscht
+werden sie aber nur auf ausdrückliches Verlangen.
 
 ## Betrieb auf ServiceBay
 

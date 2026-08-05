@@ -6,7 +6,7 @@ from chronicle import db, notes, settings
 from chronicle.app import create_app
 from chronicle.compose import client as sprachmodell
 from chronicle.compose.client import ModelUnreachable
-from chronicle.compose.service import compose_session
+from chronicle.compose.service import compose_session, recap_session
 from chronicle.config import Config
 from chronicle.foundry import service
 from chronicle.foundry.client import FoundryUnreachable
@@ -172,10 +172,12 @@ class Chronist:
     name = "chronist-test"
 
     def write(self, *, system, prompt):
+        if "Fäden" in system:
+            return "- Die Wirtin wartet auf Antwort."
         return "Die Runde tastet sich voran."
 
 
-def eine_sitzung(tmp_path, *, chronik=False):
+def eine_sitzung(tmp_path, *, chronik=False, rueckblick=False):
     config = Config(data_dir=tmp_path)
     db.init(config.database_path)
     sitzung_id = notes.create_session(
@@ -183,8 +185,10 @@ def eine_sitzung(tmp_path, *, chronik=False):
     )
     szene = notes.session(config.database_path, sitzung_id).scenes[0]
     notes.add_note(config.database_path, szene.id, "Wir brechen bei Sonnenaufgang auf.")
-    if chronik:
+    if chronik or rueckblick:
         compose_session(config, sitzung_id, model=Chronist())
+    if rueckblick:
+        recap_session(config, sitzung_id, model=Chronist())
     return config, sitzung_id
 
 
@@ -226,6 +230,20 @@ def test_die_ansicht_haelt_belegtes_und_verbindungstext_auseinander(tmp_path):
     assert '<section class="abschnitt verbindung">' in html
 
 
+def test_der_rueckblick_steht_ueber_der_chronik(tmp_path):
+    config, sitzung_id = eine_sitzung(tmp_path, rueckblick=True)
+    html = gelesen(config, f"/sitzungen/{sitzung_id}/protokoll")
+    assert "<h2>Rückblick — Sitzung vom 2026-08-05: Der Keller</h2>" in html
+    assert html.index("Rückblick — Sitzung") < html.index("Chronik — Sitzung")
+    assert '<section class="abschnitt deutung">' in html
+    assert "Die Wirtin wartet auf Antwort." in html
+
+
+def test_ohne_rueckblick_bleibt_die_ansicht_bei_der_chronik(tmp_path):
+    config, sitzung_id = eine_sitzung(tmp_path, chronik=True)
+    assert "Rückblick" not in gelesen(config, f"/sitzungen/{sitzung_id}/protokoll")
+
+
 def test_die_protokollliste_verweist_auf_die_chronik(tmp_path):
     config, sitzung_id = eine_sitzung(tmp_path, chronik=True)
     assert f"/sitzungen/{sitzung_id}/protokoll" in gelesen(config, "/protokolle")
@@ -242,6 +260,42 @@ def test_die_protokollansicht_steht_hinter_demselben_tuersteher(tmp_path):
     client = bewacht(tmp_path)
     assert client.get("/protokolle").status_code == 403
     assert client.get("/sitzungen/1/protokoll").status_code == 403
+
+
+def test_die_suche_ist_von_jeder_seite_erreichbar(tmp_path):
+    assert 'href="/suche"' in gelesen(Config(data_dir=tmp_path), "/")
+
+
+def test_die_suche_findet_notiz_und_chronik_getrennt(tmp_path):
+    config, sitzung_id = eine_sitzung(tmp_path, chronik=True)
+    html = gelesen(config, "/suche?q=sonnenaufgang")
+    assert "<h2>Notizen</h2>" in html
+    assert "<h2>Chronik</h2>" in html
+    assert f'href="/sitzungen/{sitzung_id}#szene-' in html
+    assert f'href="/sitzungen/{sitzung_id}/protokoll"' in html
+    assert "<mark>" in html
+
+
+def test_ohne_treffer_sagt_die_suche_wonach_gesucht_wurde(tmp_path):
+    config, _ = eine_sitzung(tmp_path)
+    html = gelesen(config, "/suche?q=Drachenhort")
+    assert "Keine Treffer für „Drachenhort“" in html
+
+
+def test_ohne_indexinhalt_sagt_die_suche_dass_nichts_da_ist(tmp_path):
+    html = gelesen(Config(data_dir=tmp_path), "/suche?q=Schwert")
+    assert "Es ist noch nichts abgelegt" in html
+
+
+def test_ohne_eingabe_bleibt_die_suche_stumm(tmp_path):
+    config, _ = eine_sitzung(tmp_path)
+    html = gelesen(config, "/suche")
+    assert "Keine Treffer" not in html
+    assert 'name="q"' in html
+
+
+def test_die_suche_steht_hinter_demselben_tuersteher(tmp_path):
+    assert bewacht(tmp_path).get("/suche?q=schwert").status_code == 403
 
 
 def test_die_einstellungsseite_zeigt_die_fuenf_werte(tmp_path):

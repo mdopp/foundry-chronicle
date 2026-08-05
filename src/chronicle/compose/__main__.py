@@ -1,6 +1,10 @@
-"""python -m chronicle.compose <sitzung> — eine Chronik, im Stapel.
+"""python -m chronicle.compose <sitzung> — Chronik und Rückblick, im Stapel.
 
-Rückgabewert 1 heißt: das Protokoll steht, aber ohne Sprachmodell — geordnet statt
+Ein Lauf, zwei Ausgänge: der Rückblick liest die Chronik, die der erste Schritt gerade
+abgelegt hat. Ein eigener Aufruf daneben wäre ein zweiter Stapel für dieselbe
+Komposition; ein zweiter Lauf ersetzt ohnehin beides.
+
+Rückgabewert 1 heißt: die Protokolle stehen, aber ohne Sprachmodell — geordnet statt
 formuliert. Das ist ein Zustand, den ein Aufrufer sehen soll, kein Absturz.
 """
 
@@ -9,7 +13,7 @@ from __future__ import annotations
 import logging
 import sys
 
-from chronicle.compose.service import compose_session
+from chronicle.compose.service import compose_session, recap_session
 from chronicle.config import Config
 
 
@@ -20,12 +24,15 @@ def main(argv: list[str] | None = None) -> int:
         print("Aufruf: python -m chronicle.compose <sitzungs-id>")
         return 2
     sitzung = int(args[0])
-    ergebnis = compose_session(Config.from_env(), sitzung)
-    if ergebnis is None:
+    config = Config.from_env()
+    chronik = compose_session(config, sitzung)
+    if chronik is None:
         print(f"Sitzung {sitzung} gibt es nicht.")
         return 2
-    print(ergebnis.message)
-    return 1 if ergebnis.reason else 0
+    rueckblick = recap_session(config, sitzung)
+    print(chronik.message)
+    print(rueckblick.message)
+    return 1 if chronik.reason or rueckblick.reason else 0
 
 
 if __name__ == "__main__":

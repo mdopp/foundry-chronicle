@@ -37,6 +37,52 @@
   </form>
 </section>
 
+<section class="karte" id="diktat">
+  <h2>Diktat</h2>
+  {% if diktat_fehler %}<p class="fehlt">{{ diktat_fehler }}</p>{% endif %}
+  <p class="gedaempft">Eine Sprachnotiz vom Heimweg hochladen — ein Sprecher, eine Spur.
+    Aufgenommen wird in der Sprachmemo-App des Telefons: die übersteht Bildschirmsperre und
+    Anruf. Kurze Notizen diktiert die Handy-Tastatur direkt ins Notizfeld oben.</p>
+
+  {% for aufnahme in aufnahmen %}
+  <div class="abschnitt{% if aufnahme.status == 'fertig' %} belegt{% elif aufnahme.status == 'laeuft' %} deutung{% endif %}">
+    <h4>Spur {{ aufnahme.id }} <span class="gedaempft">— <code>{{ aufnahme.filename }}</code>,
+      eingegangen <time datetime="{{ aufnahme.uploaded_at }}">{{ aufnahme.uploaded_at[11:16] }} UTC</time></span></h4>
+
+    {% if aufnahme.status == 'wartet' %}
+    <p>Diktat empfangen — es läuft im nächsten Stapel, das Ergebnis steht morgen früh hier.
+      Bis dahin passiert nichts: der Stapel ist <code>python -m chronicle.transcribe</code>.</p>
+    {% elif aufnahme.status == 'laeuft' %}
+    <p>Läuft gerade. Wie weit, steht in der Logzeile des Stapellaufs — hier steht keine
+      geratene Restzeit.</p>
+    {% elif aufnahme.status == 'fertig' %}
+    <p class="gedaempft">{{ aufnahme.detail }}</p>
+    <p>{{ aufnahme.text }}</p>
+    <form method="post" action="{{ url_for('diktat_uebernehmen', aufnahme_id=aufnahme.id) }}">
+      <label for="ziel-{{ aufnahme.id }}">Zur Szene übernehmen</label>
+      <select id="ziel-{{ aufnahme.id }}" name="scene_id">
+        {% for szene in sitzung.scenes %}
+        <option value="{{ szene.id }}">Szene {{ szene.position }}{% if szene.title %} — {{ szene.title }}{% endif %}</option>
+        {% endfor %}
+      </select>
+      <div class="absenden"><button type="submit" class="leise">Als Notiz übernehmen</button></div>
+    </form>
+    <p class="gedaempft">Die Spur liegt weiter im Aufnahmeverzeichnis. Der Stapellauf mit
+      <code>--loeschen</code> entfernt sie nach einem erfolgreichen Lauf; von selbst
+      verschwindet sie nie.</p>
+    {% else %}
+    <p class="fehlt">{{ aufnahme.detail }}</p>
+    {% endif %}
+  </div>
+  {% endfor %}
+
+  <form method="post" action="{{ url_for('neues_diktat', sitzung_id=sitzung.id) }}" enctype="multipart/form-data">
+    <label for="diktat-datei">Sprachnotiz</label>
+    <input type="file" id="diktat-datei" name="datei" accept="audio/*">
+    <div class="absenden"><button type="submit" class="leise">Diktat hochladen</button></div>
+  </form>
+</section>
+
 <p><a href="{{ url_for('protokoll', sitzung_id=sitzung.id) }}">Zur Chronik</a> ·
   <a href="{{ url_for('sitzungen') }}">Zurück zu den Sitzungen</a></p>
 
