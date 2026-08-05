@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from flask import Flask, Response, abort, redirect, render_template, request, url_for
 
-from chronicle import db, foundry, notes
+from chronicle import db, foundry, notes, protocol
 from chronicle.config import Config
 
 REMOTE_USER_HEADER = "Remote-User"
@@ -74,6 +74,23 @@ def create_app(config: Config | None = None) -> Flask:
             abort(404)
         notes.add_note(settings.database_path, szene_id, request.form.get("text", ""))
         return redirect(url_for("sitzung", sitzung_id=sitzung_id, _anchor=f"szene-{szene_id}"))
+
+    @app.get("/protokolle")
+    def protokolle() -> str:
+        return render_template(
+            "protokolle.html", eintraege=protocol.entries(settings.database_path)
+        )
+
+    @app.get("/sitzungen/<int:sitzung_id>/protokoll")
+    def protokoll(sitzung_id: int) -> str:
+        daten = notes.session(settings.database_path, sitzung_id)
+        if daten is None:
+            abort(404)
+        return render_template(
+            "protokoll.html",
+            sitzung=daten,
+            protokoll=protocol.stored(settings.database_path, sitzung_id),
+        )
 
     @app.get("/status")
     def status() -> str:

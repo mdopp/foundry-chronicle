@@ -1,8 +1,9 @@
 from conftest import GM_FIGUR, UNSER_KONTO
 
 import chronicle.__main__ as entry
-from chronicle import db
+from chronicle import db, notes
 from chronicle.app import create_app
+from chronicle.compose.service import compose_session
 from chronicle.config import Config
 from chronicle.foundry import service
 from chronicle.foundry.client import FoundryUnreachable
@@ -152,6 +153,82 @@ def test_status_nennt_den_angemeldeten_menschen(tmp_path):
     html = antwort.get_data(as_text=True)
     assert "mira" in html
     assert "Ein eigenes Login gibt es nicht" in html
+
+
+class Chronist:
+    name = "chronist-test"
+
+    def write(self, *, system, prompt):
+        return "Die Runde tastet sich voran."
+
+
+def eine_sitzung(tmp_path, *, chronik=False):
+    config = Config(data_dir=tmp_path)
+    db.init(config.database_path)
+    sitzung_id = notes.create_session(
+        config.database_path, played_on="2026-08-05", title="Der Keller"
+    )
+    szene = notes.session(config.database_path, sitzung_id).scenes[0]
+    notes.add_note(config.database_path, szene.id, "Wir brechen bei Sonnenaufgang auf.")
+    if chronik:
+        compose_session(config, sitzung_id, model=Chronist())
+    return config, sitzung_id
+
+
+def gelesen(config, pfad):
+    return create_app(config).test_client().get(pfad).get_data(as_text=True)
+
+
+def test_ohne_sitzung_sagt_die_protokollliste_warum_da_nichts_steht(tmp_path):
+    html = gelesen(Config(data_dir=tmp_path), "/protokolle")
+    assert "Noch keine Sitzung" in html
+
+
+def test_die_protokollliste_zeigt_auch_sitzungen_ohne_chronik(tmp_path):
+    config, _ = eine_sitzung(tmp_path)
+    html = gelesen(config, "/protokolle")
+    assert "Der Keller" in html
+    assert "Noch keine Chronik" in html
+
+
+def test_ohne_lauf_erklaert_die_ansicht_wie_die_chronik_entsteht(tmp_path):
+    config, sitzung_id = eine_sitzung(tmp_path)
+    html = gelesen(config, f"/sitzungen/{sitzung_id}/protokoll")
+    assert "noch nicht gelaufen" in html
+    assert f"python -m chronicle.compose {sitzung_id}" in html
+
+
+def test_die_chronik_wird_serverseitig_gerendert(tmp_path):
+    config, sitzung_id = eine_sitzung(tmp_path, chronik=True)
+    html = gelesen(config, f"/sitzungen/{sitzung_id}/protokoll")
+    assert "<h2>Chronik — Sitzung vom 2026-08-05: Der Keller</h2>" in html
+    assert "Wir brechen bei Sonnenaufgang auf." in html
+    assert "Die Runde tastet sich voran." in html
+
+
+def test_die_ansicht_haelt_belegtes_und_verbindungstext_auseinander(tmp_path):
+    config, sitzung_id = eine_sitzung(tmp_path, chronik=True)
+    html = gelesen(config, f"/sitzungen/{sitzung_id}/protokoll")
+    assert '<section class="abschnitt notizen">' in html
+    assert '<section class="abschnitt verbindung">' in html
+
+
+def test_die_protokollliste_verweist_auf_die_chronik(tmp_path):
+    config, sitzung_id = eine_sitzung(tmp_path, chronik=True)
+    assert f"/sitzungen/{sitzung_id}/protokoll" in gelesen(config, "/protokolle")
+    assert f"/sitzungen/{sitzung_id}/protokoll" in gelesen(config, f"/sitzungen/{sitzung_id}")
+
+
+def test_eine_unbekannte_sitzung_hat_keine_protokollseite(tmp_path):
+    config = Config(data_dir=tmp_path)
+    antwort = create_app(config).test_client().get("/sitzungen/999/protokoll")
+    assert antwort.status_code == 404
+
+
+def test_die_protokollansicht_steht_hinter_demselben_tuersteher(tmp_path):
+    client = bewacht(tmp_path)
+    assert client.get("/protokolle").status_code == 403
+    assert client.get("/sitzungen/1/protokoll").status_code == 403
 
 
 def test_main_liest_host_und_port_aus_der_umgebung(monkeypatch):

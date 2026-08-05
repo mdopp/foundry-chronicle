@@ -195,6 +195,28 @@
       }
       .notizen time { color: var(--text-subtle); display: block; font-size: .75rem; margin-bottom: var(--space-1); }
 
+      .chronik h2 { font-size: 1.25rem; margin: 0 0 var(--space-2); }
+      .chronik h3 { font-size: 1.0625rem; margin: var(--space-5) 0 var(--space-3); }
+      .chronik h4 { font-size: .75rem; letter-spacing: .06em; margin: 0 0 var(--space-2); text-transform: uppercase; }
+      .chronik ul { margin: 0; padding-left: var(--space-4); }
+      .chronik li + li { margin-top: var(--space-1); }
+      .chronik .kursiv { color: var(--text-muted); font-size: .875rem; font-style: italic; }
+      .chronik-fuss { border-top: 1px solid var(--border); margin-top: var(--space-5); padding-top: var(--space-3); }
+
+      /* Belegtes und Verbindungstext dürfen nie gleich aussehen — das ist der Zweck der Ansicht. */
+      .abschnitt {
+        background: var(--surface-muted);
+        border-left: 3px solid var(--border-strong);
+        border-radius: 0 var(--r-card) var(--r-card) 0;
+        margin: 0 0 var(--space-3);
+        padding: var(--space-3) var(--space-4);
+      }
+      .abschnitt h4 { color: var(--text-muted); }
+      .abschnitt.belegt { border-left-color: var(--status-ok); }
+      .abschnitt.belegt h4 { color: var(--status-ok); }
+      .abschnitt.verbindung { border-left-color: var(--status-warn); }
+      .abschnitt.verbindung h4 { color: var(--status-warn); }
+
       dl { display: grid; gap: var(--space-2) var(--space-4); grid-template-columns: max-content 1fr; margin: 0; }
       dt { color: var(--text-muted); }
       dd { margin: 0; }
@@ -229,6 +251,8 @@
         <nav>
           <a href="{{ url_for('sitzungen') }}"
              {% if request.path == url_for('sitzungen') %}aria-current="page"{% endif %}>Sitzungen</a>
+          <a href="{{ url_for('protokolle') }}"
+             {% if request.endpoint in ['protokolle', 'protokoll'] %}aria-current="page"{% endif %}>Protokolle</a>
           <a href="{{ url_for('status') }}"
              {% if request.path == url_for('status') %}aria-current="page"{% endif %}>Status</a>
         </nav>
