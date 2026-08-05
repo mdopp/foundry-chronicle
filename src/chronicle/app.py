@@ -20,6 +20,7 @@ from flask import Flask, Response, abort, redirect, render_template, request, ur
 from chronicle import db, foundry, notes, protocol, settings
 from chronicle.compose import client as sprachmodell
 from chronicle.compose.client import ModelError
+from chronicle.compose.service import RUECKBLICK
 from chronicle.config import Config
 
 REMOTE_USER_HEADER = "Remote-User"
@@ -94,6 +95,7 @@ def create_app(config: Config | None = None) -> Flask:
             "protokoll.html",
             sitzung=daten,
             protokoll=protocol.stored(basis.database_path, sitzung_id),
+            rueckblick=protocol.stored(basis.database_path, sitzung_id, RUECKBLICK),
         )
 
     @app.get("/einstellungen")

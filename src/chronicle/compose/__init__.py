@@ -1,4 +1,5 @@
-"""Die Komposition: aus Notizen und Foundry-Fakten wird eine Chronik."""
+"""Die Komposition: aus Notizen und Foundry-Fakten wird eine Chronik — und aus der
+Chronik der Rückblick, der vor der nächsten Sitzung gelesen wird."""
 
 from chronicle.compose.client import (
     ModelError,
@@ -13,7 +14,8 @@ from chronicle.compose.composer import (
     SessionMaterial,
     compose,
 )
-from chronicle.compose.service import compose_session
+from chronicle.compose.recap import Recap, RecapMaterial
+from chronicle.compose.service import compose_session, recap_session
 
 __all__ = [
     "Composition",
@@ -21,9 +23,12 @@ __all__ = [
     "ModelNotConfigured",
     "ModelUnreachable",
     "OllamaClient",
+    "Recap",
+    "RecapMaterial",
     "SceneMaterial",
     "SessionMaterial",
     "TextModel",
     "compose",
     "compose_session",
+    "recap_session",
 ]

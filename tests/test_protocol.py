@@ -4,7 +4,8 @@ import pytest
 
 from chronicle import db, protocol
 from chronicle.compose.composer import BELEG_TITEL, NOTIZEN_TITEL, VERBINDUNG_TITEL
-from chronicle.compose.service import save
+from chronicle.compose.recap import CHRONIK_TITEL, FAEDEN_TITEL, HERGANG_TITEL
+from chronicle.compose.service import RUECKBLICK, save
 
 STAND = "2026-08-05T20:00:00+00:00"
 
@@ -25,6 +26,23 @@ CHRONIK = "\n".join(
         "",
         VERBINDUNG_TITEL,
         "Die Runde tastet sich voran.",
+        "",
+    ]
+)
+
+
+RUECKBLICK_TEXT = "\n".join(
+    [
+        "# Rückblick — Sitzung vom 2026-08-05: Der Keller",
+        "",
+        HERGANG_TITEL,
+        "Die Runde stieg in den Keller.",
+        "",
+        FAEDEN_TITEL,
+        "- Die Wirtin wartet auf Antwort.",
+        "",
+        CHRONIK_TITEL,
+        "- Brok — Knowledge Roll: Summe 7",
         "",
     ]
 )
@@ -127,3 +145,29 @@ def test_die_liste_zeigt_jede_sitzung_mit_und_ohne_chronik(config, connection):
 
 def test_ohne_sitzung_ist_die_liste_leer(config, connection):
     assert protocol.entries(config.database_path) == ()
+
+
+def test_die_offenen_faeden_bekommen_einen_eigenen_abschnitt():
+    html = gerendert(RUECKBLICK_TEXT)
+    assert "<h2>Rückblick — Sitzung vom 2026-08-05: Der Keller</h2>" in html
+    # Deutung, Verbindungstext und Belegtes dürfen nie gleich aussehen.
+    assert '<section class="abschnitt deutung">' in html
+    assert '<section class="abschnitt verbindung">' in html
+    assert '<section class="abschnitt belegt">' in html
+
+
+def test_chronik_und_rueckblick_liegen_unter_eigener_art(config, connection):
+    sitzung_id = sitzung(connection)
+    save(connection, sitzung_id, CHRONIK, STAND)
+    save(connection, sitzung_id, RUECKBLICK_TEXT, STAND, kind=RUECKBLICK)
+
+    assert protocol.stored(config.database_path, sitzung_id).text == CHRONIK
+    abgelegt = protocol.stored(config.database_path, sitzung_id, RUECKBLICK)
+    assert abgelegt.text == RUECKBLICK_TEXT
+
+
+def test_ohne_rueckblick_kommt_nichts_zurueck(config, connection):
+    sitzung_id = sitzung(connection)
+    save(connection, sitzung_id, CHRONIK, STAND)
+
+    assert protocol.stored(config.database_path, sitzung_id, RUECKBLICK) is None

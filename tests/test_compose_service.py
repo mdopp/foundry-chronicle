@@ -6,7 +6,7 @@ from conftest import UNSER_KONTO
 import chronicle.compose.__main__ as entry
 from chronicle import db
 from chronicle.compose.composer import VERBINDUNG_TITEL
-from chronicle.compose.service import KIND, compose_session
+from chronicle.compose.service import KIND, RUECKBLICK, compose_session, recap_session
 from chronicle.foundry import store
 from chronicle.foundry.world import project
 
@@ -14,14 +14,20 @@ STAND = "2026-08-05T20:00:00+00:00"
 
 
 class Modell:
-    def __init__(self, antwort="Die Runde tastet sich voran.", name="chronist-test"):
+    def __init__(
+        self,
+        antwort="Die Runde tastet sich voran.",
+        faeden="- Die Wirtin wartet auf Antwort.",
+        name="chronist-test",
+    ):
         self.name = name
         self.antwort = antwort
+        self.faeden = faeden
         self.prompts = []
 
     def write(self, *, system, prompt):
         self.prompts.append(prompt)
-        return self.antwort
+        return self.faeden if "Fäden" in system else self.antwort
 
 
 @pytest.fixture
@@ -32,10 +38,10 @@ def connection(config):
     verbindung.close()
 
 
-def sitzung(connection, *, title="Der Keller"):
+def sitzung(connection, *, title="Der Keller", played_on="2026-08-05"):
     zeiger = connection.execute(
         "INSERT INTO session (played_on, title, created_at) VALUES (?, ?, ?)",
-        ("2026-08-05", title, STAND),
+        (played_on, title, STAND),
     )
     return zeiger.lastrowid
 
@@ -148,6 +154,57 @@ def test_jede_szene_bekommt_ihren_eigenen_aufruf(config, connection, welt):
     assert "Belegte Fakten aus Foundry" not in modell.prompts[0]
 
 
+def test_der_rueckblick_liegt_neben_der_chronik(config, connection, welt):
+    sitzung_id = eine_runde(connection, welt)
+    compose_session(config, sitzung_id, model=Modell())
+
+    ergebnis = recap_session(config, sitzung_id, model=Modell())
+
+    zeilen = protokolle(connection, sitzung_id)
+    assert {z["kind"] for z in zeilen} == {KIND, RUECKBLICK}
+    abgelegt = next(z["text"] for z in zeilen if z["kind"] == RUECKBLICK)
+    assert abgelegt == ergebnis.text
+    assert ergebnis.scene_count == 2
+    # Die Zahl steht unverändert in der Chronik und wird von dort übernommen.
+    assert "Knowledge Roll: Summe 7" in abgelegt
+
+
+def test_ohne_chronik_gibt_es_keinen_rueckblick(config, connection, welt):
+    sitzung_id = eine_runde(connection, welt)
+
+    assert recap_session(config, sitzung_id, model=Modell()) is None
+    assert protokolle(connection, sitzung_id) == []
+
+
+def test_ein_zweiter_lauf_ersetzt_den_rueckblick(config, connection, welt):
+    sitzung_id = eine_runde(connection, welt)
+    compose_session(config, sitzung_id, model=Modell())
+    recap_session(config, sitzung_id, model=Modell("Erster Anlauf."))
+
+    recap_session(config, sitzung_id, model=Modell("Zweiter Anlauf."))
+
+    zeilen = [z for z in protokolle(connection, sitzung_id) if z["kind"] == RUECKBLICK]
+    assert len(zeilen) == 1
+    assert "Zweiter Anlauf." in zeilen[0]["text"]
+    assert "Erster Anlauf." not in zeilen[0]["text"]
+
+
+def test_der_rueckblick_bekommt_die_vorigen_rueckblicke_mit(config, connection, welt):
+    alt = eine_runde(connection, welt)
+    compose_session(config, alt, model=Modell())
+    recap_session(config, alt, model=Modell("Der Hafen lag hinter uns."))
+    neu = sitzung(connection, title="Der Turm", played_on="2026-08-12")
+    notiz(connection, szene(connection, neu), "Wir steigen zum Turm.")
+    connection.commit()
+    compose_session(config, neu, model=Modell())
+    modell = Modell()
+
+    recap_session(config, neu, model=modell)
+
+    assert "Der Hafen lag hinter uns." in modell.prompts[0]
+    assert "Wir steigen zum Turm." in modell.prompts[0]
+
+
 def test_der_stapelaufruf_meldet_die_betriebsart(config, connection, welt, monkeypatch, capsys):
     sitzung_id = eine_runde(connection, welt)
     monkeypatch.setenv("CHRONICLE_DATA_DIR", str(config.data_dir))
@@ -156,6 +213,20 @@ def test_der_stapelaufruf_meldet_die_betriebsart(config, connection, welt, monke
 
     assert entry.main([str(sitzung_id)]) == 1
     assert "geordnet, nicht formuliert" in capsys.readouterr().out
+
+
+def test_der_stapelaufruf_schreibt_beides(config, connection, welt, monkeypatch, capsys):
+    sitzung_id = eine_runde(connection, welt)
+    monkeypatch.setenv("CHRONICLE_DATA_DIR", str(config.data_dir))
+    monkeypatch.delenv("OLLAMA_URL", raising=False)
+    monkeypatch.delenv("OLLAMA_MODEL", raising=False)
+
+    entry.main([str(sitzung_id)])
+
+    ausgabe = capsys.readouterr().out
+    assert "Chronik aus" in ausgabe
+    assert "Rückblick aus" in ausgabe
+    assert {z["kind"] for z in protokolle(connection, sitzung_id)} == {KIND, RUECKBLICK}
 
 
 def test_der_stapelaufruf_weist_falsche_argumente_ab(config, monkeypatch, capsys):

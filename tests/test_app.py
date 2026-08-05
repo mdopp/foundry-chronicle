@@ -6,7 +6,7 @@ from chronicle import db, notes, settings
 from chronicle.app import create_app
 from chronicle.compose import client as sprachmodell
 from chronicle.compose.client import ModelUnreachable
-from chronicle.compose.service import compose_session
+from chronicle.compose.service import compose_session, recap_session
 from chronicle.config import Config
 from chronicle.foundry import service
 from chronicle.foundry.client import FoundryUnreachable
@@ -172,10 +172,12 @@ class Chronist:
     name = "chronist-test"
 
     def write(self, *, system, prompt):
+        if "Fäden" in system:
+            return "- Die Wirtin wartet auf Antwort."
         return "Die Runde tastet sich voran."
 
 
-def eine_sitzung(tmp_path, *, chronik=False):
+def eine_sitzung(tmp_path, *, chronik=False, rueckblick=False):
     config = Config(data_dir=tmp_path)
     db.init(config.database_path)
     sitzung_id = notes.create_session(
@@ -183,8 +185,10 @@ def eine_sitzung(tmp_path, *, chronik=False):
     )
     szene = notes.session(config.database_path, sitzung_id).scenes[0]
     notes.add_note(config.database_path, szene.id, "Wir brechen bei Sonnenaufgang auf.")
-    if chronik:
+    if chronik or rueckblick:
         compose_session(config, sitzung_id, model=Chronist())
+    if rueckblick:
+        recap_session(config, sitzung_id, model=Chronist())
     return config, sitzung_id
 
 
@@ -224,6 +228,20 @@ def test_die_ansicht_haelt_belegtes_und_verbindungstext_auseinander(tmp_path):
     html = gelesen(config, f"/sitzungen/{sitzung_id}/protokoll")
     assert '<section class="abschnitt notizen">' in html
     assert '<section class="abschnitt verbindung">' in html
+
+
+def test_der_rueckblick_steht_ueber_der_chronik(tmp_path):
+    config, sitzung_id = eine_sitzung(tmp_path, rueckblick=True)
+    html = gelesen(config, f"/sitzungen/{sitzung_id}/protokoll")
+    assert "<h2>Rückblick — Sitzung vom 2026-08-05: Der Keller</h2>" in html
+    assert html.index("Rückblick — Sitzung") < html.index("Chronik — Sitzung")
+    assert '<section class="abschnitt deutung">' in html
+    assert "Die Wirtin wartet auf Antwort." in html
+
+
+def test_ohne_rueckblick_bleibt_die_ansicht_bei_der_chronik(tmp_path):
+    config, sitzung_id = eine_sitzung(tmp_path, chronik=True)
+    assert "Rückblick" not in gelesen(config, f"/sitzungen/{sitzung_id}/protokoll")
 
 
 def test_die_protokollliste_verweist_auf_die_chronik(tmp_path):
