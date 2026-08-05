@@ -2,32 +2,262 @@
 <html lang="de">
   <head>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <title>{% block titel %}Foundry Chronicle{% endblock %}</title>
     <style>
+      /* ServiceBay-Design-Standard: :root ist dunkel, hell überschreibt. */
+      :root {
+        color-scheme: dark light;
+
+        --background: #050505;
+        --surface: #111114;
+        --surface-2: #1c1c20;
+        --surface-muted: #0a0a0c;
+        --border: #2a2a30;
+        --border-strong: #3a3a42;
+        --text: #f0f0f0;
+        --text-muted: #a1a1aa;
+        --text-subtle: #6b7280;
+
+        --status-ok: #34d399;
+        --status-warn: #fbbf24;
+        --status-fail: #f87171;
+        --status-info: #60a5fa;
+
+        --accent: #3b82f6;
+        --accent-strong: #2563eb;
+        --on-accent: #ffffff;
+
+        --font-sans: "Geist", "Inter", "Outfit", system-ui, sans-serif;
+        --font-mono: "Geist Mono", "Fira Code", ui-monospace, monospace;
+
+        --r-chip: .375rem;
+        --r-card: .625rem;
+        --r-panel: .875rem;
+
+        --space-1: 4px;
+        --space-2: 8px;
+        --space-3: 12px;
+        --space-4: 16px;
+        --space-5: 24px;
+        --space-6: 32px;
+        --space-7: 48px;
+        --space-8: 64px;
+      }
+
+      @media (prefers-color-scheme: light) {
+        :root {
+          --background: #f8fafc;
+          --surface: #ffffff;
+          --surface-2: #f1f5f9;
+          --surface-muted: #f8fafc;
+          --border: #e2e8f0;
+          --border-strong: #cbd5e1;
+          --text: #0f172a;
+          --text-muted: #475569;
+          --text-subtle: #94a3b8;
+
+          --status-ok: #059669;
+          --status-warn: #d97706;
+          --status-fail: #dc2626;
+          --status-info: #2563eb;
+        }
+      }
+
+      * { box-sizing: border-box; }
+
       body {
-        font-family: system-ui, sans-serif;
+        background: var(--background);
+        color: var(--text);
+        font-family: var(--font-sans);
+        -webkit-font-smoothing: antialiased;
         line-height: 1.5;
+        margin: 0;
+      }
+
+      .huelle {
         margin: 0 auto;
         max-width: 46rem;
-        padding: 2rem 1rem;
+        padding: var(--space-5) var(--space-4);
+        padding-bottom: max(var(--space-7), env(safe-area-inset-bottom));
       }
-      h1 { font-size: 1.6rem; margin-bottom: 0; }
-      h2 { font-size: 1.1rem; margin-top: 2rem; }
-      p.leitsatz { color: #555; margin-top: .25rem; }
-      dl { display: grid; grid-template-columns: max-content 1fr; gap: .3rem 1rem; }
-      dt { font-weight: 600; }
+
+      .kopf {
+        align-items: baseline;
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--space-3);
+        justify-content: space-between;
+        margin-bottom: var(--space-5);
+      }
+
+      h1 { font-size: 1.5rem; letter-spacing: -.01em; margin: 0; }
+      h2 { font-size: 1.125rem; margin: 0 0 var(--space-3); }
+      h3 { font-size: 1rem; margin: 0 0 var(--space-2); }
+      p { margin: 0 0 var(--space-3); }
+      p:last-child { margin-bottom: 0; }
+      a { color: var(--accent); }
+
+      .leitsatz { color: var(--text-muted); font-size: .875rem; margin: var(--space-1) 0 0; }
+      .gedaempft { color: var(--text-muted); font-size: .875rem; }
+
+      nav { display: flex; gap: var(--space-2); }
+      nav a {
+        align-items: center;
+        border-radius: var(--r-chip);
+        color: var(--text-muted);
+        display: inline-flex;
+        min-height: 44px;
+        padding: 0 var(--space-3);
+        text-decoration: none;
+      }
+      nav a:hover { background: var(--surface-2); color: var(--text); }
+      nav a[aria-current="page"] { background: var(--surface-2); color: var(--accent); }
+
+      .karte {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: var(--r-panel);
+        margin-bottom: var(--space-4);
+        padding: var(--space-5);
+      }
+
+      label { color: var(--text-muted); display: block; font-size: .875rem; margin-bottom: var(--space-1); }
+
+      /* 1rem verhindert, dass iOS beim Fokus in ein Feld hineinzoomt. */
+      input, textarea {
+        background: var(--surface-2);
+        border: 1px solid var(--border);
+        border-radius: var(--r-card);
+        color: var(--text);
+        font-family: inherit;
+        font-size: 1rem;
+        padding: var(--space-3);
+        width: 100%;
+      }
+      input { min-height: 44px; }
+      textarea { min-height: 7rem; resize: vertical; }
+      input::placeholder, textarea::placeholder { color: var(--text-subtle); }
+      input:focus, textarea:focus { border-color: var(--border-strong); }
+
+      button {
+        background: var(--accent);
+        border: 0;
+        border-radius: var(--r-card);
+        color: var(--on-accent);
+        cursor: pointer;
+        font-family: inherit;
+        font-size: 1rem;
+        font-weight: 600;
+        min-height: 44px;
+        padding: 0 var(--space-5);
+        transition: background 300ms cubic-bezier(.16, 1, .3, 1);
+      }
+      button:hover { background: var(--accent-strong); }
+      button.leise { background: transparent; border: 1px solid var(--border-strong); color: var(--text); }
+      button.leise:hover { background: var(--surface-2); }
+
+      :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+      .reihe { display: flex; flex-wrap: wrap; gap: var(--space-3); }
+      .reihe > * { flex: 1 1 12rem; }
+      .absenden { margin-top: var(--space-3); }
+
+      .marke {
+        background: var(--surface-2);
+        border-radius: var(--r-chip);
+        color: var(--text-muted);
+        font-size: .75rem;
+        margin-right: var(--space-2);
+        padding: var(--space-1) var(--space-2);
+      }
+
+      .liste { list-style: none; margin: 0; padding: 0; }
+      .liste a {
+        border-radius: var(--r-card);
+        color: var(--text);
+        display: block;
+        padding: var(--space-3);
+        text-decoration: none;
+      }
+      .liste a:hover { background: var(--surface-2); }
+      .liste a span { display: block; }
+      .liste + .liste, .liste li + li { margin-top: var(--space-1); }
+
+      .notizen { list-style: none; margin: 0 0 var(--space-4); padding: 0; }
+      .notizen li {
+        background: var(--surface-muted);
+        border: 1px solid var(--border);
+        border-radius: var(--r-card);
+        margin-bottom: var(--space-2);
+        padding: var(--space-3);
+        white-space: pre-wrap;
+      }
+      .notizen time { color: var(--text-subtle); display: block; font-size: .75rem; margin-bottom: var(--space-1); }
+
+      .chronik h2 { font-size: 1.25rem; margin: 0 0 var(--space-2); }
+      .chronik h3 { font-size: 1.0625rem; margin: var(--space-5) 0 var(--space-3); }
+      .chronik h4 { font-size: .75rem; letter-spacing: .06em; margin: 0 0 var(--space-2); text-transform: uppercase; }
+      .chronik ul { margin: 0; padding-left: var(--space-4); }
+      .chronik li + li { margin-top: var(--space-1); }
+      .chronik .kursiv { color: var(--text-muted); font-size: .875rem; font-style: italic; }
+      .chronik-fuss { border-top: 1px solid var(--border); margin-top: var(--space-5); padding-top: var(--space-3); }
+
+      /* Belegtes und Verbindungstext dürfen nie gleich aussehen — das ist der Zweck der Ansicht. */
+      .abschnitt {
+        background: var(--surface-muted);
+        border-left: 3px solid var(--border-strong);
+        border-radius: 0 var(--r-card) var(--r-card) 0;
+        margin: 0 0 var(--space-3);
+        padding: var(--space-3) var(--space-4);
+      }
+      .abschnitt h4 { color: var(--text-muted); }
+      .abschnitt.belegt { border-left-color: var(--status-ok); }
+      .abschnitt.belegt h4 { color: var(--status-ok); }
+      .abschnitt.verbindung { border-left-color: var(--status-warn); }
+      .abschnitt.verbindung h4 { color: var(--status-warn); }
+
+      dl { display: grid; gap: var(--space-2) var(--space-4); grid-template-columns: max-content 1fr; margin: 0; }
+      dt { color: var(--text-muted); }
       dd { margin: 0; }
-      .fehlt { color: #8a1f11; }
-      .steht { color: #1f6b2c; }
-      code { background: #f2f2f2; padding: 0 .2rem; }
+
+      .fehlt { color: var(--status-fail); }
+      .steht { color: var(--status-ok); }
+      .hinweis { color: var(--status-info); }
+
+      code {
+        background: var(--surface-muted);
+        border-radius: var(--r-chip);
+        font-family: var(--font-mono);
+        font-size: .875em;
+        overflow-wrap: anywhere;
+        padding: 0 var(--space-1);
+      }
+
+      @media (max-width: 30rem) {
+        .karte { padding: var(--space-4); }
+        dl { grid-template-columns: 1fr; gap: var(--space-1); }
+        dd { margin-bottom: var(--space-2); }
+      }
     </style>
   </head>
   <body>
-    <header>
-      <h1>Foundry Chronicle</h1>
-      <p class="leitsatz">Sitzungsprotokolle für Tisch-Rollenspiel — eine Instanz pro Gruppe.</p>
-    </header>
-    <main>{% block inhalt %}{% endblock %}</main>
+    <div class="huelle">
+      <header class="kopf">
+        <div>
+          <h1>Foundry Chronicle</h1>
+          <p class="leitsatz">Sitzungsprotokolle für Tisch-Rollenspiel — eine Instanz pro Gruppe.</p>
+        </div>
+        <nav>
+          <a href="{{ url_for('sitzungen') }}"
+             {% if request.path == url_for('sitzungen') %}aria-current="page"{% endif %}>Sitzungen</a>
+          <a href="{{ url_for('protokolle') }}"
+             {% if request.endpoint in ['protokolle', 'protokoll'] %}aria-current="page"{% endif %}>Protokolle</a>
+          <a href="{{ url_for('status') }}"
+             {% if request.path == url_for('status') %}aria-current="page"{% endif %}>Status</a>
+        </nav>
+      </header>
+      <main>{% block inhalt %}{% endblock %}</main>
+    </div>
   </body>
 </html>

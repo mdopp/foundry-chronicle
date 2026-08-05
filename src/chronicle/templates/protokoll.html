@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block titel %}Chronik — {{ sitzung.title or sitzung.played_on }} — Foundry Chronicle{% endblock %}
+{% block inhalt %}
+
+<section class="karte">
+  {% if protokoll %}
+  <article class="chronik">{{ protokoll.html }}</article>
+  <p class="gedaempft chronik-fuss">Erzeugt am {{ protokoll.created_at[:10] }}. Ein neuer Lauf
+    ersetzt sie: <code>python -m chronicle.compose {{ sitzung.id }}</code></p>
+  {% else %}
+  <h2>Noch keine Chronik</h2>
+  <p>Für {{ sitzung.title or "die Sitzung vom " ~ sitzung.played_on }} ist die Komposition
+    noch nicht gelaufen. Sie läuft im Stapel, nicht auf Knopfdruck:</p>
+  <p><code>python -m chronicle.compose {{ sitzung.id }}</code></p>
+  <p class="gedaempft">Danach steht sie hier. Ohne Sprachmodell wird sie geordnet statt
+    formuliert — die Notizen und die belegten Foundry-Fakten stehen trotzdem drin.</p>
+  {% endif %}
+</section>
+
+<p><a href="{{ url_for('sitzung', sitzung_id=sitzung.id) }}">Zu den Notizen</a> ·
+  <a href="{{ url_for('protokolle') }}">Alle Protokolle</a></p>
+
+{% endblock %}

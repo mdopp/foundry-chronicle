@@ -7,6 +7,8 @@ VOLLSTAENDIG = {
     "FOUNDRY_USER": "chronist",
     "FOUNDRY_PASSWORD": "passwort-aus-der-umgebung",
     "DISCORD_BOT_TOKEN": "bot-token-aus-der-umgebung",
+    "OLLAMA_URL": "http://ollama.example:11434",
+    "OLLAMA_MODEL": "chronist-modell",
     "CHRONICLE_DATA_DIR": "/srv/chronik",
 }
 
@@ -50,6 +52,28 @@ def test_discord_darf_fehlen():
     assert not config.discord_configured
 
 
+def test_ollama_kommt_aus_der_umgebung():
+    config = Config.from_env(VOLLSTAENDIG)
+    assert config.ollama_url == "http://ollama.example:11434"
+    assert config.ollama_model == "chronist-modell"
+    assert config.ollama_configured
+
+
+def test_ollama_darf_fehlen_und_nennt_dann_beide_variablen():
+    config = Config.from_env({})
+    assert not config.ollama_configured
+    assert config.missing_ollama_variables == ("OLLAMA_URL", "OLLAMA_MODEL")
+
+
+def test_ohne_modellnamen_ist_ollama_unkonfiguriert():
+    config = Config.from_env(dict(VOLLSTAENDIG, OLLAMA_MODEL=" "))
+    assert config.missing_ollama_variables == ("OLLAMA_MODEL",)
+
+
+def test_die_ollama_adresse_ist_konfiguration_und_wird_nicht_maskiert():
+    assert "http://ollama.example:11434" in repr(Config.from_env(VOLLSTAENDIG))
+
+
 def test_datenverzeichnis_hat_eine_vorgabe():
     config = Config.from_env({})
     assert config.data_dir == Path("data")
@@ -60,6 +84,17 @@ def test_from_env_nutzt_ohne_argument_die_prozessumgebung(monkeypatch):
     monkeypatch.setenv("FOUNDRY_URL", "https://foundry.example")
     monkeypatch.delenv("FOUNDRY_USER", raising=False)
     assert Config.from_env().foundry_url == "https://foundry.example"
+
+
+def test_remote_user_wird_standardmaessig_nicht_erzwungen():
+    assert not Config.from_env({}).require_remote_user
+
+
+def test_remote_user_erzwingen_laesst_sich_schalten():
+    for wert in ("1", "true", "TRUE", "yes", "on"):
+        assert Config.from_env({"CHRONICLE_REQUIRE_REMOTE_USER": wert}).require_remote_user
+    for wert in ("0", "false", "nein", "", "  "):
+        assert not Config.from_env({"CHRONICLE_REQUIRE_REMOTE_USER": wert}).require_remote_user
 
 
 def test_repr_maskiert_passwort_und_token():

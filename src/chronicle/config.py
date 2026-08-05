@@ -3,6 +3,7 @@
 Foundry kennt keinen API-Token: der Zugang ist Benutzer und Passwort eines echten
 Kontos (siehe docs/foundry-zugriff.md). Passwort und Bot-Token verlassen dieses
 Objekt nie über ``repr``/``str`` — das ist der wahrscheinlichste Weg in eine Logzeile.
+Die Ollama-Adresse ist dagegen Konfiguration und kein Geheimnis; sie bleibt lesbar.
 """
 
 from __future__ import annotations
@@ -15,6 +16,10 @@ from pathlib import Path
 MASK = "***"
 
 FOUNDRY_VARIABLES = ("FOUNDRY_URL", "FOUNDRY_USER", "FOUNDRY_PASSWORD")
+
+OLLAMA_VARIABLES = ("OLLAMA_URL", "OLLAMA_MODEL")
+
+REMOTE_USER_VARIABLE = "CHRONICLE_REQUIRE_REMOTE_USER"
 
 DEFAULT_DATA_DIR = "data"
 
@@ -29,13 +34,20 @@ def _value(env: Mapping[str, str], name: str) -> str | None:
     return (env.get(name) or "").strip() or None
 
 
+def _flag(env: Mapping[str, str], name: str) -> bool:
+    return (env.get(name) or "").strip().lower() in ("1", "true", "yes", "on")
+
+
 @dataclass(frozen=True, repr=False)
 class Config:
     foundry_url: str | None = None
     foundry_user: str | None = None
     foundry_password: str | None = None
     discord_bot_token: str | None = None
+    ollama_url: str | None = None
+    ollama_model: str | None = None
     data_dir: Path = Path(DEFAULT_DATA_DIR)
+    require_remote_user: bool = False
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> Config:
@@ -45,7 +57,10 @@ class Config:
             foundry_user=_value(env, "FOUNDRY_USER"),
             foundry_password=_value(env, "FOUNDRY_PASSWORD"),
             discord_bot_token=_value(env, "DISCORD_BOT_TOKEN"),
+            ollama_url=_value(env, "OLLAMA_URL"),
+            ollama_model=_value(env, "OLLAMA_MODEL"),
             data_dir=Path(_value(env, "CHRONICLE_DATA_DIR") or DEFAULT_DATA_DIR),
+            require_remote_user=_flag(env, REMOTE_USER_VARIABLE),
         )
 
     @property
@@ -63,6 +78,15 @@ class Config:
         return self.discord_bot_token is not None
 
     @property
+    def missing_ollama_variables(self) -> tuple[str, ...]:
+        paare = zip(OLLAMA_VARIABLES, (self.ollama_url, self.ollama_model), strict=True)
+        return tuple(name for name, value in paare if not value)
+
+    @property
+    def ollama_configured(self) -> bool:
+        return not self.missing_ollama_variables
+
+    @property
     def database_path(self) -> Path:
         return self.data_dir / DATABASE_NAME
 
@@ -73,5 +97,8 @@ class Config:
             f"foundry_user={self.foundry_user!r}, "
             f"foundry_password={masked(self.foundry_password)}, "
             f"discord_bot_token={masked(self.discord_bot_token)}, "
-            f"data_dir={str(self.data_dir)!r})"
+            f"ollama_url={self.ollama_url!r}, "
+            f"ollama_model={self.ollama_model!r}, "
+            f"data_dir={str(self.data_dir)!r}, "
+            f"require_remote_user={self.require_remote_user!r})"
         )

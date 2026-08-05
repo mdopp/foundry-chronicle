@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block titel %}Protokolle — Foundry Chronicle{% endblock %}
+{% block inhalt %}
+
+<section class="karte">
+  <h2>Protokolle</h2>
+  <p class="gedaempft">Je Sitzung eine Chronik. Sie bleibt hier — nach Foundry
+    zurückschreiben lässt sich ein Protokoll nicht.</p>
+  {% if eintraege %}
+  <ul class="liste">
+    {% for e in eintraege %}
+    <li>
+      <a href="{{ url_for('protokoll', sitzung_id=e.session_id) }}">
+        <strong>{{ e.title or "Sitzung vom " ~ e.played_on }}</strong>
+        <span class="gedaempft">{% if e.title %}{{ e.played_on }} — {% endif %}{% if e.created_at %}Chronik vom {{ e.created_at[:10] }}{% else %}Noch keine Chronik{% endif %}</span>
+      </a>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="gedaempft">Noch keine Sitzung — und damit auch nichts zu lesen.
+    <a href="{{ url_for('sitzungen') }}">Die erste beginnt bei den Sitzungen.</a></p>
+  {% endif %}
+</section>
+
+{% endblock %}

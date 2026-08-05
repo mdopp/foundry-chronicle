@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block titel %}{{ sitzung.title or sitzung.played_on }} — Foundry Chronicle{% endblock %}
+{% block inhalt %}
+
+<section class="karte">
+  <h2>{{ sitzung.title or "Sitzung vom " ~ sitzung.played_on }}</h2>
+  <p class="gedaempft">{{ sitzung.played_on }} — {{ sitzung.scene_count }} {{ "Szene" if sitzung.scene_count == 1 else "Szenen" }}, {{ sitzung.note_count }} {{ "Notiz" if sitzung.note_count == 1 else "Notizen" }}.
+    Jede Notiz liegt mit dem Absenden auf der Platte — ein Neuladen verliert nichts.</p>
+</section>
+
+{% for szene in sitzung.scenes %}
+<section class="karte" id="szene-{{ szene.id }}">
+  <h2><span class="marke">Szene {{ szene.position }}</span>{{ szene.title or "" }}</h2>
+  {% if szene.notes %}
+  <ul class="notizen">
+    {% for notiz in szene.notes %}
+    <li><time datetime="{{ notiz.created_at }}">{{ notiz.created_at[11:16] }} UTC</time>{{ notiz.text }}</li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+  <form method="post" action="{{ url_for('neue_notiz', szene_id=szene.id) }}">
+    <label for="notiz-{{ szene.id }}">Mitschreiben</label>
+    <textarea id="notiz-{{ szene.id }}" name="text" rows="4"
+      placeholder="Was gerade passiert. Diktieren geht über die Tastatur."
+      {% if loop.last %}autofocus{% endif %}></textarea>
+    <div class="absenden"><button type="submit">Notiz sichern</button></div>
+  </form>
+</section>
+{% endfor %}
+
+<section class="karte">
+  <h2>Neue Szene</h2>
+  <form method="post" action="{{ url_for('neue_szene', sitzung_id=sitzung.id) }}">
+    <label for="szene-titel">Titel <span class="gedaempft">optional</span></label>
+    <input type="text" id="szene-titel" name="title" placeholder="Ankunft im Hafen">
+    <div class="absenden"><button type="submit" class="leise">Szene beginnen</button></div>
+  </form>
+</section>
+
+<p><a href="{{ url_for('protokoll', sitzung_id=sitzung.id) }}">Zur Chronik</a> ·
+  <a href="{{ url_for('sitzungen') }}">Zurück zu den Sitzungen</a></p>
+
+{% endblock %}

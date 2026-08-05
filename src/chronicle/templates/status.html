@@ -2,43 +2,78 @@
 {% block titel %}Status — Foundry Chronicle{% endblock %}
 {% block inhalt %}
 
-<h2>Foundry</h2>
-{% if config.foundry_configured %}
-  <p class="steht">Konfiguriert als <code>{{ config.foundry_user }}</code> auf
-    <code>{{ config.foundry_url }}</code>. Das Passwort steht in der Umgebung.</p>
-{% else %}
-  <p class="fehlt">Nicht konfiguriert — der Dienst läuft, holt aber nichts aus Foundry.</p>
-  <p>Diese Umgebungsvariablen fehlen:</p>
-  <ul>
-    {% for name in config.missing_foundry_variables %}<li><code>{{ name }}</code></li>{% endfor %}
-  </ul>
-  <p>Foundry hat keinen API-Token: es braucht die Adresse sowie Benutzername und Passwort
-    eines echten Kontos. Das Protokoll sieht danach genau so viel wie dieser Mensch.</p>
-{% endif %}
+<section class="karte">
+  <h2>Zugang</h2>
+  {% if config.require_remote_user %}
+    <p class="steht">Die Haustür steht am Proxy: ohne den Header <code>Remote-User</code>
+      wird jeder Request abgewiesen. Ein eigenes Login gibt es nicht.</p>
+    <p class="gedaempft">Angemeldet als <code>{{ remote_user }}</code>.</p>
+  {% else %}
+    <p class="hinweis">Die Header-Prüfung ist aus — wer den Port erreicht, sieht alles.
+      Das ist für den Lauf ohne Proxy gedacht; auf der Box gehört
+      <code>CHRONICLE_REQUIRE_REMOTE_USER=1</code> in die Umgebung.</p>
+  {% endif %}
+</section>
 
-<h2>Discord</h2>
-{% if config.discord_configured %}
-  <p class="steht">Bot-Token gesetzt.</p>
-{% else %}
-  <p>Kein Bot-Token — das ist in Ordnung. Eine Gruppe, die nur vor Ort spielt, braucht
-    ihn nicht; ohne ihn entfallen Aufnahme und Zustellung.</p>
-{% endif %}
+<section class="karte">
+  <h2>Foundry</h2>
+  {% if config.foundry_configured %}
+    <p class="steht">Konfiguriert als <code>{{ config.foundry_user }}</code> auf
+      <code>{{ config.foundry_url }}</code>. Das Passwort steht in der Umgebung.</p>
+  {% else %}
+    <p class="fehlt">Nicht konfiguriert — der Dienst läuft, holt aber nichts aus Foundry.</p>
+    <p>Diese Umgebungsvariablen fehlen:</p>
+    <ul>
+      {% for name in config.missing_foundry_variables %}<li><code>{{ name }}</code></li>{% endfor %}
+    </ul>
+    <p>Foundry hat keinen API-Token: es braucht die Adresse sowie Benutzername und Passwort
+      eines echten Kontos. Das Protokoll sieht danach genau so viel wie dieser Mensch.</p>
+  {% endif %}
+</section>
 
-<h2>Abgleich</h2>
-<p class="{{ 'fehlt' if abgleich.stale else 'steht' }}">{{ abgleich.message }}</p>
-{% if abgleich.snapshot %}
-<dl>
-  <dt>Regelwerk</dt><dd><code>{{ abgleich.snapshot.system }}</code></dd>
-  <dt>Spieler</dt><dd>{{ abgleich.snapshot.players | length }}</dd>
-  <dt>Charaktere</dt><dd>{{ abgleich.snapshot.characters | length }}</dd>
-  <dt>Chat-Nachrichten</dt><dd>{{ abgleich.snapshot.messages | length }}</dd>
-</dl>
-{% endif %}
+<section class="karte">
+  <h2>Discord</h2>
+  {% if config.discord_configured %}
+    <p class="steht">Bot-Token gesetzt.</p>
+  {% else %}
+    <p>Kein Bot-Token — das ist in Ordnung. Eine Gruppe, die nur vor Ort spielt, braucht
+      ihn nicht; ohne ihn entfallen Aufnahme und Zustellung.</p>
+  {% endif %}
+</section>
 
-<h2>Speicher</h2>
-<dl>
-  <dt>Datenbank</dt><dd><code>{{ config.database_path }}</code></dd>
-  <dt>Schema-Stand</dt><dd>{{ schema_version }}</dd>
-</dl>
+<section class="karte">
+  <h2>Sprachmodell</h2>
+  {% if config.ollama_configured %}
+    <p class="steht">Ollama unter <code>{{ config.ollama_url }}</code>, Modell
+      <code>{{ config.ollama_model }}</code>.</p>
+  {% else %}
+    <p>Kein Sprachmodell — die Chronik entsteht trotzdem, dann geordnet statt formuliert:
+      Notizen nach Szenen, Foundry-Fakten wörtlich, keine Prosa. Es fehlen:</p>
+    <ul>
+      {% for name in config.missing_ollama_variables %}<li><code>{{ name }}</code></li>{% endfor %}
+    </ul>
+  {% endif %}
+</section>
+
+<section class="karte">
+  <h2>Abgleich</h2>
+  <p class="{{ 'fehlt' if abgleich.stale else 'steht' }}">{{ abgleich.message }}</p>
+  {% if abgleich.snapshot %}
+  <dl>
+    <dt>Regelwerk</dt><dd><code>{{ abgleich.snapshot.system }}</code></dd>
+    <dt>Spieler</dt><dd>{{ abgleich.snapshot.players | length }}</dd>
+    <dt>Charaktere</dt><dd>{{ abgleich.snapshot.characters | length }}</dd>
+    <dt>Chat-Nachrichten</dt><dd>{{ abgleich.snapshot.messages | length }}</dd>
+  </dl>
+  {% endif %}
+</section>
+
+<section class="karte">
+  <h2>Speicher</h2>
+  <dl>
+    <dt>Datenbank</dt><dd><code>{{ config.database_path }}</code></dd>
+    <dt>Schema-Stand</dt><dd>{{ schema_version }}</dd>
+  </dl>
+</section>
 
 {% endblock %}

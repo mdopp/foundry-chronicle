@@ -55,6 +55,17 @@ def _roll(row: sqlite3.Row) -> Roll | None:
     )
 
 
+def message(row: sqlite3.Row) -> ChatMessage:
+    return ChatMessage(
+        id=row["id"],
+        timestamp=row["timestamp"],
+        speaker_actor=row["speaker_actor"],
+        speaker_alias=row["speaker_alias"],
+        content=row["content"],
+        roll=_roll(row),
+    )
+
+
 def save(connection: sqlite3.Connection, snapshot: WorldSnapshot) -> None:
     with connection:
         for tabelle in ("foundry_player", "foundry_character", "foundry_message"):
@@ -118,17 +129,7 @@ def load(connection: sqlite3.Connection) -> WorldSnapshot | None:
             )
             for r in characters
         ),
-        messages=tuple(
-            ChatMessage(
-                id=r["id"],
-                timestamp=r["timestamp"],
-                speaker_actor=r["speaker_actor"],
-                speaker_alias=r["speaker_alias"],
-                content=r["content"],
-                roll=_roll(r),
-            )
-            for r in messages
-        ),
+        messages=tuple(message(r) for r in messages),
     )
 
 
