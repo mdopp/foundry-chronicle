@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from flask import Flask, Response, abort, redirect, render_template, request, url_for
 
-from chronicle import db, foundry, notes, protocol, settings
+from chronicle import db, foundry, notes, protocol, search, settings
 from chronicle.compose import client as sprachmodell
 from chronicle.compose.client import ModelError
 from chronicle.compose.service import RUECKBLICK
@@ -96,6 +96,13 @@ def create_app(config: Config | None = None) -> Flask:
             sitzung=daten,
             protokoll=protocol.stored(basis.database_path, sitzung_id),
             rueckblick=protocol.stored(basis.database_path, sitzung_id, RUECKBLICK),
+        )
+
+    @app.get("/suche")
+    def suche() -> str:
+        return render_template(
+            "suche.html",
+            ergebnis=search.find(basis.database_path, request.args.get("q", "")),
         )
 
     @app.get("/einstellungen")

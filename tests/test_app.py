@@ -262,6 +262,42 @@ def test_die_protokollansicht_steht_hinter_demselben_tuersteher(tmp_path):
     assert client.get("/sitzungen/1/protokoll").status_code == 403
 
 
+def test_die_suche_ist_von_jeder_seite_erreichbar(tmp_path):
+    assert 'href="/suche"' in gelesen(Config(data_dir=tmp_path), "/")
+
+
+def test_die_suche_findet_notiz_und_chronik_getrennt(tmp_path):
+    config, sitzung_id = eine_sitzung(tmp_path, chronik=True)
+    html = gelesen(config, "/suche?q=sonnenaufgang")
+    assert "<h2>Notizen</h2>" in html
+    assert "<h2>Chronik</h2>" in html
+    assert f'href="/sitzungen/{sitzung_id}#szene-' in html
+    assert f'href="/sitzungen/{sitzung_id}/protokoll"' in html
+    assert "<mark>" in html
+
+
+def test_ohne_treffer_sagt_die_suche_wonach_gesucht_wurde(tmp_path):
+    config, _ = eine_sitzung(tmp_path)
+    html = gelesen(config, "/suche?q=Drachenhort")
+    assert "Keine Treffer für „Drachenhort“" in html
+
+
+def test_ohne_indexinhalt_sagt_die_suche_dass_nichts_da_ist(tmp_path):
+    html = gelesen(Config(data_dir=tmp_path), "/suche?q=Schwert")
+    assert "Es ist noch nichts abgelegt" in html
+
+
+def test_ohne_eingabe_bleibt_die_suche_stumm(tmp_path):
+    config, _ = eine_sitzung(tmp_path)
+    html = gelesen(config, "/suche")
+    assert "Keine Treffer" not in html
+    assert 'name="q"' in html
+
+
+def test_die_suche_steht_hinter_demselben_tuersteher(tmp_path):
+    assert bewacht(tmp_path).get("/suche?q=schwert").status_code == 403
+
+
 def test_die_einstellungsseite_zeigt_die_fuenf_werte(tmp_path):
     config = Config(
         foundry_url="https://foundry.example",

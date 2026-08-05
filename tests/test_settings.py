@@ -92,4 +92,4 @@ def test_ein_zweiter_schemalauf_laesst_die_einstellungen_stehen(config):
     settings.save(config.database_path, {"foundry_user": "frontend-konto"})
     db.init(config.database_path)
     assert settings.effective(config).foundry_user == "frontend-konto"
-    assert db.current_schema_version(config.database_path) == 4
+    assert db.current_schema_version(config.database_path) == db.SCHEMA_VERSION

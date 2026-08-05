@@ -100,5 +100,52 @@ CREATE TABLE IF NOT EXISTS settings (
     value TEXT NOT NULL
 );
 
-INSERT INTO meta (key, value) VALUES ('schema_version', '4')
+-- Der Suchindex. FTS5 steckt in SQLite, also keine neue Abhängigkeit. Eine Zeile je
+-- auffindbarem Stück; ``kind`` unterscheidet sie, damit ein Transkript später eine
+-- weitere Art bekommt und keine weitere Tabelle.
+CREATE VIRTUAL TABLE IF NOT EXISTS search_index USING fts5 (
+    text,
+    kind       UNINDEXED,
+    ref_id     UNINDEXED,
+    session_id UNINDEXED,
+    scene_id   UNINDEXED
+);
+
+CREATE TRIGGER IF NOT EXISTS note_search_insert AFTER INSERT ON note BEGIN
+    INSERT INTO search_index (text, kind, ref_id, session_id, scene_id)
+    VALUES (new.text, 'notiz', new.id,
+            (SELECT session_id FROM scene WHERE id = new.scene_id), new.scene_id);
+END;
+
+CREATE TRIGGER IF NOT EXISTS note_search_delete AFTER DELETE ON note BEGIN
+    DELETE FROM search_index WHERE kind = 'notiz' AND ref_id = old.id;
+END;
+
+CREATE TRIGGER IF NOT EXISTS protocol_search_insert AFTER INSERT ON protocol BEGIN
+    INSERT INTO search_index (text, kind, ref_id, session_id, scene_id)
+    VALUES (new.text, new.kind, new.id, new.session_id, NULL);
+END;
+
+-- Ein zweiter Lauf von ``chronicle.compose`` ersetzt den Text der Zeile; ohne diesen
+-- Trigger stünde die verworfene Fassung weiter im Index.
+CREATE TRIGGER IF NOT EXISTS protocol_search_update AFTER UPDATE ON protocol BEGIN
+    UPDATE search_index SET text = new.text WHERE kind = old.kind AND ref_id = old.id;
+END;
+
+CREATE TRIGGER IF NOT EXISTS protocol_search_delete AFTER DELETE ON protocol BEGIN
+    DELETE FROM search_index WHERE kind = old.kind AND ref_id = old.id;
+END;
+
+-- Der Index ist abgeleitet: die Trigger halten ihn im Betrieb aktuell, dieser Neuaufbau
+-- holt beim Start, was vor ihnen entstanden ist — eine Datenbank aus Schema 4.
+DELETE FROM search_index;
+
+INSERT INTO search_index (text, kind, ref_id, session_id, scene_id)
+SELECT n.text, 'notiz', n.id, c.session_id, n.scene_id
+FROM note n JOIN scene c ON c.id = n.scene_id;
+
+INSERT INTO search_index (text, kind, ref_id, session_id, scene_id)
+SELECT p.text, p.kind, p.id, p.session_id, NULL FROM protocol p;
+
+INSERT INTO meta (key, value) VALUES ('schema_version', '5')
 ON CONFLICT (key) DO UPDATE SET value = excluded.value;

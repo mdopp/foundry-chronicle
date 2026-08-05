@@ -101,7 +101,7 @@
       .leitsatz { color: var(--text-muted); font-size: .875rem; margin: var(--space-1) 0 0; }
       .gedaempft { color: var(--text-muted); font-size: .875rem; }
 
-      nav { display: flex; gap: var(--space-2); }
+      nav { display: flex; flex-wrap: wrap; gap: var(--space-2); }
       nav a {
         align-items: center;
         border-radius: var(--r-chip);
@@ -232,6 +232,14 @@
       .steht { color: var(--status-ok); }
       .hinweis { color: var(--status-info); }
 
+      mark {
+        background: var(--surface-2);
+        border-radius: var(--r-chip);
+        color: var(--text);
+        font-weight: 600;
+        padding: 0 var(--space-1);
+      }
+
       code {
         background: var(--surface-muted);
         border-radius: var(--r-chip);
@@ -260,6 +268,8 @@
              {% if request.path == url_for('sitzungen') %}aria-current="page"{% endif %}>Sitzungen</a>
           <a href="{{ url_for('protokolle') }}"
              {% if request.endpoint in ['protokolle', 'protokoll'] %}aria-current="page"{% endif %}>Protokolle</a>
+          <a href="{{ url_for('suche') }}"
+             {% if request.path == url_for('suche') %}aria-current="page"{% endif %}>Suche</a>
           <a href="{{ url_for('einstellungen') }}"
              {% if request.endpoint in ['einstellungen', 'einstellungen_speichern'] %}aria-current="page"{% endif %}>Einstellungen</a>
           <a href="{{ url_for('status') }}"
