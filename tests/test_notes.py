@@ -6,7 +6,11 @@ from chronicle.config import Config
 
 
 def klient(tmp_path):
-    return create_app(Config(data_dir=tmp_path)).test_client()
+    # Diese Tests wollen die Sitzungsliste sehen; ohne Foundry führte "/" sonst
+    # jedes Mal in die Einrichtung.
+    client = create_app(Config(data_dir=tmp_path)).test_client()
+    settings.finish_onboarding(pfad(tmp_path))
+    return client
 
 
 def pfad(tmp_path):
@@ -95,10 +99,7 @@ def test_liste_zaehlt_szenen_und_notizen(tmp_path):
 
 
 def test_leere_liste_erklaert_sich(tmp_path):
-    # Vor der Einrichtung führt "/" in den Wizard; die leere Liste kommt danach.
-    client = klient(tmp_path)
-    settings.finish_onboarding(pfad(tmp_path))
-    assert "Noch keine Sitzung" in client.get("/").get_data(as_text=True)
+    assert "Noch keine Sitzung" in klient(tmp_path).get("/").get_data(as_text=True)
 
 
 def test_unbekannte_sitzung_ist_ein_404(tmp_path):
