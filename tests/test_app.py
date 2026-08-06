@@ -961,6 +961,7 @@ SYSTEMWOERTER = (
     "python -m",
     "CHRONICLE_",
     "OLLAMA_",
+    "FOUNDRY_",
     "Remote-User",
     "Forward-Auth",
     "Authelia",
@@ -992,6 +993,16 @@ def test_auch_die_abweisung_spricht_nutzersprache(tmp_path):
     antwort = bewacht(tmp_path).get("/")
     assert antwort.status_code == 403
     assert systemsprache(antwort.get_data(as_text=True)) == []
+
+
+def test_ein_abgleich_ohne_zugang_erklaert_das_ohne_variablennamen(tmp_path):
+    config = Config(data_dir=tmp_path)
+    zustand = service.sync(config)
+    assert zustand.stale
+
+    html = seite(config).get_data(as_text=True)
+    assert "Für den Zugang zu Foundry fehlen noch" in html
+    assert systemsprache(html) == []
 
 
 def test_auch_das_abgelegte_protokoll_spricht_nutzersprache(tmp_path):

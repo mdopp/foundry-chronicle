@@ -53,6 +53,17 @@ def test_nennt_nur_die_fehlenden_variablen():
     assert config.missing_foundry_variables == ("FOUNDRY_PASSWORD",)
 
 
+def test_kennt_die_fehlenden_werte_auch_unter_ihrem_feldnamen():
+    """Was fehlt, muss auch sagbar sein, ohne eine Umgebungsvariable zu nennen."""
+    assert Config.from_env({}).missing_foundry_fields == (
+        "die Adresse",
+        "der Benutzer",
+        "das Passwort",
+    )
+    halb = Config.from_env({"FOUNDRY_URL": "https://foundry.example", "FOUNDRY_USER": "chronist"})
+    assert halb.missing_foundry_fields == ("das Passwort",)
+
+
 def test_leerer_string_zaehlt_als_fehlend():
     config = Config.from_env(dict(VOLLSTAENDIG, FOUNDRY_PASSWORD="   "))
     assert config.foundry_password is None

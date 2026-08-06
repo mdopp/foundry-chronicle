@@ -103,7 +103,18 @@ def test_ohne_konfiguration_meldet_der_abgleich_das_verstaendlich(tmp_path):
 
     zustand = service.sync(Config(data_dir=tmp_path))
     assert zustand.stale
-    assert "FOUNDRY_URL" in zustand.message
+    assert "die Adresse, der Benutzer und das Passwort" in zustand.message
+    assert "in den Einstellungen" in zustand.message
+    assert "FOUNDRY_" not in zustand.message
+
+
+def test_die_meldung_nennt_nur_das_wirklich_fehlende(tmp_path):
+    from chronicle.config import Config
+
+    halb = Config(data_dir=tmp_path, foundry_url="https://foundry.example", foundry_user="chronist")
+    zustand = service.sync(halb)
+    assert "fehlt noch das Passwort" in zustand.message
+    assert "Adresse" not in zustand.message
 
 
 def test_kein_passwort_in_den_logzeilen_eines_abgleichs(config, welt, caplog):

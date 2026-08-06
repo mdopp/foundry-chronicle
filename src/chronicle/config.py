@@ -21,6 +21,10 @@ MASK = "***"
 
 FOUNDRY_VARIABLES = ("FOUNDRY_URL", "FOUNDRY_USER", "FOUNDRY_PASSWORD")
 
+# Dieselben drei Werte, wie sie in der Oberfläche heißen — mit Artikel, weil daraus ein
+# Satz für jemanden gebaut wird, der nie eine Umgebungsvariable gesehen hat.
+FOUNDRY_FELDER = ("die Adresse", "der Benutzer", "das Passwort")
+
 REMOTE_USER_VARIABLE = "CHRONICLE_REQUIRE_REMOTE_USER"
 
 # Der Box-Standard: unser Pod läuft im Host-Netz, Ollama hört daneben auf 11434. Er steht
@@ -87,9 +91,17 @@ class Config:
         )
 
     @property
+    def _foundry_values(self) -> tuple[str | None, ...]:
+        return (self.foundry_url, self.foundry_user, self.foundry_password)
+
+    @property
     def missing_foundry_variables(self) -> tuple[str, ...]:
-        values = (self.foundry_url, self.foundry_user, self.foundry_password)
-        paare = zip(FOUNDRY_VARIABLES, values, strict=True)
+        paare = zip(FOUNDRY_VARIABLES, self._foundry_values, strict=True)
+        return tuple(name for name, value in paare if not value)
+
+    @property
+    def missing_foundry_fields(self) -> tuple[str, ...]:
+        paare = zip(FOUNDRY_FELDER, self._foundry_values, strict=True)
         return tuple(name for name, value in paare if not value)
 
     @property
