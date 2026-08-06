@@ -134,12 +134,22 @@ CREATE TABLE IF NOT EXISTS transcript_segment (
 CREATE INDEX IF NOT EXISTS transcript_segment_zeit
     ON transcript_segment (transcript_id, start_ms);
 
--- Die fünf Werte aus der Oberfläche. Was hier steht, schlägt die Umgebung; die bleibt
--- die Vorgabe beim ersten Start. Das Foundry-Passwort liegt damit im Klartext in dieser
--- Datei und geht mit ins Backup — bewusste Abwägung, siehe CLAUDE.md.
+-- Die Werte aus der Oberfläche. Was hier steht, schlägt die Umgebung; die bleibt die
+-- Vorgabe beim ersten Start. Foundry-Passwort und Discord-Bot-Token liegen damit im
+-- Klartext in dieser Datei und gehen mit ins Backup — bewusste Abwägung, siehe CLAUDE.md.
 CREATE TABLE IF NOT EXISTS settings (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL
+);
+
+-- Was aus dem Diktat-Kanal schon abgeholt wurde. Der Zeiger auf die zuletzt geholte
+-- Nachricht steht in ``meta``; er spart das erneute Holen. Diese Tabelle ist die
+-- Garantie: geht der Zeiger verloren, wird trotzdem nichts ein zweites Mal abgelegt.
+CREATE TABLE IF NOT EXISTS discord_intake (
+    message_id TEXT PRIMARY KEY,
+    status     TEXT NOT NULL
+               CHECK (status IN ('abgelegt', 'wartet', 'uebersprungen')),
+    handled_at TEXT NOT NULL
 );
 
 -- Der Suchindex. FTS5 steckt in SQLite, also keine neue Abhängigkeit. Eine Zeile je
@@ -210,5 +220,5 @@ INSERT INTO search_index (text, kind, ref_id, session_id, scene_id)
 SELECT s.text, 'transkript', s.transcript_id, t.session_id, NULL
 FROM transcript_segment s JOIN transcript t ON t.id = s.transcript_id;
 
-INSERT INTO meta (key, value) VALUES ('schema_version', '7')
+INSERT INTO meta (key, value) VALUES ('schema_version', '8')
 ON CONFLICT (key) DO UPDATE SET value = excluded.value;

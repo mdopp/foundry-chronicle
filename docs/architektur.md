@@ -15,7 +15,7 @@ flowchart TB
     subgraph CAP["Erfassung · während und direkt nach der Sitzung"]
         NOTE["Notiz-Eingabe je Szene · #5<br/>tippen oder Tastatur-Diktat"]
         UPLOAD["Diktat-Upload · #14<br/>Sprachmemo, ein Sprecher"]
-        DIKT["Diktat-Kanal · #19<br/>Audio oder Text, von überall"]
+        DIKT["Diktat-Kanal · #19<br/>Audio oder Text, von überall<br/>im Stapel abgeholt, kein Gateway"]
         REC["Recorder-Bot · #8<br/>nur online · hörbare Ansage<br/>Spur je Sprecher"]
     end
 
@@ -123,3 +123,8 @@ passiert ist** — und Teile davon nacherzählen können.
   löschbar; Protokoll und Transkript sind klein. Der Diktat-Kanal läuft durch Discords
   Cloud — für Online-Gruppen kein Unterschied, für reine Präsenzgruppen eine bewusste
   Entscheidung.
+- **Der Diktat-Kanal wird abgeholt, nicht abonniert.** Der Stapellauf fragt Discords
+  REST-API, was seit dem letzten Zeiger dazugekommen ist; ein Prozess, der dauernd an
+  einer WebSocket hängt, wäre für einen Briefkasten die falsche Bauform und müsste
+  laufen, damit nichts verlorengeht. Die Gateway-Verbindung kommt erst mit dem
+  Recorder-Bot (#8), der Sprache mitschneidet, während sie gesprochen wird.

@@ -154,6 +154,7 @@ def create_app(config: Config | None = None) -> Flask:
             foundry_url=aktuell.foundry_url or "",
             foundry_user=aktuell.foundry_user or "",
             passwort_gesetzt=bool(aktuell.foundry_password),
+            bot_token_gesetzt=bool(aktuell.discord_bot_token),
             ollama_url=adresse,
             ollama_model=aktuell.ollama_model or "",
             modelle=modelle,

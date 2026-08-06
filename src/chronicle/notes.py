@@ -142,6 +142,20 @@ def session(database_path: Path, session_id: int) -> Session | None:
     )
 
 
+def latest_session(database_path: Path) -> Session | None:
+    """Die zuletzt angelegte Sitzung — das Ziel für alles, was ohne Adresse hereinkommt.
+
+    Nicht die zuletzt gespielte: ein nachgetragenes Datum würde sonst die Zielsitzung
+    eines Diktats verschieben, das längst unterwegs ist.
+    """
+    connection = _open(database_path)
+    try:
+        zeile = connection.execute("SELECT id FROM session ORDER BY id DESC LIMIT 1").fetchone()
+    finally:
+        connection.close()
+    return None if zeile is None else session(database_path, int(zeile["id"]))
+
+
 def add_scene(database_path: Path, session_id: int, *, title: str = "") -> int | None:
     connection = _open(database_path)
     try:

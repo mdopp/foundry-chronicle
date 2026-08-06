@@ -37,11 +37,16 @@
 <section class="karte">
   <h2>Discord</h2>
   {% if config.discord_configured %}
-    <p class="steht">Bot-Token gesetzt.</p>
+    <p class="steht">Bot-Token gesetzt. Der Diktat-Kanal <code>#diktat</code> wird im
+      Stapel geleert: <code>python -m chronicle.discord</code>. Der Token wird nirgends
+      angezeigt.</p>
   {% else %}
     <p>Kein Bot-Token — das ist in Ordnung. Eine Gruppe, die nur vor Ort spielt, braucht
-      ihn nicht; ohne ihn entfallen Aufnahme und Zustellung.</p>
+      ihn nicht; ohne ihn bleiben Diktat-Kanal, Aufnahme und Zustellung zu.</p>
   {% endif %}
+  <dl>
+    <dt><code>DISCORD_BOT_TOKEN</code></dt><dd>{{ quellen.discord_bot_token }}</dd>
+  </dl>
 </section>
 
 <section class="karte">

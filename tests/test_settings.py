@@ -55,7 +55,7 @@ def test_speichern_ist_wiederholbar(config):
 
 
 def test_unbekannte_schluessel_landen_nicht_in_der_tabelle(config):
-    settings.save(config.database_path, {"discord_bot_token": "nicht-hier"})
+    settings.save(config.database_path, {"whisper_model": "nicht-hier"})
     assert settings.stored(config.database_path) == {}
 
 
@@ -70,15 +70,27 @@ def test_die_quelle_steht_je_wert_fest(config, tmp_path):
     assert settings.sources(leer)["foundry_url"] == settings.UNGESETZT
 
 
-def test_die_gespeicherten_werte_sind_genau_die_fuenf():
+def test_die_gespeicherten_werte_stehen_fest():
     assert settings.KEYS == (
         "foundry_url",
         "foundry_user",
         "foundry_password",
+        "discord_bot_token",
         "ollama_url",
         "ollama_model",
     )
-    assert settings.SECRET_KEYS == ("foundry_password",)
+    assert settings.SECRET_KEYS == ("foundry_password", "discord_bot_token")
+
+
+def test_der_bot_token_kommt_aus_der_oberflaeche_und_schlaegt_die_umgebung(config):
+    aus_der_umgebung = Config(discord_bot_token="token-aus-der-umgebung", data_dir=config.data_dir)
+    assert settings.effective(aus_der_umgebung).discord_bot_token == "token-aus-der-umgebung"
+
+    settings.save(config.database_path, {"discord_bot_token": "token-aus-dem-frontend"})
+    aktuell = settings.effective(aus_der_umgebung)
+    assert aktuell.discord_bot_token == "token-aus-dem-frontend"
+    assert aktuell.discord_configured
+    assert settings.is_set(aus_der_umgebung, "discord_bot_token")
 
 
 def test_is_set_sagt_ob_aber_nicht_was(config, tmp_path):

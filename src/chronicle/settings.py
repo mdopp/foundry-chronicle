@@ -1,12 +1,13 @@
-"""Die fünf Werte, die in der Oberfläche gepflegt werden.
+"""Die Werte, die in der Oberfläche gepflegt werden.
 
 Die Umgebung ist die Vorgabe beim ersten Start und bleibt der Deploy-Weg; **ein in der
 Oberfläche gesetzter Wert gewinnt.** Damit das keine zwei Wahrheiten werden, liest kein
-Aufrufer diese fünf Werte mehr selbst aus der Umgebung — er nimmt ``effective``.
+Aufrufer diese Werte mehr selbst aus der Umgebung — er nimmt ``effective``.
 
-Das Foundry-Passwort liegt dadurch im Klartext in der SQLite. Aus diesem Modul kommt es
-nur dahin zurück, wo es hingehört: in den Anmelde-Aufruf. Für die Anzeige gibt es
-``is_set`` — *ob* etwas gesetzt ist, nie *was*.
+Foundry-Passwort und Discord-Bot-Token liegen dadurch im Klartext in der SQLite. Aus
+diesem Modul kommen sie nur dahin zurück, wo sie hingehören: in den Anmelde-Aufruf und
+in den Authorization-Header. Für die Anzeige gibt es ``is_set`` — *ob* etwas gesetzt
+ist, nie *was*.
 """
 
 from __future__ import annotations
@@ -22,11 +23,12 @@ KEYS = (
     "foundry_url",
     "foundry_user",
     "foundry_password",
+    "discord_bot_token",
     "ollama_url",
     "ollama_model",
 )
 
-SECRET_KEYS = ("foundry_password",)
+SECRET_KEYS = ("foundry_password", "discord_bot_token")
 
 # Der Box-Standard: unser Pod läuft im Host-Netz, Ollama hört daneben auf 11434.
 DEFAULT_OLLAMA_URL = "http://127.0.0.1:11434"
