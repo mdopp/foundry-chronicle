@@ -12,6 +12,7 @@ from urllib.parse import unquote
 import pytest
 import requests
 
+import chronicle.discord.__main__ as entry
 from chronicle import db, notes, recordings, settings
 from chronicle.config import Config
 from chronicle.discord import service
@@ -458,6 +459,43 @@ def test_eine_unerwartete_antwort_ist_keine_nachrichtenliste(config):
 
     with pytest.raises(DiscordUnreachable):
         klient(config, Wirr()).messages(DIKTAT_KANAL)
+
+
+# --- Der Stapelaufruf ----------------------------------------------------------------
+
+
+def test_der_stapelaufruf_leert_den_kanal(config, sitzung_id, monkeypatch, capsys):
+    api = FakeDiscord(nachricht("100", text="Die Wirtin hat gelogen."))
+    monkeypatch.setattr(entry.Config, "from_env", classmethod(lambda cls: config))
+    monkeypatch.setattr(service, "DiscordClient", lambda zugang: klient(zugang, api))
+
+    assert entry.main() == 0
+
+    assert "Notiz" in capsys.readouterr().out
+    assert notes.session(config.database_path, sitzung_id).note_count == 1
+
+
+def test_ein_leerer_briefkasten_ist_kein_fehlschlag(config, sitzung_id, monkeypatch, capsys):
+    monkeypatch.setattr(entry.Config, "from_env", classmethod(lambda cls: config))
+    monkeypatch.setattr(service, "DiscordClient", lambda zugang: klient(zugang, FakeDiscord()))
+
+    assert entry.main() == 0
+    assert service.LEER in capsys.readouterr().out
+
+
+def test_der_stapelaufruf_meldet_ein_unerreichbares_discord(config, monkeypatch, capsys):
+    class Weg:
+        def request(self, *args, **kwargs):
+            raise requests.ConnectionError(f"Bot {TOKEN} abgelehnt")
+
+    monkeypatch.setattr(entry.Config, "from_env", classmethod(lambda cls: config))
+    monkeypatch.setattr(service, "DiscordClient", lambda zugang: klient(zugang, Weg()))
+
+    assert entry.main() == 2
+
+    ausgabe = capsys.readouterr().out
+    assert "fehlgeschlagen" in ausgabe
+    assert TOKEN not in ausgabe
 
 
 def test_der_download_geht_ohne_authorization_header(config, tmp_path):
