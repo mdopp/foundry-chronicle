@@ -18,12 +18,18 @@ server = ["waitress>=3.0"]
 # Megabyte zieht: das Image bringt es mit, eine Dev-Installation und die CI bleiben
 # schlank. Die Tests setzen ein erfundenes Modell ein und laden nichts herunter.
 transcribe = ["faster-whisper>=1.0"]
-# Eigenes Extra für den Aufnahme-Bot: py-cord ist ein Gateway-Client und zieht PyNaCl
-# nach, das weder der Webdienst noch der nächtliche Stapel braucht. Audio zu empfangen
-# ist von Discord nicht offiziell unterstützt — die Bruchstelle bleibt damit auf ein
-# Extra und eine Datei begrenzt. py-cord belegt das Paket ``discord``; ein daneben
-# installiertes discord.py schlägt sich mit ihm.
-discord = ["py-cord>=2.6", "PyNaCl>=1.5"]
+# Eigenes Extra für den Aufnahme-Bot: py-cord ist ein Gateway-Client mit Sprach-Anhang,
+# den weder der Webdienst noch der nächtliche Stapel braucht. Audio zu empfangen ist von
+# Discord nicht offiziell unterstützt — die Bruchstelle bleibt damit auf ein Extra und
+# eine Datei begrenzt. py-cord belegt das Paket ``discord``; ein daneben installiertes
+# discord.py schlägt sich mit ihm.
+#
+# **Das Extra ``[voice]`` wird von py-cord abgeholt, nicht von Hand nachgebaut.** Genau
+# das war der Fehler davor: PyNaCl war abgeschrieben, ``davey`` fehlte — und ohne davey
+# spricht py-cord Discords DAVE-Verschlüsselung nicht, meldet »voice will NOT be
+# supported« und der Bot verbindet sich, ohne je etwas zu hören. ``davey`` steht daneben
+# trotzdem namentlich, damit die Zeile sagt, worauf es ankommt.
+discord = ["py-cord[voice]>=2.8.1", "davey>=0.1.6"]
 dev =["pytest>=8.0", "pytest-cov>=5.0", "ruff>=0.6", "pre-commit>=3.7", "pyyaml>=6.0"]
 
 [build-system]

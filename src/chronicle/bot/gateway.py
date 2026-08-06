@@ -36,6 +36,12 @@ NICHT_INSTALLIERT = (
     "lokal nachrüsten mit: pip install '.[discord]'"
 )
 
+SPRACHE_FEHLT = (
+    "Dem Bot fehlt {fehlend} — ohne das spricht py-cord Discords Sprach-Verschlüsselung "
+    "nicht: keine Ansage, keine Aufnahme. Im Image ist es dabei, lokal nachrüsten mit: "
+    "pip install '.[discord]'"
+)
+
 NICHT_IM_KANAL = "Du bist in keinem Sprachkanal — geh hinein und ruf mich noch einmal."
 LAEUFT_SCHON = "Ich schneide schon mit."
 LAEUFT_NICHT = "Es läuft gerade keine Aufnahme."
@@ -51,6 +57,18 @@ def _discord():
     except ImportError as fehler:
         raise BotFehler(NICHT_INSTALLIERT) from fehler
     return discord
+
+
+def _sprache_pruefen(discord) -> None:
+    """Beim Start prüfen, was sonst erst im Sprachkanal auffällt.
+
+    Fehlt PyNaCl oder davey, verbindet sich py-cord anstandslos und schreibt eine einzige
+    Warnzeile ins Log; scheitern würde erst ``/aufnahme start``, mitten im Befehl und für
+    den Aufrufer unsichtbar. Ein Bot, der nichts hören kann, soll das beim Start sagen.
+    """
+    fehlend = discord.utils.get_missing_voice_dependencies()
+    if fehlend:
+        raise BotFehler(SPRACHE_FEHLT.format(fehlend=", ".join(fehlend)))
 
 
 class _WavStrom:
@@ -139,6 +157,7 @@ class _Lauf:
 def baue(config: Config):
     """Der Bot mit seinen beiden Befehlen — noch ohne Verbindung."""
     discord = _discord()
+    _sprache_pruefen(discord)
     absichten = discord.Intents.none()
     absichten.guilds = True
     absichten.voice_states = True
