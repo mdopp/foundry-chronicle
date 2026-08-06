@@ -4,8 +4,8 @@ Die Haustür steht am Proxy (ServiceBay-ADR 0001): Authelia setzt ``Remote-User`
 App baut kein eigenes Login. Erzwungen wird der Header nur, wenn die Umgebung es sagt —
 sonst wäre ``python -m chronicle`` ohne Proxy nicht startbar.
 
-Fehlt die Foundry-Konfiguration, läuft der Dienst trotzdem und erklärt im Abschnitt
-``Zustand`` der Einstellungen, was fehlt — eine harte Abhängigkeit rechtfertigt eine
+Fehlt die Foundry-Konfiguration, läuft der Dienst trotzdem und erklärt in der
+Foundry-Karte der Einstellungen, was fehlt — eine harte Abhängigkeit rechtfertigt eine
 verständliche Meldung, keine Startverweigerung. Mitgeschrieben wird auch dann.
 
 Beim ersten Mal führt ``/einrichtung`` durch dieselben Speicherwege in Schritten, statt
@@ -296,7 +296,7 @@ def create_app(config: Config | None = None) -> Flask:
     def felder(*, mit_modellen: bool = True) -> dict[str, object]:
         aktuell = settings.effective(basis)
         adresse = aktuell.ollama_url or settings.DEFAULT_OLLAMA_URL
-        modelle, hinweis = _modelle(adresse) if mit_modellen else ((), "")
+        modelle, hinweis, erreichbar = _modelle(adresse) if mit_modellen else ((), "", True)
         return {
             "foundry_url": aktuell.foundry_url or "",
             "foundry_user": aktuell.foundry_user or "",
@@ -309,6 +309,7 @@ def create_app(config: Config | None = None) -> Flask:
             "ollama_model": aktuell.ollama_model or "",
             "modelle": modelle,
             "modell_hinweis": hinweis,
+            "modell_erreichbar": erreichbar,
         }
 
     def uebernehmen(namen: tuple[str, ...]) -> None:
@@ -389,11 +390,11 @@ def create_app(config: Config | None = None) -> Flask:
     return app
 
 
-def _modelle(adresse: str) -> tuple[tuple[str, ...], str]:
+def _modelle(adresse: str) -> tuple[tuple[str, ...], str, bool]:
     try:
         namen = sprachmodell.installed_models(adresse)
-    except ModelError as fehler:
-        return (), f"{fehler} — Modellnamen von Hand eintragen."
+    except ModelError:
+        return (), "Die Auswahl lädt gerade nicht — Modellnamen von Hand eintragen.", False
     if not namen:
-        return (), f"{adresse} antwortet, hat aber kein Textmodell installiert."
-    return namen, f"{len(namen)} Modelle auf {adresse} gefunden."
+        return (), "Dort liegt noch kein Textmodell — Modellnamen von Hand eintragen.", True
+    return namen, f"{len(namen)} Modelle stehen zur Auswahl.", True

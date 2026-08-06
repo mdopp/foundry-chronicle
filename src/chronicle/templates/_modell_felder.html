@@ -1,0 +1,33 @@
+{# Dieselben Felder in Wizard und Einstellungen — damit die Wortwahl nicht auseinanderläuft. #}
+<div class="feld">
+  {% if ollama_eigen %}
+    <label for="ollama_url">Ollama-Adresse</label>
+    <input id="ollama_url" name="ollama_url" type="url" value="{{ ollama_url }}"
+           placeholder="{{ ollama_standard }}">
+    <p class="gedaempft">Feld leeren heißt: wieder das Ollama dieser Box.</p>
+  {% else %}
+    <p>Gefragt wird das <strong>Ollama dieser Box</strong> <span class="gedaempft">— der
+      Standard</span>.</p>
+    <details>
+      <summary>Ollama läuft woanders</summary>
+      <label for="ollama_url">Ollama-Adresse</label>
+      <input id="ollama_url" name="ollama_url" type="url" value=""
+             placeholder="{{ ollama_standard }}">
+    </details>
+  {% endif %}
+</div>
+
+<div class="feld">
+  <label for="ollama_model">Modell</label>
+  {% if modelle %}
+    <select id="ollama_model" name="ollama_model">
+      <option value="">— keins, dann wird nur geordnet —</option>
+      {% for name in modelle %}
+      <option value="{{ name }}"{% if name == ollama_model %} selected{% endif %}>{{ name }}</option>
+      {% endfor %}
+    </select>
+  {% else %}
+    <input id="ollama_model" name="ollama_model" value="{{ ollama_model }}">
+  {% endif %}
+  <p class="gedaempft">{{ modell_hinweis }}</p>
+</div>

@@ -26,7 +26,7 @@ def kein_ollama_im_netz(monkeypatch):
 
 
 def seite(config):
-    """Der alte Status-Pfad — er landet seit #40 im Abschnitt »Zustand« der Einstellungen."""
+    """Der alte Status-Pfad — er landet seit #40 auf der Einstellungsseite."""
     return create_app(config).test_client().get("/status", follow_redirects=True)
 
 
@@ -38,7 +38,7 @@ def test_startet_ohne_foundry_und_erklaert_was_fehlt(tmp_path):
     antwort = seite(Config(data_dir=tmp_path))
     assert antwort.status_code == 200
     html = antwort.get_data(as_text=True)
-    assert "Nicht konfiguriert" in html
+    assert "Noch kein Zugang zu Foundry" in html
     for name in ("FOUNDRY_URL", "FOUNDRY_USER", "FOUNDRY_PASSWORD"):
         assert name in html
 
@@ -161,17 +161,17 @@ def test_ohne_erzwingung_laeuft_es_lokal_weiter(tmp_path):
     assert client.get("/", follow_redirects=True).status_code == 200
 
 
-def test_status_erklaert_die_ungesicherte_lage(tmp_path):
+def test_ohne_anmeldung_sagt_die_seite_was_das_heisst(tmp_path):
     html = seite(Config(data_dir=tmp_path)).get_data(as_text=True)
-    assert "Die Anmeldung ist aus" in html
+    assert "Niemand ist angemeldet" in html
     assert "wer diese Adresse erreicht, sieht alles" in html
 
 
-def test_status_nennt_den_angemeldeten_menschen(tmp_path):
+def test_die_einstellungen_nennen_oben_den_angemeldeten_menschen(tmp_path):
     antwort = zustand(bewacht(tmp_path), headers={"Remote-User": "mira"})
     html = antwort.get_data(as_text=True)
-    assert "mira" in html
-    assert "Ein eigenes Login gibt es nicht" in html
+    assert "Angemeldet als <strong>mira</strong>" in html
+    assert "Niemand ist angemeldet" not in html
 
 
 class Chronist:
@@ -444,8 +444,32 @@ def test_ohne_ollama_bleibt_ein_textfeld_und_ein_ehrlicher_satz(tmp_path):
     html = gelesen(Config(data_dir=tmp_path), "/einstellungen")
     assert "<select" not in html
     assert 'name="ollama_model"' in html
-    assert "nicht erreichbar" in html
+    assert "Nicht erreichbar — dann wird nur geordnet, nicht formuliert" in html
+    assert "Modellnamen von Hand eintragen" in html
     assert settings.DEFAULT_OLLAMA_URL in html
+
+
+def test_ein_erreichbares_modell_meldet_sich_als_bereit(tmp_path, monkeypatch):
+    monkeypatch.setattr(sprachmodell, "installed_models", lambda adresse, **k: ("gemma4:12b",))
+    config = Config(
+        ollama_url="http://ollama.example:11434", ollama_model="gemma4:12b", data_dir=tmp_path
+    )
+    html = gelesen(config, "/einstellungen")
+    assert "Bereit — <code>gemma4:12b</code>" in html
+    assert "Nicht erreichbar" not in html
+
+
+def test_ein_erreichbares_ollama_ohne_gewaehltes_modell_sagt_was_zu_tun_ist(tmp_path, monkeypatch):
+    monkeypatch.setattr(sprachmodell, "installed_models", lambda adresse, **k: ("gemma4:12b",))
+    html = gelesen(Config(data_dir=tmp_path), "/einstellungen")
+    assert "Kein Modell gewählt" in html
+    assert "Wähle unten eins und speichere" in html
+
+
+def test_ein_modell_ohne_adresse_sagt_welches_feld_noch_fehlt(tmp_path, monkeypatch):
+    monkeypatch.setattr(sprachmodell, "installed_models", lambda adresse, **k: ("gemma4:12b",))
+    html = gelesen(Config(ollama_model="gemma4:12b", data_dir=tmp_path), "/einstellungen")
+    assert "Noch keine Ollama-Adresse gespeichert" in html
 
 
 def test_ein_kaputtes_ollama_bricht_die_seite_nicht(tmp_path, monkeypatch):
@@ -767,7 +791,49 @@ def test_der_alte_statuspfad_leitet_dauerhaft_in_den_zustand_um(tmp_path):
 def test_der_zustand_steht_unter_seinem_anker_in_den_einstellungen(tmp_path):
     html = gelesen(Config(data_dir=tmp_path), "/einstellungen")
     assert 'id="zustand"' in html
-    assert "<h2>Zustand</h2>" in html
+    assert "<h2>Woher kommen die Spieldaten?</h2>" in html
+
+
+# --- Nach Nutzerfragen geschnitten ---------------------------------------------------
+
+
+FRAGEN = (
+    "Woher kommen die Spieldaten?",
+    "Wie kommt Gesprochenes herein?",
+    "Wer formuliert die Chronik?",
+)
+
+
+def test_die_einstellungen_sind_nach_nutzerfragen_geschnitten(tmp_path):
+    html = gelesen(Config(data_dir=tmp_path), "/einstellungen")
+    for frage in FRAGEN:
+        assert f"<h2>{frage}</h2>" in html
+    assert html.index(FRAGEN[0]) < html.index(FRAGEN[1]) < html.index(FRAGEN[2])
+
+
+def test_die_foundry_karte_traegt_zugang_zustand_und_den_abgleich(config, welt):
+    service.sync(config, client=Abgleich(welt))
+    html = gelesen(config, "/einstellungen")
+    karte = html.split('id="zustand"')[1].split("</section>")[0]
+    assert 'name="foundry_url"' in karte
+    assert "Zugang steht" in karte
+    assert "Stand vom" in karte
+    assert ">Jetzt abgleichen</button>" in karte
+
+
+def test_der_abgleich_knopf_haengt_am_eigenen_formular(tmp_path):
+    html = gelesen(Config(data_dir=tmp_path), "/einstellungen")
+    assert '<form id="abgleich" method="post" action="/abgleich"' in html
+    assert 'form="abgleich"' in html
+
+
+def test_die_technikdetails_stehen_zugeklappt_am_ende(tmp_path):
+    html = gelesen(Config(data_dir=tmp_path), "/einstellungen")
+    block = html.split('<details class="karte">')[1]
+    assert "<summary>Technikdetails</summary>" in block
+    assert "Datenbank" in block
+    assert "Schema-Stand" in block
+    assert "FOUNDRY_URL" in block
 
 
 # --- Anstoßen aus der Oberfläche ----------------------------------------------------
@@ -888,9 +954,12 @@ def test_der_abgleich_steht_hinter_demselben_tuersteher(tmp_path):
 # --- Nutzersprache: was hier steht, sagt was zu tun ist ------------------------------
 
 
+# Header-Namen sind Proxy-Innenleben: niemand muss sie kennen, um die Chronik zu bedienen.
+SYSTEMWOERTER = ("python -m", "CHRONICLE_", "Remote-User", "Forward-Auth", "Authelia")
+
+
 def systemsprache(html):
-    """Header-Namen kommen mit der nächsten Einheit dazu; hier sind es diese beiden."""
-    return [wort for wort in ("python -m", "CHRONICLE_") if wort in html]
+    return [wort for wort in SYSTEMWOERTER if wort in html]
 
 
 def test_keine_systemsprache_auf_einer_gerenderten_seite(tmp_path):

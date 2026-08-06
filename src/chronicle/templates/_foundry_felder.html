@@ -1,0 +1,26 @@
+{# Dieselben Felder in Wizard und Einstellungen — damit die Wortwahl nicht auseinanderläuft. #}
+<div class="feld">
+  <label for="foundry_url">Adresse</label>
+  <input id="foundry_url" name="foundry_url" type="url" value="{{ foundry_url }}"
+         placeholder="http://127.0.0.1:30000">
+</div>
+
+<div class="feld">
+  <label for="foundry_user">Benutzer</label>
+  <input id="foundry_user" name="foundry_user" value="{{ foundry_user }}">
+  <p class="gedaempft">Am besten ein eigenes Spielerkonto ohne Spielleitungsrechte: die
+    Chronik sieht genau so viel wie dieser Mensch.</p>
+</div>
+
+<div class="feld">
+  <label for="foundry_password">Passwort</label>
+  <input id="foundry_password" name="foundry_password" type="password" value=""
+         autocomplete="new-password"
+         placeholder="{{ 'gesetzt' if passwort_gesetzt else 'nicht gesetzt' }}">
+  {% if passwort_gesetzt %}
+    <p class="gedaempft">Das Passwort ist <span class="steht">gesetzt</span> und wird nie
+      angezeigt. Feld leer lassen heißt: unverändert.</p>
+  {% else %}
+    <p class="gedaempft">Noch kein Passwort gesetzt.</p>
+  {% endif %}
+</div>
