@@ -31,6 +31,10 @@ KEYS = (
 
 SECRET_KEYS = ("foundry_password", "discord_bot_token")
 
+# Steht bewusst nicht in KEYS: kein Konfigurationswert, sondern die Merkzeile des
+# Erststart-Wizards — er soll nie ein zweites Mal aufgehen.
+ONBOARDING_KEY = "onboarding_done"
+
 # Der Box-Standard: unser Pod läuft im Host-Netz, Ollama hört daneben auf 11434.
 DEFAULT_OLLAMA_URL = "http://127.0.0.1:11434"
 
@@ -64,6 +68,30 @@ def sources(config: Config) -> dict[str, str]:
 
 def is_set(config: Config, name: str) -> bool:
     return bool(getattr(effective(config), name))
+
+
+def onboarding_done(database_path: Path) -> bool:
+    connection = db.connect(database_path)
+    try:
+        zeile = connection.execute(
+            "SELECT value FROM settings WHERE key = ?", (ONBOARDING_KEY,)
+        ).fetchone()
+    finally:
+        connection.close()
+    return zeile is not None and zeile["value"] == "1"
+
+
+def finish_onboarding(database_path: Path) -> None:
+    connection = db.connect(database_path)
+    try:
+        with connection:
+            connection.execute(
+                "INSERT INTO settings (key, value) VALUES (?, '1') "
+                "ON CONFLICT (key) DO UPDATE SET value = '1'",
+                (ONBOARDING_KEY,),
+            )
+    finally:
+        connection.close()
 
 
 def save(database_path: Path, values: Mapping[str, str | None]) -> None:

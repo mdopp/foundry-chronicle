@@ -4,9 +4,13 @@ Die Haustür steht am Proxy (ServiceBay-ADR 0001): Authelia setzt ``Remote-User`
 App baut kein eigenes Login. Erzwungen wird der Header nur, wenn die Umgebung es sagt —
 sonst wäre ``python -m chronicle`` ohne Proxy nicht startbar.
 
-Fehlt die Foundry-Konfiguration, läuft der Dienst trotzdem und erklärt auf ``/status``,
-was fehlt — eine harte Abhängigkeit rechtfertigt eine verständliche Meldung, keine
-Startverweigerung. Mitgeschrieben wird auch dann.
+Fehlt die Foundry-Konfiguration, läuft der Dienst trotzdem und erklärt im Abschnitt
+``Zustand`` der Einstellungen, was fehlt — eine harte Abhängigkeit rechtfertigt eine
+verständliche Meldung, keine Startverweigerung. Mitgeschrieben wird auch dann.
+
+Beim ersten Mal führt ``/einrichtung`` durch dieselben Speicherwege in Schritten, statt
+fünf gleichrangige Reiter hinzustellen. Der Wizard schreibt nichts selbst: er füllt
+dasselbe Formular wie ``/einstellungen`` und ruft denselben ``settings.save``-Weg auf.
 
 ``basis`` ist die Umgebung beim Start; gefragt wird nie sie, sondern
 ``settings.effective(basis)`` — ein in ``/einstellungen`` gesetzter Wert gewinnt und
@@ -29,9 +33,30 @@ REMOTE_USER_HEADER = "Remote-User"
 UNKONFIGURIERT = "unkonfiguriert"
 VERALTET = "veraltet"
 
-# Status und Einstellungen erklären den Verbindungszustand selbst und ausführlich; ein
-# Band darüber wäre dort nur eine Dopplung.
-OHNE_BAND = frozenset({"status", "einstellungen", "einstellungen_speichern", "healthz"})
+# Die Einstellungen erklären den Verbindungszustand selbst und ausführlich, der Wizard
+# ist die Einrichtung; ein Band darüber wäre dort nur eine Dopplung.
+OHNE_BAND = frozenset(
+    {
+        "einstellungen",
+        "einstellungen_speichern",
+        "einrichtung",
+        "einrichtung_schritt",
+        "einrichtung_speichern",
+        "healthz",
+    }
+)
+
+# Die Reihenfolge des Wizards und die Felder, für die ein Schritt zuständig ist. Ein
+# Schritt speichert nur seine eigenen — sonst nähme er den übrigen Schritten den Wert.
+SCHRITTE = (
+    ("foundry", ("foundry_url", "foundry_user", "foundry_password")),
+    ("discord", ("discord_bot_token", "discord_recap_channel")),
+    ("ollama", ("ollama_url", "ollama_model")),
+)
+
+SCHRITT_FELDER = dict(SCHRITTE)
+
+UEBERSPRINGEN = "ueberspringen"
 
 
 def create_app(config: Config | None = None) -> Flask:
@@ -51,16 +76,32 @@ def create_app(config: Config | None = None) -> Flask:
             return render_template("abgewiesen.html"), 403
         return None
 
+    def zugang_ziel() -> str:
+        # Eine bestehende Instanz hat längst eine Sitzung und käme über den Erststart
+        # nie in den Wizard — das Band ist für sie der Weg hinein.
+        if settings.onboarding_done(basis.database_path):
+            return url_for("einstellungen")
+        return url_for("einrichtung")
+
     @app.context_processor
     def verbindungsband() -> dict[str, str | None]:
         if g.get("abgewiesen") or request.endpoint in OHNE_BAND:
-            return {"verbindung": None}
+            return {"verbindung": None, "zugang": None}
         if not settings.effective(basis).foundry_configured:
-            return {"verbindung": UNKONFIGURIERT}
-        return {"verbindung": VERALTET if foundry.failed(basis) else None}
+            return {"verbindung": UNKONFIGURIERT, "zugang": zugang_ziel()}
+        return {"verbindung": VERALTET if foundry.failed(basis) else None, "zugang": None}
+
+    def erststart() -> bool:
+        if settings.onboarding_done(basis.database_path):
+            return False
+        if settings.effective(basis).foundry_configured:
+            return False
+        return not notes.sessions(basis.database_path)
 
     @app.get("/")
-    def sitzungen() -> str:
+    def sitzungen() -> str | Response:
+        if erststart():
+            return redirect(url_for("einrichtung"))
         return render_template(
             "sitzungen.html",
             sitzungen=notes.sessions(basis.database_path),
@@ -212,52 +253,89 @@ def create_app(config: Config | None = None) -> Flask:
         people.confirm(basis.database_path, auswahl)
         return redirect(url_for("zuordnung"))
 
-    @app.get("/einstellungen")
-    def einstellungen() -> str:
+    def felder(*, mit_modellen: bool = True) -> dict[str, object]:
         aktuell = settings.effective(basis)
         adresse = aktuell.ollama_url or settings.DEFAULT_OLLAMA_URL
-        modelle, hinweis = _modelle(adresse)
+        modelle, hinweis = _modelle(adresse) if mit_modellen else ((), "")
+        return {
+            "foundry_url": aktuell.foundry_url or "",
+            "foundry_user": aktuell.foundry_user or "",
+            "passwort_gesetzt": bool(aktuell.foundry_password),
+            "bot_token_gesetzt": bool(aktuell.discord_bot_token),
+            "discord_recap_channel": aktuell.discord_recap_channel or "",
+            "ollama_url": adresse,
+            "ollama_eigen": adresse != settings.DEFAULT_OLLAMA_URL,
+            "ollama_standard": settings.DEFAULT_OLLAMA_URL,
+            "ollama_model": aktuell.ollama_model or "",
+            "modelle": modelle,
+            "modell_hinweis": hinweis,
+        }
+
+    def uebernehmen(namen: tuple[str, ...]) -> None:
+        """Der einzige Schreibweg für die gepflegten Werte — Formular wie Wizard."""
+        werte = {
+            name: request.form.get(name, "") for name in namen if name not in settings.SECRET_KEYS
+        }
+        # Ein leer abgesendetes Geheimnis heißt »unverändert«, nicht »löschen« — sonst
+        # wäre jedes Speichern der übrigen Werte ein Abmelden.
+        for name in namen:
+            if name in settings.SECRET_KEYS and request.form.get(name, "").strip():
+                werte[name] = request.form[name]
+        settings.save(basis.database_path, werte)
+
+    @app.get("/einstellungen")
+    def einstellungen() -> str:
         return render_template(
             "einstellungen.html",
-            foundry_url=aktuell.foundry_url or "",
-            foundry_user=aktuell.foundry_user or "",
-            passwort_gesetzt=bool(aktuell.foundry_password),
-            bot_token_gesetzt=bool(aktuell.discord_bot_token),
-            discord_recap_channel=aktuell.discord_recap_channel or "",
-            ollama_url=adresse,
-            ollama_eigen=adresse != settings.DEFAULT_OLLAMA_URL,
-            ollama_standard=settings.DEFAULT_OLLAMA_URL,
-            ollama_model=aktuell.ollama_model or "",
-            modelle=modelle,
-            modell_hinweis=hinweis,
             quellen=settings.sources(basis),
+            config=settings.effective(basis),
+            schema_version=db.current_schema_version(basis.database_path),
+            abgleich=foundry.current(basis),
+            remote_user=request.headers.get(REMOTE_USER_HEADER),
+            **felder(),
         )
 
     @app.post("/einstellungen")
     def einstellungen_speichern() -> Response:
-        werte = {
-            name: request.form.get(name, "")
-            for name in settings.KEYS
-            if name not in settings.SECRET_KEYS
-        }
-        # Ein leer abgesendetes Geheimnis heißt »unverändert«, nicht »löschen« — sonst
-        # wäre jedes Speichern der übrigen Werte ein Abmelden.
-        for name in settings.SECRET_KEYS:
-            if request.form.get(name, "").strip():
-                werte[name] = request.form[name]
-        settings.save(basis.database_path, werte)
+        uebernehmen(settings.KEYS)
         return redirect(url_for("einstellungen"))
 
-    @app.get("/status")
-    def status() -> str:
+    @app.get("/einrichtung")
+    def einrichtung() -> Response:
+        return redirect(url_for("einrichtung_schritt", schritt=SCHRITTE[0][0]))
+
+    @app.get("/einrichtung/<schritt>")
+    def einrichtung_schritt(schritt: str) -> str:
+        if schritt not in SCHRITT_FELDER:
+            abort(404)
+        namen = [name for name, _ in SCHRITTE]
         return render_template(
-            "status.html",
-            config=settings.effective(basis),
-            quellen=settings.sources(basis),
-            schema_version=db.current_schema_version(basis.database_path),
-            abgleich=foundry.current(basis),
-            remote_user=request.headers.get(REMOTE_USER_HEADER),
+            "einrichtung.html",
+            schritt=schritt,
+            nummer=namen.index(schritt) + 1,
+            anzahl=len(namen),
+            letzter=namen[-1] == schritt,
+            **felder(mit_modellen=schritt == "ollama"),
         )
+
+    @app.post("/einrichtung/<schritt>")
+    def einrichtung_speichern(schritt: str) -> Response:
+        if schritt not in SCHRITT_FELDER:
+            abort(404)
+        if request.form.get("tat") != UEBERSPRINGEN:
+            uebernehmen(SCHRITT_FELDER[schritt])
+        namen = [name for name, _ in SCHRITTE]
+        naechster = namen.index(schritt) + 1
+        if naechster == len(namen):
+            settings.finish_onboarding(basis.database_path)
+            return redirect(url_for("sitzungen"))
+        return redirect(url_for("einrichtung_schritt", schritt=namen[naechster]))
+
+    # Die Statusseite ist im Abschnitt »Zustand« der Einstellungen aufgegangen; die
+    # Adresse steht in Lesezeichen und alten Bändern, deshalb 301 statt 404.
+    @app.get("/status")
+    def status() -> Response:
+        return redirect(url_for("einstellungen", _anchor="zustand"), 301)
 
     # Test-Seam und Install-Gate der ServiceBay-Box (servicebay.healthcheck).
     @app.get("/healthz")

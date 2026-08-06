@@ -18,7 +18,7 @@
 {% elif not uebersicht.spieler %}
 <section class="karte">
   <p class="fehlt">Kein Foundry-Stand da — ohne Abgleich ist die andere Hälfte der Zuordnung leer.</p>
-  <p><a href="{{ url_for('status') }}">Woran es liegt</a></p>
+  <p><a href="{{ url_for('einstellungen', _anchor='zustand') }}">Woran es liegt</a></p>
 </section>
 {% else %}
 <form method="post" action="{{ url_for('zuordnung_speichern') }}">

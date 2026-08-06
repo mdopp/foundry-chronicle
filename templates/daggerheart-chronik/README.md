@@ -23,8 +23,9 @@ noch einmal deklariert.
 
 **Foundry-Adresse, -Benutzer und -Passwort, der Discord-Bot-Token sowie Ollama-Adresse
 und -Modell sind keine Template-Variablen.** Sie werden unter `/einstellungen` gepflegt
-und liegen in der SQLite; der Dienst liest sie von dort, nicht aus der Umgebung. Bis sie
-gesetzt sind, startet er trotzdem und erklärt auf `/status`, was fehlt.
+und liegen in der SQLite; der Dienst liest sie von dort, nicht aus der Umgebung. Beim
+ersten Aufruf führt er in Schritten hindurch; bis sie gesetzt sind, startet er trotzdem
+und erklärt im Abschnitt *Zustand* der Einstellungen, was fehlt.
 
 Das ist kein Weglassen aus Bequemlichkeit: Der Assistent erzeugt für eine Variable vom
 Typ `secret` einen **Zufallswert**. Für ein internes Geheimnis ist das richtig, für

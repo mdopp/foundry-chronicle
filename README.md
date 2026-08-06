@@ -24,8 +24,10 @@ pre-commit install
 python -m chronicle          # http://127.0.0.1:8000
 ```
 
-Unter `/` wird mitgeschrieben — Sitzung, Szenen, Notizen; `/status` sagt, was
-konfiguriert ist und wann zuletzt mit Foundry abgeglichen wurde. Am Notizfeld sitzt ein
+Beim ersten Mal führt `/` durch die Einrichtung — Foundry, dann Discord, dann Ollama,
+jeder Schritt überspringbar; danach wird unter `/` mitgeschrieben — Sitzung, Szenen,
+Notizen. Der Abschnitt *Zustand* unter `/einstellungen#zustand` sagt, was konfiguriert
+ist und wann zuletzt mit Foundry abgeglichen wurde; `/status` leitet mit 301 dorthin. Am Notizfeld sitzt ein
 **Diktier-Knopf** für kurze Notizen: er nutzt die Spracherkennung des Browsers, die über
 die **Cloud des Browser-Herstellers** läuft und nicht auf dieser Box — Browser ohne
 `SpeechRecognition` zeigen ihn gar nicht erst.
@@ -34,13 +36,13 @@ Foundry-Adresse, -Benutzer und -Passwort, der Discord-Bot-Token sowie Ollama-Adr
 -Modell werden unter `/einstellungen` gepflegt und liegen in der SQLite. Die Umgebung —
 `FOUNDRY_URL`, `FOUNDRY_USER`, `FOUNDRY_PASSWORD`, `DISCORD_BOT_TOKEN`, `OLLAMA_URL`,
 `OLLAMA_MODEL` — bleibt als Vorgabe beim ersten Start lesbar und ist beim Entwickeln der
-bequeme Weg; **ein in der Oberfläche gesetzter Wert gewinnt**, und `/status` zeigt je
-Wert, woher er kommt. Das Box-Template setzt keine davon (siehe unten). Die
+bequeme Weg; **ein in der Oberfläche gesetzter Wert gewinnt**, und der Abschnitt
+*Zustand* zeigt je Wert, woher er kommt. Das Box-Template setzt keine davon (siehe unten). Die
 beiden Geheimnisse werden nie angezeigt, nur *ob* sie gesetzt sind; ein leer
 abgesendetes Feld heißt unverändert. Rein aus der Umgebung kommen weiterhin
 `CHRONICLE_DATA_DIR` (Vorgabe `./data`), `CHRONICLE_RECORDINGS_DIR` (Vorgabe
 `./recordings`) und `CHRONICLE_WHISPER_MODEL` (Vorgabe `small`). Fehlt die
-Foundry-Konfiguration, startet der Dienst trotzdem und erklärt auf `/status`, was fehlt.
+Foundry-Konfiguration, startet der Dienst trotzdem und erklärt im *Zustand*, was fehlt.
 
 Ein eigenes Login gibt es nicht: angemeldet wird am Proxy (ServiceBay-ADR 0001), der
 `Remote-User` setzt. Auf der Box gehört deshalb `CHRONICLE_REQUIRE_REMOTE_USER=1` in die
@@ -260,8 +262,8 @@ Installieren: Der Assistent würfelt für eine Variable vom Typ `secret` einen Z
 aus — richtig für ein internes Geheimnis, falsch für Zugangsdaten, die nur die
 Gegenstelle kennt. Ein solcher Wert meldete sich einmal als Bot-Token bei Discord an und
 scheiterte mit 401 in einer Neustart-Schleife. Deshalb deklariert das Template diese
-Werte gar nicht mehr, und ein frisch installierter Pod zeigt sie auf `/status` als
-*nicht gesetzt*.
+Werte gar nicht mehr, und ein frisch installierter Pod führt beim ersten Aufruf durch
+den Einrichtungs-Wizard.
 
 Das Image baut [`.github/workflows/build-images.yml`](.github/workflows/build-images.yml)
 und veröffentlicht es nach GHCR — der Publish-Job hängt an `needs: test`, es wird also

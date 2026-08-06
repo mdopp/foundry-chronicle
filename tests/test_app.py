@@ -26,7 +26,12 @@ def kein_ollama_im_netz(monkeypatch):
 
 
 def seite(config):
-    return create_app(config).test_client().get("/status")
+    """Der alte Status-Pfad — er landet seit #40 im Abschnitt »Zustand« der Einstellungen."""
+    return create_app(config).test_client().get("/status", follow_redirects=True)
+
+
+def zustand(client, **kwargs):
+    return client.get("/status", follow_redirects=True, **kwargs)
 
 
 def test_startet_ohne_foundry_und_erklaert_was_fehlt(tmp_path):
@@ -143,7 +148,7 @@ def test_auch_kein_lan_bypass_auf_die_unterseiten(tmp_path):
 
 
 def test_mit_remote_user_geht_es_weiter(tmp_path):
-    antwort = bewacht(tmp_path).get("/", headers={"Remote-User": "mira"})
+    antwort = bewacht(tmp_path).get("/", headers={"Remote-User": "mira"}, follow_redirects=True)
     assert antwort.status_code == 200
 
 
@@ -152,7 +157,8 @@ def test_healthz_bleibt_am_proxy_vorbei_erreichbar(tmp_path):
 
 
 def test_ohne_erzwingung_laeuft_es_lokal_weiter(tmp_path):
-    assert create_app(Config(data_dir=tmp_path)).test_client().get("/").status_code == 200
+    client = create_app(Config(data_dir=tmp_path)).test_client()
+    assert client.get("/", follow_redirects=True).status_code == 200
 
 
 def test_status_erklaert_die_ungesicherte_lage(tmp_path):
@@ -162,7 +168,7 @@ def test_status_erklaert_die_ungesicherte_lage(tmp_path):
 
 
 def test_status_nennt_den_angemeldeten_menschen(tmp_path):
-    antwort = bewacht(tmp_path).get("/status", headers={"Remote-User": "mira"})
+    antwort = zustand(bewacht(tmp_path), headers={"Remote-User": "mira"})
     html = antwort.get_data(as_text=True)
     assert "mira" in html
     assert "Ein eigenes Login gibt es nicht" in html
@@ -263,7 +269,8 @@ def test_die_protokollansicht_steht_hinter_demselben_tuersteher(tmp_path):
 
 
 def test_die_suche_ist_von_jeder_seite_erreichbar(tmp_path):
-    assert 'href="/suche"' in gelesen(Config(data_dir=tmp_path), "/")
+    config, _ = eine_sitzung(tmp_path)
+    assert 'href="/suche"' in gelesen(config, "/")
 
 
 def test_die_suche_findet_notiz_und_chronik_getrennt(tmp_path):
@@ -316,8 +323,8 @@ def test_die_einstellungsseite_zeigt_die_gepflegten_werte(tmp_path):
 def test_das_passwort_steht_in_keiner_antwort(tmp_path):
     config = Config(foundry_password=PASSWORT, data_dir=tmp_path)
     client = create_app(config).test_client()
-    for pfad in ("/einstellungen", "/status"):
-        assert PASSWORT not in client.get(pfad).get_data(as_text=True)
+    for pfad in ("/einstellungen", "/status", "/einrichtung/foundry"):
+        assert PASSWORT not in client.get(pfad, follow_redirects=True).get_data(as_text=True)
     antwort = client.post("/einstellungen", data={"foundry_password": PASSWORT})
     assert antwort.status_code == 302
     assert PASSWORT not in antwort.get_data(as_text=True)
@@ -343,7 +350,7 @@ def test_gespeichertes_schlaegt_die_umgebung(tmp_path):
     client.post("/einstellungen", data={"foundry_url": "https://frontend.example"})
     assert settings.effective(config).foundry_url == "https://frontend.example"
     for pfad in ("/status", "/einstellungen"):
-        html = client.get(pfad).get_data(as_text=True)
+        html = client.get(pfad, follow_redirects=True).get_data(as_text=True)
         assert "https://frontend.example" in html
         assert "https://umgebung.example" not in html
 
@@ -361,14 +368,14 @@ def test_ein_leeres_passwortfeld_behaelt_das_passwort(tmp_path):
 def test_der_bot_token_steht_in_keiner_antwort(tmp_path):
     config = Config(discord_bot_token=BOT_TOKEN, data_dir=tmp_path)
     client = create_app(config).test_client()
-    for pfad in ("/einstellungen", "/status"):
-        assert BOT_TOKEN not in client.get(pfad).get_data(as_text=True)
+    for pfad in ("/einstellungen", "/status", "/einrichtung/discord"):
+        assert BOT_TOKEN not in client.get(pfad, follow_redirects=True).get_data(as_text=True)
     antwort = client.post("/einstellungen", data={"discord_bot_token": BOT_TOKEN})
     assert antwort.status_code == 302
     assert BOT_TOKEN not in antwort.get_data(as_text=True)
     assert BOT_TOKEN not in antwort.headers["Location"]
     assert BOT_TOKEN not in client.get("/einstellungen").get_data(as_text=True)
-    assert BOT_TOKEN not in client.get("/status").get_data(as_text=True)
+    assert BOT_TOKEN not in zustand(client).get_data(as_text=True)
 
 
 def test_die_seite_sagt_nur_ob_ein_bot_token_gesetzt_ist(tmp_path):
@@ -391,12 +398,12 @@ def test_ein_leeres_bot_token_feld_behaelt_den_token(tmp_path):
 def test_ein_gespeicherter_bot_token_richtet_discord_ohne_umgebung_ein(tmp_path):
     config = Config(data_dir=tmp_path)
     client = create_app(config).test_client()
-    assert "Kein Bot-Token" in client.get("/status").get_data(as_text=True)
+    assert "Kein Bot-Token" in zustand(client).get_data(as_text=True)
 
     client.post("/einstellungen", data={"discord_bot_token": BOT_TOKEN})
 
     assert settings.effective(config).discord_configured
-    html = client.get("/status").get_data(as_text=True)
+    html = zustand(client).get_data(as_text=True)
     assert "Bot-Token gesetzt" in html
     assert f"<dd>{settings.FRONTEND}</dd>" in html
 
@@ -405,7 +412,7 @@ def test_status_nennt_je_wert_die_quelle(tmp_path):
     config = Config(foundry_user="umgebungs-konto", data_dir=tmp_path)
     client = create_app(config).test_client()
     client.post("/einstellungen", data={"foundry_url": "https://frontend.example"})
-    html = client.get("/status").get_data(as_text=True)
+    html = zustand(client).get_data(as_text=True)
     assert f"<dd>{settings.FRONTEND}</dd>" in html
     assert f"<dd>{settings.UMGEBUNG}</dd>" in html
     assert f"<dd>{settings.UNGESETZT}</dd>" in html
@@ -496,7 +503,7 @@ def test_der_zustellkanal_wird_im_formular_gepflegt(tmp_path):
 
     assert settings.effective(config).discord_recap_channel == "chronik"
     for pfad in ("/einstellungen", "/status"):
-        assert "chronik" in client.get(pfad).get_data(as_text=True)
+        assert "chronik" in client.get(pfad, follow_redirects=True).get_data(as_text=True)
 
 
 def test_ohne_zustellkanal_sagt_der_status_dass_nichts_zugestellt_wird(tmp_path):
@@ -514,10 +521,12 @@ def test_ohne_foundry_traegt_jede_arbeitsseite_das_band(tmp_path):
         assert UNKONFIGURIERT in gelesen(config, pfad)
 
 
-def test_status_und_einstellungen_erklaeren_es_selbst_und_tragen_kein_band(tmp_path):
+def test_einstellungen_und_wizard_erklaeren_es_selbst_und_tragen_kein_band(tmp_path):
     config = Config(data_dir=tmp_path)
-    for pfad in ("/status", "/einstellungen"):
-        assert UNKONFIGURIERT not in gelesen(config, pfad)
+    client = create_app(config).test_client()
+    for pfad in ("/status", "/einstellungen", "/einrichtung"):
+        html = client.get(pfad, follow_redirects=True).get_data(as_text=True)
+        assert UNKONFIGURIERT not in html
 
 
 def test_mit_foundry_und_ohne_panne_bleibt_die_arbeitsseite_ohne_band(config, welt):
@@ -532,7 +541,7 @@ def test_ein_gescheiterter_abgleich_steht_auf_der_arbeitsseite(config, welt):
     service.sync(config, client=Abgleich(fehler=FoundryUnreachable("keine Antwort")))
     html = gelesen(config, "/")
     assert VERALTET in html
-    assert '<a href="/status">' in html
+    assert '<a href="/einstellungen#zustand">' in html
 
 
 def test_ein_geglueckter_abgleich_nimmt_das_band_wieder_weg(config, welt):
@@ -577,3 +586,157 @@ def test_ohne_spracherkennung_bleibt_der_knopf_weg(tmp_path):
     assert 'erkennung.lang = "de-DE"' in html
     assert 'class="gedaempft diktat-hinweis" hidden' in html
     assert "Browser-Herstellers" in html
+
+
+def test_beim_ersten_mal_fuehrt_die_startseite_in_die_einrichtung(tmp_path):
+    antwort = create_app(Config(data_dir=tmp_path)).test_client().get("/")
+    assert antwort.status_code == 302
+    assert antwort.headers["Location"] == "/einrichtung"
+
+
+def test_mit_foundry_gibt_es_keinen_wizard(tmp_path):
+    config = Config(
+        foundry_url="https://foundry.example",
+        foundry_user="chronist",
+        foundry_password=PASSWORT,
+        data_dir=tmp_path,
+    )
+    assert create_app(config).test_client().get("/").status_code == 200
+
+
+def test_mit_einer_sitzung_gibt_es_keinen_wizard(tmp_path):
+    config, _ = eine_sitzung(tmp_path)
+    assert create_app(config).test_client().get("/").status_code == 200
+
+
+def test_der_wizard_beginnt_bei_foundry(tmp_path):
+    client = create_app(Config(data_dir=tmp_path)).test_client()
+    antwort = client.get("/einrichtung")
+    assert antwort.headers["Location"] == "/einrichtung/foundry"
+    html = client.get("/einrichtung/foundry").get_data(as_text=True)
+    assert "Schritt 1 von 3" in html
+    assert 'name="foundry_url"' in html
+    assert 'name="foundry_password"' in html
+
+
+def test_der_discord_schritt_traegt_die_bestehende_einrichtungsanleitung(tmp_path):
+    html = gelesen(Config(data_dir=tmp_path), "/einrichtung/discord")
+    assert "Developer Portal" in html
+    assert "Message Content Intent" in html
+
+
+def test_ein_erfundener_schritt_gibt_es_nicht(tmp_path):
+    client = create_app(Config(data_dir=tmp_path)).test_client()
+    assert client.get("/einrichtung/authelia").status_code == 404
+    assert client.post("/einrichtung/authelia", data={}).status_code == 404
+
+
+def test_der_wizard_speichert_ueber_denselben_weg_wie_die_einstellungen(tmp_path):
+    config = Config(data_dir=tmp_path)
+    client = create_app(config).test_client()
+    antwort = client.post(
+        "/einrichtung/foundry",
+        data={
+            "foundry_url": "https://foundry.example",
+            "foundry_user": "chronist",
+            "foundry_password": PASSWORT,
+        },
+    )
+    assert antwort.headers["Location"] == "/einrichtung/discord"
+    aktuell = settings.effective(config)
+    assert aktuell.foundry_url == "https://foundry.example"
+    assert aktuell.foundry_password == PASSWORT
+    assert settings.sources(config)["foundry_url"] == settings.FRONTEND
+
+
+def test_ein_schritt_nimmt_den_anderen_schritten_ihre_werte_nicht_weg(tmp_path):
+    config = Config(data_dir=tmp_path)
+    client = create_app(config).test_client()
+    client.post("/einrichtung/foundry", data={"foundry_user": "chronist"})
+    client.post("/einrichtung/discord", data={"discord_recap_channel": "chronik"})
+    aktuell = settings.effective(config)
+    assert aktuell.foundry_user == "chronist"
+    assert aktuell.discord_recap_channel == "chronik"
+
+
+def test_ueberspringen_schreibt_nichts_und_geht_weiter(tmp_path):
+    config = Config(data_dir=tmp_path)
+    client = create_app(config).test_client()
+    antwort = client.post(
+        "/einrichtung/discord",
+        data={"discord_bot_token": BOT_TOKEN, "tat": "ueberspringen"},
+    )
+    assert antwort.headers["Location"] == "/einrichtung/ollama"
+    assert settings.effective(config).discord_bot_token is None
+
+
+def test_der_letzte_schritt_setzt_das_flag_und_fuehrt_zur_sitzungsseite(tmp_path):
+    config = Config(data_dir=tmp_path)
+    client = create_app(config).test_client()
+    antwort = client.post("/einrichtung/ollama", data={"ollama_model": "chronist-modell"})
+    assert antwort.headers["Location"] == "/"
+    assert settings.onboarding_done(config.database_path)
+
+
+def test_auch_wer_den_letzten_schritt_ueberspringt_ist_fertig(tmp_path):
+    config = Config(data_dir=tmp_path)
+    client = create_app(config).test_client()
+    client.post("/einrichtung/ollama", data={"tat": "ueberspringen"})
+    assert settings.onboarding_done(config.database_path)
+
+
+def test_nach_der_einrichtung_kommt_der_wizard_nie_wieder(tmp_path):
+    config = Config(data_dir=tmp_path)
+    client = create_app(config).test_client()
+    for schritt in ("foundry", "discord", "ollama"):
+        client.post(f"/einrichtung/{schritt}", data={"tat": "ueberspringen"})
+    assert client.get("/").status_code == 200
+    # Auch ein Neustart des Dienstes ändert daran nichts — das Flag steht in der SQLite.
+    assert create_app(config).test_client().get("/").status_code == 200
+
+
+def test_solange_nichts_eingerichtet_ist_fuehrt_das_band_in_den_wizard(tmp_path):
+    config, _ = eine_sitzung(tmp_path)
+    html = gelesen(config, "/")
+    assert UNKONFIGURIERT in html
+    assert '<a href="/einrichtung">Zugang eintragen</a>' in html
+
+
+def test_nach_der_einrichtung_fuehrt_das_band_in_die_einstellungen(tmp_path):
+    config, _ = eine_sitzung(tmp_path)
+    settings.finish_onboarding(config.database_path)
+    html = gelesen(config, "/")
+    assert UNKONFIGURIERT in html
+    assert '<a href="/einstellungen">Zugang eintragen</a>' in html
+
+
+def test_der_wizard_steht_hinter_demselben_tuersteher(tmp_path):
+    client = bewacht(tmp_path)
+    assert client.get("/einrichtung").status_code == 403
+    assert client.get("/einrichtung/foundry").status_code == 403
+    assert (
+        client.post("/einrichtung/foundry", data={"foundry_password": PASSWORT}).status_code == 403
+    )
+    assert settings.stored(Config(data_dir=tmp_path).database_path) == {}
+
+
+def test_die_fachlichen_reiter_stehen_neben_einem_zahnrad(tmp_path):
+    config, _ = eine_sitzung(tmp_path)
+    html = gelesen(config, "/")
+    for reiter in ("Sitzungen", "Protokolle", "Suche"):
+        assert f">{reiter}</a>" in html
+    assert '<span class="nur-vorlesen">Einstellungen</span>' in html
+    assert "<svg" in html
+    assert ">Status</a>" not in html
+
+
+def test_der_alte_statuspfad_leitet_dauerhaft_in_den_zustand_um(tmp_path):
+    antwort = create_app(Config(data_dir=tmp_path)).test_client().get("/status")
+    assert antwort.status_code == 301
+    assert antwort.headers["Location"] == "/einstellungen#zustand"
+
+
+def test_der_zustand_steht_unter_seinem_anker_in_den_einstellungen(tmp_path):
+    html = gelesen(Config(data_dir=tmp_path), "/einstellungen")
+    assert 'id="zustand"' in html
+    assert "<h2>Zustand</h2>" in html

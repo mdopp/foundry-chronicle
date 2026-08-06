@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+{% block titel %}Einrichtung — Foundry Chronicle{% endblock %}
+{% block inhalt %}
+
+<form method="post" action="{{ url_for('einrichtung_speichern', schritt=schritt) }}">
+  <section class="karte">
+    <p class="schrittzahl">Schritt {{ nummer }} von {{ anzahl }}</p>
+
+    {% if schritt == "foundry" %}
+      <h2>Foundry</h2>
+      <p class="gedaempft">Von hier kommen die Zahlen: Würfe, Schaden, Beute. Foundry kennt
+        keinen API-Token — es braucht die Adresse sowie Benutzername und Passwort eines
+        echten Kontos. Das Protokoll sieht danach genau so viel wie dieser Mensch; am besten
+        ein eigenes Spielerkonto ohne Spielleitungsrechte.</p>
+
+      <div class="feld">
+        <label for="foundry_url">Adresse</label>
+        <input id="foundry_url" name="foundry_url" type="url" value="{{ foundry_url }}"
+               placeholder="http://127.0.0.1:30000">
+      </div>
+
+      <div class="feld">
+        <label for="foundry_user">Benutzer</label>
+        <input id="foundry_user" name="foundry_user" value="{{ foundry_user }}">
+      </div>
+
+      <div class="feld">
+        <label for="foundry_password">Passwort</label>
+        <input id="foundry_password" name="foundry_password" type="password" value=""
+               autocomplete="new-password"
+               placeholder="{{ 'gesetzt' if passwort_gesetzt else 'nicht gesetzt' }}">
+        {% if passwort_gesetzt %}
+          <p class="gedaempft">Das Passwort ist <span class="steht">gesetzt</span> und wird nie
+            angezeigt. Feld leer lassen heißt: unverändert.</p>
+        {% else %}
+          <p class="gedaempft">Noch kein Passwort gesetzt.</p>
+        {% endif %}
+      </div>
+
+      <p class="gedaempft">Ohne Foundry läuft der Dienst trotzdem — die Chronik bleibt dann
+        ohne Würfe, Schaden und Beute.</p>
+
+    {% elif schritt == "discord" %}
+      <h2>Discord</h2>
+      <p class="gedaempft">Der Bot-Token öffnet den Diktat-Kanal <code>#diktat</code> und
+        später die Aufnahme. <strong>Eine Gruppe, die nur vor Ort spielt, braucht ihn
+        nie</strong> — dieser Schritt ist zum Überspringen gedacht.</p>
+
+      {% if not bot_token_gesetzt %}{% include "_discord_einrichtung.html" %}{% endif %}
+
+      <div class="feld">
+        <label for="discord_bot_token">Bot-Token</label>
+        <input id="discord_bot_token" name="discord_bot_token" type="password" value=""
+               autocomplete="new-password"
+               placeholder="{{ 'gesetzt' if bot_token_gesetzt else 'nicht gesetzt' }}">
+        {% if bot_token_gesetzt %}
+          <p class="gedaempft">Der Token ist <span class="steht">gesetzt</span> und wird nie
+            angezeigt. Feld leer lassen heißt: unverändert.</p>
+        {% else %}
+          <p class="gedaempft">Noch kein Bot-Token gesetzt.</p>
+        {% endif %}
+      </div>
+
+      <div class="feld">
+        <label for="discord_recap_channel">Zustellkanal für den Rückblick</label>
+        <input id="discord_recap_channel" name="discord_recap_channel"
+               value="{{ discord_recap_channel }}" placeholder="chronik">
+        <p class="gedaempft">Der Kanal der ganzen Gruppe — nicht <code>#diktat</code>.
+          <strong>Feld leer heißt: keine Zustellung.</strong></p>
+      </div>
+
+    {% else %}
+      <h2>Sprachmodell</h2>
+      <p class="gedaempft">Ohne Sprachmodell entsteht die Chronik trotzdem, dann geordnet
+        statt formuliert. Auch dieser Schritt ist überspringbar.</p>
+
+      <div class="feld">
+        {% if ollama_eigen %}
+          <label for="ollama_url">Ollama-Adresse</label>
+          <input id="ollama_url" name="ollama_url" type="url" value="{{ ollama_url }}"
+                 placeholder="{{ ollama_standard }}">
+          <p class="gedaempft">Feld leeren heißt: wieder das Ollama dieser Box.</p>
+        {% else %}
+          <p>Gefragt wird das <strong>Ollama dieser Box</strong> <span class="gedaempft">— der
+            Standard</span>.</p>
+          <details>
+            <summary>Ollama läuft woanders</summary>
+            <label for="ollama_url">Ollama-Adresse</label>
+            <input id="ollama_url" name="ollama_url" type="url" value=""
+                   placeholder="{{ ollama_standard }}">
+          </details>
+        {% endif %}
+      </div>
+
+      <div class="feld">
+        <label for="ollama_model">Modell</label>
+        {% if modelle %}
+          <select id="ollama_model" name="ollama_model">
+            <option value="">— keins, dann wird nur geordnet —</option>
+            {% for name in modelle %}
+            <option value="{{ name }}"{% if name == ollama_model %} selected{% endif %}>{{ name }}</option>
+            {% endfor %}
+          </select>
+        {% else %}
+          <input id="ollama_model" name="ollama_model" value="{{ ollama_model }}">
+        {% endif %}
+        <p class="gedaempft">{{ modell_hinweis }}</p>
+      </div>
+    {% endif %}
+
+    <div class="absenden knoepfe">
+      <button type="submit" name="tat" value="weiter">
+        {{ "Fertig" if letzter else "Speichern und weiter" }}</button>
+      <button type="submit" name="tat" value="ueberspringen" class="leise">
+        {{ "Überspringen und fertig" if letzter else "Überspringen" }}</button>
+    </div>
+  </section>
+</form>
+
+<p class="gedaempft">Nichts davon ist endgültig: alles steht danach unter dem Zahnrad in den
+  <a href="{{ url_for('einstellungen') }}">Einstellungen</a>.</p>
+
+{% endblock %}
