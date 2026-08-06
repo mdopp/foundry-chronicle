@@ -15,7 +15,7 @@ wirkt ohne Neustart.
 
 from __future__ import annotations
 
-from flask import Flask, Response, abort, redirect, render_template, request, url_for
+from flask import Flask, Response, abort, g, redirect, render_template, request, url_for
 
 from chronicle import db, foundry, notes, people, protocol, recordings, search, settings
 from chronicle.compose import client as sprachmodell
@@ -24,6 +24,13 @@ from chronicle.compose.service import RUECKBLICK
 from chronicle.config import Config
 
 REMOTE_USER_HEADER = "Remote-User"
+
+UNKONFIGURIERT = "unkonfiguriert"
+VERALTET = "veraltet"
+
+# Status und Einstellungen erklären den Verbindungszustand selbst und ausführlich; ein
+# Band darüber wäre dort nur eine Dopplung.
+OHNE_BAND = frozenset({"status", "einstellungen", "einstellungen_speichern", "healthz"})
 
 
 def create_app(config: Config | None = None) -> Flask:
@@ -39,8 +46,17 @@ def create_app(config: Config | None = None) -> Flask:
         if not basis.require_remote_user or request.endpoint == "healthz":
             return None
         if not request.headers.get(REMOTE_USER_HEADER):
+            g.abgewiesen = True
             return render_template("abgewiesen.html"), 403
         return None
+
+    @app.context_processor
+    def verbindungsband() -> dict[str, str | None]:
+        if g.get("abgewiesen") or request.endpoint in OHNE_BAND:
+            return {"verbindung": None}
+        if not settings.effective(basis).foundry_configured:
+            return {"verbindung": UNKONFIGURIERT}
+        return {"verbindung": VERALTET if foundry.failed(basis) else None}
 
     @app.get("/")
     def sitzungen() -> str:
@@ -180,6 +196,8 @@ def create_app(config: Config | None = None) -> Flask:
             passwort_gesetzt=bool(aktuell.foundry_password),
             bot_token_gesetzt=bool(aktuell.discord_bot_token),
             ollama_url=adresse,
+            ollama_eigen=adresse != settings.DEFAULT_OLLAMA_URL,
+            ollama_standard=settings.DEFAULT_OLLAMA_URL,
             ollama_model=aktuell.ollama_model or "",
             modelle=modelle,
             modell_hinweis=hinweis,

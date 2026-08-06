@@ -485,3 +485,61 @@ def test_mit_bot_token_verschwindet_die_einrichtungshilfe(tmp_path):
     config = Config(discord_bot_token="token-aus-der-umgebung", data_dir=tmp_path)
     html = gelesen(config, "/einstellungen")
     assert "Developer Portal" not in html
+
+
+UNKONFIGURIERT = "Foundry ist nicht eingerichtet"
+VERALTET = "Der letzte Abgleich mit Foundry ist gescheitert"
+
+
+def test_ohne_foundry_traegt_jede_arbeitsseite_das_band(tmp_path):
+    config, sitzung_id = eine_sitzung(tmp_path)
+    for pfad in ("/", f"/sitzungen/{sitzung_id}", "/protokolle", "/suche"):
+        assert UNKONFIGURIERT in gelesen(config, pfad)
+
+
+def test_status_und_einstellungen_erklaeren_es_selbst_und_tragen_kein_band(tmp_path):
+    config = Config(data_dir=tmp_path)
+    for pfad in ("/status", "/einstellungen"):
+        assert UNKONFIGURIERT not in gelesen(config, pfad)
+
+
+def test_mit_foundry_und_ohne_panne_bleibt_die_arbeitsseite_ohne_band(config, welt):
+    service.sync(config, client=Abgleich(welt))
+    html = gelesen(config, "/")
+    assert UNKONFIGURIERT not in html
+    assert VERALTET not in html
+
+
+def test_ein_gescheiterter_abgleich_steht_auf_der_arbeitsseite(config, welt):
+    service.sync(config, client=Abgleich(welt))
+    service.sync(config, client=Abgleich(fehler=FoundryUnreachable("keine Antwort")))
+    html = gelesen(config, "/")
+    assert VERALTET in html
+    assert '<a href="/status">' in html
+
+
+def test_ein_geglueckter_abgleich_nimmt_das_band_wieder_weg(config, welt):
+    service.sync(config, client=Abgleich(fehler=FoundryUnreachable("keine Antwort")))
+    assert VERALTET in gelesen(config, "/")
+    service.sync(config, client=Abgleich(welt))
+    assert VERALTET not in gelesen(config, "/")
+
+
+def test_das_band_verraet_nichts_vor_der_haustuer(tmp_path):
+    antwort = bewacht(tmp_path).get("/")
+    assert antwort.status_code == 403
+    assert UNKONFIGURIERT not in antwort.get_data(as_text=True)
+
+
+def test_das_ollama_dieser_box_steht_nicht_als_rohe_ip_da(tmp_path):
+    html = gelesen(Config(data_dir=tmp_path), "/einstellungen")
+    assert "Ollama dieser Box" in html
+    assert "Ollama läuft woanders" in html
+    assert f'value="{settings.DEFAULT_OLLAMA_URL}"' not in html
+
+
+def test_eine_eigene_ollama_adresse_bekommt_das_feld(tmp_path):
+    config = Config(ollama_url="http://ollama.example:11434", data_dir=tmp_path)
+    html = gelesen(config, "/einstellungen")
+    assert "Ollama läuft woanders" not in html
+    assert 'value="http://ollama.example:11434"' in html

@@ -71,6 +71,19 @@ def current(config: Config) -> SyncState:
         connection.close()
 
 
+def failed(config: Config) -> bool:
+    """Ob der letzte Abgleich gescheitert ist — ohne den Stand zu laden.
+
+    Das Band auf den Arbeitsseiten fragt das bei jedem Seitenaufruf; ``current`` würde
+    dafür jedes Mal die ganze Welt aus der SQLite holen.
+    """
+    connection = _open(config)
+    try:
+        return store.last_failure(connection)[0] is not None
+    finally:
+        connection.close()
+
+
 def sync(config: Config, *, client: FoundryClient | None = None) -> SyncState:
     zeitpunkt = _now()
     connection = _open(config)
