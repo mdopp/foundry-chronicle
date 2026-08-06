@@ -80,6 +80,18 @@ Foundry-Zwischenspeicher, hart auf rund 224 Token gekappt.
 Dev-Installation muss es nicht laden. Die Tests setzen ein erfundenes Modell ein und
 laden nie ein echtes herunter.
 
+**Mehrere Spuren werden zu einer Unterhaltung.** Schneidet der Aufnahme-Bot mit, liegt je
+Sprecher eine Spur; nacheinander gelesen wären das Monologe. Die Sitzungsseite zeigt sie
+deshalb nach Zeit verschränkt — die Marke zählt ab dem Aufnahmebeginn, dem gemeinsamen
+Nullpunkt aller Spuren, und der Name kommt aus der bestätigten Zuordnung. Ohne Zuordnung
+steht der Discord-Name da; geraten wird keiner. Ein Abschnitt zwischen zwei Zeitmarken
+lässt sich einer Szene **als Notiz** übernehmen, in derselben Form, die die Eingabe am
+Tisch liefert — damit bleibt die Komposition unverändert und es gibt weiterhin eine
+Pipeline. Die Marken bleiben draußen: die Chronik leitet aus Notizen und Foundry-Fakten
+ab, welche Zahl belegt ist, und eine Uhrzeit steht in keinem Chat-Log. Ein Diktat vom
+Heimweg hat keinen Bezug zu einer Sitzungsuhr und bleibt deshalb außerhalb dieser Achse —
+für die Präsenzrunde ist die Szenenfolge weiterhin die einzige Zeitachse.
+
 **Die Aufnahmen liegen neben dem Datenverzeichnis, nicht darin** (`recordings/` gegen
 `data/`, im Image `/aufnahmen` gegen `/data`). Gesichert wird die SQLite; Audiospuren
 gehören nie ins Backup. `--loeschen` entfernt eine Spur sofort nach einem erfolgreichen

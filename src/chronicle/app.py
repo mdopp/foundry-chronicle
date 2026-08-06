@@ -22,6 +22,7 @@ from chronicle.compose import client as sprachmodell
 from chronicle.compose.client import ModelError
 from chronicle.compose.service import RUECKBLICK
 from chronicle.config import Config
+from chronicle.transcribe import merge
 
 REMOTE_USER_HEADER = "Remote-User"
 
@@ -75,7 +76,11 @@ def create_app(config: Config | None = None) -> Flask:
         )
         return redirect(url_for("sitzung", sitzung_id=sitzung_id))
 
-    def sitzungsseite(sitzung_id: int, diktat_fehler: str | None = None) -> str:
+    def sitzungsseite(
+        sitzung_id: int,
+        diktat_fehler: str | None = None,
+        transkript_fehler: str | None = None,
+    ) -> str:
         daten = notes.session(basis.database_path, sitzung_id)
         if daten is None:
             abort(404)
@@ -84,8 +89,10 @@ def create_app(config: Config | None = None) -> Flask:
             sitzung=daten,
             aufnahmen=recordings.for_session(basis.database_path, sitzung_id),
             sprecher=people.speakers(basis.database_path),
+            transkript=merge.conversation(basis.database_path, sitzung_id),
             frist=recordings.RETENTION_TAGE,
             diktat_fehler=diktat_fehler,
+            transkript_fehler=transkript_fehler,
         )
 
     @app.get("/sitzungen/<int:sitzung_id>")
@@ -134,6 +141,27 @@ def create_app(config: Config | None = None) -> Flask:
         return redirect(
             url_for("sitzung", sitzung_id=aufnahme.session_id, _anchor=f"szene-{szene_id}")
         )
+
+    @app.post("/sitzungen/<int:sitzung_id>/transkript")
+    def transkript_uebernehmen(sitzung_id: int) -> Response | tuple[str, int]:
+        gewaehlt = request.form.get("scene_id", "")
+        if not gewaehlt.isdigit():
+            abort(404)
+        szene_id = int(gewaehlt)
+        if notes.session_of_scene(basis.database_path, szene_id) != sitzung_id:
+            abort(404)
+        try:
+            von = merge.marke_ms(request.form.get("von", ""))
+            bis = merge.marke_ms(request.form.get("bis", ""))
+        except ValueError as fehler:
+            return sitzungsseite(sitzung_id, transkript_fehler=str(fehler)), 400
+        abschnitt = merge.span(
+            merge.conversation(basis.database_path, sitzung_id), von=von, bis=bis
+        )
+        if not abschnitt:
+            return sitzungsseite(sitzung_id, transkript_fehler=merge.LEERE_SPANNE), 400
+        notes.add_note(basis.database_path, szene_id, merge.note_text(abschnitt))
+        return redirect(url_for("sitzung", sitzung_id=sitzung_id, _anchor=f"szene-{szene_id}"))
 
     @app.errorhandler(413)
     def zu_gross(_fehler: object) -> tuple[str, int]:

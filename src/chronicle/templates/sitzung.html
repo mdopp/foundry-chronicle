@@ -43,6 +43,46 @@
   </form>
 </section>
 
+{% if transkript %}
+<section class="karte" id="transkript">
+  <h2>Zusammengeführtes Transkript</h2>
+  {% if transkript_fehler %}<p class="fehlt">{{ transkript_fehler }}</p>{% endif %}
+  <p class="gedaempft">Die Spuren des Aufnahme-Bots, nach Zeit verschränkt statt nacheinander.
+    Die Marke zählt ab dem Aufnahmebeginn — dem gemeinsamen Nullpunkt aller Spuren. Ein Name
+    ohne Zuordnung ist der Discord-Name; geraten wird keiner.</p>
+  <ul class="notizen">
+    {% for satz in transkript %}
+    <li><time>{{ satz.marke }}</time><strong>{{ satz.speaker }}</strong>{% if not satz.zugeordnet %}
+      <span class="gedaempft">— Discord-Name, noch nicht zugeordnet</span>{% endif %}
+      — {{ satz.text }}</li>
+    {% endfor %}
+  </ul>
+  <form method="post" action="{{ url_for('transkript_uebernehmen', sitzung_id=sitzung.id) }}">
+    <div class="reihe">
+      <div class="feld">
+        <label for="transkript-von">Von <span class="gedaempft">Zeitmarke, leer heißt Anfang</span></label>
+        <input type="text" id="transkript-von" name="von" placeholder="0:00:00">
+      </div>
+      <div class="feld">
+        <label for="transkript-bis">Bis <span class="gedaempft">leer heißt Ende</span></label>
+        <input type="text" id="transkript-bis" name="bis" placeholder="0:14:02">
+      </div>
+      <div class="feld">
+        <label for="transkript-ziel">Zur Szene übernehmen</label>
+        <select id="transkript-ziel" name="scene_id">
+          {% for szene in sitzung.scenes %}
+          <option value="{{ szene.id }}">Szene {{ szene.position }}{% if szene.title %} — {{ szene.title }}{% endif %}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+    <div class="absenden"><button type="submit" class="leise">Abschnitt als Notiz übernehmen</button></div>
+  </form>
+  <p class="gedaempft">Übernommen wird ohne Zeitmarken: die Chronik leitet aus Notizen und
+    Foundry-Fakten ab, welche Zahl belegt ist, und eine Uhrzeit steht in keinem Chat-Log.</p>
+</section>
+{% endif %}
+
 <section class="karte" id="diktat">
   <h2>Diktat</h2>
   {% if diktat_fehler %}<p class="fehlt">{{ diktat_fehler }}</p>{% endif %}
