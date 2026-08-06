@@ -10,7 +10,7 @@ import sqlite3
 from importlib import resources
 from pathlib import Path
 
-SCHEMA_VERSION = 12
+SCHEMA_VERSION = 13
 
 # ``CREATE TABLE IF NOT EXISTS`` erreicht eine bestehende Tabelle nicht mehr; eine neue
 # Spalte muss deshalb einmal nachgetragen werden. Nur additiv — mehr kann und soll dieser

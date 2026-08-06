@@ -12,7 +12,7 @@
     <li>
       <a href="{{ url_for('protokoll', sitzung_id=e.session_id) }}">
         <strong>{{ e.title or "Sitzung vom " ~ e.played_on }}</strong>
-        <span class="gedaempft">{% if e.title %}{{ e.played_on }} — {% endif %}{% if e.created_at %}Chronik vom {{ e.created_at[:10] }}{% else %}Noch keine Chronik{% endif %}</span>
+        <span class="gedaempft">{% if e.title %}{{ e.played_on }} — {% endif %}{% if e.created_at %}Chronik vom {{ e.created_at[:10] }}{% else %}Noch keine Chronik — hier erstellen{% endif %}</span>
       </a>
     </li>
     {% endfor %}

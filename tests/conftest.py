@@ -4,9 +4,15 @@ Nichts hier stammt aus einem echten Weltabzug: der enthält die Klarnamen aller
 Beteiligten und gehört deshalb nie ins Repo.
 """
 
+import time
+
 import pytest
 
+from chronicle import jobs
 from chronicle.config import Config
+
+# Großzügig — gemessen wird nicht, gewartet wird nur, bis ein Faden durch ist.
+GRENZE = 5.0
 
 UNSER_KONTO = "u-chronist"
 LEITUNG = "u-leitung"
@@ -107,6 +113,39 @@ WELT = {
     ],
     "scenes": [{"_id": "s-keller", "name": "Der Keller unter dem Krummen Ast"}],
 }
+
+
+def warte_bis(bedingung):
+    ende = time.monotonic() + GRENZE
+    while time.monotonic() < ende:
+        if bedingung():
+            return True
+        time.sleep(0.01)
+    return False
+
+
+def laufender_job(database_path, kind, session_id=None):
+    """Eine Zeile samt Faden-Vermerk — so sieht ein wirklich laufender Job aus."""
+    verbindung = jobs.db.connect(database_path)
+    try:
+        with verbindung:
+            zeiger = verbindung.execute(
+                "INSERT INTO job (kind, session_id, state, started_at) VALUES (?, ?, ?, ?)",
+                (kind, session_id, jobs.LAEUFT, "2026-08-06T10:00:00+00:00"),
+            )
+        job_id = int(zeiger.lastrowid)
+    finally:
+        verbindung.close()
+    jobs._laufend.add(job_id)
+    return job_id
+
+
+@pytest.fixture(autouse=True)
+def ohne_alte_laeufe():
+    """Ein Lauf des einen Tests darf im nächsten nicht als »läuft noch« dastehen."""
+    jobs._laufend.clear()
+    yield
+    jobs._laufend.clear()
 
 
 @pytest.fixture

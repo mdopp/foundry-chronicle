@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from flask import Flask, Response, abort, g, redirect, render_template, request, url_for
 
-from chronicle import db, foundry, notes, people, protocol, recordings, search, settings
+from chronicle import db, foundry, jobs, notes, people, protocol, recordings, search, settings
 from chronicle.compose import client as sprachmodell
 from chronicle.compose.client import ModelError
 from chronicle.compose.service import RUECKBLICK
@@ -32,6 +32,7 @@ REMOTE_USER_HEADER = "Remote-User"
 
 UNKONFIGURIERT = "unkonfiguriert"
 VERALTET = "veraltet"
+ABGLEICH_LAEUFT = "laeuft"
 
 # Die Einstellungen erklären den Verbindungszustand selbst und ausführlich, der Wizard
 # ist die Einrichtung; ein Band darüber wäre dort nur eine Dopplung.
@@ -85,12 +86,42 @@ def create_app(config: Config | None = None) -> Flask:
         return url_for("einrichtung")
 
     @app.context_processor
-    def verbindungsband() -> dict[str, str | None]:
-        if g.get("abgewiesen") or request.endpoint in OHNE_BAND:
-            return {"verbindung": None, "zugang": None}
+    def verbindungsband() -> dict[str, object]:
+        # ``abgleich_job`` steht auch dort, wo kein Band hängt: die Einstellungen zeigen
+        # denselben Lauf im Abschnitt »Zustand«, nur ausführlicher.
+        if g.get("abgewiesen"):
+            return {"verbindung": None, "zugang": None, "abgleich_job": None}
+        lauf = jobs.latest(basis.database_path, jobs.ABGLEICH)
+        if request.endpoint in OHNE_BAND:
+            return {"verbindung": None, "zugang": None, "abgleich_job": lauf}
         if not settings.effective(basis).foundry_configured:
-            return {"verbindung": UNKONFIGURIERT, "zugang": zugang_ziel()}
-        return {"verbindung": VERALTET if foundry.failed(basis) else None, "zugang": None}
+            return {"verbindung": UNKONFIGURIERT, "zugang": zugang_ziel(), "abgleich_job": lauf}
+        if lauf is not None and lauf.laeuft:
+            return {"verbindung": ABGLEICH_LAEUFT, "zugang": None, "abgleich_job": lauf}
+        verbindung = VERALTET if foundry.failed(basis) else None
+        return {"verbindung": verbindung, "zugang": None, "abgleich_job": lauf}
+
+    def zurueck(fallback: str) -> str:
+        ziel = request.form.get("zurueck", "")
+        # Nur ein Pfad dieses Dienstes — »//woanders« führte aus ihm hinaus.
+        return ziel if ziel.startswith("/") and not ziel.startswith("//") else fallback
+
+    @app.post("/abgleich")
+    def abgleich_anstossen() -> Response:
+        jobs.start(basis, jobs.ABGLEICH, lambda: jobs.abgleich(basis))
+        return redirect(zurueck(url_for("einstellungen", _anchor="zustand")))
+
+    @app.post("/sitzungen/<int:sitzung_id>/chronik")
+    def chronik_anstossen(sitzung_id: int) -> Response:
+        if notes.session(basis.database_path, sitzung_id) is None:
+            abort(404)
+        jobs.start(
+            basis,
+            jobs.CHRONIK,
+            lambda: jobs.chronik(basis, sitzung_id),
+            session_id=sitzung_id,
+        )
+        return redirect(url_for("protokoll", sitzung_id=sitzung_id))
 
     def einrichtung_offen() -> bool:
         # Die Einrichtung steht offen, solange Foundry fehlt — nicht nur beim ersten
@@ -135,7 +166,14 @@ def create_app(config: Config | None = None) -> Flask:
             frist=recordings.RETENTION_TAGE,
             diktat_fehler=diktat_fehler,
             transkript_fehler=transkript_fehler,
+            **chronik_stand(sitzung_id),
         )
+
+    def chronik_stand(sitzung_id: int) -> dict[str, object]:
+        return {
+            "chronik_job": jobs.latest(basis.database_path, jobs.CHRONIK, sitzung_id),
+            "chronik_laeuft": jobs.running(basis.database_path, jobs.CHRONIK),
+        }
 
     @app.get("/sitzungen/<int:sitzung_id>")
     def sitzung(sitzung_id: int) -> str:
@@ -223,6 +261,7 @@ def create_app(config: Config | None = None) -> Flask:
             sitzung=daten,
             protokoll=protocol.stored(basis.database_path, sitzung_id),
             rueckblick=protocol.stored(basis.database_path, sitzung_id, RUECKBLICK),
+            **chronik_stand(sitzung_id),
         )
 
     @app.get("/suche")

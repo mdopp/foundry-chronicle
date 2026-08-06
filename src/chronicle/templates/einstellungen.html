@@ -63,10 +63,9 @@
       <input id="discord_recap_channel" name="discord_recap_channel"
              value="{{ discord_recap_channel }}" placeholder="chronik">
       <p class="gedaempft">Der Kanal der ganzen Gruppe — nicht <code>#diktat</code>. Steht
-        hier ein Name, stellt <code>python -m chronicle.compose</code> jeden neu
-        komponierten Rückblick genau einmal dorthin zu. <strong>Feld leer heißt: keine
-        Zustellung.</strong> Eine neu komponierte Fassung wird nicht noch einmal
-        gepostet.</p>
+        hier ein Name, geht jeder neu erstellte Rückblick genau einmal dorthin.
+        <strong>Feld leer heißt: keine Zustellung.</strong> Eine neu erstellte Fassung wird
+        nicht noch einmal gepostet.</p>
     </div>
 
     <p class="gedaempft">Wessen Stimme über welchem Absatz steht, sagt die
@@ -130,9 +129,9 @@
       wird jeder Request abgewiesen. Ein eigenes Login gibt es nicht.</p>
     <p class="gedaempft">Angemeldet als <code>{{ remote_user }}</code>.</p>
   {% else %}
-    <p class="hinweis">Die Header-Prüfung ist aus — wer den Port erreicht, sieht alles.
-      Das ist für den Lauf ohne Proxy gedacht; auf der Box gehört
-      <code>CHRONICLE_REQUIRE_REMOTE_USER=1</code> in die Umgebung.</p>
+    <p class="hinweis">Die Anmeldung ist aus — wer diese Adresse erreicht, sieht alles.
+      So läuft der Dienst auf dem eigenen Rechner; auf der Box übernimmt der Proxy die
+      Anmeldung, und dann kommt niemand ohne sie herein.</p>
   {% endif %}
 
   <h3>Foundry</h3>
@@ -150,9 +149,9 @@
 
   <h3>Discord</h3>
   {% if config.discord_configured %}
-    <p class="steht">Bot-Token gesetzt. Der Diktat-Kanal <code>#diktat</code> wird im
-      Stapel geleert: <code>python -m chronicle.discord</code>. Der Token wird nie
-      angezeigt.</p>
+    <p class="steht">Bot-Token gesetzt. Der Diktat-Kanal <code>#diktat</code> wird
+      regelmäßig geleert; was dort liegt, landet bei der zuletzt angelegten Sitzung. Der
+      Token wird nie angezeigt.</p>
   {% else %}
     <p>Kein Bot-Token — das ist in Ordnung. Eine Gruppe, die nur vor Ort spielt, braucht
       ihn nicht; ohne ihn bleiben Diktat-Kanal, Aufnahme und Zustellung zu.</p>
@@ -183,6 +182,14 @@
 
   <h3>Abgleich</h3>
   <p class="{{ 'fehlt' if abgleich.stale else 'steht' }}">{{ abgleich.message }}</p>
+  {% if abgleich_job and abgleich_job.laeuft %}
+  <p class="hinweis">Die Zahlen aus Foundry werden gerade geholt. Diese Seite neu laden
+    zeigt, wann es durch ist.</p>
+  <div class="absenden"><button type="button" class="leise" disabled>Jetzt abgleichen</button></div>
+  {% else %}
+  {% if abgleich_job and abgleich_job.gescheitert %}<p class="fehlt">{{ abgleich_job.error }}</p>{% endif %}
+  {% include "_abgleich_knopf.html" %}
+  {% endif %}
   {% if abgleich.snapshot %}
   <dl>
     <dt>Regelwerk</dt><dd><code>{{ abgleich.snapshot.system }}</code></dd>

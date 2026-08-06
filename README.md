@@ -32,6 +32,15 @@ ist und wann zuletzt mit Foundry abgeglichen wurde; `/status` leitet mit 301 dor
 die **Cloud des Browser-Herstellers** läuft und nicht auf dieser Box — Browser ohne
 `SpeechRecognition` zeigen ihn gar nicht erst.
 
+**Anstoßen kann der Nutzer selbst.** *Chronik erstellen* (Sitzungs- und Chronikseite) und
+*Jetzt abgleichen* (Band und *Zustand*) starten **server-eigene Läufe** nach dem
+ServiceBay-Standard für lange Prozesse: der Zustand steht in der Tabelle `job`, überlebt
+Neuladen und geschlossenen Reiter, und ein Neustart mitten im Lauf wird beim nächsten
+Blick ehrlich als unterbrochen vermerkt statt für immer zu laufen. Je Art läuft höchstens
+einer. Der Chronik-Lauf verschriftet erst die wartenden Aufnahmen und ruft dann dieselben
+Funktionen wie `python -m chronicle.compose`: ein Knopf ist der zweite Auslöser, nicht der
+zweite Weg. Die Stapel-Einstiege unten bleiben — sie sind der Weg für Cron und Betrieb.
+
 Foundry-Adresse, -Benutzer und -Passwort, der Discord-Bot-Token sowie Ollama-Adresse und
 -Modell werden unter `/einstellungen` gepflegt und liegen in der SQLite. Die Umgebung —
 `FOUNDRY_URL`, `FOUNDRY_USER`, `FOUNDRY_PASSWORD`, `DISCORD_BOT_TOKEN`, `OLLAMA_URL`,

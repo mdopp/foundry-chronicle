@@ -1,8 +1,8 @@
 import pytest
-from conftest import GM_FIGUR, UNSER_KONTO
+from conftest import GM_FIGUR, UNSER_KONTO, laufender_job, warte_bis
 
 import chronicle.__main__ as entry
-from chronicle import db, notes, settings
+from chronicle import db, jobs, notes, protocol, recordings, settings
 from chronicle.app import create_app
 from chronicle.compose import client as sprachmodell
 from chronicle.compose.client import ModelUnreachable
@@ -163,8 +163,8 @@ def test_ohne_erzwingung_laeuft_es_lokal_weiter(tmp_path):
 
 def test_status_erklaert_die_ungesicherte_lage(tmp_path):
     html = seite(Config(data_dir=tmp_path)).get_data(as_text=True)
-    assert "Header-Prüfung ist aus" in html
-    assert "CHRONICLE_REQUIRE_REMOTE_USER" in html
+    assert "Die Anmeldung ist aus" in html
+    assert "wer diese Adresse erreicht, sieht alles" in html
 
 
 def test_status_nennt_den_angemeldeten_menschen(tmp_path):
@@ -217,11 +217,12 @@ def test_die_protokollliste_zeigt_auch_sitzungen_ohne_chronik(tmp_path):
     assert "Noch keine Chronik" in html
 
 
-def test_ohne_lauf_erklaert_die_ansicht_wie_die_chronik_entsteht(tmp_path):
+def test_ohne_chronik_bietet_die_ansicht_den_knopf_an(tmp_path):
     config, sitzung_id = eine_sitzung(tmp_path)
     html = gelesen(config, f"/sitzungen/{sitzung_id}/protokoll")
-    assert "noch nicht gelaufen" in html
-    assert f"python -m chronicle.compose {sitzung_id}" in html
+    assert "Noch keine Chronik" in html
+    assert f'action="/sitzungen/{sitzung_id}/chronik"' in html
+    assert ">Chronik erstellen</button>" in html
 
 
 def test_die_chronik_wird_serverseitig_gerendert(tmp_path):
@@ -767,3 +768,149 @@ def test_der_zustand_steht_unter_seinem_anker_in_den_einstellungen(tmp_path):
     html = gelesen(Config(data_dir=tmp_path), "/einstellungen")
     assert 'id="zustand"' in html
     assert "<h2>Zustand</h2>" in html
+
+
+# --- Anstoßen aus der Oberfläche ----------------------------------------------------
+
+
+def test_die_sitzungsseite_traegt_den_chronik_knopf(tmp_path):
+    config, sitzung_id = eine_sitzung(tmp_path)
+    html = gelesen(config, f"/sitzungen/{sitzung_id}")
+    assert f'action="/sitzungen/{sitzung_id}/chronik"' in html
+    assert ">Chronik erstellen</button>" in html
+
+
+def test_der_knopf_stoesst_den_lauf_an_und_fuehrt_zur_chronik(tmp_path):
+    config, sitzung_id = eine_sitzung(tmp_path)
+    client = create_app(config).test_client()
+
+    antwort = client.post(f"/sitzungen/{sitzung_id}/chronik")
+
+    assert antwort.status_code == 302
+    assert antwort.headers["Location"] == f"/sitzungen/{sitzung_id}/protokoll"
+    assert warte_bis(lambda: protocol.stored(config.database_path, sitzung_id) is not None)
+
+
+def test_nach_dem_lauf_sagt_die_seite_was_dabei_herauskam(tmp_path):
+    config, sitzung_id = eine_sitzung(tmp_path)
+    client = create_app(config).test_client()
+    client.post(f"/sitzungen/{sitzung_id}/chronik")
+    assert warte_bis(lambda: jobs.latest(config.database_path, jobs.CHRONIK, sitzung_id).fertig)
+
+    html = client.get(f"/sitzungen/{sitzung_id}").get_data(as_text=True)
+    assert "stehen bereit" in html
+    assert ">Chronik ansehen</a>" in html
+
+
+def test_waehrend_der_lauf_laeuft_ist_der_knopf_aus(tmp_path):
+    config, sitzung_id = eine_sitzung(tmp_path)
+    laufender_job(config.database_path, jobs.CHRONIK, sitzung_id)
+
+    html = gelesen(config, f"/sitzungen/{sitzung_id}")
+    assert "Die Chronik wird erstellt" in html
+    assert '<button type="button" disabled>Chronik erstellen</button>' in html
+    assert f'action="/sitzungen/{sitzung_id}/chronik"' not in html
+
+
+def test_eine_zweite_chronik_wartet_bis_die_erste_durch_ist(tmp_path):
+    config, sitzung_id = eine_sitzung(tmp_path)
+    zweite = notes.create_session(config.database_path, played_on="2026-08-06", title="Der Hafen")
+    laufender_job(config.database_path, jobs.CHRONIK, sitzung_id)
+
+    html = gelesen(config, f"/sitzungen/{zweite}")
+    assert "Gerade wird eine andere Chronik erstellt" in html
+
+
+def test_ein_unterbrochener_lauf_steht_als_solcher_auf_der_seite(tmp_path):
+    config, sitzung_id = eine_sitzung(tmp_path)
+    # Ohne Faden-Vermerk: genau das, was ein Neustart mitten im Lauf hinterlässt.
+    verbindung = db.connect(config.database_path)
+    with verbindung:
+        verbindung.execute(
+            "INSERT INTO job (kind, session_id, state, started_at) VALUES (?, ?, ?, ?)",
+            (jobs.CHRONIK, sitzung_id, jobs.LAEUFT, "2026-08-06T10:00:00+00:00"),
+        )
+    verbindung.close()
+
+    html = gelesen(config, f"/sitzungen/{sitzung_id}")
+    assert "wurde unterbrochen" in html
+    assert f'action="/sitzungen/{sitzung_id}/chronik"' in html
+
+
+def test_eine_unbekannte_sitzung_laesst_sich_nicht_anstossen(tmp_path):
+    config, _ = eine_sitzung(tmp_path)
+    assert create_app(config).test_client().post("/sitzungen/999/chronik").status_code == 404
+
+
+def test_der_chronik_knopf_steht_hinter_demselben_tuersteher(tmp_path):
+    assert bewacht(tmp_path).post("/sitzungen/1/chronik").status_code == 403
+
+
+def test_ein_gescheiterter_abgleich_bietet_das_erneute_holen_an(config, welt):
+    service.sync(config, client=Abgleich(fehler=FoundryUnreachable("keine Antwort")))
+    html = gelesen(config, "/")
+    assert 'action="/abgleich"' in html
+    assert ">Jetzt abgleichen</button>" in html
+
+
+def test_der_zustand_bietet_den_abgleich_immer_an(tmp_path):
+    html = gelesen(Config(data_dir=tmp_path), "/einstellungen")
+    assert 'action="/abgleich"' in html
+    assert ">Jetzt abgleichen</button>" in html
+
+
+def test_der_abgleich_kehrt_auf_die_seite_zurueck_von_der_er_kam(config, welt):
+    client = create_app(config).test_client()
+    antwort = client.post("/abgleich", data={"zurueck": f"/sitzungen/{1}"})
+    assert antwort.headers["Location"] == "/sitzungen/1"
+    assert warte_bis(lambda: not jobs.running(config.database_path, jobs.ABGLEICH))
+
+
+def test_der_abgleich_folgt_keiner_adresse_nach_draussen(config):
+    client = create_app(config).test_client()
+    antwort = client.post("/abgleich", data={"zurueck": "//woanders.example/"})
+    assert antwort.headers["Location"] == "/einstellungen#zustand"
+    assert warte_bis(lambda: not jobs.running(config.database_path, jobs.ABGLEICH))
+
+
+def test_waehrend_des_abgleichs_sagt_das_band_was_laeuft(config, welt):
+    service.sync(config, client=Abgleich(welt))
+    laufender_job(config.database_path, jobs.ABGLEICH)
+
+    html = gelesen(config, "/")
+    assert "Zahlen aus Foundry werden gerade geholt" in html
+
+
+def test_der_abgleich_steht_hinter_demselben_tuersteher(tmp_path):
+    assert bewacht(tmp_path).post("/abgleich").status_code == 403
+
+
+# --- Nutzersprache: was hier steht, sagt was zu tun ist ------------------------------
+
+
+def systemsprache(html):
+    """Header-Namen kommen mit der nächsten Einheit dazu; hier sind es diese beiden."""
+    return [wort for wort in ("python -m", "CHRONICLE_") if wort in html]
+
+
+def test_keine_systemsprache_auf_einer_gerenderten_seite(tmp_path):
+    config, sitzung_id = eine_sitzung(tmp_path, rueckblick=True)
+    hochgeladen = recordings.enqueue(config.database_path, sitzung_id, "diktat.m4a")
+    assert hochgeladen.status == recordings.WARTET
+    app = create_app(config)
+    client = app.test_client()
+
+    for regel in app.url_map.iter_rules():
+        if regel.endpoint in ("static", "healthz") or "GET" not in regel.methods:
+            continue
+        pfad = regel.rule.replace("<int:sitzung_id>", str(sitzung_id)).replace(
+            "<schritt>", "foundry"
+        )
+        html = client.get(pfad, follow_redirects=True).get_data(as_text=True)
+        assert systemsprache(html) == [], pfad
+
+
+def test_auch_die_abweisung_spricht_nutzersprache(tmp_path):
+    antwort = bewacht(tmp_path).get("/")
+    assert antwort.status_code == 403
+    assert systemsprache(antwort.get_data(as_text=True)) == []

@@ -137,6 +137,26 @@ CREATE TABLE IF NOT EXISTS recording (
 
 CREATE INDEX IF NOT EXISTS recording_sitzung ON recording (session_id);
 
+-- Was ein Knopf in der Oberfläche angestoßen hat. Die Zeile *ist* der Lauf: sie überlebt
+-- das Neuladen der Seite, und ein Blick darauf sagt, ob noch etwas passiert. ``result``
+-- und ``error`` stehen in der Sprache der Anzeige — sie werden dem Leser gezeigt.
+--
+-- Ein Neustart mitten im Lauf lässt ``laeuft`` stehen; ``chronicle.jobs`` schreibt die
+-- Zeile beim nächsten Blick auf ``gescheitert`` um, damit nichts für immer zu laufen
+-- scheint.
+CREATE TABLE IF NOT EXISTS job (
+    id          INTEGER PRIMARY KEY,
+    kind        TEXT NOT NULL CHECK (kind IN ('abgleich', 'chronik')),
+    session_id  INTEGER REFERENCES session (id) ON DELETE CASCADE,
+    state       TEXT NOT NULL CHECK (state IN ('laeuft', 'fertig', 'gescheitert')),
+    started_at  TEXT NOT NULL,
+    finished_at TEXT,
+    result      TEXT,
+    error       TEXT
+);
+
+CREATE INDEX IF NOT EXISTS job_art ON job (kind, session_id, id);
+
 -- Zeitstempel in Millisekunden ab Spurbeginn: die Zusammenführung legt später mehrere
 -- Spuren auf eine Zeitachse, und Fließkomma-Sekunden wären dabei die falsche Einheit.
 CREATE TABLE IF NOT EXISTS transcript_segment (
@@ -278,5 +298,5 @@ INSERT INTO search_index (text, kind, ref_id, session_id, scene_id)
 SELECT s.text, 'transkript', s.transcript_id, t.session_id, NULL
 FROM transcript_segment s JOIN transcript t ON t.id = s.transcript_id;
 
-INSERT INTO meta (key, value) VALUES ('schema_version', '12')
+INSERT INTO meta (key, value) VALUES ('schema_version', '13')
 ON CONFLICT (key) DO UPDATE SET value = excluded.value;
