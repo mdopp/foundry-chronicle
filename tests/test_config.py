@@ -73,15 +73,18 @@ def test_ollama_kommt_aus_der_umgebung():
     assert config.ollama_configured
 
 
-def test_ollama_darf_fehlen_und_nennt_dann_beide_variablen():
-    config = Config.from_env({})
-    assert not config.ollama_configured
-    assert config.missing_ollama_variables == ("OLLAMA_URL", "OLLAMA_MODEL")
+def test_ollama_darf_fehlen():
+    assert not Config.from_env({}).ollama_configured
 
 
 def test_ohne_modellnamen_ist_ollama_unkonfiguriert():
-    config = Config.from_env(dict(VOLLSTAENDIG, OLLAMA_MODEL=" "))
-    assert config.missing_ollama_variables == ("OLLAMA_MODEL",)
+    assert not Config.from_env(dict(VOLLSTAENDIG, OLLAMA_MODEL=" ")).ollama_configured
+
+
+def test_eine_fehlende_adresse_haelt_ollama_nicht_auf():
+    """Die Adresse löst immer auf — offen bleibt allein die Modellwahl."""
+    config = Config.from_env({"OLLAMA_MODEL": "chronist-modell"})
+    assert config.ollama_configured
 
 
 def test_die_ollama_adresse_ist_konfiguration_und_wird_nicht_maskiert():

@@ -35,7 +35,17 @@ VERBINDUNG_TITEL = "### Verbindungstext — vom Sprachmodell, nicht belegt"
 VERWORFEN = "_Der Verbindungstext wurde verworfen: er nannte eine Zahl ohne Beleg._"
 LEER = "_Weder Notizen noch Foundry-Fakten._"
 
-OHNE_MODELL = "Kein Sprachmodell konfiguriert — OLLAMA_URL und OLLAMA_MODEL fehlen."
+# Diese beiden Sätze landen im abgelegten Protokoll und werden Wochen später gelesen —
+# von Leuten, die nie eine Umgebungsvariable gesehen haben. Sie sagen deshalb, was ist
+# und was als Nächstes zu tun ist, und nennen keinen Namen aus dem Maschinenraum.
+OHNE_MODELL = (
+    "Noch kein Modell gewählt — die Chronik wurde geordnet, nicht erzählt. "
+    "Ein Modell wählst du in den Einstellungen."
+)
+NICHT_ERREICHBAR = (
+    "Das Sprachmodell war nicht erreichbar — geordnet statt erzählt; beim nächsten Lauf "
+    "wird es erneut versucht."
+)
 
 SYSTEM = (
     "Du bist Chronist für eine Tisch-Rollenspiel-Runde. Du ordnest und verknüpfst, "
@@ -78,7 +88,7 @@ class Composition:
         umfang = f"{self.scene_count} Szenen, {self.fact_count} Foundry-Fakten"
         if self.reason is None:
             return f"Chronik aus {umfang} — {self.prose_count} Verbindungstexte vom Modell."
-        return f"Chronik aus {umfang} — geordnet, nicht formuliert: {self.reason}"
+        return f"Chronik aus {umfang}. {self.reason}"
 
 
 def numbers(text: str) -> set[str]:
@@ -146,12 +156,9 @@ def _kopf(material: SessionMaterial, name: str | None, reason: str | None, prosa
             "unverändert so im Foundry-Chat-Log._"
         )
     elif prosa:
-        stand = (
-            "_Ab einer Szene ohne Sprachmodell weitergeführt: ab dort geordnet, nicht "
-            f"formuliert. Grund: {reason}_"
-        )
+        stand = f"_{reason} Die Szenen bis dahin sind erzählt._"
     else:
-        stand = f"_Ohne Sprachmodell erzeugt: geordnet, nicht formuliert. Grund: {reason}_"
+        stand = f"_{reason}_"
     return f"{titel}\n\n{stand}"
 
 
@@ -185,7 +192,9 @@ def compose(material: SessionMaterial, model: TextModel | None = None) -> Compos
                     system=SYSTEM, prompt=_prompt(stand, scene, notizen, fakten)
                 ).strip()
             except ModelError as fehler:
-                grund = f"Sprachmodell nicht erreichbar: {fehler}"
+                # Was genau scheiterte, steht im Log; ins Protokoll gehört der Satz, den
+                # der Leser braucht, nicht die Adresse und der Ausnahmename.
+                grund = NICHT_ERREICHBAR
                 logger.warning("Komposition läuft ohne Modell weiter: %s", fehler)
                 schreiber = None
             else:

@@ -5,8 +5,8 @@ import random
 from chronicle.compose.client import ModelUnreachable
 from chronicle.compose.composer import (
     BELEG_TITEL,
+    NICHT_ERREICHBAR,
     NOTIZEN_TITEL,
-    OHNE_MODELL,
     VERBINDUNG_TITEL,
     numbers,
 )
@@ -16,6 +16,7 @@ from chronicle.compose.recap import (
     HERGANG_TITEL,
     KEIN_FADEN,
     MAX_FAEDEN,
+    OHNE_MODELL,
     VERWORFEN,
     RecapMaterial,
     digest,
@@ -102,6 +103,7 @@ def test_ohne_modell_steht_die_geordnete_fassung_da():
     assert ergebnis.reason == OHNE_MODELL
     assert ergebnis.thread_count == 0
     assert "geordnet statt erzählt" in ergebnis.text
+    assert "in den Einstellungen" in ergebnis.text
     assert HERGANG_TITEL not in ergebnis.text
     # Ohne Modell gibt es keine Deutung — also auch keinen Abschnitt, der eine vortäuscht.
     assert FAEDEN_TITEL not in ergebnis.text
@@ -179,7 +181,8 @@ def test_der_aufruf_bekommt_die_chronik_und_die_vorigen_rueckblicke():
 def test_ein_ausfall_des_modells_faellt_auf_die_geordnete_fassung_zurueck():
     ergebnis = recap(stoff(), Modell(ModelUnreachable("Ollama antwortet nicht")))
 
-    assert "Ollama antwortet nicht" in ergebnis.reason
+    assert ergebnis.reason == NICHT_ERREICHBAR
+    assert "Ollama antwortet nicht" not in ergebnis.text
     assert HERGANG_TITEL not in ergebnis.text
     assert WURF in ergebnis.text
 
@@ -209,8 +212,6 @@ def test_eine_chronik_ohne_szene_traegt_den_rueckblick_trotzdem():
 
 def test_der_satz_zum_lauf_nennt_umfang_und_betriebsart():
     ohne = recap(stoff())
-    assert ohne.message == (
-        f"Rückblick aus 2 Szenen, 1 Foundry-Fakten — geordnet, nicht erzählt: {OHNE_MODELL}"
-    )
+    assert ohne.message == f"Rückblick aus 2 Szenen, 1 Foundry-Fakten. {OHNE_MODELL}"
     mit = recap(stoff(), Modell("Die Runde stieg hinab.", FAEDEN))
     assert mit.message == "Rückblick aus 2 Szenen, 1 Foundry-Fakten — 2 Fäden als Deutung markiert."

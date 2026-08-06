@@ -12,7 +12,7 @@ from chronicle.compose.client import (
     from_config,
     installed_models,
 )
-from chronicle.config import Config
+from chronicle.config import DEFAULT_OLLAMA_URL, Config
 
 ADRESSE = "http://ollama.example:11434/"
 MODELL = "chronist-modell"
@@ -73,11 +73,17 @@ def test_baut_den_aufruf_wie_ollama_ihn_erwartet(tmp_path):
     assert text == "Ein ruhiger Abend."
 
 
-def test_ohne_konfiguration_gibt_es_keinen_klienten(tmp_path):
+def test_ohne_gewaehltes_modell_gibt_es_keinen_klienten(tmp_path):
     with pytest.raises(ModelNotConfigured) as fehler:
         OllamaClient(Config(data_dir=tmp_path))
-    assert "OLLAMA_URL" in str(fehler.value)
-    assert "OLLAMA_MODEL" in str(fehler.value)
+    assert "Noch kein Modell gewählt" in str(fehler.value)
+    assert "OLLAMA" not in str(fehler.value)
+
+
+def test_ohne_eigene_adresse_redet_der_klient_mit_dem_ollama_dieser_box(tmp_path):
+    http = Http(Antwort({"message": {"content": "Ein ruhiger Abend."}}))
+    klient(tmp_path, http, url=None).write(system="Ordne.", prompt="Szene 1")
+    assert http.aufrufe[0][0] == f"{DEFAULT_OLLAMA_URL}{CHAT_PATH}"
 
 
 def test_ein_nicht_erreichbares_ollama_ist_eine_verstaendliche_meldung(tmp_path):

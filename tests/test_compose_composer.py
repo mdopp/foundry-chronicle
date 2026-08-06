@@ -5,6 +5,7 @@ import random
 from chronicle.compose.client import ModelUnreachable
 from chronicle.compose.composer import (
     LEER,
+    NICHT_ERREICHBAR,
     OHNE_MODELL,
     VERBINDUNG_TITEL,
     VERWORFEN,
@@ -84,7 +85,8 @@ def test_ohne_modell_wird_geordnet_und_das_steht_im_protokoll():
     ergebnis = compose(sitzung(szene(notes=("Die Wirtin warnt.",), facts=(WURF,))))
     assert ergebnis.reason == OHNE_MODELL
     assert ergebnis.prose_count == 0
-    assert "Ohne Sprachmodell erzeugt" in ergebnis.text
+    assert "Noch kein Modell gewählt" in ergebnis.text
+    assert "in den Einstellungen" in ergebnis.text
     assert VERBINDUNG_TITEL not in ergebnis.text
     assert "Die Wirtin warnt." in ergebnis.text
 
@@ -175,8 +177,10 @@ def test_ein_ausfall_des_modells_beendet_die_prosa_und_nennt_den_grund():
     )
     assert len(modell.prompts) == 2
     assert ergebnis.prose_count == 1
-    assert "Ollama antwortet nicht" in ergebnis.reason
-    assert "Ab einer Szene ohne Sprachmodell weitergeführt" in ergebnis.text
+    assert ergebnis.reason == NICHT_ERREICHBAR
+    assert "Die Szenen bis dahin sind erzählt." in ergebnis.text
+    # Der Wortlaut der Panne gehört ins Log, nicht in ein Protokoll, das jemand liest.
+    assert "Ollama antwortet nicht" not in ergebnis.text
 
 
 def test_eine_duenne_bilanz_traegt_die_chronik_trotzdem():
@@ -196,8 +200,6 @@ def test_eine_leere_szene_fragt_das_modell_gar_nicht_erst():
 
 def test_der_satz_zum_lauf_nennt_umfang_und_betriebsart():
     ohne = compose(sitzung(szene(facts=(WURF,))))
-    assert ohne.message == (
-        f"Chronik aus 1 Szenen, 1 Foundry-Fakten — geordnet, nicht formuliert: {OHNE_MODELL}"
-    )
+    assert ohne.message == f"Chronik aus 1 Szenen, 1 Foundry-Fakten. {OHNE_MODELL}"
     mit = compose(sitzung(szene(facts=(WURF,))), Modell("Ein Wurf im Zwielicht."))
     assert mit.message == "Chronik aus 1 Szenen, 1 Foundry-Fakten — 1 Verbindungstexte vom Modell."

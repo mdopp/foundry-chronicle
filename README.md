@@ -48,7 +48,9 @@ Foundry-Adresse, -Benutzer und -Passwort, der Discord-Bot-Token sowie Ollama-Adr
 bequeme Weg; **ein in der Oberfläche gesetzter Wert gewinnt**, und der Abschnitt
 *Zustand* zeigt je Wert, woher er kommt. Das Box-Template setzt keine davon (siehe unten). Die
 beiden Geheimnisse werden nie angezeigt, nur *ob* sie gesetzt sind; ein leer
-abgesendetes Feld heißt unverändert. Rein aus der Umgebung kommen weiterhin
+abgesendetes Feld heißt unverändert. Die Ollama-Adresse hat eine dritte Stufe: ist weder
+etwas gespeichert noch etwas in der Umgebung gesetzt, gilt `http://127.0.0.1:11434` — das
+Ollama der Box. Offen bleibt dann allein die Modellwahl. Rein aus der Umgebung kommen weiterhin
 `CHRONICLE_DATA_DIR` (Vorgabe `./data`), `CHRONICLE_RECORDINGS_DIR` (Vorgabe
 `./recordings`) und `CHRONICLE_WHISPER_MODEL` (Vorgabe `small`). Fehlt die
 Foundry-Konfiguration, startet der Dienst trotzdem und erklärt im *Zustand*, was fehlt.

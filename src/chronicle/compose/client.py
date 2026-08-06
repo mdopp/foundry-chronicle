@@ -14,7 +14,7 @@ from typing import Protocol
 
 import requests
 
-from chronicle.config import Config
+from chronicle.config import DEFAULT_OLLAMA_URL, Config
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +30,8 @@ DEFAULT_TIMEOUT = 600.0
 TAGS_TIMEOUT = 2.0
 
 EMBEDDING_MARKER = "embed"
+
+KEIN_MODELL = "Noch kein Modell gewählt — ein Modell wählst du in den Einstellungen."
 
 
 class ModelError(RuntimeError):
@@ -66,9 +68,8 @@ class OllamaClient:
         timeout: float = DEFAULT_TIMEOUT,
     ) -> None:
         if not config.ollama_configured:
-            fehlt = ", ".join(config.missing_ollama_variables)
-            raise ModelNotConfigured(f"Kein Sprachmodell konfiguriert; es fehlt: {fehlt}")
-        self._base = str(config.ollama_url).rstrip("/")
+            raise ModelNotConfigured(KEIN_MODELL)
+        self._base = (config.ollama_url or DEFAULT_OLLAMA_URL).rstrip("/")
         self._model = str(config.ollama_model)
         self._http = http()
         self._timeout = timeout

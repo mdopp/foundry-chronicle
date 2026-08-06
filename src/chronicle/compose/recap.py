@@ -21,7 +21,7 @@ import re
 from dataclasses import dataclass
 
 from chronicle.compose.client import ModelError, TextModel
-from chronicle.compose.composer import BELEG_TITEL, OHNE_MODELL, numbers
+from chronicle.compose.composer import BELEG_TITEL, NICHT_ERREICHBAR, numbers
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +34,11 @@ CHRONIK_TITEL = "### Belegt aus der Chronik"
 
 SZENEN_ZEILE = "Die Szenen dieser Sitzung:"
 FAKTEN_ZEILE = "Aus dem Foundry-Chat-Log, unverändert:"
+
+OHNE_MODELL = (
+    "Noch kein Modell gewählt — der Rückblick wurde geordnet statt erzählt. "
+    "Ein Modell wählst du in den Einstellungen."
+)
 
 VERWORFEN = "_Verworfen: der Absatz nannte eine Zahl, die in der Chronik nicht vorkommt._"
 KEIN_FADEN = "_Das Modell hat keinen offenen Faden benannt._"
@@ -88,7 +93,7 @@ class Recap:
         umfang = f"{self.scene_count} Szenen, {self.fact_count} Foundry-Fakten"
         if self.reason is None:
             return f"Rückblick aus {umfang} — {self.thread_count} Fäden als Deutung markiert."
-        return f"Rückblick aus {umfang} — geordnet, nicht erzählt: {self.reason}"
+        return f"Rückblick aus {umfang}. {self.reason}"
 
 
 def digest(chronik: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
@@ -152,10 +157,7 @@ def _kopf(material: RecapMaterial, name: str | None, grund: str | None) -> str:
             "belegt ist nur, was unter »Belegt aus der Chronik« steht._"
         )
     else:
-        stand = (
-            "_Ohne Sprachmodell erzeugt: die Szenen und die belegten Fakten dieser Sitzung, "
-            f"geordnet statt erzählt. Grund: {grund}_"
-        )
+        stand = f"_{grund}_"
     return f"{titel}\n\n{stand}"
 
 
@@ -180,7 +182,7 @@ def recap(material: RecapMaterial, model: TextModel | None = None) -> Recap:
                 system=SYSTEM_FAEDEN, prompt=_prompt(material, AUFTRAG_FAEDEN)
             )
         except ModelError as fehler:
-            grund = f"Sprachmodell nicht erreichbar: {fehler}"
+            grund = NICHT_ERREICHBAR
             logger.warning("Rückblick bleibt bei der geordneten Fassung: %s", fehler)
         else:
             hergang, hergang_verworfen = _geprueft(roher_hergang.strip(), belegt)

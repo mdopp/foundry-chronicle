@@ -68,6 +68,27 @@ def test_die_quelle_steht_je_wert_fest(config, tmp_path):
     leer = Config(data_dir=tmp_path / "leer")
     db.init(leer.database_path)
     assert settings.sources(leer)["foundry_url"] == settings.UNGESETZT
+    assert settings.sources(leer)["ollama_url"] == settings.STANDARD
+
+
+def test_ohne_eigene_adresse_gilt_das_ollama_dieser_box(tmp_path):
+    leer = Config(data_dir=tmp_path / "leer")
+    db.init(leer.database_path)
+    assert settings.effective(leer).ollama_url == settings.DEFAULT_OLLAMA_URL
+
+
+def test_eine_eigene_adresse_schlaegt_den_standard(config):
+    assert settings.effective(config).ollama_url == "http://umgebung.example:11434"
+    settings.save(config.database_path, {"ollama_url": "http://frontend.example:11434"})
+    assert settings.effective(config).ollama_url == "http://frontend.example:11434"
+
+
+def test_eine_zurueckgenommene_adresse_faellt_auf_den_standard_zurueck(tmp_path):
+    leer = Config(data_dir=tmp_path / "zurueck")
+    db.init(leer.database_path)
+    settings.save(leer.database_path, {"ollama_url": "http://frontend.example:11434"})
+    settings.save(leer.database_path, {"ollama_url": "  "})
+    assert settings.effective(leer).ollama_url == settings.DEFAULT_OLLAMA_URL
 
 
 def test_die_gespeicherten_werte_stehen_fest():
