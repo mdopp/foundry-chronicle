@@ -113,6 +113,25 @@
       }
       nav a:hover { background: var(--surface-2); color: var(--text); }
       nav a[aria-current="page"] { background: var(--surface-2); color: var(--accent); }
+      /* Rechts und ohne Beschriftung: die Einstellungen sind kein fachlicher Reiter. */
+      .zahnrad { justify-content: center; margin-left: auto; min-width: 44px; padding: 0; }
+
+      .nur-vorlesen {
+        clip-path: inset(50%);
+        height: 1px;
+        overflow: hidden;
+        position: absolute;
+        white-space: nowrap;
+        width: 1px;
+      }
+
+      .schrittzahl {
+        color: var(--text-subtle);
+        font-size: .75rem;
+        letter-spacing: .06em;
+        margin: 0 0 var(--space-2);
+        text-transform: uppercase;
+      }
 
       .band {
         background: var(--surface);
@@ -264,6 +283,7 @@
       }
 
       @media (max-width: 30rem) {
+        nav { flex: 1 0 100%; }
         .karte { padding: var(--space-4); }
         dl { grid-template-columns: 1fr; gap: var(--space-1); }
         dd { margin-bottom: var(--space-2); }
@@ -284,20 +304,25 @@
              {% if request.endpoint in ['protokolle', 'protokoll'] %}aria-current="page"{% endif %}>Protokolle</a>
           <a href="{{ url_for('suche') }}"
              {% if request.path == url_for('suche') %}aria-current="page"{% endif %}>Suche</a>
-          <a href="{{ url_for('einstellungen') }}"
-             {% if request.endpoint in ['einstellungen', 'einstellungen_speichern'] %}aria-current="page"{% endif %}>Einstellungen</a>
-          <a href="{{ url_for('status') }}"
-             {% if request.path == url_for('status') %}aria-current="page"{% endif %}>Status</a>
+          <a class="zahnrad" href="{{ url_for('einstellungen') }}" title="Einstellungen"
+             {% if request.endpoint in ['einstellungen', 'einstellungen_speichern'] %}aria-current="page"{% endif %}>
+            <span class="nur-vorlesen">Einstellungen</span>
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor"
+                 stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="3"></circle>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1.08-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+            </svg>
+          </a>
         </nav>
       </header>
       {% if verbindung == "unkonfiguriert" %}
       <p class="band">Foundry ist nicht eingerichtet — mitgeschrieben wird trotzdem, die
         Chronik bleibt dann aber ohne Würfe, Schaden und Beute.
-        <a href="{{ url_for('einstellungen') }}">Zugang eintragen</a></p>
+        <a href="{{ zugang }}">Zugang eintragen</a></p>
       {% elif verbindung == "veraltet" %}
       <p class="band">Der letzte Abgleich mit Foundry ist gescheitert — was hier steht,
         stammt aus dem Zwischenspeicher.
-        <a href="{{ url_for('status') }}">Woran es lag</a></p>
+        <a href="{{ url_for('einstellungen', _anchor='zustand') }}">Woran es lag</a></p>
       {% endif %}
       <main>{% block inhalt %}{% endblock %}</main>
     </div>

@@ -61,6 +61,11 @@ NOTIZFORMULAR = re.compile(r'action="/szenen/(\d+)/notizen"')
 # Die Protokollseite kennzeichnet den Rückblick über seine Klasse (protokoll.html).
 RUECKBLICK = 'class="chronik rueckblick"'
 
+# Der erste Schritt des Erststart-Wizards und der Anker, in dem /status aufgegangen ist.
+ERSTER_SCHRITT = "/einrichtung/foundry"
+
+ZUSTAND = 'id="zustand"'
+
 
 class Fehlschlag(AssertionError):
     """Ein Schritt, der nicht ergab, was er ergeben muss."""
@@ -128,6 +133,20 @@ def warten(basis: str, prozess: subprocess.Popen) -> None:
 def durchlauf(basis: str, umgeb: dict[str, str], lauf: Lauf) -> None:
     marke = "Durchstichmarke" + uuid.uuid4().hex[:8]
     notiz = f"Die Kammer hinter dem Krummen Ast, Kennzeichen {marke}."
+
+    # Eine frische Instanz ist der Erststart: die Startseite führt in die Einrichtung.
+    status, _, ziel = abruf(basis + "/")
+    pruefe(status == 200, f"Erststart: HTTP {status}")
+    pruefe(ziel.endswith(ERSTER_SCHRITT), f"Erststart: / landete auf {ziel} statt {ERSTER_SCHRITT}")
+    lauf.ok("Erststart führt in die Einrichtung")
+
+    status, seite, ziel = abruf(basis + "/status")
+    pruefe(status == 200, f"Zustand: HTTP {status}")
+    pfad = urllib.parse.urlsplit(ziel)
+    pruefe(pfad.path == "/einstellungen", f"Zustand: /status landete auf {ziel}")
+    pruefe(pfad.fragment == "zustand", f"Zustand: kein Anker in {ziel}")
+    pruefe(ZUSTAND in seite, "Zustand: der Abschnitt fehlt auf der Einstellungsseite")
+    lauf.ok("/status leitet in den Zustand der Einstellungen um")
 
     status, _, ziel = abruf(basis + "/", daten={"played_on": "", "title": "Durchstich"})
     pruefe(status == 200, f"Sitzung anlegen: HTTP {status}")

@@ -43,26 +43,7 @@
       darf, darf diktieren — die Rechte vergibt Discord. Ohne Token bleibt der Kanal zu;
       eine Gruppe, die nur vor Ort spielt, braucht ihn nicht.</p>
 
-    {% if not bot_token_gesetzt %}
-    <div class="hinweis">
-      <p><strong>Noch kein Bot?</strong> So entsteht er, einmalig, in etwa fünf Minuten:</p>
-      <ol>
-        <li>Im <a href="https://discord.com/developers/applications" rel="noopener">Discord
-          Developer Portal</a> eine <em>New Application</em> anlegen, dann links <em>Bot</em>
-          öffnen und den <strong>Token</strong> erzeugen — der gehört ins Feld unten und
-          sonst nirgendwohin.</li>
-        <li>Unter <em>Bot</em> die <strong>Message Content Intent</strong> einschalten —
-          ohne sie sieht der Bot keine Nachrichtentexte.</li>
-        <li>Unter <em>OAuth2 → URL Generator</em>: Scope <code>bot</code> mit den Rechten
-          <em>View Channels, Read Message History, Send Messages, Add Reactions</em>
-          (für den Diktat-Kanal) sowie <em>Connect</em> und <em>Use Voice Activity</em>
-          (für die spätere Aufnahme) — die erzeugte URL öffnen und den Bot auf euren
-          Server einladen.</li>
-        <li>Auf dem Server einen Kanal <code>#diktat</code> anlegen. Wer dort schreiben
-          darf, darf diktieren.</li>
-      </ol>
-    </div>
-    {% endif %}
+    {% if not bot_token_gesetzt %}{% include "_discord_einrichtung.html" %}{% endif %}
 
     <div class="feld">
       <label for="discord_bot_token">Bot-Token</label>
@@ -132,23 +113,90 @@
     </div>
   </section>
 
-  <section class="karte">
-    <h2>Woher die Werte kommen</h2>
-    <dl>
-      <dt>Foundry-Adresse</dt><dd>{{ quellen.foundry_url }}</dd>
-      <dt>Foundry-Benutzer</dt><dd>{{ quellen.foundry_user }}</dd>
-      <dt>Foundry-Passwort</dt><dd>{{ quellen.foundry_password }}</dd>
-      <dt>Discord-Bot-Token</dt><dd>{{ quellen.discord_bot_token }}</dd>
-      <dt>Zustellkanal</dt><dd>{{ quellen.discord_recap_channel }}</dd>
-      <dt>Ollama-Adresse</dt><dd>{{ quellen.ollama_url }}</dd>
-      <dt>Ollama-Modell</dt><dd>{{ quellen.ollama_model }}</dd>
-    </dl>
-    <p class="gedaempft absenden">Was hier gespeichert wird, schlägt die Umgebung. Ein leer
-      abgesendetes Feld — außer Passwort und Bot-Token — nimmt den Wert zurück, dann gilt
-      wieder die Umgebung.</p>
-  </section>
+  <p class="gedaempft">Was hier gespeichert wird, schlägt die Umgebung. Ein leer
+    abgesendetes Feld — außer Passwort und Bot-Token — nimmt den Wert zurück, dann gilt
+    wieder die Umgebung. Woher jeder einzelne Wert gerade stammt, steht unten im
+    <a href="#zustand">Zustand</a>.</p>
 
   <div class="absenden"><button type="submit">Speichern</button></div>
 </form>
+
+<section class="karte" id="zustand">
+  <h2>Zustand</h2>
+
+  <h3>Zugang</h3>
+  {% if config.require_remote_user %}
+    <p class="steht">Die Haustür steht am Proxy: ohne den Header <code>Remote-User</code>
+      wird jeder Request abgewiesen. Ein eigenes Login gibt es nicht.</p>
+    <p class="gedaempft">Angemeldet als <code>{{ remote_user }}</code>.</p>
+  {% else %}
+    <p class="hinweis">Die Header-Prüfung ist aus — wer den Port erreicht, sieht alles.
+      Das ist für den Lauf ohne Proxy gedacht; auf der Box gehört
+      <code>CHRONICLE_REQUIRE_REMOTE_USER=1</code> in die Umgebung.</p>
+  {% endif %}
+
+  <h3>Foundry</h3>
+  {% if config.foundry_configured %}
+    <p class="steht">Konfiguriert als <code>{{ config.foundry_user }}</code> auf
+      <code>{{ config.foundry_url }}</code>. Das Passwort wird nie angezeigt.</p>
+  {% else %}
+    <p class="fehlt">Nicht konfiguriert — der Dienst läuft, holt aber nichts aus Foundry.</p>
+  {% endif %}
+  <dl>
+    <dt><code>FOUNDRY_URL</code></dt><dd>{{ quellen.foundry_url }}</dd>
+    <dt><code>FOUNDRY_USER</code></dt><dd>{{ quellen.foundry_user }}</dd>
+    <dt><code>FOUNDRY_PASSWORD</code></dt><dd>{{ quellen.foundry_password }}</dd>
+  </dl>
+
+  <h3>Discord</h3>
+  {% if config.discord_configured %}
+    <p class="steht">Bot-Token gesetzt. Der Diktat-Kanal <code>#diktat</code> wird im
+      Stapel geleert: <code>python -m chronicle.discord</code>. Der Token wird nie
+      angezeigt.</p>
+  {% else %}
+    <p>Kein Bot-Token — das ist in Ordnung. Eine Gruppe, die nur vor Ort spielt, braucht
+      ihn nicht; ohne ihn bleiben Diktat-Kanal, Aufnahme und Zustellung zu.</p>
+  {% endif %}
+  {% if config.discord_recap_channel %}
+    <p class="steht">Der Rückblick geht nach
+      <code>#{{ config.discord_recap_channel }}</code> — einmal je Sitzung.</p>
+  {% else %}
+    <p>Kein Zustellkanal — der Rückblick bleibt in der Chronik.</p>
+  {% endif %}
+  <dl>
+    <dt><code>DISCORD_BOT_TOKEN</code></dt><dd>{{ quellen.discord_bot_token }}</dd>
+    <dt><code>DISCORD_RECAP_CHANNEL</code></dt><dd>{{ quellen.discord_recap_channel }}</dd>
+  </dl>
+
+  <h3>Sprachmodell</h3>
+  {% if config.ollama_configured %}
+    <p class="steht">Ollama unter <code>{{ config.ollama_url }}</code>, Modell
+      <code>{{ config.ollama_model }}</code>.</p>
+  {% else %}
+    <p>Kein Sprachmodell — die Chronik entsteht trotzdem, dann geordnet statt formuliert:
+      Notizen nach Szenen, Foundry-Fakten wörtlich, keine Prosa.</p>
+  {% endif %}
+  <dl>
+    <dt><code>OLLAMA_URL</code></dt><dd>{{ quellen.ollama_url }}</dd>
+    <dt><code>OLLAMA_MODEL</code></dt><dd>{{ quellen.ollama_model }}</dd>
+  </dl>
+
+  <h3>Abgleich</h3>
+  <p class="{{ 'fehlt' if abgleich.stale else 'steht' }}">{{ abgleich.message }}</p>
+  {% if abgleich.snapshot %}
+  <dl>
+    <dt>Regelwerk</dt><dd><code>{{ abgleich.snapshot.system }}</code></dd>
+    <dt>Spieler</dt><dd>{{ abgleich.snapshot.players | length }}</dd>
+    <dt>Charaktere</dt><dd>{{ abgleich.snapshot.characters | length }}</dd>
+    <dt>Chat-Nachrichten</dt><dd>{{ abgleich.snapshot.messages | length }}</dd>
+  </dl>
+  {% endif %}
+
+  <h3>Speicher</h3>
+  <dl>
+    <dt>Datenbank</dt><dd><code>{{ config.database_path }}</code></dd>
+    <dt>Schema-Stand</dt><dd>{{ schema_version }}</dd>
+  </dl>
+</section>
 
 {% endblock %}

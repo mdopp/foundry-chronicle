@@ -70,8 +70,8 @@ def mock_ollama():
     server.stop()
 
 
-def hole(client, pfad: str):
-    return client.get(pfad, headers=KOPF)
+def hole(client, pfad: str, *, folgen: bool = False):
+    return client.get(pfad, headers=KOPF, follow_redirects=folgen)
 
 
 def sende(client, pfad: str, **felder: str):
@@ -92,7 +92,7 @@ def verknuepfe(config: Config, paare: list[tuple[int, str]]) -> None:
 
 
 def station_1_aufsetzen(tmp_path):
-    """Frische Instanz auf Wegwerf-Verzeichnissen: sie läuft und erklärt, was ihr fehlt."""
+    """Frische Instanz auf Wegwerf-Verzeichnissen: sie führt in die Einrichtung."""
     config = Config(
         data_dir=tmp_path / "daten",
         recordings_dir=tmp_path / "spuren",
@@ -102,32 +102,54 @@ def station_1_aufsetzen(tmp_path):
     assert config.database_path.is_file()
 
     assert client.get("/status").status_code == 403
+    assert client.get("/einrichtung/foundry").status_code == 403
 
-    seite = hole(client, "/status").get_data(as_text=True)
+    assert hole(client, "/").headers["Location"] == "/einrichtung"
+    schritt = hole(client, "/einrichtung", folgen=True).get_data(as_text=True)
+    assert "Schritt 1 von 3" in schritt
+
+    # Der alte Status-Pfad steht in Lesezeichen; er landet im Abschnitt »Zustand«.
+    assert hole(client, "/status").status_code == 301
+    seite = hole(client, "/status", folgen=True).get_data(as_text=True)
     assert "Nicht konfiguriert" in seite
     assert "Kein Sprachmodell" in seite
     return config, client
 
 
 def station_2_konfigurieren(client, mock_foundry, mock_ollama):
-    """Beide Ziele über POST /einstellungen — ein Geheimnis geht nie in eine URL."""
+    """Der Wizard, Schritt für Schritt — ein Geheimnis geht nie in eine URL."""
     antwort = sende(
         client,
-        "/einstellungen",
+        "/einrichtung/foundry",
         foundry_url=mock_foundry.url,
         foundry_user=foundry_mock.BENUTZER,
         foundry_password=foundry_mock.PASSWORT,
+    )
+    assert antwort.status_code == 302
+    assert antwort.headers["Location"] == "/einrichtung/discord"
+    assert foundry_mock.PASSWORT not in antwort.headers["Location"]
+
+    # Eine Präsenzgruppe braucht keinen Bot — überspringen ist immer möglich.
+    antwort = sende(client, "/einrichtung/discord", tat="ueberspringen")
+    assert antwort.headers["Location"] == "/einrichtung/ollama"
+
+    antwort = sende(
+        client,
+        "/einrichtung/ollama",
         ollama_url=mock_ollama.url,
         ollama_model=ollama_mock.MODELL,
     )
-    assert antwort.status_code == 302
+    assert antwort.headers["Location"] == "/"
+
+    # Fertig heißt fertig: die Startseite ist wieder die Sitzungsseite.
+    assert hole(client, "/").status_code == 200
 
     formular = hole(client, "/einstellungen").get_data(as_text=True)
     assert foundry_mock.PASSWORT not in formular
     assert ollama_mock.MODELL in formular
     assert ollama_mock.EINBETTUNG not in formular
 
-    status = hole(client, "/status").get_data(as_text=True)
+    status = hole(client, "/status", folgen=True).get_data(as_text=True)
     assert "Konfiguriert als" in status
     assert foundry_mock.PASSWORT not in status
 
@@ -158,7 +180,7 @@ def station_3_erster_abgleich(config, client):
         ("fear", foundry_mock.STURZ_FURCHT),
     ]
 
-    assert "daggerheart" in hole(client, "/status").get_data(as_text=True)
+    assert "daggerheart" in hole(client, "/status", folgen=True).get_data(as_text=True)
 
 
 def station_4_erste_sitzung(client, config):
