@@ -21,9 +21,16 @@ MASK = "***"
 
 FOUNDRY_VARIABLES = ("FOUNDRY_URL", "FOUNDRY_USER", "FOUNDRY_PASSWORD")
 
-OLLAMA_VARIABLES = ("OLLAMA_URL", "OLLAMA_MODEL")
+# Dieselben drei Werte, wie sie in der Oberfläche heißen — mit Artikel, weil daraus ein
+# Satz für jemanden gebaut wird, der nie eine Umgebungsvariable gesehen hat.
+FOUNDRY_FELDER = ("die Adresse", "der Benutzer", "das Passwort")
 
 REMOTE_USER_VARIABLE = "CHRONICLE_REQUIRE_REMOTE_USER"
+
+# Der Box-Standard: unser Pod läuft im Host-Netz, Ollama hört daneben auf 11434. Er steht
+# hier und nirgends sonst — Oberfläche, Einrichtung und Komposition fragen denselben Wert,
+# sonst verspräche die Seite eine Adresse, gegen die der Lauf nicht redet.
+DEFAULT_OLLAMA_URL = "http://127.0.0.1:11434"
 
 DEFAULT_DATA_DIR = "data"
 
@@ -84,9 +91,17 @@ class Config:
         )
 
     @property
+    def _foundry_values(self) -> tuple[str | None, ...]:
+        return (self.foundry_url, self.foundry_user, self.foundry_password)
+
+    @property
     def missing_foundry_variables(self) -> tuple[str, ...]:
-        values = (self.foundry_url, self.foundry_user, self.foundry_password)
-        paare = zip(FOUNDRY_VARIABLES, values, strict=True)
+        paare = zip(FOUNDRY_VARIABLES, self._foundry_values, strict=True)
+        return tuple(name for name, value in paare if not value)
+
+    @property
+    def missing_foundry_fields(self) -> tuple[str, ...]:
+        paare = zip(FOUNDRY_FELDER, self._foundry_values, strict=True)
         return tuple(name for name, value in paare if not value)
 
     @property
@@ -98,13 +113,10 @@ class Config:
         return self.discord_bot_token is not None
 
     @property
-    def missing_ollama_variables(self) -> tuple[str, ...]:
-        paare = zip(OLLAMA_VARIABLES, (self.ollama_url, self.ollama_model), strict=True)
-        return tuple(name for name, value in paare if not value)
-
-    @property
     def ollama_configured(self) -> bool:
-        return not self.missing_ollama_variables
+        # Die Adresse löst immer auf — ohne eigene ist es das Ollama dieser Box. Offen
+        # bleibt allein die Modellwahl.
+        return bool(self.ollama_model)
 
     @property
     def database_path(self) -> Path:

@@ -313,7 +313,7 @@ def create_app(config: Config | None = None, *, zeitplan: bool = False) -> Flask
 
     def felder(*, mit_modellen: bool = True) -> dict[str, object]:
         aktuell = settings.effective(basis)
-        adresse = aktuell.ollama_url or settings.DEFAULT_OLLAMA_URL
+        adresse = str(aktuell.ollama_url)
         modelle, hinweis, erreichbar = _modelle(adresse) if mit_modellen else ((), "", True)
         return {
             "foundry_url": aktuell.foundry_url or "",

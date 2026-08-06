@@ -18,7 +18,7 @@ from datetime import time
 from pathlib import Path
 
 from chronicle import db
-from chronicle.config import Config
+from chronicle.config import DEFAULT_OLLAMA_URL, Config
 
 KEYS = (
     "foundry_url",
@@ -42,11 +42,9 @@ ONBOARDING_KEY = "onboarding_done"
 NIGHTLY_KEY = "nightly_time"
 DEFAULT_NIGHTLY_TIME = "04:00"
 
-# Der Box-Standard: unser Pod läuft im Host-Netz, Ollama hört daneben auf 11434.
-DEFAULT_OLLAMA_URL = "http://127.0.0.1:11434"
-
 FRONTEND = "Frontend"
 UMGEBUNG = "Umgebung"
+STANDARD = "Standard dieser Box"
 UNGESETZT = "nicht gesetzt"
 
 
@@ -60,15 +58,27 @@ def stored(database_path: Path) -> dict[str, str]:
 
 
 def effective(config: Config) -> Config:
-    return replace(config, **stored(config.database_path))
+    """Gespeichertes schlägt die Umgebung, die Umgebung schlägt den Box-Standard.
+
+    Der Standard ist hier Verhalten und nicht bloß Formulartext: wer keine Adresse
+    einträgt, bekommt das Ollama dieser Box — sonst versprächen die Einstellungen etwas,
+    das der Lauf dann nicht tut.
+    """
+    zusammen = replace(config, **stored(config.database_path))
+    if zusammen.ollama_url:
+        return zusammen
+    return replace(zusammen, ollama_url=DEFAULT_OLLAMA_URL)
 
 
 def sources(config: Config) -> dict[str, str]:
+    wirksam = effective(config)
     gespeichert = stored(config.database_path)
     return {
         name: FRONTEND
         if name in gespeichert
-        else (UMGEBUNG if getattr(config, name) else UNGESETZT)
+        else UMGEBUNG
+        if getattr(config, name)
+        else (STANDARD if getattr(wirksam, name) else UNGESETZT)
         for name in KEYS
     }
 

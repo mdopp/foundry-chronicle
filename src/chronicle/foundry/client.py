@@ -47,6 +47,14 @@ class FoundryLoginFailed(FoundryError):
     pass
 
 
+def _zugang_fehlt(felder: tuple[str, ...]) -> str:
+    aufzaehlung = felder[0] if len(felder) == 1 else f"{', '.join(felder[:-1])} und {felder[-1]}"
+    return (
+        f"Für den Zugang zu Foundry {'fehlt' if len(felder) == 1 else 'fehlen'} noch "
+        f"{aufzaehlung}. Eintragen kannst du das in den Einstellungen."
+    )
+
+
 def _http_session() -> requests.Session:
     return requests.Session()
 
@@ -65,8 +73,13 @@ class FoundryClient:
         timeout: float = DEFAULT_TIMEOUT,
     ) -> None:
         if not config.foundry_configured:
-            fehlt = ", ".join(config.missing_foundry_variables)
-            raise FoundryNotConfigured(f"Foundry ist nicht konfiguriert; es fehlt: {fehlt}")
+            # Der Grund wird in den Einstellungen angezeigt und landet in der SQLite; die
+            # Namen aus der Umgebung bleiben deshalb im Log.
+            logger.warning(
+                "Foundry ist nicht konfiguriert; es fehlt: %s",
+                ", ".join(config.missing_foundry_variables),
+            )
+            raise FoundryNotConfigured(_zugang_fehlt(config.missing_foundry_fields))
         self._config = config
         self._http_factory = http
         self._socket_factory = socket

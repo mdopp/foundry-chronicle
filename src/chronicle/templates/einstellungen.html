@@ -103,12 +103,9 @@
     {% elif config.ollama_configured %}
       <p class="steht">Bereit — <code>{{ config.ollama_model }}</code> formuliert die
         nächste Chronik.</p>
-    {% elif not ollama_model %}
+    {% else %}
       <p class="hinweis">Kein Modell gewählt — dann wird nur geordnet, nicht formuliert.
         Wähle unten eins und speichere.</p>
-    {% else %}
-      <p class="hinweis">Noch keine Ollama-Adresse gespeichert — dann wird nur geordnet,
-        nicht formuliert. Trag sie unten ein und speichere.</p>
     {% endif %}
 
     {% include "_modell_felder.html" %}
@@ -169,13 +166,13 @@
   <p class="gedaempft">Woher jeder Wert gerade stammt — was hier gespeichert ist, schlägt
     die Umgebung:</p>
   <dl>
-    <dt><code>FOUNDRY_URL</code></dt><dd>{{ quellen.foundry_url }}</dd>
-    <dt><code>FOUNDRY_USER</code></dt><dd>{{ quellen.foundry_user }}</dd>
-    <dt><code>FOUNDRY_PASSWORD</code></dt><dd>{{ quellen.foundry_password }}</dd>
-    <dt><code>DISCORD_BOT_TOKEN</code></dt><dd>{{ quellen.discord_bot_token }}</dd>
-    <dt><code>DISCORD_RECAP_CHANNEL</code></dt><dd>{{ quellen.discord_recap_channel }}</dd>
-    <dt><code>OLLAMA_URL</code></dt><dd>{{ quellen.ollama_url }}</dd>
-    <dt><code>OLLAMA_MODEL</code></dt><dd>{{ quellen.ollama_model }}</dd>
+    <dt>Foundry-Adresse</dt><dd>{{ quellen.foundry_url }}</dd>
+    <dt>Foundry-Benutzer</dt><dd>{{ quellen.foundry_user }}</dd>
+    <dt>Foundry-Passwort</dt><dd>{{ quellen.foundry_password }}</dd>
+    <dt>Discord-Bot-Token</dt><dd>{{ quellen.discord_bot_token }}</dd>
+    <dt>Discord-Kanal für den Rückblick</dt><dd>{{ quellen.discord_recap_channel }}</dd>
+    <dt>Ollama-Adresse</dt><dd>{{ quellen.ollama_url }}</dd>
+    <dt>Modell</dt><dd>{{ quellen.ollama_model }}</dd>
   </dl>
 </details>
 

@@ -195,7 +195,14 @@ def test_antwort_ohne_daten_wird_zu_nicht_erreichbar(config):
 def test_ohne_konfiguration_wird_gar_nicht_erst_verbunden(tmp_path):
     with pytest.raises(FoundryNotConfigured) as fehler:
         FoundryClient(Config(data_dir=tmp_path))
-    assert "FOUNDRY_PASSWORD" in str(fehler.value)
+    assert "das Passwort" in str(fehler.value)
+    assert "FOUNDRY_" not in str(fehler.value)
+
+
+def test_die_variablennamen_stehen_im_log_und_nicht_in_der_meldung(tmp_path, caplog):
+    with caplog.at_level(logging.WARNING), pytest.raises(FoundryNotConfigured):
+        FoundryClient(Config(data_dir=tmp_path))
+    assert "FOUNDRY_PASSWORD" in caplog.text
 
 
 def test_das_passwort_steht_in_keiner_logzeile(config, caplog):

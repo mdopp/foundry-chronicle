@@ -39,8 +39,8 @@ def test_startet_ohne_foundry_und_erklaert_was_fehlt(tmp_path):
     assert antwort.status_code == 200
     html = antwort.get_data(as_text=True)
     assert "Noch kein Zugang zu Foundry" in html
-    for name in ("FOUNDRY_URL", "FOUNDRY_USER", "FOUNDRY_PASSWORD"):
-        assert name in html
+    for feld in ("Foundry-Adresse", "Foundry-Benutzer", "Foundry-Passwort"):
+        assert feld in html
 
 
 def test_ohne_discord_ist_das_kein_fehler(tmp_path):
@@ -78,8 +78,8 @@ def test_legt_die_datenbank_beim_start_an(tmp_path):
 def test_ohne_sprachmodell_sagt_der_status_was_die_chronik_dann_wird(tmp_path):
     html = seite(Config(data_dir=tmp_path)).get_data(as_text=True)
     assert "geordnet statt formuliert" in html
-    for name in ("OLLAMA_URL", "OLLAMA_MODEL"):
-        assert name in html
+    assert "Ollama-Adresse" in html
+    assert f"<dd>{settings.STANDARD}</dd>" in html
 
 
 def test_mit_sprachmodell_zeigt_der_status_adresse_und_modell(tmp_path):
@@ -466,10 +466,12 @@ def test_ein_erreichbares_ollama_ohne_gewaehltes_modell_sagt_was_zu_tun_ist(tmp_
     assert "Wähle unten eins und speichere" in html
 
 
-def test_ein_modell_ohne_adresse_sagt_welches_feld_noch_fehlt(tmp_path, monkeypatch):
+def test_ein_modell_ohne_eigene_adresse_ist_schon_bereit(tmp_path, monkeypatch):
+    """Ohne gespeicherte Adresse gilt das Ollama dieser Box — kein Zustand bleibt offen."""
     monkeypatch.setattr(sprachmodell, "installed_models", lambda adresse, **k: ("gemma4:12b",))
     html = gelesen(Config(ollama_model="gemma4:12b", data_dir=tmp_path), "/einstellungen")
-    assert "Noch keine Ollama-Adresse gespeichert" in html
+    assert "Bereit — <code>gemma4:12b</code>" in html
+    assert "Noch keine Ollama-Adresse gespeichert" not in html
 
 
 def test_ein_kaputtes_ollama_bricht_die_seite_nicht(tmp_path, monkeypatch):
@@ -833,7 +835,7 @@ def test_die_technikdetails_stehen_zugeklappt_am_ende(tmp_path):
     assert "<summary>Technikdetails</summary>" in block
     assert "Datenbank" in block
     assert "Schema-Stand" in block
-    assert "FOUNDRY_URL" in block
+    assert "Foundry-Adresse" in block
 
 
 # --- Anstoßen aus der Oberfläche ----------------------------------------------------
@@ -955,7 +957,15 @@ def test_der_abgleich_steht_hinter_demselben_tuersteher(tmp_path):
 
 
 # Header-Namen sind Proxy-Innenleben: niemand muss sie kennen, um die Chronik zu bedienen.
-SYSTEMWOERTER = ("python -m", "CHRONICLE_", "Remote-User", "Forward-Auth", "Authelia")
+SYSTEMWOERTER = (
+    "python -m",
+    "CHRONICLE_",
+    "OLLAMA_",
+    "FOUNDRY_",
+    "Remote-User",
+    "Forward-Auth",
+    "Authelia",
+)
 
 
 def systemsprache(html):
@@ -983,3 +993,28 @@ def test_auch_die_abweisung_spricht_nutzersprache(tmp_path):
     antwort = bewacht(tmp_path).get("/")
     assert antwort.status_code == 403
     assert systemsprache(antwort.get_data(as_text=True)) == []
+
+
+def test_ein_abgleich_ohne_zugang_erklaert_das_ohne_variablennamen(tmp_path):
+    config = Config(data_dir=tmp_path)
+    zustand = service.sync(config)
+    assert zustand.stale
+
+    html = seite(config).get_data(as_text=True)
+    assert "Für den Zugang zu Foundry fehlen noch" in html
+    assert systemsprache(html) == []
+
+
+def test_auch_das_abgelegte_protokoll_spricht_nutzersprache(tmp_path):
+    """Der Text in der SQLite wird Wochen später gelesen — er ist selbst Oberfläche."""
+    config, sitzung_id = eine_sitzung(tmp_path)
+    chronik = compose_session(config, sitzung_id)
+    rueckblick = recap_session(config, sitzung_id)
+
+    for abgelegt in (chronik.text, rueckblick.text, chronik.message, rueckblick.message):
+        assert systemsprache(abgelegt) == [], abgelegt
+        assert "in den Einstellungen" in abgelegt
+
+    html = gelesen(config, f"/sitzungen/{sitzung_id}/protokoll")
+    assert systemsprache(html) == []
+    assert "Noch kein Modell gewählt" in html

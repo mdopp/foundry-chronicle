@@ -213,7 +213,7 @@ def test_der_stapelaufruf_meldet_die_betriebsart(config, connection, welt, monke
     monkeypatch.delenv("OLLAMA_MODEL", raising=False)
 
     assert entry.main([str(sitzung_id)]) == 1
-    assert "geordnet, nicht formuliert" in capsys.readouterr().out
+    assert "geordnet, nicht erzählt" in capsys.readouterr().out
 
 
 def test_der_stapelaufruf_schreibt_beides(config, connection, welt, monkeypatch, capsys):

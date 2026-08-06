@@ -2,11 +2,13 @@
 {% block titel %}Chronik — {{ sitzung.title or sitzung.played_on }} — Foundry Chronicle{% endblock %}
 {% block inhalt %}
 
+{# Die Merkzeile steht über dem Rückblick: sie sagt, wofür der Text da ist. Unter ihm
+   stünde sie mitten in der Seite, zwischen belegter Szenenliste und Chronik. #}
 {% if rueckblick %}
 <section class="karte">
-  <article class="chronik rueckblick">{{ rueckblick.html }}</article>
-  <p class="gedaempft chronik-fuss">Vor der nächsten Sitzung zu lesen. Erzeugt am
+  <p class="gedaempft chronik-kopf">Vor der nächsten Sitzung zu lesen. Erzeugt am
     {{ rueckblick.created_at[:10] }} aus der Chronik darunter — die ist das Archiv dahinter.</p>
+  <article class="chronik rueckblick">{{ rueckblick.html }}</article>
 </section>
 {% endif %}
 
