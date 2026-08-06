@@ -113,6 +113,9 @@
         {{ "Fertig" if letzter else "Speichern und weiter" }}</button>
       <button type="submit" name="tat" value="ueberspringen" class="leise">
         {{ "Überspringen und fertig" if letzter else "Überspringen" }}</button>
+      {% if not letzter %}
+        <button type="submit" name="tat" value="spaeter" class="leise">Später</button>
+      {% endif %}
     </div>
   </section>
 </form>

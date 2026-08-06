@@ -195,6 +195,9 @@ def eine_sitzung(tmp_path, *, chronik=False, rueckblick=False):
         compose_session(config, sitzung_id, model=Chronist())
     if rueckblick:
         recap_session(config, sitzung_id, model=Chronist())
+    # Wer schon mitschreibt, hat die Einrichtung hinter sich oder beiseitegelegt —
+    # sonst führte jede dieser Seiten in den Wizard statt zur Sitzung.
+    settings.finish_onboarding(config.database_path)
     return config, sitzung_id
 
 
@@ -604,9 +607,13 @@ def test_mit_foundry_gibt_es_keinen_wizard(tmp_path):
     assert create_app(config).test_client().get("/").status_code == 200
 
 
-def test_mit_einer_sitzung_gibt_es_keinen_wizard(tmp_path):
-    config, _ = eine_sitzung(tmp_path)
-    assert create_app(config).test_client().get("/").status_code == 200
+def test_eine_sitzung_ersetzt_die_einrichtung_nicht(tmp_path):
+    config = Config(data_dir=tmp_path)
+    db.init(config.database_path)
+    notes.create_session(config.database_path, played_on="2026-08-05", title="Der Keller")
+    antwort = create_app(config).test_client().get("/")
+    assert antwort.status_code == 302
+    assert antwort.headers["Location"] == "/einrichtung"
 
 
 def test_der_wizard_beginnt_bei_foundry(tmp_path):
@@ -696,10 +703,30 @@ def test_nach_der_einrichtung_kommt_der_wizard_nie_wieder(tmp_path):
 
 
 def test_solange_nichts_eingerichtet_ist_fuehrt_das_band_in_den_wizard(tmp_path):
-    config, _ = eine_sitzung(tmp_path)
-    html = gelesen(config, "/")
+    html = gelesen(Config(data_dir=tmp_path), "/protokolle")
     assert UNKONFIGURIERT in html
     assert '<a href="/einrichtung">Zugang eintragen</a>' in html
+
+
+def test_der_wizard_bietet_spaeter_an_ausser_im_letzten_schritt(tmp_path):
+    client = create_app(Config(data_dir=tmp_path)).test_client()
+    assert 'value="spaeter"' in client.get("/einrichtung/foundry").get_data(as_text=True)
+    assert 'value="spaeter"' not in client.get("/einrichtung/ollama").get_data(as_text=True)
+
+
+def test_spaeter_legt_die_einrichtung_beiseite_ohne_etwas_zu_speichern(tmp_path):
+    config = Config(data_dir=tmp_path)
+    client = create_app(config).test_client()
+    antwort = client.post(
+        "/einrichtung/foundry",
+        data={"foundry_user": "chronist", "foundry_password": PASSWORT, "tat": "spaeter"},
+    )
+    assert antwort.headers["Location"] == "/"
+    assert settings.stored(config.database_path) == {}
+    assert settings.onboarding_done(config.database_path)
+    html = client.get("/").get_data(as_text=True)
+    assert UNKONFIGURIERT in html
+    assert '<a href="/einstellungen">Zugang eintragen</a>' in html
 
 
 def test_nach_der_einrichtung_fuehrt_das_band_in_die_einstellungen(tmp_path):

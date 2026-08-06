@@ -57,6 +57,7 @@ SCHRITTE = (
 SCHRITT_FELDER = dict(SCHRITTE)
 
 UEBERSPRINGEN = "ueberspringen"
+SPAETER = "spaeter"
 
 
 def create_app(config: Config | None = None) -> Flask:
@@ -77,8 +78,8 @@ def create_app(config: Config | None = None) -> Flask:
         return None
 
     def zugang_ziel() -> str:
-        # Eine bestehende Instanz hat längst eine Sitzung und käme über den Erststart
-        # nie in den Wizard — das Band ist für sie der Weg hinein.
+        # Nach einem »Später« ist die Einrichtung abgehakt und das Band führt in die
+        # Einstellungen — sonst zurück in den Wizard.
         if settings.onboarding_done(basis.database_path):
             return url_for("einstellungen")
         return url_for("einrichtung")
@@ -91,16 +92,16 @@ def create_app(config: Config | None = None) -> Flask:
             return {"verbindung": UNKONFIGURIERT, "zugang": zugang_ziel()}
         return {"verbindung": VERALTET if foundry.failed(basis) else None, "zugang": None}
 
-    def erststart() -> bool:
+    def einrichtung_offen() -> bool:
+        # Die Einrichtung steht offen, solange Foundry fehlt — nicht nur beim ersten
+        # Aufruf. Wer sie nicht jetzt machen will, legt sie mit »Später« beiseite.
         if settings.onboarding_done(basis.database_path):
             return False
-        if settings.effective(basis).foundry_configured:
-            return False
-        return not notes.sessions(basis.database_path)
+        return not settings.effective(basis).foundry_configured
 
     @app.get("/")
     def sitzungen() -> str | Response:
-        if erststart():
+        if einrichtung_offen():
             return redirect(url_for("einrichtung"))
         return render_template(
             "sitzungen.html",
@@ -322,7 +323,11 @@ def create_app(config: Config | None = None) -> Flask:
     def einrichtung_speichern(schritt: str) -> Response:
         if schritt not in SCHRITT_FELDER:
             abort(404)
-        if request.form.get("tat") != UEBERSPRINGEN:
+        tat = request.form.get("tat")
+        if tat == SPAETER:
+            settings.finish_onboarding(basis.database_path)
+            return redirect(url_for("sitzungen"))
+        if tat != UEBERSPRINGEN:
             uebernehmen(SCHRITT_FELDER[schritt])
         namen = [name for name, _ in SCHRITTE]
         naechster = namen.index(schritt) + 1
