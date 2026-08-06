@@ -38,6 +38,8 @@ spec:
         value: "{{CHRONICLE_PORT}}"
       - name: CHRONICLE_DATA_DIR
         value: "/data"
+      - name: CHRONICLE_RECORDINGS_DIR
+        value: "/aufnahmen"
       # Die Haustür steht am Proxy (ADR 0001). Ohne Remote-User antwortet der Dienst 403,
       # damit ein direkter Zugriff aus dem LAN die Anmeldung nicht überspringt.
       - name: CHRONICLE_REQUIRE_REMOTE_USER
@@ -64,10 +66,40 @@ spec:
     volumeMounts:
       - mountPath: /data
         name: chronik-daten
+      - mountPath: /aufnahmen
+        name: chronik-aufnahmen
+  # Der Aufnahme-Bot ist ein eigener, dauerhafter Prozess: er hält eine
+  # Gateway-Verbindung, weil Sprache nur mitgeschnitten werden kann, während sie
+  # gesprochen wird. Gleiches Image, anderer Befehl. Ohne Bot-Token beendet er sich mit
+  # einem Satz, statt in einer Schleife abzustürzen.
+  - name: bot
+    image: ghcr.io/mdopp/foundry-chronicle:{{CHRONICLE_IMAGE_TAG}}
+    command: ["python", "-m", "chronicle.bot"]
+    securityContext:
+      runAsUser: 0
+      runAsGroup: 0
+    env:
+      - name: CHRONICLE_DATA_DIR
+        value: "/data"
+      - name: CHRONICLE_RECORDINGS_DIR
+        value: "/aufnahmen"
+      - name: DISCORD_BOT_TOKEN
+        value: "{{DISCORD_BOT_TOKEN}}"
+    volumeMounts:
+      - mountPath: /data
+        name: chronik-daten
+      - mountPath: /aufnahmen
+        name: chronik-aufnahmen
   volumes:
   # Die SQLite-Datei liegt hier und läuft im WAL-Modus; sie ist klein und enthält alles
   # Unersetzliche. Audiospuren daneben gehören nicht ins Backup.
   - name: chronik-daten
     hostPath:
       path: {{DATA_DIR}}/daggerheart
+      type: DirectoryOrCreate
+  # Bewusst ein eigenes Verzeichnis neben den Daten und nicht darin: die Spuren werden
+  # groß, sind nach der Transkription entbehrlich und gehören aus dem Backup heraus.
+  - name: chronik-aufnahmen
+    hostPath:
+      path: {{DATA_DIR}}/daggerheart-aufnahmen
       type: DirectoryOrCreate

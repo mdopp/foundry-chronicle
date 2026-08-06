@@ -107,6 +107,12 @@ CREATE TABLE IF NOT EXISTS transcript (
 -- ist der Job — ``id`` ist die Job-Id, ``status`` der einzige Fortschritt, den es hier
 -- ehrlich zu melden gibt. Der Diktat-Upload reiht sich hier ein, der Recorder-Bot
 -- später ebenso; einen zweiten Verarbeitungsweg gibt es nicht.
+--
+-- ``deleted_at`` sagt, wann die Audiodatei nach der zugesagten Frist entfernt wurde. Die
+-- Zeile bleibt: dass es die Spur gab und was aus ihr wurde, ist die ehrliche Hälfte der
+-- Geschichte. Ein eigenes Feld statt eines weiteren ``status``, damit der Ausgang des
+-- Laufs daneben stehen bleibt. Kommentare gehören außerhalb der Klammer — SQLite liest
+-- den Tabellentext bei ``ALTER TABLE DROP COLUMN`` neu ein und stolpert sonst darüber.
 CREATE TABLE IF NOT EXISTS recording (
     id          INTEGER PRIMARY KEY,
     session_id  INTEGER NOT NULL REFERENCES session (id) ON DELETE CASCADE,
@@ -116,7 +122,8 @@ CREATE TABLE IF NOT EXISTS recording (
     status      TEXT NOT NULL
                 CHECK (status IN ('wartet', 'laeuft', 'fertig', 'gescheitert')),
     detail      TEXT,
-    updated_at  TEXT NOT NULL
+    updated_at  TEXT NOT NULL,
+    deleted_at  TEXT
 );
 
 CREATE INDEX IF NOT EXISTS recording_sitzung ON recording (session_id);
@@ -150,6 +157,33 @@ CREATE TABLE IF NOT EXISTS discord_intake (
     status     TEXT NOT NULL
                CHECK (status IN ('abgelegt', 'wartet', 'uebersprungen')),
     handled_at TEXT NOT NULL
+);
+
+-- Das Einwilligungsprotokoll des Aufnahme-Bots. Das Aufzeichnen des nichtöffentlich
+-- gesprochenen Wortes ohne Einwilligung ist strafbar (§201 StGB); der Bot sagt hörbar an,
+-- und **was** er angesagt hat, steht hier im Wortlaut — nicht als Verweis auf eine
+-- Konstante im Code, die sich später ändern kann. Ein Nachweis, der sich rückwirkend
+-- umschreibt, ist keiner. Die Zeile überlebt deshalb auch das Löschen ihrer Sitzung.
+CREATE TABLE IF NOT EXISTS consent_event (
+    id           INTEGER PRIMARY KEY,
+    session_id   INTEGER REFERENCES session (id) ON DELETE SET NULL,
+    kind         TEXT NOT NULL CHECK (kind IN ('ansage', 'nachzuegler')),
+    announced_at TEXT NOT NULL,
+    guild_id     TEXT NOT NULL,
+    channel_id   TEXT NOT NULL,
+    channel_name TEXT NOT NULL,
+    text         TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS consent_event_sitzung ON consent_event (session_id);
+
+-- Wer im Sprachkanal war, als die Ansage zu Ende gespielt hatte. Der Anzeigename steht
+-- dabei: eine Discord-Id allein ist Wochen später niemand mehr.
+CREATE TABLE IF NOT EXISTS consent_member (
+    event_id INTEGER NOT NULL REFERENCES consent_event (id) ON DELETE CASCADE,
+    user_id  TEXT NOT NULL,
+    name     TEXT NOT NULL,
+    PRIMARY KEY (event_id, user_id)
 );
 
 -- Der Suchindex. FTS5 steckt in SQLite, also keine neue Abhängigkeit. Eine Zeile je
@@ -220,5 +254,5 @@ INSERT INTO search_index (text, kind, ref_id, session_id, scene_id)
 SELECT s.text, 'transkript', s.transcript_id, t.session_id, NULL
 FROM transcript_segment s JOIN transcript t ON t.id = s.transcript_id;
 
-INSERT INTO meta (key, value) VALUES ('schema_version', '8')
+INSERT INTO meta (key, value) VALUES ('schema_version', '10')
 ON CONFLICT (key) DO UPDATE SET value = excluded.value;

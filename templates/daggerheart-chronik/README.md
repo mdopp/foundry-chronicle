@@ -18,21 +18,45 @@ Proxy setzt `Remote-User`, und ein Request ohne diesen Header wird abgewiesen.
 | `FOUNDRY_URL` | Adresse der Foundry-Instanz | — |
 | `FOUNDRY_USER` | Benutzername eines Foundry-Kontos | — |
 | `FOUNDRY_PASSWORD` | Passwort dazu (`secret`, beim Installieren einsetzen) | — |
-| `DISCORD_BOT_TOKEN` | Optional, erst ab dem Audio-Zweig | — |
+| `DISCORD_BOT_TOKEN` | Optional, für Diktat-Kanal und Aufnahme-Bot | — |
 | `OLLAMA_URL` / `OLLAMA_MODEL` | Optional, Sprachmodell auf der Box | — |
 
 `DATA_DIR` und `PUBLIC_DOMAIN` sind globale ServiceBay-Variablen und werden hier nicht
 noch einmal deklariert.
 
+## Container
+
+Der Pod hat zwei Container aus demselben Image:
+
+| Container | Befehl | Wofür |
+|---|---|---|
+| `chronik` | `waitress-serve` (Vorgabe des Images) | die Oberfläche hinter Authelia |
+| `bot` | `python -m chronicle.bot` | der Aufnahme-Bot am Discord-Gateway |
+
+Der Bot ist ein eigener, dauerhafter Prozess, weil Sprache nur mitgeschnitten werden kann,
+während sie gesprochen wird. **Ohne `DISCORD_BOT_TOKEN` beendet er sich mit einem Satz**
+und wird von der Neustart-Regel des Pods wieder gestartet — das ist erwartet und kein
+Fehler; der Token lässt sich jederzeit unter `/einstellungen` nachtragen.
+
 ## Daten
 
 ```
 {{DATA_DIR}}/daggerheart/
-  chronicle.sqlite3        ← Sitzungen, Szenen, Notizen, Protokolle (WAL-Modus)
+  chronicle.sqlite3        ← Sitzungen, Szenen, Notizen, Protokolle, Einwilligungen
+{{DATA_DIR}}/daggerheart-aufnahmen/
+  sitzung1-…-Mira.wav      ← eine Spur je Sprecher, aus dem Backup heraushalten
 ```
 
-Die SQLite-Datei ist klein und enthält alles Unersetzliche — sie gehört ins Backup.
-Audiospuren sind nach erfolgreichem Lauf löschbar und gehören nicht hinein.
+Die SQLite-Datei ist klein und enthält alles Unersetzliche — sie gehört ins Backup, samt
+dem Einwilligungsprotokoll des Aufnahme-Bots. Die Audiospuren liegen bewusst in einem
+**zweiten** Verzeichnis daneben: sie werden groß, sind nach der Transkription entbehrlich
+und gehören nicht ins Backup. **Beim Einrichten der Sicherung `daggerheart-aufnahmen`
+ausschließen.**
+
+Der Bot sagt im Sprachkanal eine **Aufbewahrungsfrist von 7 Tagen** zu und hält sie selbst
+ein: er räumt einmal beim Start und danach täglich ab, der nächtliche Stapel zusätzlich am
+Ende jedes Laufs. `python -m chronicle.transcribe --loeschen` entfernt eine Spur schon
+vorher. Gelöscht wird dabei nur die Audiodatei — die Zeile in der SQLite bleibt stehen.
 
 ## Rollout
 

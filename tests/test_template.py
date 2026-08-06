@@ -96,6 +96,41 @@ def test_ports_sind_konsistent(manifest: dict, variablen: dict) -> None:
     assert umgebung["CHRONICLE_PORT"] == str(port)
 
 
+def test_der_aufnahme_bot_laeuft_als_zweiter_container(manifest: dict) -> None:
+    # Ein eigener, dauerhafter Prozess neben dem Webdienst: Sprache lässt sich nur
+    # mitschneiden, während sie gesprochen wird.
+    container = {eintrag["name"]: eintrag for eintrag in manifest["spec"]["containers"]}
+    assert set(container) == {"chronik", "bot"}
+    assert container["bot"]["image"] == container["chronik"]["image"]
+    assert container["bot"]["command"] == ["python", "-m", "chronicle.bot"]
+    assert "ports" not in container["bot"]
+
+
+def test_beide_container_teilen_dasselbe_aufnahmeverzeichnis(manifest: dict) -> None:
+    for eintrag in manifest["spec"]["containers"]:
+        umgebung = {wert["name"]: wert["value"] for wert in eintrag["env"]}
+        assert umgebung["CHRONICLE_RECORDINGS_DIR"] == "/aufnahmen"
+        pfade = {mount["mountPath"]: mount["name"] for mount in eintrag["volumeMounts"]}
+        assert pfade["/aufnahmen"] == "chronik-aufnahmen"
+        assert pfade["/data"] == "chronik-daten"
+
+
+def test_die_aufnahmen_liegen_nicht_im_gesicherten_datenverzeichnis(manifest: dict) -> None:
+    pfade = {
+        eintrag["name"]: eintrag["hostPath"]["path"] for eintrag in manifest["spec"]["volumes"]
+    }
+    daten = pfade["chronik-daten"]
+    assert pfade["chronik-aufnahmen"] != daten
+    assert not pfade["chronik-aufnahmen"].startswith(daten + "/")
+
+
+def test_der_bot_bekommt_den_token_und_die_datenbank(manifest: dict) -> None:
+    bot = next(e for e in manifest["spec"]["containers"] if e["name"] == "bot")
+    umgebung = {wert["name"]: wert["value"] for wert in bot["env"]}
+    assert "DISCORD_BOT_TOKEN" in umgebung
+    assert umgebung["CHRONICLE_DATA_DIR"] == "/data"
+
+
 def test_mounts_treffen_ihre_volumes(manifest: dict) -> None:
     volumes = {eintrag["name"] for eintrag in manifest["spec"]["volumes"]}
     for container in manifest["spec"]["containers"]:

@@ -67,6 +67,7 @@ def create_app(config: Config | None = None) -> Flask:
             "sitzung.html",
             sitzung=daten,
             aufnahmen=recordings.for_session(basis.database_path, sitzung_id),
+            frist=recordings.RETENTION_TAGE,
             diktat_fehler=diktat_fehler,
         )
 
