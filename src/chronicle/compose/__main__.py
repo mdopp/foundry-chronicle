@@ -1,8 +1,13 @@
-"""python -m chronicle.compose <sitzung> — Chronik und Rückblick, im Stapel.
+"""python -m chronicle.compose <sitzung> — Chronik, Rückblick, Zustellung, im Stapel.
 
 Ein Lauf, zwei Ausgänge: der Rückblick liest die Chronik, die der erste Schritt gerade
 abgelegt hat. Ein eigener Aufruf daneben wäre ein zweiter Stapel für dieselbe
 Komposition; ein zweiter Lauf ersetzt ohnehin beides.
+
+Die Zustellung nach Discord hängt hier und nicht am Diktat-Lauf: **hier** entsteht ein
+neuer Rückblick, und der Diktat-Lauf ist die Gegenrichtung — dort abgeholt, würde der
+Rückblick eine Nacht zu spät im Kanal stehen. Zugestellt wird höchstens einmal je
+Sitzung; ohne Kanal oder ohne Bot-Token passiert nichts und der Lauf sagt es.
 
 Rückgabewert 1 heißt: die Protokolle stehen, aber ohne Sprachmodell — geordnet statt
 formuliert. Das ist ein Zustand, den ein Aufrufer sehen soll, kein Absturz.
@@ -15,6 +20,7 @@ import sys
 
 from chronicle.compose.service import compose_session, recap_session
 from chronicle.config import Config
+from chronicle.discord.rueckblick import deliver
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -32,6 +38,7 @@ def main(argv: list[str] | None = None) -> int:
     rueckblick = recap_session(config, sitzung)
     print(chronik.message)
     print(rueckblick.message)
+    print(deliver(config, sitzung))
     return 1 if chronik.reason or rueckblick.reason else 0
 
 

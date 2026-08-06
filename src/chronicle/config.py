@@ -56,8 +56,10 @@ class Config:
     foundry_user: str | None = None
     foundry_password: str | None = None
     discord_bot_token: str | None = None
+    discord_recap_channel: str | None = None
     ollama_url: str | None = None
     ollama_model: str | None = None
+    public_url: str | None = None
     data_dir: Path = Path(DEFAULT_DATA_DIR)
     recordings_dir: Path = Path(DEFAULT_RECORDINGS_DIR)
     whisper_model: str = DEFAULT_WHISPER_MODEL
@@ -71,8 +73,10 @@ class Config:
             foundry_user=_value(env, "FOUNDRY_USER"),
             foundry_password=_value(env, "FOUNDRY_PASSWORD"),
             discord_bot_token=_value(env, "DISCORD_BOT_TOKEN"),
+            discord_recap_channel=_value(env, "DISCORD_RECAP_CHANNEL"),
             ollama_url=_value(env, "OLLAMA_URL"),
             ollama_model=_value(env, "OLLAMA_MODEL"),
+            public_url=_value(env, "CHRONICLE_PUBLIC_URL"),
             data_dir=Path(_value(env, "CHRONICLE_DATA_DIR") or DEFAULT_DATA_DIR),
             recordings_dir=Path(_value(env, "CHRONICLE_RECORDINGS_DIR") or DEFAULT_RECORDINGS_DIR),
             whisper_model=_value(env, "CHRONICLE_WHISPER_MODEL") or DEFAULT_WHISPER_MODEL,
@@ -113,8 +117,10 @@ class Config:
             f"foundry_user={self.foundry_user!r}, "
             f"foundry_password={masked(self.foundry_password)}, "
             f"discord_bot_token={masked(self.discord_bot_token)}, "
+            f"discord_recap_channel={self.discord_recap_channel!r}, "
             f"ollama_url={self.ollama_url!r}, "
             f"ollama_model={self.ollama_model!r}, "
+            f"public_url={self.public_url!r}, "
             f"data_dir={str(self.data_dir)!r}, "
             f"recordings_dir={str(self.recordings_dir)!r}, "
             f"whisper_model={self.whisper_model!r}, "

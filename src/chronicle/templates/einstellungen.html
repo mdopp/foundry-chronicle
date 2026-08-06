@@ -77,6 +77,17 @@
       {% endif %}
     </div>
 
+    <div class="feld">
+      <label for="discord_recap_channel">Zustellkanal für den Rückblick</label>
+      <input id="discord_recap_channel" name="discord_recap_channel"
+             value="{{ discord_recap_channel }}" placeholder="chronik">
+      <p class="gedaempft">Der Kanal der ganzen Gruppe — nicht <code>#diktat</code>. Steht
+        hier ein Name, stellt <code>python -m chronicle.compose</code> jeden neu
+        komponierten Rückblick genau einmal dorthin zu. <strong>Feld leer heißt: keine
+        Zustellung.</strong> Eine neu komponierte Fassung wird nicht noch einmal
+        gepostet.</p>
+    </div>
+
     <p class="gedaempft">Wessen Stimme über welchem Absatz steht, sagt die
       <a href="{{ url_for('zuordnung') }}">Personen-Zuordnung</a>: Discord-Ids stehen nirgends in
       Foundry, also wird vorgeschlagen und einmal von Hand bestätigt.</p>
@@ -88,9 +99,21 @@
       statt formuliert.</p>
 
     <div class="feld">
-      <label for="ollama_url">Ollama-Adresse</label>
-      <input id="ollama_url" name="ollama_url" type="url" value="{{ ollama_url }}"
-             placeholder="{{ ollama_url }}">
+      {% if ollama_eigen %}
+        <label for="ollama_url">Ollama-Adresse</label>
+        <input id="ollama_url" name="ollama_url" type="url" value="{{ ollama_url }}"
+               placeholder="{{ ollama_standard }}">
+        <p class="gedaempft">Feld leeren heißt: wieder das Ollama dieser Box.</p>
+      {% else %}
+        <p>Gefragt wird das <strong>Ollama dieser Box</strong> <span class="gedaempft">— der
+          Standard</span>.</p>
+        <details>
+          <summary>Ollama läuft woanders</summary>
+          <label for="ollama_url">Ollama-Adresse</label>
+          <input id="ollama_url" name="ollama_url" type="url" value=""
+                 placeholder="{{ ollama_standard }}">
+        </details>
+      {% endif %}
     </div>
 
     <div class="feld">
@@ -116,6 +139,7 @@
       <dt>Foundry-Benutzer</dt><dd>{{ quellen.foundry_user }}</dd>
       <dt>Foundry-Passwort</dt><dd>{{ quellen.foundry_password }}</dd>
       <dt>Discord-Bot-Token</dt><dd>{{ quellen.discord_bot_token }}</dd>
+      <dt>Zustellkanal</dt><dd>{{ quellen.discord_recap_channel }}</dd>
       <dt>Ollama-Adresse</dt><dd>{{ quellen.ollama_url }}</dd>
       <dt>Ollama-Modell</dt><dd>{{ quellen.ollama_model }}</dd>
     </dl>

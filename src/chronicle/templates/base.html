@@ -114,6 +114,16 @@
       nav a:hover { background: var(--surface-2); color: var(--text); }
       nav a[aria-current="page"] { background: var(--surface-2); color: var(--accent); }
 
+      .band {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-left: 3px solid var(--status-warn);
+        border-radius: 0 var(--r-card) var(--r-card) 0;
+        font-size: .875rem;
+        margin: 0 0 var(--space-4);
+        padding: var(--space-3) var(--space-4);
+      }
+
       .karte {
         background: var(--surface);
         border: 1px solid var(--border);
@@ -166,6 +176,10 @@
       .reihe { display: flex; flex-wrap: wrap; gap: var(--space-3); }
       .reihe > * { flex: 1 1 12rem; }
       .absenden { margin-top: var(--space-3); }
+      .knoepfe { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+
+      summary { color: var(--text-muted); cursor: pointer; font-size: .875rem; }
+      details > *:not(summary) { margin-top: var(--space-2); }
 
       .marke {
         background: var(--surface-2);
@@ -276,6 +290,15 @@
              {% if request.path == url_for('status') %}aria-current="page"{% endif %}>Status</a>
         </nav>
       </header>
+      {% if verbindung == "unkonfiguriert" %}
+      <p class="band">Foundry ist nicht eingerichtet — mitgeschrieben wird trotzdem, die
+        Chronik bleibt dann aber ohne Würfe, Schaden und Beute.
+        <a href="{{ url_for('einstellungen') }}">Zugang eintragen</a></p>
+      {% elif verbindung == "veraltet" %}
+      <p class="band">Der letzte Abgleich mit Foundry ist gescheitert — was hier steht,
+        stammt aus dem Zwischenspeicher.
+        <a href="{{ url_for('status') }}">Woran es lag</a></p>
+      {% endif %}
       <main>{% block inhalt %}{% endblock %}</main>
     </div>
   </body>

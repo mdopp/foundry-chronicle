@@ -42,8 +42,13 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: pip install -e ".[dev]"
+      # Derselbe Eingabesatz wie im Test-Job der ci.yml — inklusive transcribe-Extra und
+      # HF_HUB_OFFLINE. Ein Torwächter, der eine schmalere Installation prüft als die CI,
+      # lässt das Image an einem Bruch vorbei, den die CI nebenan gerade rot meldet.
+      - run: pip install -e ".[dev,transcribe]"
       - run: pytest -q
+        env:
+          HF_HUB_OFFLINE: "1"
 
   image:
     name: Image

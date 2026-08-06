@@ -25,7 +25,10 @@ python -m chronicle          # http://127.0.0.1:8000
 ```
 
 Unter `/` wird mitgeschrieben — Sitzung, Szenen, Notizen; `/status` sagt, was
-konfiguriert ist und wann zuletzt mit Foundry abgeglichen wurde.
+konfiguriert ist und wann zuletzt mit Foundry abgeglichen wurde. Am Notizfeld sitzt ein
+**Diktier-Knopf** für kurze Notizen: er nutzt die Spracherkennung des Browsers, die über
+die **Cloud des Browser-Herstellers** läuft und nicht auf dieser Box — Browser ohne
+`SpeechRecognition` zeigen ihn gar nicht erst.
 
 Foundry-Adresse, -Benutzer und -Passwort, der Discord-Bot-Token sowie Ollama-Adresse und
 -Modell werden unter `/einstellungen` gepflegt und liegen in der SQLite. Die Umgebung —
@@ -61,9 +64,10 @@ Ohne Argumente wird abgearbeitet, was über die Oberfläche hochgeladen wurde un
 wartet: auf der Sitzungsseite lädt ein **Diktat** — eine Sprachnotiz aus der
 Sprachmemo-App des Telefons — eine Spur hoch und reiht sie in dieselbe Warteschlange ein.
 Die Seite zeigt den Stand dieses Jobs, nie einen geratenen Fortschritt; ist er fertig,
-steht das Transkript dort und lässt sich einer Szene als Notiz übernehmen. Aufgenommen
-wird **nicht** im Browser: Mikrofonzugriff braucht HTTPS und wäre im Heimnetz über HTTP
-tot, und die Sprachmemo-App übersteht Bildschirmsperre und Anruf.
+steht das Transkript dort und lässt sich einer Szene als Notiz übernehmen. Lange Diktate
+werden **nicht** im Browser aufgenommen: eine Sprachmemo-App übersteht Bildschirmsperre
+und Anruf, ein Browser-Tab nicht — und die Quelle bleibt erhalten, bis das Transkript
+taugt.
 
 Der Dateiname wird die Quellenkennung der Spur; ein zweiter Lauf ersetzt sie, statt zu
 verdoppeln. Erkannt wird `small` auf CPU mit int8 — grob das Zwei- bis Fünffache der
@@ -75,6 +79,18 @@ Foundry-Zwischenspeicher, hart auf rund 224 Token gekappt.
 `faster-whisper` steckt im Extra `transcribe`: das Image bringt es mit, eine
 Dev-Installation muss es nicht laden. Die Tests setzen ein erfundenes Modell ein und
 laden nie ein echtes herunter.
+
+**Mehrere Spuren werden zu einer Unterhaltung.** Schneidet der Aufnahme-Bot mit, liegt je
+Sprecher eine Spur; nacheinander gelesen wären das Monologe. Die Sitzungsseite zeigt sie
+deshalb nach Zeit verschränkt — die Marke zählt ab dem Aufnahmebeginn, dem gemeinsamen
+Nullpunkt aller Spuren, und der Name kommt aus der bestätigten Zuordnung. Ohne Zuordnung
+steht der Discord-Name da; geraten wird keiner. Ein Abschnitt zwischen zwei Zeitmarken
+lässt sich einer Szene **als Notiz** übernehmen, in derselben Form, die die Eingabe am
+Tisch liefert — damit bleibt die Komposition unverändert und es gibt weiterhin eine
+Pipeline. Die Marken bleiben draußen: die Chronik leitet aus Notizen und Foundry-Fakten
+ab, welche Zahl belegt ist, und eine Uhrzeit steht in keinem Chat-Log. Ein Diktat vom
+Heimweg hat keinen Bezug zu einer Sitzungsuhr und bleibt deshalb außerhalb dieser Achse —
+für die Präsenzrunde ist die Szenenfolge weiterhin die einzige Zeitachse.
 
 **Die Aufnahmen liegen neben dem Datenverzeichnis, nicht darin** (`recordings/` gegen
 `data/`, im Image `/aufnahmen` gegen `/data`). Gesichert wird die SQLite; Audiospuren
@@ -130,6 +146,32 @@ neben dem Zeiger steht die Kennung jeder erledigten Nachricht in der Datenbank. 
 läuft durch Discords Cloud; für Online-Gruppen ändert das nichts, für reine Präsenzgruppen
 ist es eine bewusste Entscheidung — der Discord-Teil darf leer bleiben, dann bleibt das
 Web-Formular der Weg.
+
+## Rückblick nach Discord
+
+Gegenrichtung: der Rückblick geht **in den Gruppenkanal**, nicht in den Briefkasten. Er
+wird unmittelbar vor der nächsten Sitzung gelesen, und dort ist die Gruppe ohnehin.
+Welcher Kanal, sagt *Einstellungen → Zustellkanal für den Rückblick* (z. B. `chronik`);
+**leer heißt: keine Zustellung.** Einen Zeitpunkt gibt es nicht, auf den sich zielen ließe
+— das System kennt keinen Sitzungskalender.
+
+Zugestellt wird am Ende der Komposition:
+
+```bash
+python -m chronicle.compose 7    # Chronik, Rückblick, Zustellung
+```
+
+**Eine Sitzung, eine Zustellung.** Der Zeitpunkt steht in `protocol.delivered_at`, ein
+zweiter Lauf sieht ihn und schweigt. Auch eine *neu komponierte* Fassung wird nicht noch
+einmal gepostet: der Kanal ist die Zeitachse der Gruppe, ein zweiter Rückblick darin läse
+sich wie eine zweite Sitzung. Wer die neue Fassung sehen will, liest die Chronik — dorthin
+zeigt auch der Link. Gepostet wird ausschließlich der abgelegte Rückblick; er ist per
+Konstruktion aus berechtigungsgefiltertem Material komponiert, und daran vorbei wird
+nichts hineingereicht.
+
+Discord kappt bei **2000 Zeichen**. Ein längerer Rückblick ist ein Fehler des Rückblicks
+und kein Grund zum Aufteilen: gepostet wird der Anfang plus ein Link auf die
+Protokollseite (`CHRONICLE_PUBLIC_URL`), die volle Länge steht in der Logzeile.
 
 ## Aufnahme per Discord
 

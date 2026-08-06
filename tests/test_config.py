@@ -24,6 +24,20 @@ def test_liest_alles_aus_der_umgebung():
     assert config.discord_configured
 
 
+def test_zustellkanal_und_oeffentliche_adresse_kommen_aus_der_umgebung():
+    config = Config.from_env(
+        dict(
+            VOLLSTAENDIG,
+            DISCORD_RECAP_CHANNEL="chronik",
+            CHRONICLE_PUBLIC_URL="https://chronik.example",
+        )
+    )
+    assert config.discord_recap_channel == "chronik"
+    assert config.public_url == "https://chronik.example"
+    assert Config.from_env({}).discord_recap_channel is None
+    assert Config.from_env({}).public_url is None
+
+
 def test_ohne_umgebung_ist_foundry_unkonfiguriert():
     config = Config.from_env({})
     assert not config.foundry_configured

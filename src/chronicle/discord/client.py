@@ -197,6 +197,9 @@ class DiscordClient:
             f"/channels/{channel_id}/messages/{message_id}/reactions/{quote(emoji)}/@me",
         )
 
+    def post(self, channel_id: str, text: str) -> None:
+        self._call("POST", f"/channels/{channel_id}/messages", json={"content": text})
+
     def reply(self, channel_id: str, message_id: str, text: str) -> None:
         self._call(
             "POST",

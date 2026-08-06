@@ -1,0 +1,326 @@
+"""Aus fünf Monologen eine Unterhaltung — und aus der eine Notiz.
+
+Geprüft wird vor allem das, was still schiefgehen würde: nach Spur statt nach Zeit zu
+sortieren, einen Sprechernamen zu raten, oder einer Präsenzrunde eine Zeitachse
+anzudichten, die es dort nicht gibt.
+"""
+
+from __future__ import annotations
+
+import pytest
+
+from chronicle import consent, db, notes, people, recordings
+from chronicle.app import create_app
+from chronicle.compose.composer import NOTIZEN_TITEL, compose
+from chronicle.compose.service import material
+from chronicle.config import Config
+from chronicle.transcribe import merge, service
+
+STAND = "2026-08-06T20:00:00+00:00"
+
+MIRA = consent.Member(id="4001", name="Mira")
+DAVEY = consent.Member(id="4002", name="Davey")
+
+MIRA_IN_FOUNDRY = "u-mira"
+
+
+@pytest.fixture
+def config(tmp_path):
+    return Config(data_dir=tmp_path / "daten", recordings_dir=tmp_path / "aufnahmen")
+
+
+@pytest.fixture
+def sitzung_id(config):
+    db.init(config.database_path)
+    return notes.create_session(config.database_path, played_on="2026-08-06", title="Der Keller")
+
+
+@pytest.fixture
+def client(config):
+    return create_app(config).test_client()
+
+
+def angesagt(config, *mitglieder):
+    consent.record(
+        config.database_path,
+        session_id=None,
+        kind=consent.ANSAGE,
+        guild_id="g-1",
+        channel_id="c-1",
+        channel_name="Am Tisch",
+        text="Ich schneide mit.",
+        members=tuple(mitglieder),
+    )
+
+
+def spur(config, sitzung_id, wer, *segmente, discord_user_id="egal"):
+    """Eine aufgenommene Spur samt Transkript — ``segmente`` sind (ms, ms, Text)."""
+    kennung = None if discord_user_id is None else (wer.id if wer else discord_user_id)
+    name = (wer.name if wer else discord_user_id).lower()
+    recordings.enqueue(config.database_path, sitzung_id, f"{name}.wav", discord_user_id=kennung)
+    verbindung = db.connect(config.database_path)
+    try:
+        service.store(verbindung, sitzung_id, name, tuple(segmente), STAND)
+    finally:
+        verbindung.close()
+
+
+def diktat(config, sitzung_id, *segmente):
+    recordings.enqueue(config.database_path, sitzung_id, "memo.m4a")
+    verbindung = db.connect(config.database_path)
+    try:
+        service.store(verbindung, sitzung_id, "memo", tuple(segmente), STAND)
+    finally:
+        verbindung.close()
+
+
+def foundry_spieler(config, kennung, name):
+    verbindung = db.connect(config.database_path)
+    try:
+        with verbindung:
+            verbindung.execute(
+                "INSERT INTO foundry_player (id, name, role, is_gm) VALUES (?, ?, 1, 0)",
+                (kennung, name),
+            )
+    finally:
+        verbindung.close()
+
+
+def zwei_stimmen(config, sitzung_id):
+    angesagt(config, MIRA, DAVEY)
+    spur(
+        config,
+        sitzung_id,
+        MIRA,
+        (0, 2000, "Wir brechen bei Sonnenaufgang auf."),
+        (10000, 12000, "Da liegt etwas vor der Tür."),
+    )
+    spur(
+        config,
+        sitzung_id,
+        DAVEY,
+        (5000, 7000, "Warte, ich sehe nach."),
+        (15000, 17000, "Es ist verriegelt."),
+    )
+
+
+# --- Die Zeitachse ------------------------------------------------------------------
+
+
+def test_verschraenkt_wird_nach_zeit_und_nicht_nach_spur(config, sitzung_id):
+    zwei_stimmen(config, sitzung_id)
+
+    unterhaltung = merge.conversation(config.database_path, sitzung_id)
+
+    assert [a.speaker for a in unterhaltung] == ["Mira", "Davey", "Mira", "Davey"]
+    assert [a.start_ms for a in unterhaltung] == [0, 5000, 10000, 15000]
+
+
+def test_eine_luecke_in_einer_spur_verschiebt_die_andere_nicht(config, sitzung_id):
+    angesagt(config, MIRA, DAVEY)
+    # Mira schweigt eine Viertelstunde; die Marke danach bleibt trotzdem die des Bandes.
+    spur(config, sitzung_id, MIRA, (0, 2000, "Anfang."), (900000, 902000, "Und weiter."))
+    spur(config, sitzung_id, DAVEY, (60000, 62000, "Dazwischen."))
+
+    unterhaltung = merge.conversation(config.database_path, sitzung_id)
+
+    assert [a.marke for a in unterhaltung] == ["0:00:00", "0:01:00", "0:15:00"]
+    assert [a.speaker for a in unterhaltung] == ["Mira", "Davey", "Mira"]
+
+
+def test_zwei_saetze_derselben_stimme_werden_ein_beitrag(config, sitzung_id):
+    angesagt(config, MIRA, DAVEY)
+    spur(config, sitzung_id, MIRA, (0, 2000, "Wir gehen."), (2000, 4000, "Und zwar jetzt."))
+    spur(config, sitzung_id, DAVEY, (6000, 7000, "Meinetwegen."))
+
+    unterhaltung = merge.conversation(config.database_path, sitzung_id)
+
+    assert len(unterhaltung) == 2
+    assert unterhaltung[0].text == "Wir gehen. Und zwar jetzt."
+    assert unterhaltung[0].end_ms == 4000
+
+
+# --- Die Beschriftung ---------------------------------------------------------------
+
+
+def test_eine_bestaetigte_zuordnung_setzt_den_foundry_namen(config, sitzung_id):
+    zwei_stimmen(config, sitzung_id)
+    foundry_spieler(config, MIRA_IN_FOUNDRY, "Mira Hartleib")
+    people.confirm(config.database_path, {MIRA.id: MIRA_IN_FOUNDRY})
+
+    unterhaltung = merge.conversation(config.database_path, sitzung_id)
+
+    assert unterhaltung[0].speaker == "Mira Hartleib"
+    assert unterhaltung[0].zugeordnet is True
+
+
+def test_ohne_bestaetigung_steht_der_discord_name_da_und_kein_vorschlag(config, sitzung_id):
+    zwei_stimmen(config, sitzung_id)
+    # Der Name wäre auf Anhieb vorzuschlagen — an einer Spur sähe ein Vorschlag aber aus
+    # wie eine Tatsache, und genau das darf hier nicht passieren.
+    foundry_spieler(config, MIRA_IN_FOUNDRY, "Mira")
+
+    unterhaltung = merge.conversation(config.database_path, sitzung_id)
+
+    assert unterhaltung[0].speaker == "Mira"
+    assert unterhaltung[0].zugeordnet is False
+
+
+def test_eine_spur_ohne_einwilligungseintrag_behaelt_ihren_spurnamen(config, sitzung_id):
+    spur(config, sitzung_id, None, (0, 2000, "Wer war das?"), discord_user_id="4009")
+
+    unterhaltung = merge.conversation(config.database_path, sitzung_id)
+
+    assert unterhaltung[0].speaker == "4009"
+    assert unterhaltung[0].zugeordnet is False
+
+
+# --- Der Präsenzweg bleibt, wie er war ----------------------------------------------
+
+
+def test_ein_diktat_ohne_discord_id_kommt_nicht_auf_die_zeitachse(config, sitzung_id):
+    diktat(config, sitzung_id, (0, 2000, "Auf dem Heimweg fällt mir ein:"))
+
+    assert merge.conversation(config.database_path, sitzung_id) == ()
+
+
+def test_die_seite_zeigt_ohne_bot_spuren_kein_transkript(client, config, sitzung_id):
+    diktat(config, sitzung_id, (0, 2000, "Auf dem Heimweg fällt mir ein:"))
+
+    text = client.get(f"/sitzungen/{sitzung_id}").get_data(as_text=True)
+
+    assert "Zusammengeführtes Transkript" not in text
+
+
+# --- Marken und Abschnitte ----------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("eingabe", "erwartet"),
+    [("", None), ("17", 17000), ("02:03", 123000), ("1:02:03", 3723000)],
+)
+def test_eine_zeitmarke_wird_gelesen(eingabe, erwartet):
+    assert merge.marke_ms(eingabe) == erwartet
+
+
+@pytest.mark.parametrize("eingabe", ["gleich", "1:2:3:4", "12,5"])
+def test_eine_unlesbare_marke_wird_gesagt_und_nicht_geraten(eingabe):
+    with pytest.raises(ValueError, match="keine Zeitmarke"):
+        merge.marke_ms(eingabe)
+
+
+def test_ein_abschnitt_wird_nach_marken_geschnitten(config, sitzung_id):
+    zwei_stimmen(config, sitzung_id)
+    unterhaltung = merge.conversation(config.database_path, sitzung_id)
+
+    abschnitt = merge.span(unterhaltung, von=5000, bis=10000)
+
+    assert [a.speaker for a in abschnitt] == ["Davey", "Mira"]
+    assert merge.span(unterhaltung) == unterhaltung
+
+
+def test_die_notiz_traegt_den_sprecher_aber_keine_zeitmarke(config, sitzung_id):
+    zwei_stimmen(config, sitzung_id)
+
+    text = merge.note_text(merge.conversation(config.database_path, sitzung_id))
+
+    assert text.splitlines()[0] == "Mira: Wir brechen bei Sonnenaufgang auf."
+    # Keine Ziffer aus der Uhr: die Zahlenschranke der Komposition liest die Notizen als
+    # belegt, und eine Uhrzeit steht in keinem Foundry-Chat-Log.
+    assert "0:00:00" not in text
+
+
+# --- Der Weg in die Komposition -----------------------------------------------------
+
+
+def test_der_abschnitt_wird_zur_notiz_in_der_gewaehlten_szene(client, config, sitzung_id):
+    zwei_stimmen(config, sitzung_id)
+    szene = notes.session(config.database_path, sitzung_id).scenes[0]
+
+    antwort = client.post(
+        f"/sitzungen/{sitzung_id}/transkript",
+        data={"scene_id": str(szene.id), "von": "0:00:05", "bis": "0:00:10"},
+        follow_redirects=True,
+    )
+
+    assert antwort.status_code == 200
+    notiz = notes.session(config.database_path, sitzung_id).scenes[0].notes[0]
+    assert notiz.text == "Davey: Warte, ich sehe nach.\nMira: Da liegt etwas vor der Tür."
+
+
+def test_ein_leerer_abschnitt_wird_gesagt_statt_still_verschluckt(client, config, sitzung_id):
+    zwei_stimmen(config, sitzung_id)
+    szene = notes.session(config.database_path, sitzung_id).scenes[0]
+
+    antwort = client.post(
+        f"/sitzungen/{sitzung_id}/transkript",
+        data={"scene_id": str(szene.id), "von": "1:00:00", "bis": ""},
+    )
+
+    assert antwort.status_code == 400
+    assert merge.LEERE_SPANNE in antwort.get_data(as_text=True)
+    assert notes.session(config.database_path, sitzung_id).note_count == 0
+
+
+def test_eine_unlesbare_marke_kommt_als_meldung_zurueck(client, config, sitzung_id):
+    zwei_stimmen(config, sitzung_id)
+    szene = notes.session(config.database_path, sitzung_id).scenes[0]
+
+    antwort = client.post(
+        f"/sitzungen/{sitzung_id}/transkript", data={"scene_id": str(szene.id), "von": "gleich"}
+    )
+
+    assert antwort.status_code == 400
+    assert "keine Zeitmarke" in antwort.get_data(as_text=True)
+
+
+def test_ein_abschnitt_geht_nicht_in_eine_fremde_szene(client, config, sitzung_id):
+    zwei_stimmen(config, sitzung_id)
+    fremde = notes.session(
+        config.database_path,
+        notes.create_session(config.database_path, played_on="2026-08-13"),
+    ).scenes[0]
+
+    assert (
+        client.post(f"/sitzungen/{sitzung_id}/transkript", data={"scene_id": "0"}).status_code
+        == 404
+    )
+    assert (
+        client.post(
+            f"/sitzungen/{sitzung_id}/transkript", data={"scene_id": str(fremde.id)}
+        ).status_code
+        == 404
+    )
+
+
+def test_die_komposition_nimmt_das_transkript_wie_eine_notiz(client, config, sitzung_id):
+    """Der Schluss der Architektur: dieselbe Materialform, derselbe Composer."""
+    zwei_stimmen(config, sitzung_id)
+    szene = notes.session(config.database_path, sitzung_id).scenes[0]
+    client.post(f"/sitzungen/{sitzung_id}/transkript", data={"scene_id": str(szene.id)})
+
+    verbindung = db.connect(config.database_path)
+    try:
+        stoff = material(verbindung, sitzung_id)
+    finally:
+        verbindung.close()
+
+    assert stoff.scenes[0].notes == (
+        "Mira: Wir brechen bei Sonnenaufgang auf.\nDavey: Warte, ich sehe nach.\n"
+        "Mira: Da liegt etwas vor der Tür.\nDavey: Es ist verriegelt.",
+    )
+    assert stoff.scenes[0].facts == ()
+
+    chronik = compose(stoff).text
+    assert NOTIZEN_TITEL in chronik
+    assert "Mira: Wir brechen bei Sonnenaufgang auf." in chronik
+
+
+def test_die_sitzungsseite_zeigt_die_verschraenkte_unterhaltung(client, config, sitzung_id):
+    zwei_stimmen(config, sitzung_id)
+
+    text = client.get(f"/sitzungen/{sitzung_id}").get_data(as_text=True)
+
+    assert "Zusammengeführtes Transkript" in text
+    assert "noch nicht zugeordnet" in text
+    assert text.index("Warte, ich sehe nach.") < text.index("Da liegt etwas vor der Tür.")

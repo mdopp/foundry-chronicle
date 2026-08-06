@@ -24,6 +24,7 @@ KEYS = (
     "foundry_user",
     "foundry_password",
     "discord_bot_token",
+    "discord_recap_channel",
     "ollama_url",
     "ollama_model",
 )

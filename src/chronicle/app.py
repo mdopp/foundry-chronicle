@@ -15,15 +15,23 @@ wirkt ohne Neustart.
 
 from __future__ import annotations
 
-from flask import Flask, Response, abort, redirect, render_template, request, url_for
+from flask import Flask, Response, abort, g, redirect, render_template, request, url_for
 
 from chronicle import db, foundry, notes, people, protocol, recordings, search, settings
 from chronicle.compose import client as sprachmodell
 from chronicle.compose.client import ModelError
 from chronicle.compose.service import RUECKBLICK
 from chronicle.config import Config
+from chronicle.transcribe import merge
 
 REMOTE_USER_HEADER = "Remote-User"
+
+UNKONFIGURIERT = "unkonfiguriert"
+VERALTET = "veraltet"
+
+# Status und Einstellungen erklären den Verbindungszustand selbst und ausführlich; ein
+# Band darüber wäre dort nur eine Dopplung.
+OHNE_BAND = frozenset({"status", "einstellungen", "einstellungen_speichern", "healthz"})
 
 
 def create_app(config: Config | None = None) -> Flask:
@@ -39,8 +47,17 @@ def create_app(config: Config | None = None) -> Flask:
         if not basis.require_remote_user or request.endpoint == "healthz":
             return None
         if not request.headers.get(REMOTE_USER_HEADER):
+            g.abgewiesen = True
             return render_template("abgewiesen.html"), 403
         return None
+
+    @app.context_processor
+    def verbindungsband() -> dict[str, str | None]:
+        if g.get("abgewiesen") or request.endpoint in OHNE_BAND:
+            return {"verbindung": None}
+        if not settings.effective(basis).foundry_configured:
+            return {"verbindung": UNKONFIGURIERT}
+        return {"verbindung": VERALTET if foundry.failed(basis) else None}
 
     @app.get("/")
     def sitzungen() -> str:
@@ -59,7 +76,11 @@ def create_app(config: Config | None = None) -> Flask:
         )
         return redirect(url_for("sitzung", sitzung_id=sitzung_id))
 
-    def sitzungsseite(sitzung_id: int, diktat_fehler: str | None = None) -> str:
+    def sitzungsseite(
+        sitzung_id: int,
+        diktat_fehler: str | None = None,
+        transkript_fehler: str | None = None,
+    ) -> str:
         daten = notes.session(basis.database_path, sitzung_id)
         if daten is None:
             abort(404)
@@ -68,8 +89,10 @@ def create_app(config: Config | None = None) -> Flask:
             sitzung=daten,
             aufnahmen=recordings.for_session(basis.database_path, sitzung_id),
             sprecher=people.speakers(basis.database_path),
+            transkript=merge.conversation(basis.database_path, sitzung_id),
             frist=recordings.RETENTION_TAGE,
             diktat_fehler=diktat_fehler,
+            transkript_fehler=transkript_fehler,
         )
 
     @app.get("/sitzungen/<int:sitzung_id>")
@@ -118,6 +141,27 @@ def create_app(config: Config | None = None) -> Flask:
         return redirect(
             url_for("sitzung", sitzung_id=aufnahme.session_id, _anchor=f"szene-{szene_id}")
         )
+
+    @app.post("/sitzungen/<int:sitzung_id>/transkript")
+    def transkript_uebernehmen(sitzung_id: int) -> Response | tuple[str, int]:
+        gewaehlt = request.form.get("scene_id", "")
+        if not gewaehlt.isdigit():
+            abort(404)
+        szene_id = int(gewaehlt)
+        if notes.session_of_scene(basis.database_path, szene_id) != sitzung_id:
+            abort(404)
+        try:
+            von = merge.marke_ms(request.form.get("von", ""))
+            bis = merge.marke_ms(request.form.get("bis", ""))
+        except ValueError as fehler:
+            return sitzungsseite(sitzung_id, transkript_fehler=str(fehler)), 400
+        abschnitt = merge.span(
+            merge.conversation(basis.database_path, sitzung_id), von=von, bis=bis
+        )
+        if not abschnitt:
+            return sitzungsseite(sitzung_id, transkript_fehler=merge.LEERE_SPANNE), 400
+        notes.add_note(basis.database_path, szene_id, merge.note_text(abschnitt))
+        return redirect(url_for("sitzung", sitzung_id=sitzung_id, _anchor=f"szene-{szene_id}"))
 
     @app.errorhandler(413)
     def zu_gross(_fehler: object) -> tuple[str, int]:
@@ -179,7 +223,10 @@ def create_app(config: Config | None = None) -> Flask:
             foundry_user=aktuell.foundry_user or "",
             passwort_gesetzt=bool(aktuell.foundry_password),
             bot_token_gesetzt=bool(aktuell.discord_bot_token),
+            discord_recap_channel=aktuell.discord_recap_channel or "",
             ollama_url=adresse,
+            ollama_eigen=adresse != settings.DEFAULT_OLLAMA_URL,
+            ollama_standard=settings.DEFAULT_OLLAMA_URL,
             ollama_model=aktuell.ollama_model or "",
             modelle=modelle,
             modell_hinweis=hinweis,
