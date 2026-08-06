@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from flask import Flask, Response, abort, redirect, render_template, request, url_for
 
-from chronicle import db, foundry, notes, protocol, recordings, search, settings
+from chronicle import db, foundry, notes, people, protocol, recordings, search, settings
 from chronicle.compose import client as sprachmodell
 from chronicle.compose.client import ModelError
 from chronicle.compose.service import RUECKBLICK
@@ -67,6 +67,7 @@ def create_app(config: Config | None = None) -> Flask:
             "sitzung.html",
             sitzung=daten,
             aufnahmen=recordings.for_session(basis.database_path, sitzung_id),
+            sprecher=people.speakers(basis.database_path),
             frist=recordings.RETENTION_TAGE,
             diktat_fehler=diktat_fehler,
         )
@@ -144,6 +145,28 @@ def create_app(config: Config | None = None) -> Flask:
             "suche.html",
             ergebnis=search.find(basis.database_path, request.args.get("q", "")),
         )
+
+    @app.get("/zuordnung")
+    def zuordnung() -> str:
+        return render_template(
+            "zuordnung.html",
+            uebersicht=people.overview(basis.database_path),
+            feld=people.FELD,
+        )
+
+    @app.post("/zuordnung")
+    def zuordnung_speichern() -> Response:
+        uebersicht = people.overview(basis.database_path)
+        bekannt = {spieler.id for spieler in uebersicht.spieler}
+        # Gespeichert wird nur, was in der angezeigten Liste stand: diese Tabelle sagt
+        # später, wessen Stimme wessen Absatz ist, und nimmt deshalb keinen Wert an, den
+        # niemand gesehen hat.
+        auswahl = {}
+        for person in uebersicht.personen:
+            gewaehlt = request.form.get(people.FELD + person.discord_user_id, "").strip()
+            auswahl[person.discord_user_id] = gewaehlt if gewaehlt in bekannt else ""
+        people.confirm(basis.database_path, auswahl)
+        return redirect(url_for("zuordnung"))
 
     @app.get("/einstellungen")
     def einstellungen() -> str:

@@ -49,6 +49,16 @@
     <h4>Spur {{ aufnahme.id }} <span class="gedaempft">— <code>{{ aufnahme.filename }}</code>,
       eingegangen <time datetime="{{ aufnahme.uploaded_at }}">{{ aufnahme.uploaded_at[11:16] }} UTC</time></span></h4>
 
+    {% set person = sprecher.get(aufnahme.discord_user_id) if aufnahme.discord_user_id else none %}
+    {% if person and person.confirmed %}
+    <p>Gesprochen von <strong>{{ person.confirmed.name }}</strong>{% if person.confirmed.characters %}
+      — {{ person.confirmed.characters | join(", ") }}{% endif %}.</p>
+    {% elif person %}
+    <p>Gesprochen von {{ person.discord_name }}
+      <span class="gedaempft">— in Discord, noch nicht zugeordnet</span>.
+      <a href="{{ url_for('zuordnung') }}">Zuordnen</a></p>
+    {% endif %}
+
     {% if aufnahme.deleted_at %}
     <p class="gedaempft">Aufnahme nach {{ frist }} Tagen entfernt — die Frist, die der Bot im
       Sprachkanal ansagt. Die Zeile bleibt stehen, damit nachvollziehbar ist, dass es die

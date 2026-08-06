@@ -10,12 +10,15 @@ import sqlite3
 from importlib import resources
 from pathlib import Path
 
-SCHEMA_VERSION = 10
+SCHEMA_VERSION = 11
 
 # ``CREATE TABLE IF NOT EXISTS`` erreicht eine bestehende Tabelle nicht mehr; eine neue
 # Spalte muss deshalb einmal nachgetragen werden. Nur additiv — mehr kann und soll dieser
 # Weg nicht.
-NACHGETRAGEN = (("recording", "deleted_at", "TEXT"),)
+NACHGETRAGEN = (
+    ("recording", "deleted_at", "TEXT"),
+    ("recording", "discord_user_id", "TEXT"),
+)
 
 
 def schema_sql() -> str:
