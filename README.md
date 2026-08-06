@@ -25,7 +25,10 @@ python -m chronicle          # http://127.0.0.1:8000
 ```
 
 Unter `/` wird mitgeschrieben — Sitzung, Szenen, Notizen; `/status` sagt, was
-konfiguriert ist und wann zuletzt mit Foundry abgeglichen wurde.
+konfiguriert ist und wann zuletzt mit Foundry abgeglichen wurde. Am Notizfeld sitzt ein
+**Diktier-Knopf** für kurze Notizen: er nutzt die Spracherkennung des Browsers, die über
+die **Cloud des Browser-Herstellers** läuft und nicht auf dieser Box — Browser ohne
+`SpeechRecognition` zeigen ihn gar nicht erst.
 
 Foundry-Adresse, -Benutzer und -Passwort, der Discord-Bot-Token sowie Ollama-Adresse und
 -Modell werden unter `/einstellungen` gepflegt und liegen in der SQLite. Die Umgebung —
@@ -61,9 +64,10 @@ Ohne Argumente wird abgearbeitet, was über die Oberfläche hochgeladen wurde un
 wartet: auf der Sitzungsseite lädt ein **Diktat** — eine Sprachnotiz aus der
 Sprachmemo-App des Telefons — eine Spur hoch und reiht sie in dieselbe Warteschlange ein.
 Die Seite zeigt den Stand dieses Jobs, nie einen geratenen Fortschritt; ist er fertig,
-steht das Transkript dort und lässt sich einer Szene als Notiz übernehmen. Aufgenommen
-wird **nicht** im Browser: Mikrofonzugriff braucht HTTPS und wäre im Heimnetz über HTTP
-tot, und die Sprachmemo-App übersteht Bildschirmsperre und Anruf.
+steht das Transkript dort und lässt sich einer Szene als Notiz übernehmen. Lange Diktate
+werden **nicht** im Browser aufgenommen: eine Sprachmemo-App übersteht Bildschirmsperre
+und Anruf, ein Browser-Tab nicht — und die Quelle bleibt erhalten, bis das Transkript
+taugt.
 
 Der Dateiname wird die Quellenkennung der Spur; ein zweiter Lauf ersetzt sie, statt zu
 verdoppeln. Erkannt wird `small` auf CPU mit int8 — grob das Zwei- bis Fünffache der

@@ -190,13 +190,14 @@ def test_ein_gescheiterter_lauf_steht_mit_grund_auf_der_seite(client, config, si
     assert "faster-whisper fehlt." in seite(client, sitzung_id)
 
 
-def test_kein_mikrofon_kein_aufnahmeknopf_kein_stt(client, sitzung_id):
+def test_im_browser_wird_nicht_aufgenommen_sondern_hochgeladen(client, sitzung_id):
+    """Seit #35 diktiert der Browser ins Notizfeld — aufgenommen wird dort trotzdem nicht."""
     hochladen(client, sitzung_id)
     html = seite(client, sitzung_id)
 
     assert 'type="file"' in html
     assert 'accept="audio/*"' in html
-    for verboten in ("getUserMedia", "MediaRecorder", "SpeechRecognition", "capture=", "<script"):
+    for verboten in ("getUserMedia", "MediaRecorder", "capture="):
         assert verboten not in html
 
 

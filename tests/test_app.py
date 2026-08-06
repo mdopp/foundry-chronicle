@@ -543,3 +543,20 @@ def test_eine_eigene_ollama_adresse_bekommt_das_feld(tmp_path):
     html = gelesen(config, "/einstellungen")
     assert "Ollama läuft woanders" not in html
     assert 'value="http://ollama.example:11434"' in html
+
+
+def test_der_diktier_knopf_haengt_verborgen_an_jedem_notizfeld(tmp_path):
+    config, sitzung_id = eine_sitzung(tmp_path)
+    szene = notes.session(config.database_path, sitzung_id).scenes[0]
+    html = gelesen(config, f"/sitzungen/{sitzung_id}")
+    assert f'data-diktat="notiz-{szene.id}"' in html
+    assert 'aria-pressed="false" hidden>Diktieren</button>' in html
+
+
+def test_ohne_spracherkennung_bleibt_der_knopf_weg(tmp_path):
+    config, sitzung_id = eine_sitzung(tmp_path)
+    html = gelesen(config, f"/sitzungen/{sitzung_id}")
+    assert "window.SpeechRecognition || window.webkitSpeechRecognition" in html
+    assert 'erkennung.lang = "de-DE"' in html
+    assert 'class="gedaempft diktat-hinweis" hidden' in html
+    assert "Browser-Herstellers" in html

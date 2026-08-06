@@ -21,9 +21,15 @@
   <form method="post" action="{{ url_for('neue_notiz', szene_id=szene.id) }}">
     <label for="notiz-{{ szene.id }}">Mitschreiben</label>
     <textarea id="notiz-{{ szene.id }}" name="text" rows="4"
-      placeholder="Was gerade passiert. Diktieren geht über die Tastatur."
+      placeholder="Was gerade passiert. Diktieren geht auch über die Tastatur."
       {% if loop.last %}autofocus{% endif %}></textarea>
-    <div class="absenden"><button type="submit">Notiz sichern</button></div>
+    <div class="absenden knoepfe">
+      <button type="submit">Notiz sichern</button>
+      <button type="button" class="leise" data-diktat="notiz-{{ szene.id }}"
+        aria-pressed="false" hidden>Diktieren</button>
+    </div>
+    <p class="gedaempft diktat-hinweis" hidden>Die Erkennung läuft über die Cloud des
+      Browser-Herstellers, nicht auf dieser Box.</p>
   </form>
 </section>
 {% endfor %}
@@ -103,5 +109,48 @@
 
 <p><a href="{{ url_for('protokoll', sitzung_id=sitzung.id) }}">Zur Chronik</a> ·
   <a href="{{ url_for('sitzungen') }}">Zurück zu den Sitzungen</a></p>
+
+<script>
+  // Kennt der Browser keine SpeechRecognition, bleibt der Knopf verborgen: ein toter
+  // Diktier-Knopf ist schlimmer als keiner.
+  (function () {
+    var Erkenner = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!Erkenner) { return; }
+    document.querySelectorAll(".diktat-hinweis").forEach(function (zeile) {
+      zeile.hidden = false;
+    });
+    document.querySelectorAll("[data-diktat]").forEach(function (knopf) {
+      var feld = document.getElementById(knopf.dataset.diktat);
+      var erkennung = new Erkenner();
+      var laeuft = false;
+      var basis = "";
+      erkennung.lang = "de-DE";
+      erkennung.continuous = true;
+      erkennung.interimResults = true;
+      erkennung.onresult = function (ereignis) {
+        var text = "";
+        for (var i = 0; i < ereignis.results.length; i++) {
+          text += ereignis.results[i][0].transcript;
+        }
+        feld.value = basis + text;
+      };
+      erkennung.onend = function () {
+        laeuft = false;
+        knopf.textContent = "Diktieren";
+        knopf.setAttribute("aria-pressed", "false");
+      };
+      erkennung.onerror = erkennung.onend;
+      knopf.addEventListener("click", function () {
+        if (laeuft) { erkennung.stop(); return; }
+        basis = feld.value ? feld.value.replace(/\s+$/, "") + " " : "";
+        laeuft = true;
+        knopf.textContent = "Diktat beenden";
+        knopf.setAttribute("aria-pressed", "true");
+        erkennung.start();
+      });
+      knopf.hidden = false;
+    });
+  })();
+</script>
 
 {% endblock %}
