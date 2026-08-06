@@ -25,7 +25,7 @@
   },
   "DISCORD_BOT_TOKEN": {
     "type": "secret",
-    "description": "Optional: Token des Discord-Bots, der den Diktat-Kanal #diktat leert. Kann leer bleiben und später unter /einstellungen gesetzt werden — ein dort gepflegter Wert schlägt diesen hier. Ohne Token läuft der Dienst ohne Discord."
+    "description": "Optional: Token des Discord-Bots — er leert den Diktat-Kanal #diktat und ist zugleich der Aufnahme-Bot, der auf /aufnahme start dem Sprachkanal beitritt, die Einwilligung ansagt und je Sprecher eine Spur schreibt. Kann leer bleiben und später unter /einstellungen gesetzt werden — ein dort gepflegter Wert schlägt diesen hier. Ohne Token läuft der Dienst ohne Discord und der Bot-Container beendet sich mit einer Meldung."
   },
   "OLLAMA_URL": {
     "type": "text",

@@ -91,12 +91,14 @@ Der Bot-Account entsteht im [Discord Developer Portal](https://discord.com/devel
    eingetragen — nie ins Repo, nie in eine Nachricht.
 2. Unter **Bot** die **Message Content Intent** einschalten — ohne sie liefert die
    API keine Nachrichtentexte.
-3. **OAuth2 → URL Generator**: Scope `bot`, Rechte *View Channels, Read Message
-   History, Send Messages, Add Reactions* (Diktat-Kanal) plus *Connect* und *Use
-   Voice Activity* (Aufnahme, sobald der Recorder da ist). Die erzeugte URL öffnen
-   und den Bot auf den Server einladen.
+3. **OAuth2 → URL Generator**: Scopes `bot` **und `applications.commands`** — ohne den
+   zweiten gibt es keinen Slash-Befehl. Rechte *View Channels, Read Message History,
+   Send Messages, Add Reactions* (Diktat-Kanal) plus *Connect*, *Speak* und *Use Voice
+   Activity* (Aufnahme). **Sprechen** ist Pflicht: ohne das Recht bleibt die
+   Einwilligungs-Ansage stumm, und dann wird auch nicht aufgenommen. Die erzeugte URL
+   öffnen und den Bot auf den Server einladen.
 4. Einen Kanal **`#diktat`** anlegen. Für das Abholen per Stapel-Lauf muss der Bot
-   nur eingeladen sein — als „online" erscheint er erst, wenn der Voice-Recorder
+   nur eingeladen sein — als „online" erscheint er erst, wenn der Aufnahme-Bot
    eine Gateway-Verbindung hält.
 
 Die Oberfläche ist nur im Heimnetz erreichbar, der Diktat-Moment aber auf dem Heimweg.
@@ -124,6 +126,57 @@ neben dem Zeiger steht die Kennung jeder erledigten Nachricht in der Datenbank. 
 läuft durch Discords Cloud; für Online-Gruppen ändert das nichts, für reine Präsenzgruppen
 ist es eine bewusste Entscheidung — der Discord-Teil darf leer bleiben, dann bleibt das
 Web-Formular der Weg.
+
+## Aufnahme per Discord
+
+```bash
+pip install -e ".[dev,discord]"      # py-cord ist ein eigenes Extra
+python -m chronicle.bot              # ein eigener, dauerhafter Prozess
+```
+
+Der Aufnahme-Bot ist **kein Stapellauf**: er hält eine Gateway-Verbindung, weil Sprache
+nur mitgeschnitten werden kann, während sie gesprochen wird. Auf der Box läuft er deshalb
+als zweiter Container im selben Pod, mit demselben Image und `python -m chronicle.bot`.
+Ohne Bot-Token startet er nicht und sagt das in einem Satz.
+
+Im Sprachkanal: **`/aufnahme start`** holt den Bot in den Kanal des Aufrufers — eine
+Kanal-Konfiguration braucht es deshalb nicht —, **`/aufnahme stop`** beendet die Aufnahme
+und reiht die Spuren in dieselbe Warteschlange ein wie ein Diktat. Die Befehle registriert
+der Bot beim Start selbst.
+
+### Die Ansage ist der Kern, nicht die Verpackung
+
+Das Aufzeichnen des nichtöffentlich gesprochenen Wortes ohne Einwilligung ist strafbar
+(**§201 StGB**). Der Bot spielt deshalb zuerst eine hörbare deutsche Ansage — wer
+aufnimmt, wofür, und dass Verlassen des Kanals heißt: keine Aufnahme. **Der Mitschnitt
+beginnt erst, wenn die Ansage zu Ende gespielt ist**; wer davor zu schreiben versucht,
+bekommt einen Fehler und keine Datei. Wer *nach* dem Start dazukommt, hört dieselbe Ansage
+noch einmal und wird eigens protokolliert — bloß zu vermerken, dass jemand sie verpasst
+hat, hielte fest, dass er nicht eingewilligt hat, statt ihn zu fragen.
+
+Protokolliert wird jede Ansage in der SQLite: Zeitpunkt, Server und Kanal, die Anwesenden
+mit Id und Anzeigename — und der **Wortlaut**. Nicht ein Verweis auf den Text im Code:
+ändert jemand die Ansage, darf sich das Protokoll vergangener Sitzungen nicht mitändern.
+Der Eintrag überlebt auch das Löschen seiner Sitzung.
+
+Gesprochen wird die Ansage von **espeak-ng**, erzeugt beim ersten Bedarf aus dem Text in
+`chronicle/bot/ansage.py` und unter dessen Fingerabdruck im Aufnahmeverzeichnis abgelegt.
+Damit können Ansage und Protokoll nicht auseinanderlaufen. Fehlt espeak-ng, wird **nicht**
+aufgenommen.
+
+### Je Sprecher eine Spur
+
+Discord trennt die Audiodaten ohnehin pro Client. Damit entfällt die Sprechertrennung
+nicht bloß billiger, sondern exakt — jede Diarisierung rät bei Überlappungen, und in einer
+Rollenspielrunde reden fünf Leute durcheinander. Geschrieben wird **eine Datei je Sprecher
+für die ganze Sitzung**, im Strom auf die Platte und nie in einen Puffer im Speicher.
+
+Empfangenes Audio ist von Discord nicht offiziell unterstützt: `discord.py` kann es nicht.
+Wir nehmen **py-cord**, weil es die Senken-API mitbringt, regelmäßig veröffentlicht wird
+und die Sprechpausen beim Empfang anhand der RTP-Zeitstempel mit Stille auffüllt — das
+hält alle Spuren auf einer Zeitachse. Das ist die eine bekannte Bruchstelle des Systems
+und steckt deshalb in genau einer Datei (`chronicle/bot/gateway.py`). py-cord belegt das
+Paket `discord`; ein daneben installiertes `discord.py` schlägt sich mit ihm.
 
 ## Betrieb auf ServiceBay
 

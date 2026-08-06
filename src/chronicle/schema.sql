@@ -152,6 +152,33 @@ CREATE TABLE IF NOT EXISTS discord_intake (
     handled_at TEXT NOT NULL
 );
 
+-- Das Einwilligungsprotokoll des Aufnahme-Bots. Das Aufzeichnen des nichtöffentlich
+-- gesprochenen Wortes ohne Einwilligung ist strafbar (§201 StGB); der Bot sagt hörbar an,
+-- und **was** er angesagt hat, steht hier im Wortlaut — nicht als Verweis auf eine
+-- Konstante im Code, die sich später ändern kann. Ein Nachweis, der sich rückwirkend
+-- umschreibt, ist keiner. Die Zeile überlebt deshalb auch das Löschen ihrer Sitzung.
+CREATE TABLE IF NOT EXISTS consent_event (
+    id           INTEGER PRIMARY KEY,
+    session_id   INTEGER REFERENCES session (id) ON DELETE SET NULL,
+    kind         TEXT NOT NULL CHECK (kind IN ('ansage', 'nachzuegler')),
+    announced_at TEXT NOT NULL,
+    guild_id     TEXT NOT NULL,
+    channel_id   TEXT NOT NULL,
+    channel_name TEXT NOT NULL,
+    text         TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS consent_event_sitzung ON consent_event (session_id);
+
+-- Wer im Sprachkanal war, als die Ansage zu Ende gespielt hatte. Der Anzeigename steht
+-- dabei: eine Discord-Id allein ist Wochen später niemand mehr.
+CREATE TABLE IF NOT EXISTS consent_member (
+    event_id INTEGER NOT NULL REFERENCES consent_event (id) ON DELETE CASCADE,
+    user_id  TEXT NOT NULL,
+    name     TEXT NOT NULL,
+    PRIMARY KEY (event_id, user_id)
+);
+
 -- Der Suchindex. FTS5 steckt in SQLite, also keine neue Abhängigkeit. Eine Zeile je
 -- auffindbarem Stück; ``kind`` unterscheidet sie, damit ein Transkript später eine
 -- weitere Art bekommt und keine weitere Tabelle.
@@ -220,5 +247,5 @@ INSERT INTO search_index (text, kind, ref_id, session_id, scene_id)
 SELECT s.text, 'transkript', s.transcript_id, t.session_id, NULL
 FROM transcript_segment s JOIN transcript t ON t.id = s.transcript_id;
 
-INSERT INTO meta (key, value) VALUES ('schema_version', '8')
+INSERT INTO meta (key, value) VALUES ('schema_version', '9')
 ON CONFLICT (key) DO UPDATE SET value = excluded.value;
