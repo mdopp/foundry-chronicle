@@ -200,8 +200,15 @@ Ohne Bot-Token startet er nicht und sagt das in einem Satz.
 
 Im Sprachkanal: **`/aufnahme start`** holt den Bot in den Kanal des Aufrufers — eine
 Kanal-Konfiguration braucht es deshalb nicht —, **`/aufnahme stop`** beendet die Aufnahme
-und reiht die Spuren in dieselbe Warteschlange ein wie ein Diktat. Die Befehle registriert
-der Bot beim Start selbst.
+und reiht die Spuren in dieselbe Warteschlange ein wie ein Diktat, **`/aufnahme hilfe`**
+sagt in drei Zeilen, was der Bot tut. Die Befehle registriert der Bot beim Start selbst.
+
+**Jeder Befehl antwortet, auch der gescheiterte.** Ein Befehl ohne Antwort lässt Discord
+ewig „denkt nach …" anzeigen — mitten in der Runde weiß dann niemand, ob aufgenommen wird
+oder nicht; das ist der schlechteste aller Ausgänge und war der erste Live-Fund (#57).
+Deshalb geht jede Absage in Nutzersprache heraus („Das hat nicht geklappt: … Was du tun
+kannst: …"), die Einzelheiten bleiben im Log. Die Antworten sind ephemer: sie sieht nur,
+wer den Befehl gegeben hat.
 
 ### Die Ansage ist der Kern, nicht die Verpackung
 
@@ -259,6 +266,14 @@ passiert. Deshalb wird die Liste nicht mehr abgeschrieben, und deshalb **prüft 
 beim Start** (`discord.utils.get_missing_voice_dependencies()`) und beendet sich mit einem
 verständlichen Satz, statt sich taub anzumelden. Beide Pakete bringen fertige
 manylinux-Räder mit; im Image wird nichts übersetzt.
+
+**Die Senke erfüllt py-cords Empfangs-Protokoll von Hand.** In 2.8.1 verlangt der neue
+Empfangs-Router `__sink_listeners__`, `walk_children`, `root` und `is_opus` — und **keine**
+mitgelieferte Senke bringt das mit, `WaveSink` eingeschlossen; py-cord warnt beim
+Aufnehmen selbst, dass der Empfang wegen Discords DAVE-Umstellung derzeit kaputt ist
+([Pycord #3139](https://github.com/Pycord-Development/pycord/issues/3139)). Geerbt werden
+kann das also nicht, es steht in `gateway.py`. Ein Test registriert unsere Senke gegen den
+**echten** Router — bricht das Protokoll wieder, ist der Test rot statt der Sitzung.
 
 ## Betrieb auf ServiceBay
 

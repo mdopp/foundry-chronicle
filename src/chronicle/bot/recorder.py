@@ -37,7 +37,12 @@ logger = logging.getLogger(__name__)
 
 OHNE_SITZUNG = "Noch keine Sitzung angelegt — leg eine an, dann schneide ich mit."
 NICHT_ANGESAGT = "Es wurde noch nichts angesagt — ohne Ansage wird nichts geschrieben."
-GESTARTET = "Ansage gelaufen, ich schneide mit — je Sprecher eine eigene Spur."
+GESTARTET = (
+    "Die Ansage ist durch, ich schneide jetzt mit — je Sprecherin und Sprecher eine "
+    "eigene Spur. Wer nicht aufgezeichnet werden möchte, verlässt den Sprachkanal; "
+    "außerhalb nehme ich nichts auf. Beendet wird mit `/aufnahme stop`, und "
+    "`/aufnahme hilfe` sagt den Rest."
+)
 NICHTS_GESPROCHEN = "Es hat niemand gesprochen — keine Spur abgelegt."
 
 

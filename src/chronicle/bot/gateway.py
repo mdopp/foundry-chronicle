@@ -18,6 +18,7 @@ Der Token geht in genau einen Aufruf und in keine Logzeile.
 from __future__ import annotations
 
 import asyncio
+import functools
 import logging
 import wave
 from pathlib import Path
@@ -45,6 +46,32 @@ SPRACHE_FEHLT = (
 NICHT_IM_KANAL = "Du bist in keinem Sprachkanal — geh hinein und ruf mich noch einmal."
 LAEUFT_SCHON = "Ich schneide schon mit."
 LAEUFT_NICHT = "Es läuft gerade keine Aufnahme."
+
+UNBEKANNT = "unbekannt"
+
+# Ein Befehl, der nicht antwortet, lässt Discord ewig »denkt nach …« anzeigen. Das ist
+# der schlechteste Ausgang: niemand weiß, ob aufgenommen wird. Deshalb antwortet jeder
+# Befehl, auch wenn er scheitert — der Grund in Nutzersprache, die Einzelheiten ins Log.
+GESCHEITERT = (
+    "Das hat nicht geklappt: {grund} "
+    "Was du tun kannst: es noch einmal versuchen — bleibt es dabei, steht der Grund im "
+    "Log des Bots."
+)
+
+UNERWARTET = "unerwarteter Fehler im Bot ({typ})."
+
+HILFE = (
+    "**So schneide ich eine Sitzung mit**\n"
+    "• `/aufnahme start` — ich komme in deinen Sprachkanal, spiele eine hörbare Ansage "
+    "und schneide **erst danach** mit, je Sprecherin und Sprecher eine eigene Spur.\n"
+    "• `/aufnahme stop` — ich höre auf und gehe wieder; die Spuren wandern in den "
+    "nächtlichen Lauf und werden zu Text.\n"
+    "• `/aufnahme hilfe` — dieser Text.\n"
+    "Wer nicht aufgezeichnet werden möchte, verlässt den Sprachkanal — außerhalb nehme "
+    "ich nichts auf. Wer später dazukommt, hört die Ansage noch einmal. "
+    f"Die Aufnahmen werden nach {recordings.RETENTION_TAGE} Tagen gelöscht.\n"
+    "Meine Antworten sieht nur, wer den Befehl gegeben hat."
+)
 
 RAHMEN = ansage.KANAELE * ansage.BREITE
 
@@ -110,7 +137,7 @@ class Sprachverbindung:
         await fertig.wait()
 
     def mitschneiden(self, aufnahme: Aufnahme) -> None:
-        self._vc.start_recording(_senke(aufnahme, self._vc), _abgeschlossen)
+        self._vc.start_recording(_senke(aufnahme), _abgeschlossen)
 
     def mitschnitt_beenden(self) -> None:
         self._vc.stop_recording()
@@ -123,26 +150,78 @@ async def _abgeschlossen(senke, *args) -> None:
     """py-cord verlangt einen Rückruf; die Spuren schließt ``Aufnahme.beenden``."""
 
 
-def _mitglied(voice_client, user_id: int) -> consent.Member:
-    wer = voice_client.guild.get_member(user_id)
+def _mitglied(quelle) -> consent.Member:
+    """Aus py-cords Sprecher wird unser Mitglied — ohne Namen bleibt die Spur namenlos.
+
+    ``VoiceData.source`` darf ``None`` sein, solange py-cord die SSRC noch keinem Konto
+    zuordnen konnte. Geraten wird dann nichts: die Sekunden landen in einer Spur, die
+    ehrlich »unbekannt« heißt, statt jemandem in den Mund gelegt zu werden.
+    """
+    if quelle is None:
+        return consent.Member(id=UNBEKANNT, name=UNBEKANNT)
     return consent.Member(
-        id=str(user_id), name=wer.display_name if wer is not None else str(user_id)
+        id=str(quelle.id), name=getattr(quelle, "display_name", None) or UNBEKANNT
     )
 
 
-def _senke(aufnahme: Aufnahme, voice_client):
+def _senke(aufnahme: Aufnahme):
     discord = _discord()
 
     class SpurSenke(discord.sinks.Sink):
-        """Je Sprecher eine Spur — geschrieben wird auf die Platte, nicht in den Speicher."""
+        """Je Sprecher eine Spur — geschrieben wird auf die Platte, nicht in den Speicher.
 
-        def write(self, data: bytes, user: int) -> None:
-            aufnahme.schreiben(_mitglied(voice_client, user), data)
+        Die Basisklasse allein genügt py-cord 2.8 nicht mehr: der neue Empfangs-Router
+        verlangt ``__sink_listeners__``, ``walk_children``, ``root`` und ``is_opus`` —
+        Teile einer Senken-Schnittstelle, die in 2.8.1 noch **keine** mitgelieferte Senke
+        erfüllt, auch ``WaveSink`` nicht (siehe Test und PR). Wir erfüllen sie hier von
+        Hand: wir hören auf keines der Senken-Ereignisse, also ist die Liste leer, und
+        Kinder-Senken gibt es nicht.
+        """
+
+        __sink_listeners__: tuple[tuple[str, str], ...] = ()
+
+        @property
+        def root(self):
+            return self
+
+        def walk_children(self):
+            return ()
+
+        def is_opus(self) -> bool:
+            # Nein: wir wollen dekodiertes PCM, damit die Spur ohne weiteres Werkzeug
+            # abspielbar und für die Transkription lesbar ist.
+            return False
+
+        def write(self, data, source) -> None:
+            aufnahme.schreiben(_mitglied(source), data.pcm)
 
         def cleanup(self) -> None:
             self.finished = True
 
     return SpurSenke()
+
+
+def antwortet(befehl):
+    """Kein Befehl geht ohne Antwort aus — auch der, der stolpert.
+
+    Ein Fehlschlag, den Discord als »denkt nach …« stehen lässt, ist schlimmer als eine
+    Absage: mitten in der Runde weiß niemand, ob gerade aufgenommen wird oder nicht.
+    """
+
+    @functools.wraps(befehl)
+    async def gefasst(ctx, *args, **kwargs):
+        try:
+            return await befehl(ctx, *args, **kwargs)
+        except BotFehler as fehler:
+            logger.warning("Befehl %s abgebrochen: %s", befehl.__name__, fehler)
+            await ctx.respond(GESCHEITERT.format(grund=str(fehler)), ephemeral=True)
+        except Exception as fehler:  # noqa: BLE001
+            logger.exception("Befehl %s gescheitert", befehl.__name__)
+            grund = UNERWARTET.format(typ=type(fehler).__name__)
+            await ctx.respond(GESCHEITERT.format(grund=grund), ephemeral=True)
+        return None
+
+    return gefasst
 
 
 class _Lauf:
@@ -166,6 +245,7 @@ def baue(config: Config):
     gruppe = bot.create_group(GRUPPE, "Die Sitzung mitschneiden")
 
     @gruppe.command(name="start", description="Beitreten, ansagen, je Sprecher mitschneiden")
+    @antwortet
     async def start(ctx) -> None:
         if lauf.aufnahme is not None:
             await ctx.respond(LAEUFT_SCHON, ephemeral=True)
@@ -178,14 +258,14 @@ def baue(config: Config):
         stimme = Sprachverbindung(await kanal.connect())
         try:
             lauf.aufnahme = await recorder.starten(config, stimme)
-        except BotFehler as fehler:
+        except BaseException:
             await stimme.trennen()
-            await ctx.respond(str(fehler), ephemeral=True)
-            return
+            raise
         lauf.stimme = stimme
         await ctx.respond(recorder.GESTARTET, ephemeral=True)
 
     @gruppe.command(name="stop", description="Aufnahme beenden und die Spuren einreihen")
+    @antwortet
     async def stop(ctx) -> None:
         if lauf.aufnahme is None:
             await ctx.respond(LAEUFT_NICHT, ephemeral=True)
@@ -195,6 +275,11 @@ def baue(config: Config):
         lauf.stimme = None
         lauf.aufnahme = None
         await ctx.respond(" ".join(meldungen), ephemeral=True)
+
+    @gruppe.command(name="hilfe", description="Was der Bot tut und wie man ihn bedient")
+    @antwortet
+    async def hilfe(ctx) -> None:
+        await ctx.respond(HILFE, ephemeral=True)
 
     @bot.event
     async def on_ready() -> None:
