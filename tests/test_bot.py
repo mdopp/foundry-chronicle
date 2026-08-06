@@ -50,6 +50,11 @@ def stille(rahmen: int) -> bytes:
     return bytes(rahmen * ansage.KANAELE * ansage.BREITE)
 
 
+def sprachdaten(pcm: bytes):
+    """Die Form, in der py-cords Empfangs-Router die Senke füttert: ``VoiceData``."""
+    return types.SimpleNamespace(pcm=pcm, packet=None, source=None)
+
+
 @pytest.fixture
 def konfiguration(tmp_path):
     return Config(
@@ -574,7 +579,7 @@ def test_der_bot_bringt_beide_befehle_mit_und_bekommt_den_token(konfiguration, p
     gateway.run(konfiguration)
 
     (bot,) = FakeBot.erzeugt
-    assert set(bot.gruppen[gateway.GRUPPE].befehle) == {"start", "stop"}
+    assert set(bot.gruppen[gateway.GRUPPE].befehle) == {"start", "stop", "hilfe"}
     assert bot.intents.guilds and bot.intents.voice_states
     assert bot.token == TOKEN
 
@@ -623,7 +628,9 @@ def test_start_ohne_sitzung_trennt_wieder(konfiguration, ohne_espeak, runde):
 
     asyncio.run(befehl(bot, "start")(ctx))
 
-    assert ctx.antworten == [recorder.OHNE_SITZUNG]
+    (antwort,) = ctx.antworten
+    assert antwort.startswith("Das hat nicht geklappt:")
+    assert recorder.OHNE_SITZUNG in antwort
     assert runde.kanal.verbindung.getrennt
 
 
@@ -632,8 +639,8 @@ def test_die_senke_schreibt_je_sprecher_eine_spur(konfiguration, sitzung_id, ohn
     asyncio.run(befehl(bot, "start")(FakeCtx(runde.mira)))
     senke = runde.kanal.verbindung.senke
 
-    senke.write(stille(480), runde.mira.id)
-    senke.write(stille(480), runde.brok.id)
+    senke.write(sprachdaten(stille(480)), runde.mira)
+    senke.write(sprachdaten(stille(480)), runde.brok)
     ctx = FakeCtx(runde.mira)
     asyncio.run(befehl(bot, "stop")(ctx))
 
@@ -730,3 +737,138 @@ def test_ohne_laufende_aufnahme_bleibt_der_beitritt_folgenlos(konfiguration, sit
     )
 
     assert consent.for_session(konfiguration.database_path, sitzung_id) == ()
+
+
+def test_ein_stolpernder_befehl_antwortet_trotzdem(
+    konfiguration, sitzung_id, ohne_espeak, runde, monkeypatch
+):
+    # Der Fehler von der Box: der Befehl stürzte ab und Discord zeigte ewig
+    # »denkt nach …«. Schweigen ist der schlechteste Ausgang — mitten in der Runde weiß
+    # dann niemand, ob aufgenommen wird.
+    async def stolpert(*args, **kwargs):
+        raise RuntimeError("irgendwas in der Bibliothek")
+
+    monkeypatch.setattr(recorder, "starten", stolpert)
+    bot = gateway.baue(konfiguration)
+    ctx = FakeCtx(runde.mira)
+
+    asyncio.run(befehl(bot, "start")(ctx))
+
+    (antwort,) = ctx.antworten
+    assert antwort.startswith("Das hat nicht geklappt:")
+    assert "RuntimeError" in antwort
+    assert "Was du tun kannst" in antwort
+    # Und der Bot hängt nicht stumm im Kanal herum.
+    assert runde.kanal.verbindung.getrennt
+
+
+def test_die_hilfe_erklaert_die_bedienung(konfiguration, runde):
+    bot = gateway.baue(konfiguration)
+    ctx = FakeCtx(runde.mira)
+
+    asyncio.run(befehl(bot, "hilfe")(ctx))
+
+    (antwort,) = ctx.antworten
+    for satzteil in ("/aufnahme start", "/aufnahme stop", "Ansage", "verlässt"):
+        assert satzteil in antwort
+
+
+def test_die_bestaetigung_sagt_das_wichtigste(konfiguration, sitzung_id, ohne_espeak, runde):
+    bot = gateway.baue(konfiguration)
+    ctx = FakeCtx(runde.mira)
+
+    asyncio.run(befehl(bot, "start")(ctx))
+
+    (antwort,) = ctx.antworten
+    for satzteil in ("Ansage", "eigene Spur", "verlässt den Sprachkanal", "/aufnahme stop"):
+        assert satzteil in antwort
+
+
+# -- Gegen das echte py-cord ------------------------------------------------------------
+#
+# Hier steht keine Attrappe. Zweimal hintereinander fiel erst auf der Box auf, dass wir
+# das Protokoll der Bibliothek verfehlt hatten — beim zweiten Mal an genau der Zeile, die
+# diese Tests jetzt ausführen.
+
+
+class LeererReader:
+    """Der Router legt den Reader nur ab; zum Registrieren braucht er nichts von ihm."""
+
+
+def echte_senke(konfiguration, sitzung_id):
+    aufnahme = Aufnahme(konfiguration, sitzung_id, KANAL)
+    aufnahme.ansage_protokollieren((MIRA,))
+    return aufnahme, gateway._senke(aufnahme)
+
+
+def test_die_senke_laesst_sich_an_pycords_echtem_router_anmelden(konfiguration, sitzung_id):
+    from discord.sinks import Sink
+    from discord.voice.receive.router import PacketRouter, SinkEventRouter
+
+    _, senke = echte_senke(konfiguration, sitzung_id)
+
+    # Genau der Aufruf aus dem Absturzbericht: SinkEventRouter.__init__ registriert die
+    # Ereignisse der Senke und griff dabei ins Leere.
+    SinkEventRouter(senke, LeererReader())
+    PacketRouter(senke, LeererReader())
+
+    # start_recording lässt nur echte Sink-Ableitungen durch.
+    assert isinstance(senke, Sink)
+    assert senke.is_opus() is False
+
+
+def test_die_alte_senke_ohne_das_protokoll_scheitert_weiter(konfiguration, sitzung_id):
+    """Der rote Gegenbeweis — ohne ihn wäre der Test oben nicht zu unterscheiden.
+
+    So sah unsere Senke vor diesem Fix aus: eine reine Ableitung der Basisklasse.
+    """
+    from discord.sinks import Sink
+    from discord.voice.receive.router import SinkEventRouter
+
+    class AlteSpurSenke(Sink):
+        def write(self, data, user):
+            pass
+
+    with pytest.raises(AttributeError, match="__sink_listeners__"):
+        SinkEventRouter(AlteSpurSenke(), LeererReader())
+
+
+def test_auch_pycords_eigene_senke_scheitert_daran(konfiguration, sitzung_id):
+    """Warum das Protokoll hier von Hand steht statt geerbt zu werden.
+
+    In py-cord 2.8.1 erfüllt **keine** mitgelieferte Senke die Erwartung des neuen
+    Empfangs-Routers — auch ``WaveSink`` nicht. Es gibt also keine Basisklasse, von der
+    man das erben könnte; wer diesen Test rot sieht, darf den Handbetrieb wegräumen.
+    """
+    from discord.sinks import WaveSink
+    from discord.voice.receive.router import SinkEventRouter
+
+    with pytest.raises(AttributeError, match="__sink_listeners__"):
+        SinkEventRouter(WaveSink(), LeererReader())
+
+
+def test_pycords_datenform_landet_in_der_spur_des_sprechers(konfiguration, sitzung_id):
+    from discord.voice.packets import VoiceData
+
+    aufnahme, senke = echte_senke(konfiguration, sitzung_id)
+    sprecher = types.SimpleNamespace(id=int(MIRA.id), display_name=MIRA.name)
+    daten = VoiceData(packet=None, source=sprecher, pcm=stille(480))
+
+    # So ruft PacketRouter die Senke: write(data, data.source).
+    senke.write(daten, daten.source)
+    aufnahme.beenden()
+
+    (spur,) = recordings.pending(konfiguration.database_path)
+    assert spur.filename.endswith(f"{MIRA.name}.wav")
+
+
+def test_ein_sprecher_ohne_konto_bekommt_eine_ehrlich_benannte_spur(konfiguration, sitzung_id):
+    from discord.voice.packets import VoiceData
+
+    aufnahme, senke = echte_senke(konfiguration, sitzung_id)
+
+    senke.write(VoiceData(packet=None, source=None, pcm=stille(480)), None)
+    aufnahme.beenden()
+
+    (spur,) = recordings.pending(konfiguration.database_path)
+    assert spur.filename.endswith(f"{gateway.UNBEKANNT}.wav")

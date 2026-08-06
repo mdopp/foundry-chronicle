@@ -30,7 +30,19 @@ transcribe = ["faster-whisper>=1.0"]
 # supported« und der Bot verbindet sich, ohne je etwas zu hören. ``davey`` steht daneben
 # trotzdem namentlich, damit die Zeile sagt, worauf es ankommt.
 discord = ["py-cord[voice]>=2.8.1", "davey>=0.1.6"]
-dev =["pytest>=8.0", "pytest-cov>=5.0", "ruff>=0.6", "pre-commit>=3.7", "pyyaml>=6.0"]
+# py-cord gehört hier dazu, obwohl nur der Bot es braucht: der Regressionstest
+# registriert unsere Senke gegen py-cords **echten** Empfangs-Router. Genau das haben die
+# Attrappen nicht gesehen — zweimal hintereinander fiel erst auf der Box auf, dass wir
+# das Protokoll der Bibliothek verfehlt hatten. Es ist reines Python plus zwei kleine
+# Räder; die CI wird davon nicht schwer.
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+    "ruff>=0.6",
+    "pre-commit>=3.7",
+    "pyyaml>=6.0",
+    "py-cord[voice]>=2.8.1",
+]
 
 [build-system]
 requires = ["setuptools>=68"]
