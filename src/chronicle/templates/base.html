@@ -305,6 +305,7 @@
              {% if request.endpoint in ['protokolle', 'protokoll'] %}aria-current="page"{% endif %}>Protokolle</a>
           <a href="{{ url_for('suche') }}"
              {% if request.path == url_for('suche') %}aria-current="page"{% endif %}>Suche</a>
+          {% if verwalter %}
           <a class="zahnrad" href="{{ url_for('einstellungen') }}" title="Einstellungen"
              {% if request.endpoint in ['einstellungen', 'einstellungen_speichern'] %}aria-current="page"{% endif %}>
             <span class="nur-vorlesen">Einstellungen</span>
@@ -314,20 +315,21 @@
               <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1.08-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
             </svg>
           </a>
+          {% endif %}
         </nav>
       </header>
       {% if verbindung == "unkonfiguriert" %}
       <div class="band"><p>Foundry ist nicht eingerichtet — mitgeschrieben wird trotzdem, die
         Chronik bleibt dann aber ohne Würfe, Schaden und Beute.
-        <a href="{{ zugang }}">Zugang eintragen</a></p></div>
+        {% if zugang %}<a href="{{ zugang }}">Zugang eintragen</a>{% endif %}</p></div>
       {% elif verbindung == "laeuft" %}
       <div class="band"><p>Die Zahlen aus Foundry werden gerade geholt. Diese Seite neu
         laden zeigt, wann es durch ist.</p></div>
       {% elif verbindung == "veraltet" %}
       <div class="band"><p>Der letzte Abgleich mit Foundry ist gescheitert — was hier steht,
         stammt aus dem Zwischenspeicher.
-        <a href="{{ url_for('einstellungen', _anchor='zustand') }}">Woran es lag</a></p>
-        {% include "_abgleich_knopf.html" %}</div>
+        {% if verwalter %}<a href="{{ url_for('einstellungen', _anchor='zustand') }}">Woran es lag</a>{% endif %}</p>
+        {% if verwalter %}{% include "_abgleich_knopf.html" %}{% endif %}</div>
       {% endif %}
       <main>{% block inhalt %}{% endblock %}</main>
     </div>

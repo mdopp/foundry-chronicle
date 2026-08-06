@@ -99,7 +99,12 @@ SQLite-Datei ist klein und enthält alles Unersetzliche.
 - Drei ähnliche Zeilen schlagen eine verfrühte Abstraktion. Keine spekulative
   Fehlerbehandlung für Fälle, die nicht eintreten können.
 - **Eine Instanz pro Gruppe** ist eine tragende Entscheidung: kein `group_id`, keine
-  Mandantentrennung, keine Zugriffskontrolle zwischen Gruppen. Nicht auf Vorrat bauen.
+  Mandantentrennung, keine Zugriffskontrolle **zwischen** Gruppen. Nicht auf Vorrat bauen.
+  Gemeint ist damit die Trennung zwischen Runden — **innerhalb** der Instanz gibt es seit
+  der Operator-Entscheidung 2026-08-06 zwei Rollen: Mitspielen und Verwalten (#51). Die
+  Rolle kommt aus einer Gruppe, die der Proxy mitliefert; ein leerer Gruppenname heißt
+  weiterhin: alle dürfen alles. Entschieden wird sie an genau einer Stelle
+  (`chronicle.roles`).
 
 ## Kommentare
 
@@ -125,7 +130,8 @@ Assists (`get_assist`) lesen. Dieser Abschnitt ist der Extrakt, nicht der Ersatz
   Authelia-Forward-Auth. Die App baut **kein eigenes Login**; sobald echte Inhalte
   angezeigt werden (#5/#7), erzwingt sie den `Remote-User`-Header und testet, dass
   ohne ihn abgelehnt wird — kein LAN-Bypass. „Keine Zugriffskontrolle" weiter unten
-  meint Mandantentrennung, nicht die Haustür.
+  meint Mandantentrennung zwischen Gruppen — nicht die Haustür und nicht die
+  Verwaltungsrolle innerhalb der Instanz.
 - **`/healthz` → 200** ist Test-Seam und Install-Gate der Box.
 - **SQLite läuft im WAL-Modus** — Plattform-Lektion gegen „database is locked".
 - **CI gatet den Image-Publish auf grüne Tests** (`needs: test`); eine CI, die nur

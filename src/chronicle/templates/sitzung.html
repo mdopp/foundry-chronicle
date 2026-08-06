@@ -102,7 +102,7 @@
     {% elif person %}
     <p>Gesprochen von {{ person.discord_name }}
       <span class="gedaempft">— in Discord, noch nicht zugeordnet</span>.
-      <a href="{{ url_for('zuordnung') }}">Zuordnen</a></p>
+      {% if verwalter %}<a href="{{ url_for('zuordnung') }}">Zuordnen</a>{% endif %}</p>
     {% endif %}
 
     {% if aufnahme.deleted_at %}

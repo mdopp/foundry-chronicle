@@ -42,6 +42,10 @@ ONBOARDING_KEY = "onboarding_done"
 NIGHTLY_KEY = "nightly_time"
 DEFAULT_NIGHTLY_TIME = "04:00"
 
+# Auch nicht in KEYS: der Name der Gruppe, die verwalten darf. Er stammt aus der
+# Benutzerverwaltung der Box und ist kein Deploy-Wert — leer heißt: alle dürfen alles.
+ADMIN_GROUP_KEY = "admin_group"
+
 FRONTEND = "Frontend"
 UMGEBUNG = "Umgebung"
 STANDARD = "Standard dieser Box"
@@ -107,6 +111,35 @@ def finish_onboarding(database_path: Path) -> None:
                 "ON CONFLICT (key) DO UPDATE SET value = '1'",
                 (ONBOARDING_KEY,),
             )
+    finally:
+        connection.close()
+
+
+def admin_group(database_path: Path) -> str:
+    connection = db.connect(database_path)
+    try:
+        zeile = connection.execute(
+            "SELECT value FROM settings WHERE key = ?", (ADMIN_GROUP_KEY,)
+        ).fetchone()
+    finally:
+        connection.close()
+    return "" if zeile is None else str(zeile["value"]).strip()
+
+
+def save_admin_group(database_path: Path, value: str) -> None:
+    """Ein leerer Name nimmt die Rolle zurück — dann darf wieder jeder alles."""
+    sauber = value.strip()
+    connection = db.connect(database_path)
+    try:
+        with connection:
+            if sauber:
+                connection.execute(
+                    "INSERT INTO settings (key, value) VALUES (?, ?) "
+                    "ON CONFLICT (key) DO UPDATE SET value = excluded.value",
+                    (ADMIN_GROUP_KEY, sauber),
+                )
+            else:
+                connection.execute("DELETE FROM settings WHERE key = ?", (ADMIN_GROUP_KEY,))
     finally:
         connection.close()
 
