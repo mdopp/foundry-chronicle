@@ -89,8 +89,14 @@ spec:
     hostPath:
       path: {{DATA_DIR}}/daggerheart
       type: DirectoryOrCreate
-  # Bewusst ein eigenes Verzeichnis neben den Daten und nicht darin: die Spuren werden
-  # groß, sind nach der Transkription entbehrlich und gehören aus dem Backup heraus.
+  # Neben dem Datenverzeichnis und nicht darin — das ist die Entscheidung zu #27.
+  # ServiceBay sichert je Dienst eine Auswahlliste, verankert am Verzeichnis
+  # {{DATA_DIR}}/<dienst>: was daneben liegt, kann eine spätere Liste gar nicht erst
+  # einsammeln, ein Unterverzeichnis müsste sie ausdrücklich aussparen. Unterhalb von
+  # {{DATA_DIR}} bleibt es trotzdem, weil ein absoluter Host-Pfad aus der
+  # Abdeckungsprüfung der Plattform herausfällt — dann wäre es unsichtbar statt
+  # ausgenommen. DirectoryOrCreate, weil das Verzeichnis bei der Erstinstallation noch
+  # nicht existiert; mit Directory scheitert der erste Start.
   - name: chronik-aufnahmen
     hostPath:
       path: {{DATA_DIR}}/daggerheart-aufnahmen
