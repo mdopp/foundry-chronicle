@@ -9,34 +9,6 @@
     "description": "Image-Tag von ghcr.io/mdopp/foundry-chronicle. Für den Rollout auf einen festen Tag setzen — 'sha-<kurz>' aus dem Build oder die Release-Version — und nach dem Neustart den laufenden Digest prüfen. 'latest' ist nur die Erstinstallation, solange noch kein Release geschnitten ist.",
     "default": "latest"
   },
-  "FOUNDRY_URL": {
-    "type": "text",
-    "description": "Adresse der Foundry-Instanz, z. B. http://127.0.0.1:30000 auf derselben Box. Ohne Foundry-Konfiguration startet der Dienst trotzdem und erklärt auf /status, was fehlt.",
-    "default": ""
-  },
-  "FOUNDRY_USER": {
-    "type": "text",
-    "description": "Benutzername eines echten Foundry-Kontos. Foundry kennt keinen API-Token; gelesen wird mit den Rechten dieses Kontos, also am besten ein eigenes Spielerkonto ohne Spielleitungsrechte.",
-    "default": ""
-  },
-  "FOUNDRY_PASSWORD": {
-    "type": "secret",
-    "description": "Passwort dieses Foundry-Kontos. Der Assistent erzeugt einen Zufallswert — den beim Installieren durch das echte Passwort ersetzen. Es steht nie im Repo und wird nie in eine Logzeile geschrieben."
-  },
-  "DISCORD_BOT_TOKEN": {
-    "type": "secret",
-    "description": "Optional: Token des Discord-Bots — er leert den Diktat-Kanal #diktat und ist zugleich der Aufnahme-Bot, der auf /aufnahme start dem Sprachkanal beitritt, die Einwilligung ansagt und je Sprecher eine Spur schreibt. Kann leer bleiben und später unter /einstellungen gesetzt werden — ein dort gepflegter Wert schlägt diesen hier. Ohne Token läuft der Dienst ohne Discord und der Bot-Container beendet sich mit einer Meldung."
-  },
-  "OLLAMA_URL": {
-    "type": "text",
-    "description": "Optional: Adresse eines Ollama auf der Box, z. B. http://127.0.0.1:11434. Leer lassen, dann wird die Chronik ohne Sprachmodell geordnet.",
-    "default": ""
-  },
-  "OLLAMA_MODEL": {
-    "type": "text",
-    "description": "Optional: Modellname für Ollama, z. B. llama3.1. Nur zusammen mit OLLAMA_URL wirksam.",
-    "default": ""
-  },
   "CHRONICLE_SUBDOMAIN": {
     "type": "subdomain",
     "description": "Subdomain der Chronik — die Instanz heißt wie die Gruppe. Authelia-Forward-Auth davor: unauthentifiziert antwortet die Subdomain mit 302 auf auth.<domain>, danach setzt NPM den Remote-User-Header. Ein eigenes Login hat der Dienst nicht.",

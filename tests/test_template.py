@@ -2,8 +2,8 @@
 
 Ein Template zeigt sich erst auf der Box vollständig als richtig. Was sich vorher
 mechanisch prüfen lässt, gehört aber hierher: die Platzhalter sind deklariert, das
-gerenderte Manifest ist ein gültiger Pod, Mounts treffen ihre Volumes — und kein
-Geheimnis hat eine Vorgabe.
+gerenderte Manifest ist ein gültiger Pod, Mounts treffen ihre Volumes — und keine
+Zugangsdaten kommen aus dem Assistenten.
 """
 
 from __future__ import annotations
@@ -124,10 +124,11 @@ def test_die_aufnahmen_liegen_nicht_im_gesicherten_datenverzeichnis(manifest: di
     assert not pfade["chronik-aufnahmen"].startswith(daten + "/")
 
 
-def test_der_bot_bekommt_den_token_und_die_datenbank(manifest: dict) -> None:
+def test_der_bot_bekommt_die_datenbank(manifest: dict) -> None:
+    # Der Token kommt aus der SQLite, nicht aus der Umgebung — also muss der Bot
+    # dieselbe Datenbank sehen wie die Oberfläche, in der er gepflegt wird.
     bot = next(e for e in manifest["spec"]["containers"] if e["name"] == "bot")
     umgebung = {wert["name"]: wert["value"] for wert in bot["env"]}
-    assert "DISCORD_BOT_TOKEN" in umgebung
     assert umgebung["CHRONICLE_DATA_DIR"] == "/data"
 
 
@@ -165,10 +166,30 @@ def test_proxy_port_verweist_auf_eine_variable(variablen: dict) -> None:
             assert ziel in variablen
 
 
-def test_zugangsdaten_sind_geheim_und_ohne_vorgabe(variablen: dict) -> None:
-    for name in ("FOUNDRY_PASSWORD", "DISCORD_BOT_TOKEN"):
-        assert variablen[name]["type"] == "secret"
-        assert "default" not in variablen[name]
+def test_kein_zufallswert_fuer_fremde_zugangsdaten(variablen: dict) -> None:
+    # Der Assistent würfelt für 'type: secret' einen Wert aus. Für ein Geheimnis, das
+    # nur die Gegenstelle kennt, ist das kein Platzhalter, sondern ein falscher Wert:
+    # er meldete sich als Bot-Token bei Discord an und scheiterte in einer
+    # Neustart-Schleife (#33).
+    for meta in variablen.values():
+        assert meta["type"] not in ("secret", "password", "rsa-private", "bcrypt")
+
+
+def test_zugangsdaten_kommen_nicht_aus_der_umgebung(variablen: dict, manifest: dict) -> None:
+    # Seit #25 ist die Oberfläche die Quelle dieser sechs Werte. Deklariert das Template
+    # sie trotzdem, rendert es sie bestenfalls leer und schlimmstenfalls falsch.
+    gepflegt = {
+        "FOUNDRY_URL",
+        "FOUNDRY_USER",
+        "FOUNDRY_PASSWORD",
+        "DISCORD_BOT_TOKEN",
+        "OLLAMA_URL",
+        "OLLAMA_MODEL",
+    }
+    assert set(variablen) & gepflegt == set()
+    for container in manifest["spec"]["containers"]:
+        umgebung = {eintrag["name"] for eintrag in container["env"]}
+        assert umgebung & gepflegt == set()
 
 
 def test_keine_echte_adresse_im_manifest(rohtext: str) -> None:

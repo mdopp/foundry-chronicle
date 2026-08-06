@@ -49,18 +49,11 @@ spec:
       # footgun-subdomain-needs-public-domain.
       - name: CHRONICLE_PUBLIC_URL
         value: "https://{{CHRONICLE_SUBDOMAIN}}.{{PUBLIC_DOMAIN}}"
-      - name: FOUNDRY_URL
-        value: "{{FOUNDRY_URL}}"
-      - name: FOUNDRY_USER
-        value: "{{FOUNDRY_USER}}"
-      - name: FOUNDRY_PASSWORD
-        value: "{{FOUNDRY_PASSWORD}}"
-      - name: DISCORD_BOT_TOKEN
-        value: "{{DISCORD_BOT_TOKEN}}"
-      - name: OLLAMA_URL
-        value: "{{OLLAMA_URL}}"
-      - name: OLLAMA_MODEL
-        value: "{{OLLAMA_MODEL}}"
+      # Foundry-Zugang, Discord-Bot-Token und Ollama stehen hier bewusst NICHT: sie
+      # werden unter /einstellungen gepflegt und liegen in der SQLite, die Umgebung wäre
+      # nur die Vorgabe beim ersten Start. Als Template-Variablen haben sie geschadet —
+      # der Assistent erzeugt für 'type: secret' einen Zufallswert, und der meldete sich
+      # als Bot-Token bei Discord an (401 in der Neustart-Schleife, siehe #33).
     ports:
       - containerPort: {{CHRONICLE_PORT}}
     volumeMounts:
@@ -70,7 +63,8 @@ spec:
         name: chronik-aufnahmen
   # Der Aufnahme-Bot ist ein eigener, dauerhafter Prozess: er hält eine
   # Gateway-Verbindung, weil Sprache nur mitgeschnitten werden kann, während sie
-  # gesprochen wird. Gleiches Image, anderer Befehl. Ohne Bot-Token beendet er sich mit
+  # gesprochen wird. Gleiches Image, anderer Befehl. Den Token holt er sich aus derselben
+  # SQLite wie der Webdienst — deshalb teilen sie /data. Ohne Token beendet er sich mit
   # einem Satz, statt in einer Schleife abzustürzen.
   - name: bot
     image: ghcr.io/mdopp/foundry-chronicle:{{CHRONICLE_IMAGE_TAG}}
@@ -83,8 +77,6 @@ spec:
         value: "/data"
       - name: CHRONICLE_RECORDINGS_DIR
         value: "/aufnahmen"
-      - name: DISCORD_BOT_TOKEN
-        value: "{{DISCORD_BOT_TOKEN}}"
     volumeMounts:
       - mountPath: /data
         name: chronik-daten

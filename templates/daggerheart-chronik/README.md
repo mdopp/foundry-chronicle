@@ -15,14 +15,21 @@ Proxy setzt `Remote-User`, und ein Request ohne diesen Header wird abgewiesen.
 | `CHRONICLE_SUBDOMAIN` | Subdomain hinter Authelia-Forward-Auth | `daggerheart` |
 | `CHRONICLE_PORT` | HTTP-Port auf der Box | `8700` |
 | `CHRONICLE_IMAGE_TAG` | Image-Tag für den Rollout | `latest` |
-| `FOUNDRY_URL` | Adresse der Foundry-Instanz | — |
-| `FOUNDRY_USER` | Benutzername eines Foundry-Kontos | — |
-| `FOUNDRY_PASSWORD` | Passwort dazu (`secret`, beim Installieren einsetzen) | — |
-| `DISCORD_BOT_TOKEN` | Optional, für Diktat-Kanal und Aufnahme-Bot | — |
-| `OLLAMA_URL` / `OLLAMA_MODEL` | Optional, Sprachmodell auf der Box | — |
 
 `DATA_DIR` und `PUBLIC_DOMAIN` sind globale ServiceBay-Variablen und werden hier nicht
 noch einmal deklariert.
+
+## Eingerichtet wird nach dem ersten Start, nicht im Assistenten
+
+**Foundry-Adresse, -Benutzer und -Passwort, der Discord-Bot-Token sowie Ollama-Adresse
+und -Modell sind keine Template-Variablen.** Sie werden unter `/einstellungen` gepflegt
+und liegen in der SQLite; der Dienst liest sie von dort, nicht aus der Umgebung. Bis sie
+gesetzt sind, startet er trotzdem und erklärt auf `/status`, was fehlt.
+
+Das ist kein Weglassen aus Bequemlichkeit: Der Assistent erzeugt für eine Variable vom
+Typ `secret` einen **Zufallswert**. Für ein internes Geheimnis ist das richtig, für
+Zugangsdaten einer fremden Gegenstelle falsch — der ausgewürfelte Bot-Token meldete sich
+bei Discord an und scheiterte mit 401 in einer Neustart-Schleife.
 
 ## Container
 
@@ -34,9 +41,10 @@ Der Pod hat zwei Container aus demselben Image:
 | `bot` | `python -m chronicle.bot` | der Aufnahme-Bot am Discord-Gateway |
 
 Der Bot ist ein eigener, dauerhafter Prozess, weil Sprache nur mitgeschnitten werden kann,
-während sie gesprochen wird. **Ohne `DISCORD_BOT_TOKEN` beendet er sich mit einem Satz**
-und wird von der Neustart-Regel des Pods wieder gestartet — das ist erwartet und kein
-Fehler; der Token lässt sich jederzeit unter `/einstellungen` nachtragen.
+während sie gesprochen wird. Den Token liest er aus derselben SQLite wie die Oberfläche —
+deshalb teilen beide Container `/data`. **Ohne Token beendet er sich mit einem Satz** und
+wird von der Neustart-Regel des Pods wieder gestartet — das ist erwartet und kein Fehler;
+nach dem Eintragen unter `/einstellungen` findet ihn der nächste Start.
 
 ## Daten
 
