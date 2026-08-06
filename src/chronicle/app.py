@@ -35,6 +35,7 @@ from chronicle import (
     people,
     protocol,
     recordings,
+    roles,
     search,
     settings,
 )
@@ -76,6 +77,24 @@ SCHRITT_FELDER = dict(SCHRITTE)
 UEBERSPRINGEN = "ueberspringen"
 SPAETER = "spaeter"
 
+# Was die Runde einmal einrichtet, statt es beim Spielen zu brauchen. Alles andere —
+# Sitzungen, Notizen, Diktate, Protokolle, Suche — steht jedem offen.
+VERWALTUNG = frozenset(
+    {
+        "einstellungen",
+        "einstellungen_speichern",
+        "einrichtung",
+        "einrichtung_schritt",
+        "einrichtung_speichern",
+        "zuordnung",
+        "zuordnung_speichern",
+        "abgleich_anstossen",
+        "chronik_anstossen",
+    }
+)
+
+BESTAETIGT = "gruppe_bestaetigt"
+
 
 def create_app(config: Config | None = None, *, zeitplan: bool = False) -> Flask:
     app = Flask(__name__)
@@ -96,6 +115,16 @@ def create_app(config: Config | None = None, *, zeitplan: bool = False) -> Flask
             return render_template("abgewiesen.html"), 403
         return None
 
+    @app.before_request
+    def verwaltungsrolle() -> tuple[str, int] | None:
+        # Ohne gesetzte Gruppe ist jeder Verwalter — der Wizard beim ersten Start kann
+        # sich also nicht selbst aussperren, denn dort ist noch keine gesetzt.
+        if request.endpoint not in VERWALTUNG:
+            return None
+        if roles.ist_verwalter(request, basis.database_path):
+            return None
+        return render_template("keine_verwaltung.html"), 403
+
     def zugang_ziel() -> str:
         # Nach einem »Später« ist die Einrichtung abgehakt und das Band führt in die
         # Einstellungen — sonst zurück in den Wizard.
@@ -108,16 +137,21 @@ def create_app(config: Config | None = None, *, zeitplan: bool = False) -> Flask
         # ``abgleich_job`` steht auch dort, wo kein Band hängt: die Einstellungen zeigen
         # denselben Lauf im Abschnitt »Zustand«, nur ausführlicher.
         if g.get("abgewiesen"):
-            return {"verbindung": None, "zugang": None, "abgleich_job": None}
+            return {"verbindung": None, "zugang": None, "abgleich_job": None, "verwalter": False}
+        verwalter = roles.ist_verwalter(request, basis.database_path)
         lauf = jobs.latest(basis.database_path, jobs.ABGLEICH)
+        rahmen = {"verbindung": None, "zugang": None, "abgleich_job": lauf, "verwalter": verwalter}
         if request.endpoint in OHNE_BAND:
-            return {"verbindung": None, "zugang": None, "abgleich_job": lauf}
+            return rahmen
         if not settings.effective(basis).foundry_configured:
-            return {"verbindung": UNKONFIGURIERT, "zugang": zugang_ziel(), "abgleich_job": lauf}
+            # Der Weg in die Einrichtung steht nur dem offen, der sie auch gehen darf.
+            return rahmen | {
+                "verbindung": UNKONFIGURIERT,
+                "zugang": zugang_ziel() if verwalter else None,
+            }
         if lauf is not None and lauf.laeuft:
-            return {"verbindung": ABGLEICH_LAEUFT, "zugang": None, "abgleich_job": lauf}
-        verbindung = VERALTET if foundry.failed(basis) else None
-        return {"verbindung": verbindung, "zugang": None, "abgleich_job": lauf}
+            return rahmen | {"verbindung": ABGLEICH_LAEUFT}
+        return rahmen | {"verbindung": VERALTET if foundry.failed(basis) else None}
 
     def zurueck(fallback: str) -> str:
         ziel = request.form.get("zurueck", "")
@@ -150,7 +184,8 @@ def create_app(config: Config | None = None, *, zeitplan: bool = False) -> Flask
 
     @app.get("/")
     def sitzungen() -> str | Response:
-        if einrichtung_offen():
+        # Wer die Einrichtung nicht machen darf, wird auch nicht in sie geschickt.
+        if einrichtung_offen() and roles.ist_verwalter(request, basis.database_path):
             return redirect(url_for("einrichtung"))
         return render_template(
             "sitzungen.html",
@@ -342,8 +377,7 @@ def create_app(config: Config | None = None, *, zeitplan: bool = False) -> Flask
                 werte[name] = request.form[name]
         settings.save(basis.database_path, werte)
 
-    @app.get("/einstellungen")
-    def einstellungen() -> str:
+    def einstellungsseite(sperr_gruppe: str | None = None) -> str:
         return render_template(
             "einstellungen.html",
             quellen=settings.sources(basis),
@@ -353,13 +387,31 @@ def create_app(config: Config | None = None, *, zeitplan: bool = False) -> Flask
             remote_user=request.headers.get(REMOTE_USER_HEADER),
             nightly_time=settings.nightly_time(basis.database_path),
             nachtlauf=nightly.letzter(basis.database_path),
+            admin_group=settings.admin_group(basis.database_path)
+            if sperr_gruppe is None
+            else sperr_gruppe,
+            sperr_gruppe=sperr_gruppe,
             **felder(),
         )
 
+    @app.get("/einstellungen")
+    def einstellungen() -> str:
+        return einstellungsseite()
+
     @app.post("/einstellungen")
-    def einstellungen_speichern() -> Response:
+    def einstellungen_speichern() -> Response | str:
         uebernehmen(settings.KEYS)
         settings.save_nightly_time(basis.database_path, request.form.get(settings.NIGHTLY_KEY, ""))
+        # Ein gar nicht abgesendetes Feld heißt »unverändert«: ein Formular ohne dieses
+        # Feld darf die Verwaltungsrolle nicht still zurücknehmen.
+        gruppe = request.form.get(settings.ADMIN_GROUP_KEY)
+        if gruppe is None:
+            return redirect(url_for("einstellungen"))
+        if request.form.get(BESTAETIGT) != "ja" and not roles.traegt(
+            request.headers.get(roles.GRUPPEN_HEADER), gruppe
+        ):
+            return einstellungsseite(sperr_gruppe=gruppe.strip())
+        settings.save_admin_group(basis.database_path, gruppe)
         return redirect(url_for("einstellungen"))
 
     @app.get("/einrichtung")

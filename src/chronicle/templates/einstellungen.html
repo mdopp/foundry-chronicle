@@ -145,6 +145,37 @@
     {% endif %}
   </section>
 
+  <section class="karte" id="verwaltung">
+    <h2>Wer darf verwalten?</h2>
+    <p class="gedaempft">Mitspielen darf jeder, den die Anmeldung hereinlässt: Sitzungen,
+      Szenen, Notizen, Diktate, Protokolle, Suche. Verwalten — diese Seite, die Einrichtung,
+      die Personen-Zuordnung und die Knöpfe, die einen Lauf sofort anstoßen — darf, wer in
+      der hier genannten Gruppe steht.</p>
+
+    <div class="feld">
+      <label for="admin_group">Gruppe für die Verwaltung</label>
+      <input id="admin_group" name="admin_group" type="text" value="{{ admin_group }}"
+             autocomplete="off" placeholder="leer: alle dürfen alles">
+      <p class="gedaempft">Leer heißt: jeder darf alles — für eine kleine Runde ist das
+        genau richtig. Steht hier ein Name, verwaltet nur, wer in dieser Gruppe steht.</p>
+    </div>
+
+    {% if sperr_gruppe %}
+    <p class="fehlt">In <strong>{{ sperr_gruppe }}</strong> stehst du selbst nicht. Speicherst
+      du das so, kommst du auf diese Seite nicht mehr herein und musst dich erst wieder
+      eintragen lassen. An der Gruppe wurde deshalb noch nichts geändert — die übrigen
+      Felder sind gespeichert.</p>
+    <div class="absenden">
+      <button type="submit" class="leise" name="gruppe_bestaetigt" value="ja">Gruppe
+        trotzdem übernehmen</button>
+    </div>
+    {% endif %}
+
+    <p class="gedaempft">Konten und Gruppen legt die Chronik nicht an: neue Mitspieler
+      entstehen in der Benutzerverwaltung dieser Box. Hier steht nur, welche Gruppe
+      verwalten darf.</p>
+  </section>
+
   <p class="gedaempft">Ein leer abgesendetes Feld — außer Passwort und Bot-Token — nimmt den
     Wert zurück.</p>
 

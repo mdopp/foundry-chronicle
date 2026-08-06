@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block titel %}Das macht die Verwaltung — Foundry Chronicle{% endblock %}
+{% block inhalt %}
+
+<section class="karte">
+  <h2>Das macht die Verwaltung</h2>
+  <p>Hier stehen die Dinge, die eure Runde einmal einrichtet: die Zugänge, die
+    Personen-Zuordnung und die Knöpfe, die einen Lauf sofort anstoßen. Dafür bist du
+    nicht freigeschaltet.</p>
+  <p>Zum Mitspielen brauchst du das nicht: Sitzungen, Szenen, Notizen, Diktate,
+    Protokolle und die Suche stehen dir offen. Chronik und Rückblick entstehen über Nacht
+    von selbst.</p>
+  <p class="gedaempft">Freischalten kann dich, wer in eurer Runde die Chronik verwaltet —
+    eingetragen wird das in der Benutzerverwaltung dieser Box, nicht hier.</p>
+  <p><a href="{{ url_for('sitzungen') }}">Zurück zu den Sitzungen</a></p>
+</section>
+
+{% endblock %}

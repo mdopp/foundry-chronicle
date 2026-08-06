@@ -963,6 +963,7 @@ SYSTEMWOERTER = (
     "OLLAMA_",
     "FOUNDRY_",
     "Remote-User",
+    "Remote-Groups",
     "Forward-Auth",
     "Authelia",
 )
@@ -1018,3 +1019,162 @@ def test_auch_das_abgelegte_protokoll_spricht_nutzersprache(tmp_path):
     html = gelesen(config, f"/sitzungen/{sitzung_id}/protokoll")
     assert systemsprache(html) == []
     assert "Noch kein Modell gewählt" in html
+
+
+# --- Verwaltungsrolle: nicht jeder braucht Einstellungen und Auslöse-Knöpfe -----------
+
+
+GRUPPE = "chronik-verwaltung"
+MITSPIEL = {"Remote-Groups": "spieler"}
+VERWALTUNG = {"Remote-Groups": f"Spieler, {GRUPPE.upper()} "}
+
+VERWALTUNGSSEITEN = ("/einstellungen", "/einrichtung/foundry", "/zuordnung")
+
+
+def mit_gruppe(tmp_path, *, eingerichtet=True):
+    config = Config(data_dir=tmp_path)
+    db.init(config.database_path)
+    if eingerichtet:
+        settings.finish_onboarding(config.database_path)
+    settings.save_admin_group(config.database_path, GRUPPE)
+    return config, create_app(config).test_client()
+
+
+def test_ohne_gesetzte_gruppe_darf_jeder_alles(tmp_path):
+    config = Config(data_dir=tmp_path)
+    db.init(config.database_path)
+    settings.finish_onboarding(config.database_path)
+    client = create_app(config).test_client()
+    for pfad in VERWALTUNGSSEITEN:
+        assert client.get(pfad, headers=MITSPIEL).status_code == 200, pfad
+
+
+def test_mit_gruppe_bleibt_die_verwaltung_der_gruppe_vorbehalten(tmp_path):
+    _, client = mit_gruppe(tmp_path)
+    for pfad in VERWALTUNGSSEITEN:
+        assert client.get(pfad, headers=MITSPIEL).status_code == 403, pfad
+        assert client.get(pfad, headers=VERWALTUNG).status_code == 200, pfad
+
+
+def test_auch_die_speicherwege_stehen_hinter_der_rolle(tmp_path):
+    _, client = mit_gruppe(tmp_path)
+    assert client.post("/einstellungen", data={}, headers=MITSPIEL).status_code == 403
+    assert client.post("/einrichtung/foundry", data={}, headers=MITSPIEL).status_code == 403
+    assert client.post("/zuordnung", data={}, headers=MITSPIEL).status_code == 403
+
+
+def test_die_ausloese_knoepfe_gehoeren_der_verwaltung(tmp_path):
+    config, sitzung_id = eine_sitzung(tmp_path)
+    settings.save_admin_group(config.database_path, GRUPPE)
+    client = create_app(config).test_client()
+    assert client.post("/abgleich", headers=MITSPIEL).status_code == 403
+    assert client.post(f"/sitzungen/{sitzung_id}/chronik", headers=MITSPIEL).status_code == 403
+
+
+def test_zum_mitspielen_braucht_niemand_die_rolle(tmp_path):
+    config, sitzung_id = eine_sitzung(tmp_path)
+    settings.save_admin_group(config.database_path, GRUPPE)
+    client = create_app(config).test_client()
+    for pfad in (
+        "/",
+        f"/sitzungen/{sitzung_id}",
+        f"/sitzungen/{sitzung_id}/protokoll",
+        "/protokolle",
+        "/suche",
+        "/healthz",
+    ):
+        assert client.get(pfad, headers=MITSPIEL).status_code == 200, pfad
+    angelegt = client.post("/", data={"played_on": "2026-08-06"}, headers=MITSPIEL)
+    assert angelegt.status_code == 302
+
+
+def test_ohne_rolle_haengt_kein_zahnrad_in_der_navigation(tmp_path):
+    config, _ = eine_sitzung(tmp_path)
+    settings.save_admin_group(config.database_path, GRUPPE)
+    client = create_app(config).test_client()
+    assert 'class="zahnrad"' not in client.get("/", headers=MITSPIEL).get_data(as_text=True)
+    assert 'class="zahnrad"' in client.get("/", headers=VERWALTUNG).get_data(as_text=True)
+
+
+def test_ohne_rolle_steht_auch_kein_ausloese_knopf_auf_der_seite(tmp_path):
+    config, sitzung_id = eine_sitzung(tmp_path)
+    settings.save_admin_group(config.database_path, GRUPPE)
+    client = create_app(config).test_client()
+    html = client.get(f"/sitzungen/{sitzung_id}/protokoll", headers=MITSPIEL).get_data(as_text=True)
+    assert f'action="/sitzungen/{sitzung_id}/chronik"' not in html
+    assert "Über Nacht entsteht sie von selbst" in html
+
+
+def test_der_direkte_aufruf_sagt_in_nutzersprache_wer_helfen_kann(tmp_path):
+    _, client = mit_gruppe(tmp_path)
+    antwort = client.get("/einstellungen", headers=MITSPIEL)
+    assert antwort.status_code == 403
+    html = antwort.get_data(as_text=True)
+    assert "Das macht die Verwaltung" in html
+    assert "Freischalten kann dich" in html
+    assert "Benutzerverwaltung dieser Box" in html
+    assert systemsprache(html) == []
+
+
+def test_beim_ersten_start_steht_der_wizard_allen_offen(tmp_path):
+    client = create_app(Config(data_dir=tmp_path)).test_client()
+    antwort = client.get("/", headers=MITSPIEL, follow_redirects=True)
+    assert antwort.status_code == 200
+    assert "Schritt 1 von" in antwort.get_data(as_text=True)
+
+
+def test_ist_eine_gruppe_gesetzt_gilt_sie_auch_fuer_den_wizard(tmp_path):
+    _, client = mit_gruppe(tmp_path, eingerichtet=False)
+    assert client.get("/einrichtung/foundry", headers=MITSPIEL).status_code == 403
+    # Und die Startseite schickt niemanden vor eine Tür, die für ihn zu ist.
+    antwort = client.get("/", headers=MITSPIEL, follow_redirects=True)
+    assert antwort.status_code == 200
+    assert "Schritt 1 von" not in antwort.get_data(as_text=True)
+
+
+def test_wer_sich_selbst_aussperren_wuerde_wird_gewarnt(tmp_path):
+    config = Config(data_dir=tmp_path)
+    client = create_app(config).test_client()
+    antwort = client.post(
+        "/einstellungen",
+        data={"admin_group": GRUPPE, "foundry_user": "chronist"},
+        headers=MITSPIEL,
+    )
+    assert antwort.status_code == 200
+    assert "stehst du selbst nicht" in antwort.get_data(as_text=True)
+    assert settings.admin_group(config.database_path) == ""
+    # Was daneben im Formular stand, ist trotzdem gespeichert.
+    assert settings.stored(config.database_path)["foundry_user"] == "chronist"
+
+
+def test_die_warnung_laesst_sich_bewusst_uebergehen(tmp_path):
+    config = Config(data_dir=tmp_path)
+    client = create_app(config).test_client()
+    antwort = client.post(
+        "/einstellungen",
+        data={"admin_group": GRUPPE, "gruppe_bestaetigt": "ja"},
+        headers=MITSPIEL,
+    )
+    assert antwort.status_code == 302
+    assert settings.admin_group(config.database_path) == GRUPPE
+
+
+def test_wer_die_gruppe_selbst_traegt_speichert_ohne_warnung(tmp_path):
+    config = Config(data_dir=tmp_path)
+    client = create_app(config).test_client()
+    antwort = client.post("/einstellungen", data={"admin_group": GRUPPE}, headers=VERWALTUNG)
+    assert antwort.status_code == 302
+    assert settings.admin_group(config.database_path) == GRUPPE
+
+
+def test_die_gruppe_zurueckzunehmen_warnt_nicht(tmp_path):
+    config, client = mit_gruppe(tmp_path)
+    antwort = client.post("/einstellungen", data={"admin_group": "  "}, headers=VERWALTUNG)
+    assert antwort.status_code == 302
+    assert settings.admin_group(config.database_path) == ""
+
+
+def test_ein_formular_ohne_das_feld_nimmt_die_rolle_nicht_still_zurueck(tmp_path):
+    config, client = mit_gruppe(tmp_path)
+    client.post("/einstellungen", data={"foundry_user": "chronist"}, headers=VERWALTUNG)
+    assert settings.admin_group(config.database_path) == GRUPPE
