@@ -107,6 +107,12 @@ CREATE TABLE IF NOT EXISTS transcript (
 -- ist der Job — ``id`` ist die Job-Id, ``status`` der einzige Fortschritt, den es hier
 -- ehrlich zu melden gibt. Der Diktat-Upload reiht sich hier ein, der Recorder-Bot
 -- später ebenso; einen zweiten Verarbeitungsweg gibt es nicht.
+--
+-- ``deleted_at`` sagt, wann die Audiodatei nach der zugesagten Frist entfernt wurde. Die
+-- Zeile bleibt: dass es die Spur gab und was aus ihr wurde, ist die ehrliche Hälfte der
+-- Geschichte. Ein eigenes Feld statt eines weiteren ``status``, damit der Ausgang des
+-- Laufs daneben stehen bleibt. Kommentare gehören außerhalb der Klammer — SQLite liest
+-- den Tabellentext bei ``ALTER TABLE DROP COLUMN`` neu ein und stolpert sonst darüber.
 CREATE TABLE IF NOT EXISTS recording (
     id          INTEGER PRIMARY KEY,
     session_id  INTEGER NOT NULL REFERENCES session (id) ON DELETE CASCADE,
@@ -116,7 +122,8 @@ CREATE TABLE IF NOT EXISTS recording (
     status      TEXT NOT NULL
                 CHECK (status IN ('wartet', 'laeuft', 'fertig', 'gescheitert')),
     detail      TEXT,
-    updated_at  TEXT NOT NULL
+    updated_at  TEXT NOT NULL,
+    deleted_at  TEXT
 );
 
 CREATE INDEX IF NOT EXISTS recording_sitzung ON recording (session_id);
@@ -247,5 +254,5 @@ INSERT INTO search_index (text, kind, ref_id, session_id, scene_id)
 SELECT s.text, 'transkript', s.transcript_id, t.session_id, NULL
 FROM transcript_segment s JOIN transcript t ON t.id = s.transcript_id;
 
-INSERT INTO meta (key, value) VALUES ('schema_version', '9')
+INSERT INTO meta (key, value) VALUES ('schema_version', '10')
 ON CONFLICT (key) DO UPDATE SET value = excluded.value;

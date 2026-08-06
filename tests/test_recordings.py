@@ -8,6 +8,7 @@ tot. Kein Test lädt ein Spracherkennungsmodell; an dessen Stelle steht ein erfu
 from __future__ import annotations
 
 import io
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -290,6 +291,124 @@ def test_ein_fehlendes_faster_whisper_laesst_die_warteschlange_stehen(
         service.run_queue(config)
 
     assert recordings.pending(config.database_path)[0].status == recordings.WARTET
+
+
+# --- Die zugesagte Frist ------------------------------------------------------------
+
+
+def altern(config, aufnahme_id, tage):
+    zeitpunkt = (datetime.now(UTC) - timedelta(days=tage)).isoformat(timespec="seconds")
+    verbindung = db.connect(config.database_path)
+    try:
+        with verbindung:
+            verbindung.execute(
+                "UPDATE recording SET uploaded_at = ? WHERE id = ?", (zeitpunkt, aufnahme_id)
+            )
+    finally:
+        verbindung.close()
+
+
+def test_was_aelter_ist_als_die_frist_wird_geloescht(client, config, sitzung_id):
+    hochladen(client, sitzung_id)
+    (aufnahme,) = recordings.for_session(config.database_path, sitzung_id)
+    altern(config, aufnahme.id, recordings.RETENTION_TAGE + 1)
+
+    (meldung,) = recordings.sweep(config)
+
+    assert list(config.recordings_dir.iterdir()) == []
+    assert str(recordings.RETENTION_TAGE) in meldung
+    nachher = recordings.get(config.database_path, aufnahme.id)
+    assert nachher is not None
+    assert nachher.deleted_at
+    assert nachher.filename == aufnahme.filename
+
+
+def test_was_juenger_ist_bleibt_liegen(client, config, sitzung_id):
+    hochladen(client, sitzung_id)
+    (aufnahme,) = recordings.for_session(config.database_path, sitzung_id)
+    altern(config, aufnahme.id, recordings.RETENTION_TAGE - 1)
+
+    assert recordings.sweep(config) == ()
+    assert len(list(config.recordings_dir.iterdir())) == 1
+    assert recordings.get(config.database_path, aufnahme.id).deleted_at is None
+
+
+def test_der_lauf_darf_beliebig_oft_kommen(client, config, sitzung_id):
+    hochladen(client, sitzung_id)
+    (aufnahme,) = recordings.for_session(config.database_path, sitzung_id)
+    altern(config, aufnahme.id, recordings.RETENTION_TAGE + 1)
+
+    zuerst = recordings.sweep(config)
+
+    assert len(zuerst) == 1
+    assert recordings.sweep(config) == ()
+    assert recordings.expired(config.database_path) == ()
+
+
+def test_eine_abgeraeumte_spur_kommt_nicht_in_die_warteschlange_zurueck(client, config, sitzung_id):
+    hochladen(client, sitzung_id)
+    (aufnahme,) = recordings.for_session(config.database_path, sitzung_id)
+    altern(config, aufnahme.id, recordings.RETENTION_TAGE + 1)
+    recordings.sweep(config)
+
+    assert recordings.pending(config.database_path) == ()
+    assert service.run_queue(config, model=Erkenner()) == ()
+
+
+def test_der_naechtliche_stapel_setzt_die_frist_auch_ohne_arbeit_durch(client, config, sitzung_id):
+    hochladen(client, sitzung_id)
+    (aufnahme,) = recordings.for_session(config.database_path, sitzung_id)
+    service.run_queue(config, model=Erkenner())
+    altern(config, aufnahme.id, recordings.RETENTION_TAGE + 1)
+
+    (meldung,) = service.run_queue(config)
+
+    assert "gelöscht" in meldung
+    assert list(config.recordings_dir.iterdir()) == []
+    # Das Transkript bleibt — gelöscht wird die Audiodatei, nicht die Geschichte.
+    assert recordings.get(config.database_path, aufnahme.id).text
+
+
+def test_die_seite_sagt_warum_die_aufnahme_weg_ist(client, config, sitzung_id):
+    hochladen(client, sitzung_id)
+    (aufnahme,) = recordings.for_session(config.database_path, sitzung_id)
+    altern(config, aufnahme.id, recordings.RETENTION_TAGE + 1)
+    recordings.sweep(config)
+
+    text = seite(client, sitzung_id)
+    assert f"nach {recordings.RETENTION_TAGE} Tagen entfernt" in text
+    assert "läuft im nächsten Stapel" not in text
+
+
+def test_eine_alte_datenbank_bekommt_die_spalte_nachgetragen(tmp_path):
+    # ``CREATE TABLE IF NOT EXISTS`` erreicht eine bestehende Tabelle nicht — hier steht
+    # deshalb die Fassung vor Schema 10, samt einer Zeile, die den Umbau überleben muss.
+    pfad = tmp_path / "alt.sqlite3"
+    verbindung = db.connect(pfad)
+    try:
+        with verbindung:
+            verbindung.execute(
+                "CREATE TABLE recording (id INTEGER PRIMARY KEY, session_id INTEGER NOT NULL, "
+                "filename TEXT NOT NULL UNIQUE, source TEXT NOT NULL, uploaded_at TEXT NOT NULL, "
+                "status TEXT NOT NULL, detail TEXT, updated_at TEXT NOT NULL)"
+            )
+            verbindung.execute(
+                "INSERT INTO recording (session_id, filename, source, uploaded_at, status, "
+                "updated_at) VALUES (1, 'memo.m4a', 'memo', '2026-01-01T00:00:00+00:00', "
+                "'fertig', '2026-01-01T00:00:00+00:00')"
+            )
+    finally:
+        verbindung.close()
+
+    db.init(pfad)
+
+    verbindung = db.connect(pfad)
+    try:
+        zeile = verbindung.execute("SELECT filename, deleted_at FROM recording").fetchone()
+    finally:
+        verbindung.close()
+    assert (zeile["filename"], zeile["deleted_at"]) == ("memo.m4a", None)
+    assert db.current_schema_version(pfad) == db.SCHEMA_VERSION
 
 
 # --- Vom Transkript zur Notiz -------------------------------------------------------

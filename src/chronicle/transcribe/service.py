@@ -187,20 +187,22 @@ def run_queue(
 
     Das Modell wird erst geladen, wenn wirklich etwas wartet: ein leerer Lauf soll
     nichts kosten, damit er stündlich stehen darf.
+
+    Am Ende wird die zugesagte Aufbewahrungsfrist durchgesetzt — auch nach einem leeren
+    Lauf, denn zugesagt ist sie unabhängig davon, ob heute etwas zu tun war.
     """
     db.init(config.database_path)
     wartend = recordings.pending(config.database_path)
-    if not wartend:
-        return ()
-
-    erkenner = model if model is not None else model_from_config(config)
     meldungen = []
-    for aufnahme in wartend:
-        recordings.mark(config.database_path, aufnahme.id, recordings.LAEUFT)
-        meldung, gelungen = _eine_spur(config, aufnahme, erkenner, delete_audio)
-        stand = recordings.FERTIG if gelungen else recordings.GESCHEITERT
-        recordings.mark(config.database_path, aufnahme.id, stand, meldung)
-        meldungen.append(meldung)
+    if wartend:
+        erkenner = model if model is not None else model_from_config(config)
+        for aufnahme in wartend:
+            recordings.mark(config.database_path, aufnahme.id, recordings.LAEUFT)
+            meldung, gelungen = _eine_spur(config, aufnahme, erkenner, delete_audio)
+            stand = recordings.FERTIG if gelungen else recordings.GESCHEITERT
+            recordings.mark(config.database_path, aufnahme.id, stand, meldung)
+            meldungen.append(meldung)
+    meldungen.extend(recordings.sweep(config))
     return tuple(meldungen)
 
 

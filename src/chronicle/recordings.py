@@ -10,23 +10,46 @@ Lauf beginnt im nächsten Stapel, nicht beim Absenden.
 Geschrieben wird im Strom auf die Platte — Werkzeug spult den Hochladestrom ab einem
 halben Megabyte selbst in eine temporäre Datei, und ``save`` kopiert von dort weiter.
 Eine Stunde Audio steht damit nie im Speicher.
+
+**Die Aufbewahrungsfrist steht hier**, und zwar als Zahl: der Bot sagt sie im Sprachkanal
+zu (``chronicle.bot.ansage``), und derselbe Wert setzt sie durch. Ein Versprechen, das nur
+im Ansagetext steht, wäre keins — deshalb formatiert die Ansage ihre Frist aus
+``RETENTION_TAGE``, und ``sweep`` räumt danach. Beide können nicht auseinanderlaufen.
+
+Gelöscht wird dabei nur die **Audiodatei**; die Zeile bleibt mit ``deleted_at`` stehen.
+Sie ist der ehrliche Teil der Geschichte: dass es die Spur gab, wann sie kam, was aus ihr
+wurde — und dass sie nach Frist entfernt wurde und nicht etwa verlorenging.
 """
 
 from __future__ import annotations
 
+import asyncio
+import logging
 import sqlite3
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from werkzeug.utils import secure_filename
 
 from chronicle import db
 
+logger = logging.getLogger(__name__)
+
 WARTET = "wartet"
 LAEUFT = "laeuft"
 FERTIG = "fertig"
 GESCHEITERT = "gescheitert"
+
+# Die Frist aus der Ansage. Kein Betriebsknopf: wer sie ändert, ändert eine Zusage an
+# Menschen, deren Stimme aufgenommen wurde — das ist kein Umgebungsvariablen-Thema.
+RETENTION_TAGE = 7
+
+# Der Bot läuft ohnehin; einmal am Tag nachzusehen kostet nichts und hält die Zusage auch
+# in Wochen ohne Stapellauf.
+SWEEP_ABSTAND = 24 * 60 * 60
+
+NACH_FRIST = "Spur »{source}«: Aufnahme nach {tage} Tagen gelöscht — die Frist aus der Ansage."
 
 # Was Sprachmemo-Apps ablegen. Normalisiert wird nichts davon vorab: faster-whisper
 # dekodiert über PyAV, dessen Wheel bringt die FFmpeg-Bibliotheken mit — m4a/AAC und
@@ -66,6 +89,7 @@ class Recording:
     detail: str | None = None
     transcript_id: int | None = None
     text: str = ""
+    deleted_at: str | None = None
 
 
 def _now() -> str:
@@ -87,6 +111,7 @@ def _eintrag(row: sqlite3.Row, text: str = "") -> Recording:
         detail=row["detail"],
         transcript_id=row["transcript_id"] if "transcript_id" in row.keys() else None,
         text=text,
+        deleted_at=row["deleted_at"],
     )
 
 
@@ -165,7 +190,7 @@ def _mit_transkript(connection: sqlite3.Connection, row: sqlite3.Row) -> Recordi
 # Lauf ersetzt die Transkript-Zeile im Ganzen, ihre Id wäre also nicht haltbar.
 AUSWAHL = (
     "SELECT r.id, r.session_id, r.filename, r.source, r.uploaded_at, r.status, r.detail, "
-    "t.id AS transcript_id FROM recording r "
+    "r.deleted_at, t.id AS transcript_id FROM recording r "
     "LEFT JOIN transcript t ON t.session_id = r.session_id AND t.source = r.source "
 )
 
@@ -191,10 +216,11 @@ def get(database_path: Path, recording_id: int) -> Recording | None:
 
 
 def pending(database_path: Path) -> tuple[Recording, ...]:
+    """Was noch wartet — ohne die Spuren, deren Audio die Frist schon geholt hat."""
     connection = _open(database_path)
     try:
         rows = connection.execute(
-            AUSWAHL + "WHERE r.status = ? ORDER BY r.id", (WARTET,)
+            AUSWAHL + "WHERE r.status = ? AND r.deleted_at IS NULL ORDER BY r.id", (WARTET,)
         ).fetchall()
     finally:
         connection.close()
@@ -211,3 +237,56 @@ def mark(database_path: Path, recording_id: int, status: str, detail: str | None
             )
     finally:
         connection.close()
+
+
+def expired(database_path: Path, *, tage: int = RETENTION_TAGE) -> tuple[Recording, ...]:
+    """Spuren, deren Audio die Frist überschritten hat und noch da ist."""
+    grenze = (datetime.now(UTC) - timedelta(days=tage)).isoformat(timespec="seconds")
+    connection = _open(database_path)
+    try:
+        rows = connection.execute(
+            AUSWAHL + "WHERE r.deleted_at IS NULL AND r.uploaded_at < ? ORDER BY r.id", (grenze,)
+        ).fetchall()
+    finally:
+        connection.close()
+    return tuple(_eintrag(row) for row in rows)
+
+
+def _als_geloescht_vermerken(database_path: Path, recording_id: int) -> None:
+    zeitpunkt = _now()
+    connection = _open(database_path)
+    try:
+        with connection:
+            connection.execute(
+                "UPDATE recording SET deleted_at = ?, updated_at = ? WHERE id = ?",
+                (zeitpunkt, zeitpunkt, recording_id),
+            )
+    finally:
+        connection.close()
+
+
+def sweep(config, *, tage: int = RETENTION_TAGE) -> tuple[str, ...]:
+    """Setzt die zugesagte Frist durch: Audio weg, Zeile bleibt.
+
+    Beliebig oft aufrufbar — eine bereits vermerkte Spur wird nicht noch einmal gesucht,
+    und eine schon von Hand entfernte Datei ist kein Fehlschlag.
+    """
+    meldungen = []
+    for aufnahme in expired(config.database_path, tage=tage):
+        (config.recordings_dir / aufnahme.filename).unlink(missing_ok=True)
+        _als_geloescht_vermerken(config.database_path, aufnahme.id)
+        meldung = NACH_FRIST.format(source=aufnahme.source, tage=tage)
+        logger.info("%s", meldung)
+        meldungen.append(meldung)
+    return tuple(meldungen)
+
+
+async def taeglich(config, *, schlafen=asyncio.sleep) -> None:
+    """Die Frist im dauerhaften Bot-Prozess — einmal beim Start, danach täglich.
+
+    Der nächtliche Stapel räumt ebenfalls; beides zusammen heißt, dass die Zusage auch
+    dann gilt, wenn eines von beidem eine Weile nicht läuft.
+    """
+    while True:
+        sweep(config)
+        await schlafen(SWEEP_ABSTAND)

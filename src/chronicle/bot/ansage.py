@@ -28,12 +28,17 @@ from collections.abc import Callable
 from pathlib import Path
 
 from chronicle.bot import BotFehler
+from chronicle.recordings import RETENTION_TAGE
 
+# Die Frist im Satz kommt aus derselben Zahl, die ``recordings.sweep`` durchsetzt. Sie hier
+# hineinzuschreiben wäre die teuerste Art von Fehler: eine Zusage an Menschen, die sich
+# still von dem entfernt, was die Maschine tut.
 TEXT = (
     "Hier spricht der Chronik-Bot. Ab jetzt wird dieses Gespräch aufgezeichnet, "
     "für jede und jeden im Kanal eine eigene Tonspur. "
     "Die Aufnahmen dienen ausschließlich dem Sitzungsprotokoll dieser Spielrunde, "
-    "sie werden auf dem Server der Gruppe verarbeitet und danach gelöscht. "
+    "sie werden auf dem Server der Gruppe verarbeitet, "
+    f"höchstens {RETENTION_TAGE} Tage aufbewahrt und dann gelöscht. "
     "Wer nicht aufgezeichnet werden möchte, verlässt jetzt bitte den Sprachkanal. "
     "Außerhalb dieses Kanals wird nichts aufgenommen. "
     "Wer im Kanal bleibt, ist mit der Aufnahme einverstanden. "

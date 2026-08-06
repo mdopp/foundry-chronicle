@@ -51,8 +51,12 @@ Die SQLite-Datei ist klein und enthält alles Unersetzliche — sie gehört ins 
 dem Einwilligungsprotokoll des Aufnahme-Bots. Die Audiospuren liegen bewusst in einem
 **zweiten** Verzeichnis daneben: sie werden groß, sind nach der Transkription entbehrlich
 und gehören nicht ins Backup. **Beim Einrichten der Sicherung `daggerheart-aufnahmen`
-ausschließen.** Gelöscht werden die Spuren nur auf ausdrückliches Verlangen
-(`python -m chronicle.transcribe --loeschen`), nie still.
+ausschließen.**
+
+Der Bot sagt im Sprachkanal eine **Aufbewahrungsfrist von 7 Tagen** zu und hält sie selbst
+ein: er räumt einmal beim Start und danach täglich ab, der nächtliche Stapel zusätzlich am
+Ende jedes Laufs. `python -m chronicle.transcribe --loeschen` entfernt eine Spur schon
+vorher. Gelöscht wird dabei nur die Audiodatei — die Zeile in der SQLite bleibt stehen.
 
 ## Rollout
 

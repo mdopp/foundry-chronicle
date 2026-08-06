@@ -49,7 +49,13 @@
     <h4>Spur {{ aufnahme.id }} <span class="gedaempft">— <code>{{ aufnahme.filename }}</code>,
       eingegangen <time datetime="{{ aufnahme.uploaded_at }}">{{ aufnahme.uploaded_at[11:16] }} UTC</time></span></h4>
 
-    {% if aufnahme.status == 'wartet' %}
+    {% if aufnahme.deleted_at %}
+    <p class="gedaempft">Aufnahme nach {{ frist }} Tagen entfernt — die Frist, die der Bot im
+      Sprachkanal ansagt. Die Zeile bleibt stehen, damit nachvollziehbar ist, dass es die
+      Spur gab und was aus ihr wurde.</p>
+    {% endif %}
+
+    {% if aufnahme.status == 'wartet' and not aufnahme.deleted_at %}
     <p>Diktat empfangen — es läuft im nächsten Stapel, das Ergebnis steht morgen früh hier.
       Bis dahin passiert nichts: der Stapel ist <code>python -m chronicle.transcribe</code>.</p>
     {% elif aufnahme.status == 'laeuft' %}
@@ -67,10 +73,12 @@
       </select>
       <div class="absenden"><button type="submit" class="leise">Als Notiz übernehmen</button></div>
     </form>
-    <p class="gedaempft">Die Spur liegt weiter im Aufnahmeverzeichnis. Der Stapellauf mit
-      <code>--loeschen</code> entfernt sie nach einem erfolgreichen Lauf; von selbst
-      verschwindet sie nie.</p>
-    {% else %}
+    {% if not aufnahme.deleted_at %}
+    <p class="gedaempft">Die Spur liegt weiter im Aufnahmeverzeichnis, längstens {{ frist }} Tage
+      — so lange, wie der Bot es ansagt. Der Stapellauf mit <code>--loeschen</code> entfernt sie
+      schon nach einem erfolgreichen Lauf; still verschwindet sie nie.</p>
+    {% endif %}
+    {% elif aufnahme.status == 'gescheitert' %}
     <p class="fehlt">{{ aufnahme.detail }}</p>
     {% endif %}
   </div>

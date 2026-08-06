@@ -77,8 +77,11 @@ laden nie ein echtes herunter.
 
 **Die Aufnahmen liegen neben dem Datenverzeichnis, nicht darin** (`recordings/` gegen
 `data/`, im Image `/aufnahmen` gegen `/data`). Gesichert wird die SQLite; Audiospuren
-gehören nie ins Backup und werden nach einem erfolgreichen Lauf entbehrlich — gelöscht
-werden sie aber nur auf ausdrückliches Verlangen.
+gehören nie ins Backup. `--loeschen` entfernt eine Spur sofort nach einem erfolgreichen
+Lauf; spätestens nach der zugesagten **Aufbewahrungsfrist** (`recordings.RETENTION_TAGE`,
+derzeit 7 Tage) räumt der Stapel sie ohnehin ab. Gelöscht wird dabei nur die Audiodatei —
+die Zeile bleibt mit `deleted_at` stehen, damit man sieht, dass die Spur nach Frist
+entfernt wurde und nicht verlorenging.
 
 ## Diktat per Discord
 
@@ -163,6 +166,19 @@ Gesprochen wird die Ansage von **espeak-ng**, erzeugt beim ersten Bedarf aus dem
 `chronicle/bot/ansage.py` und unter dessen Fingerabdruck im Aufnahmeverzeichnis abgelegt.
 Damit können Ansage und Protokoll nicht auseinanderlaufen. Fehlt espeak-ng, wird **nicht**
 aufgenommen.
+
+### Die zugesagte Frist wird auch eingehalten
+
+Die Ansage nennt eine Aufbewahrungsfrist — und **dieselbe Zahl setzt sie durch**: der Satz
+wird aus `recordings.RETENTION_TAGE` (7) formatiert, und `recordings.sweep` räumt danach
+auf. Ein Versprechen, das nur im Ansagetext steht, wäre keins; so können Satz und Verhalten
+nicht auseinanderlaufen. Durchgesetzt wird an zwei Stellen, damit die Zusage auch gilt,
+wenn eine davon eine Weile steht: **im laufenden Bot** einmal beim Start und danach täglich,
+und **am Ende jedes `python -m chronicle.transcribe`-Laufs**, auch wenn nichts zu tun war.
+
+Gelöscht wird nur die Audiodatei. Die Zeile in der Datenbank bleibt mit `deleted_at` stehen
+— dass es die Spur gab, wann sie kam und was aus ihr wurde, ist die ehrliche Hälfte der
+Geschichte; das Transkript bleibt ohnehin. Die Sitzungsseite sagt es in einem Satz.
 
 ### Je Sprecher eine Spur
 

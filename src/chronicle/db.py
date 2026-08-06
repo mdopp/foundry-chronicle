@@ -10,7 +10,12 @@ import sqlite3
 from importlib import resources
 from pathlib import Path
 
-SCHEMA_VERSION = 9
+SCHEMA_VERSION = 10
+
+# ``CREATE TABLE IF NOT EXISTS`` erreicht eine bestehende Tabelle nicht mehr; eine neue
+# Spalte muss deshalb einmal nachgetragen werden. Nur additiv — mehr kann und soll dieser
+# Weg nicht.
+NACHGETRAGEN = (("recording", "deleted_at", "TEXT"),)
 
 
 def schema_sql() -> str:
@@ -27,11 +32,19 @@ def connect(database_path: Path) -> sqlite3.Connection:
     return connection
 
 
+def _nachtragen(connection: sqlite3.Connection) -> None:
+    for tabelle, spalte, typ in NACHGETRAGEN:
+        vorhanden = {zeile["name"] for zeile in connection.execute(f"PRAGMA table_info({tabelle})")}
+        if vorhanden and spalte not in vorhanden:
+            connection.execute(f"ALTER TABLE {tabelle} ADD COLUMN {spalte} {typ}")
+
+
 def init(database_path: Path) -> None:
     database_path.parent.mkdir(parents=True, exist_ok=True)
     connection = connect(database_path)
     try:
         connection.executescript(schema_sql())
+        _nachtragen(connection)
         connection.commit()
     finally:
         connection.close()

@@ -108,6 +108,29 @@ def test_die_ansage_nennt_aufnahme_zweck_und_den_ausweg():
         assert satzteil in ansage.TEXT
 
 
+def test_die_zugesagte_frist_ist_die_frist_aus_dem_code():
+    # Der Satz darf sich nicht von dem entfernen, was ``recordings.sweep`` durchsetzt.
+    assert f"{recordings.RETENTION_TAGE} Tage" in ansage.TEXT
+    assert "aufbewahrt und dann gelöscht" in ansage.TEXT
+
+
+def test_die_frist_wird_beim_start_und_danach_taeglich_geprueft(konfiguration, sitzung_id):
+    class Schluss(Exception):
+        pass
+
+    laeufe = []
+
+    async def schlafen(sekunden):
+        laeufe.append(sekunden)
+        if len(laeufe) == 2:
+            raise Schluss
+
+    with pytest.raises(Schluss):
+        asyncio.run(recordings.taeglich(konfiguration, schlafen=schlafen))
+
+    assert laeufe == [recordings.SWEEP_ABSTAND, recordings.SWEEP_ABSTAND]
+
+
 def test_die_ansage_wird_einmal_erzeugt_und_danach_wiederverwendet(tmp_path):
     laeufe = []
 
@@ -645,6 +668,27 @@ def test_ein_ortswechsel_im_selben_kanal_sagt_nichts_noch_einmal(
 
     assert len(runde.kanal.verbindung.gespielt) == 1
     assert len(consent.for_session(konfiguration.database_path, sitzung_id)) == 1
+
+
+def test_der_bot_setzt_die_frist_selbst_durch(konfiguration, sitzung_id, runde, monkeypatch):
+    gelaufen = []
+
+    async def frist(config):
+        gelaufen.append(config)
+
+    monkeypatch.setattr(recordings, "taeglich", frist)
+    bot = gateway.baue(konfiguration)
+
+    async def anmelden():
+        await bot.ereignisse["on_ready"]()
+        await bot.ereignisse["on_ready"]()
+        await asyncio.sleep(0)
+
+    asyncio.run(anmelden())
+
+    # Beim zweiten on_ready — Discord schickt es nach jedem Wiederverbinden — darf kein
+    # zweiter Aufräumer danebenlaufen.
+    assert gelaufen == [konfiguration]
 
 
 def test_ohne_laufende_aufnahme_bleibt_der_beitritt_folgenlos(konfiguration, sitzung_id, runde):

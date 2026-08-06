@@ -22,7 +22,7 @@ import logging
 import wave
 from pathlib import Path
 
-from chronicle import consent
+from chronicle import consent, recordings
 from chronicle.bot import BotFehler, ansage, recorder
 from chronicle.bot.recorder import Aufnahme, Kanal
 from chronicle.config import Config
@@ -133,6 +133,7 @@ class _Lauf:
     def __init__(self) -> None:
         self.stimme: Sprachverbindung | None = None
         self.aufnahme: Aufnahme | None = None
+        self.frist = None
 
 
 def baue(config: Config):
@@ -175,6 +176,13 @@ def baue(config: Config):
         lauf.stimme = None
         lauf.aufnahme = None
         await ctx.respond(" ".join(meldungen), ephemeral=True)
+
+    @bot.event
+    async def on_ready() -> None:
+        # Der Prozess läuft ohnehin durch — er ist damit der zuverlässigste Ort, die in
+        # der Ansage zugesagte Frist einzuhalten, auch wenn der nächtliche Stapel steht.
+        if lauf.frist is None:
+            lauf.frist = asyncio.create_task(recordings.taeglich(config))
 
     @bot.event
     async def on_voice_state_update(member, before, after) -> None:
