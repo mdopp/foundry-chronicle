@@ -30,8 +30,9 @@ konfiguriert ist und wann zuletzt mit Foundry abgeglichen wurde.
 Foundry-Adresse, -Benutzer und -Passwort, der Discord-Bot-Token sowie Ollama-Adresse und
 -Modell werden unter `/einstellungen` gepflegt und liegen in der SQLite. Die Umgebung —
 `FOUNDRY_URL`, `FOUNDRY_USER`, `FOUNDRY_PASSWORD`, `DISCORD_BOT_TOKEN`, `OLLAMA_URL`,
-`OLLAMA_MODEL` — bleibt die Vorgabe beim ersten Start und der Deploy-Weg; **ein in der
-Oberfläche gesetzter Wert gewinnt**, und `/status` zeigt je Wert, woher er kommt. Die
+`OLLAMA_MODEL` — bleibt als Vorgabe beim ersten Start lesbar und ist beim Entwickeln der
+bequeme Weg; **ein in der Oberfläche gesetzter Wert gewinnt**, und `/status` zeigt je
+Wert, woher er kommt. Das Box-Template setzt keine davon (siehe unten). Die
 beiden Geheimnisse werden nie angezeigt, nur *ob* sie gesetzt sind; ein leer
 abgesendetes Feld heißt unverändert. Rein aus der Umgebung kommen weiterhin
 `CHRONICLE_DATA_DIR` (Vorgabe `./data`), `CHRONICLE_RECORDINGS_DIR` (Vorgabe
@@ -210,6 +211,15 @@ Dieses Repo ist zugleich eine **ServiceBay-Registry**: unter [`templates/`](temp
 liegt das Pod-Template `daggerheart-chronik`. Auf der Box wird das Repo einmal in
 `config.registries[]` eingetragen (Git-URL dieses Repos), danach steht das Template im
 Installations-Assistenten neben den mitgelieferten.
+
+Der Assistent fragt nur nach Subdomain, Port und Image-Tag. **Foundry, Discord und Ollama
+werden nach dem ersten Start unter `/einstellungen` eingerichtet**, nicht beim
+Installieren: Der Assistent würfelt für eine Variable vom Typ `secret` einen Zufallswert
+aus — richtig für ein internes Geheimnis, falsch für Zugangsdaten, die nur die
+Gegenstelle kennt. Ein solcher Wert meldete sich einmal als Bot-Token bei Discord an und
+scheiterte mit 401 in einer Neustart-Schleife. Deshalb deklariert das Template diese
+Werte gar nicht mehr, und ein frisch installierter Pod zeigt sie auf `/status` als
+*nicht gesetzt*.
 
 Das Image baut [`.github/workflows/build-images.yml`](.github/workflows/build-images.yml)
 und veröffentlicht es nach GHCR — der Publish-Job hängt an `needs: test`, es wird also
