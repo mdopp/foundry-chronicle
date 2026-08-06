@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import replace
+from datetime import time
 from pathlib import Path
 
 from chronicle import db
@@ -34,6 +35,12 @@ SECRET_KEYS = ("foundry_password", "discord_bot_token")
 # Steht bewusst nicht in KEYS: kein Konfigurationswert, sondern die Merkzeile des
 # Erststart-Wizards — er soll nie ein zweites Mal aufgehen.
 ONBOARDING_KEY = "onboarding_done"
+
+# Ebenfalls nicht in KEYS: die Uhrzeit des nächtlichen Laufs gibt es nur hier. Sie über
+# die Umgebung vorzugeben hieße, sie beim Deploy zu entscheiden — sie gehört aber der
+# Gruppe, die weiß, wann ihr Server ungestört ist.
+NIGHTLY_KEY = "nightly_time"
+DEFAULT_NIGHTLY_TIME = "04:00"
 
 # Der Box-Standard: unser Pod läuft im Host-Netz, Ollama hört daneben auf 11434.
 DEFAULT_OLLAMA_URL = "http://127.0.0.1:11434"
@@ -92,6 +99,46 @@ def finish_onboarding(database_path: Path) -> None:
             )
     finally:
         connection.close()
+
+
+def nightly_at(value: str) -> time:
+    """Die Uhrzeit hinter dem Wert — was sich nicht lesen lässt, ist die Vorgabe."""
+    try:
+        return time.fromisoformat(value)
+    except ValueError:
+        return time.fromisoformat(DEFAULT_NIGHTLY_TIME)
+
+
+def nightly_time(database_path: Path) -> str:
+    connection = db.connect(database_path)
+    try:
+        zeile = connection.execute(
+            "SELECT value FROM settings WHERE key = ?", (NIGHTLY_KEY,)
+        ).fetchone()
+    finally:
+        connection.close()
+    if zeile is None:
+        return DEFAULT_NIGHTLY_TIME
+    return nightly_at(str(zeile["value"])).strftime("%H:%M")
+
+
+def save_nightly_time(database_path: Path, value: str) -> bool:
+    """Speichert eine Uhrzeit; eine unlesbare lässt die bisherige stehen."""
+    try:
+        gewaehlt = time.fromisoformat(value.strip())
+    except ValueError:
+        return False
+    connection = db.connect(database_path)
+    try:
+        with connection:
+            connection.execute(
+                "INSERT INTO settings (key, value) VALUES (?, ?) "
+                "ON CONFLICT (key) DO UPDATE SET value = excluded.value",
+                (NIGHTLY_KEY, gewaehlt.strftime("%H:%M")),
+            )
+    finally:
+        connection.close()
+    return True
 
 
 def save(database_path: Path, values: Mapping[str, str | None]) -> None:

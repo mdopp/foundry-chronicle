@@ -489,7 +489,7 @@ def test_main_liest_host_und_port_aus_der_umgebung(monkeypatch):
         def run(self, **kwargs):
             aufruf.update(kwargs)
 
-    monkeypatch.setattr(entry, "create_app", lambda: Attrappe())
+    monkeypatch.setattr(entry, "dienst", lambda: Attrappe())
     monkeypatch.setenv("CHRONICLE_HOST", "127.0.0.2")
     monkeypatch.setenv("CHRONICLE_PORT", "9001")
     entry.main()
@@ -503,7 +503,7 @@ def test_main_hat_vorgaben(monkeypatch):
         def run(self, **kwargs):
             aufruf.update(kwargs)
 
-    monkeypatch.setattr(entry, "create_app", lambda: Attrappe())
+    monkeypatch.setattr(entry, "dienst", lambda: Attrappe())
     monkeypatch.delenv("CHRONICLE_HOST", raising=False)
     monkeypatch.delenv("CHRONICLE_PORT", raising=False)
     entry.main()

@@ -43,6 +43,7 @@ logger = logging.getLogger(__name__)
 
 ABGLEICH = "abgleich"
 CHRONIK = "chronik"
+NACHTLAUF = "nachtlauf"
 
 LAEUFT = "laeuft"
 FERTIG = "fertig"
@@ -148,13 +149,17 @@ def latest(database_path: Path, kind: str, session_id: int | None = None) -> Job
     return None if row is None else _job(row)
 
 
-def running(database_path: Path, kind: str) -> bool:
+def running(database_path: Path, kind: str | None = None) -> bool:
+    """Läuft einer — ohne ``kind`` einer beliebiger Art."""
     connection = db.connect(database_path)
     try:
         _aufraeumen(connection)
-        offen = connection.execute(
-            "SELECT 1 FROM job WHERE kind = ? AND state = ?", (kind, LAEUFT)
-        ).fetchone()
+        if kind is None:
+            offen = connection.execute("SELECT 1 FROM job WHERE state = ?", (LAEUFT,)).fetchone()
+        else:
+            offen = connection.execute(
+                "SELECT 1 FROM job WHERE kind = ? AND state = ?", (kind, LAEUFT)
+            ).fetchone()
     finally:
         connection.close()
     return offen is not None

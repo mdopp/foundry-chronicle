@@ -41,4 +41,4 @@ EXPOSE 8000
 # Kein USER-Wechsel: unter rootless Podman bildet Container-uid 0 auf den unprivilegierten
 # Host-Benutzer ab, dem das hostPath-Datenverzeichnis gehört. Ein eigener Benutzer landete
 # auf einer subuid ohne Schreibrecht darauf — die SQLite-Datei wäre nicht anlegbar.
-CMD ["sh", "-c", "exec waitress-serve --host=$CHRONICLE_HOST --port=$CHRONICLE_PORT --call chronicle.app:create_app"]
+CMD ["sh", "-c", "exec waitress-serve --host=$CHRONICLE_HOST --port=$CHRONICLE_PORT --call chronicle.app:dienst"]

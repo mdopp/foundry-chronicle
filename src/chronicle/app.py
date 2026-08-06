@@ -15,13 +15,29 @@ dasselbe Formular wie ``/einstellungen`` und ruft denselben ``settings.save``-We
 ``basis`` ist die Umgebung beim Start; gefragt wird nie sie, sondern
 ``settings.effective(basis)`` — ein in ``/einstellungen`` gesetzter Wert gewinnt und
 wirkt ohne Neustart.
+
+Der nächtliche Lauf hängt an ``dienst()`` und nicht an ``create_app``: eine App, die nur
+befragt wird — im Test, im Skript —, soll nicht anfangen zu arbeiten. Er läuft hier und
+nicht im Aufnahme-Bot, weil es den ohne Bot-Token gar nicht gibt (siehe
+``chronicle.nightly``).
 """
 
 from __future__ import annotations
 
 from flask import Flask, Response, abort, g, redirect, render_template, request, url_for
 
-from chronicle import db, foundry, jobs, notes, people, protocol, recordings, search, settings
+from chronicle import (
+    db,
+    foundry,
+    jobs,
+    nightly,
+    notes,
+    people,
+    protocol,
+    recordings,
+    search,
+    settings,
+)
 from chronicle.compose import client as sprachmodell
 from chronicle.compose.client import ModelError
 from chronicle.compose.service import RUECKBLICK
@@ -61,12 +77,14 @@ UEBERSPRINGEN = "ueberspringen"
 SPAETER = "spaeter"
 
 
-def create_app(config: Config | None = None) -> Flask:
+def create_app(config: Config | None = None, *, zeitplan: bool = False) -> Flask:
     app = Flask(__name__)
     basis = config if config is not None else Config.from_env()
     app.config["CHRONICLE"] = basis
     app.config["MAX_CONTENT_LENGTH"] = recordings.MAX_BYTES
     db.init(basis.database_path)
+    if zeitplan:
+        nightly.starten(basis)
 
     @app.before_request
     def tuersteher() -> tuple[str, int] | None:
@@ -333,12 +351,15 @@ def create_app(config: Config | None = None) -> Flask:
             schema_version=db.current_schema_version(basis.database_path),
             abgleich=foundry.current(basis),
             remote_user=request.headers.get(REMOTE_USER_HEADER),
+            nightly_time=settings.nightly_time(basis.database_path),
+            nachtlauf=nightly.letzter(basis.database_path),
             **felder(),
         )
 
     @app.post("/einstellungen")
     def einstellungen_speichern() -> Response:
         uebernehmen(settings.KEYS)
+        settings.save_nightly_time(basis.database_path, request.form.get(settings.NIGHTLY_KEY, ""))
         return redirect(url_for("einstellungen"))
 
     @app.get("/einrichtung")
@@ -388,6 +409,15 @@ def create_app(config: Config | None = None) -> Flask:
         return {"status": "ok"}
 
     return app
+
+
+def dienst() -> Flask:
+    """Der Einstieg des Servers — dieselbe App, dazu der nächtliche Zeitplan.
+
+    Der Faden hängt hier und nicht an ``create_app``, damit eine App, die nur befragt
+    wird, nicht anfängt zu arbeiten.
+    """
+    return create_app(zeitplan=True)
 
 
 def _modelle(adresse: str) -> tuple[tuple[str, ...], str, bool]:

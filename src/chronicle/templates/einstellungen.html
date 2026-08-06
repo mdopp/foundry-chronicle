@@ -48,6 +48,11 @@
       <button type="submit" class="leise" form="abgleich">Jetzt abgleichen</button>
     </div>
     {% endif %}
+
+    {% if nachtlauf and nachtlauf.abgleich %}
+    <p class="{{ 'steht' if nachtlauf.abgleich.gelungen else 'fehlt' }}">Nachts am
+      {{ nachtlauf.zeitpunkt }}: {{ nachtlauf.abgleich.text }}</p>
+    {% endif %}
   </section>
 
   <section class="karte">
@@ -75,6 +80,15 @@
     <p class="gedaempft">Wessen Stimme über welchem Absatz steht, entscheidest du in der
       <a href="{{ url_for('zuordnung') }}">Personen-Zuordnung</a> — vorgeschlagen wird,
       bestätigt wird von Hand.</p>
+
+    {% if nachtlauf and nachtlauf.diktat %}
+    <p class="{{ 'steht' if nachtlauf.diktat.gelungen else 'fehlt' }}">Nachts am
+      {{ nachtlauf.zeitpunkt }}, Briefkasten: {{ nachtlauf.diktat.text }}</p>
+    {% endif %}
+    {% if nachtlauf and nachtlauf.transkript %}
+    <p class="{{ 'steht' if nachtlauf.transkript.gelungen else 'fehlt' }}">Nachts am
+      {{ nachtlauf.zeitpunkt }}, Aufnahmen: {{ nachtlauf.transkript.text }}</p>
+    {% endif %}
   </section>
 
   <section class="karte">
@@ -98,6 +112,40 @@
     {% endif %}
 
     {% include "_modell_felder.html" %}
+
+    {% if nachtlauf and nachtlauf.chronik %}
+    <p class="{{ 'steht' if nachtlauf.chronik.gelungen else 'fehlt' }}">Nachts am
+      {{ nachtlauf.zeitpunkt }}: {{ nachtlauf.chronik.text }}</p>
+    {% endif %}
+  </section>
+
+  <section class="karte" id="nachts">
+    <h2>Wann läuft das alles von allein?</h2>
+    <p class="gedaempft">Einmal in der Nacht holt die Chronik von selbst, was im
+      Diktat-Kanal liegt, verschriftet die wartenden Aufnahmen, holt die Zahlen aus Foundry
+      und schreibt Chronik und Rückblick für jede Sitzung, zu der etwas Neues dazugekommen
+      ist. Was nicht eingerichtet ist, wird dabei übersprungen. Die Knöpfe hier und auf der
+      Sitzung bleiben für den Fall, dass du nicht bis morgen früh warten willst.</p>
+
+    <div class="feld">
+      <label for="nightly_time">Uhrzeit</label>
+      <input id="nightly_time" name="nightly_time" type="time" value="{{ nightly_time }}"
+             required>
+      <p class="gedaempft">Nach der Uhr des Servers. War er zu dieser Zeit aus, wird nichts
+        nachgeholt — dann kommt der Lauf in der nächsten Nacht.</p>
+    </div>
+
+    {% if nachtlauf and nachtlauf.laeuft %}
+      <p class="hinweis">Der Lauf vom {{ nachtlauf.zeitpunkt }} ist noch unterwegs. Diese
+        Seite neu laden zeigt, wann er durch ist.</p>
+    {% elif nachtlauf and nachtlauf.fehler %}
+      <p class="fehlt">{{ nachtlauf.fehler }}</p>
+    {% elif nachtlauf %}
+      <p class="steht">Zuletzt gelaufen am {{ nachtlauf.zeitpunkt }} — was dabei
+        herauskam, steht oben bei der jeweiligen Frage.</p>
+    {% else %}
+      <p>Noch keine Nacht gelaufen. Der erste Lauf kommt um {{ nightly_time }}.</p>
+    {% endif %}
   </section>
 
   <p class="gedaempft">Ein leer abgesendetes Feld — außer Passwort und Bot-Token — nimmt den

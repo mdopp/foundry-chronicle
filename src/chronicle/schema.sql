@@ -137,16 +137,18 @@ CREATE TABLE IF NOT EXISTS recording (
 
 CREATE INDEX IF NOT EXISTS recording_sitzung ON recording (session_id);
 
--- Was ein Knopf in der Oberfläche angestoßen hat. Die Zeile *ist* der Lauf: sie überlebt
--- das Neuladen der Seite, und ein Blick darauf sagt, ob noch etwas passiert. ``result``
--- und ``error`` stehen in der Sprache der Anzeige — sie werden dem Leser gezeigt.
+-- Was ein Knopf in der Oberfläche oder der nächtliche Zeitplan angestoßen hat. Die Zeile
+-- *ist* der Lauf: sie überlebt das Neuladen der Seite, und ein Blick darauf sagt, ob noch
+-- etwas passiert. ``result`` und ``error`` stehen in der Sprache der Anzeige — sie werden
+-- dem Leser gezeigt. Beim ``nachtlauf`` steht in ``result`` das Ergebnis je Schritt, damit
+-- jede Karte der Einstellungen ihr eigenes zeigen kann.
 --
 -- Ein Neustart mitten im Lauf lässt ``laeuft`` stehen; ``chronicle.jobs`` schreibt die
 -- Zeile beim nächsten Blick auf ``gescheitert`` um, damit nichts für immer zu laufen
 -- scheint.
 CREATE TABLE IF NOT EXISTS job (
     id          INTEGER PRIMARY KEY,
-    kind        TEXT NOT NULL CHECK (kind IN ('abgleich', 'chronik')),
+    kind        TEXT NOT NULL CHECK (kind IN ('abgleich', 'chronik', 'nachtlauf')),
     session_id  INTEGER REFERENCES session (id) ON DELETE CASCADE,
     state       TEXT NOT NULL CHECK (state IN ('laeuft', 'fertig', 'gescheitert')),
     started_at  TEXT NOT NULL,
