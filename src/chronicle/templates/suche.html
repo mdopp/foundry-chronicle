@@ -5,7 +5,7 @@
 <section class="karte">
   <h2>Suche</h2>
   <form method="get" action="{{ url_for('suche') }}">
-    <label for="q">Notizen, Transkripte, Chroniken und Rückblicke</label>
+    <label for="q">Register, Notizen, Transkripte, Chroniken und Rückblicke</label>
     <input type="search" id="q" name="q" value="{{ ergebnis.query }}"
       placeholder="Schwert" autofocus>
     <div class="absenden"><button type="submit">Suchen</button></div>
@@ -19,8 +19,8 @@
   <ul class="liste">
     {% for treffer in gruppe.hits %}
     <li>
-      <a href="{% if treffer.scene_id %}{{ url_for('sitzung', sitzung_id=treffer.session_id, _anchor='szene-' ~ treffer.scene_id) }}{% elif treffer.kind == 'transkript' %}{{ url_for('sitzung', sitzung_id=treffer.session_id) }}{% else %}{{ url_for('protokoll', sitzung_id=treffer.session_id) }}{% endif %}">
-        <strong>{{ treffer.title or "Sitzung vom " ~ treffer.played_on }}</strong>
+      <a href="{% if treffer.kind == 'register' %}{{ url_for('register_seite', _anchor='eintrag-' ~ treffer.ref_id) }}{% elif treffer.scene_id %}{{ url_for('sitzung', sitzung_id=treffer.session_id, _anchor='szene-' ~ treffer.scene_id) }}{% elif treffer.kind == 'transkript' %}{{ url_for('sitzung', sitzung_id=treffer.session_id) }}{% else %}{{ url_for('protokoll', sitzung_id=treffer.session_id) }}{% endif %}">
+        <strong>{% if treffer.kind == 'register' %}Registereintrag{% else %}{{ treffer.title or "Sitzung vom " ~ treffer.played_on }}{% endif %}</strong>
         <span class="gedaempft">{{ treffer.snippet }}</span>
       </a>
     </li>

@@ -232,6 +232,37 @@ CREATE TABLE IF NOT EXISTS person_mapping (
     confirmed_at    TEXT NOT NULL
 );
 
+-- Das kampagnenweite Register: Figuren, Orte, Handlungsfäden. Ein **Index**, kein Wiki —
+-- Name, ein Satz, Verweise. Die Wahrheit über eine Figur wohnt in Foundry; ``foundry_actor_id``
+-- zeigt nur darauf und pflegt nichts doppelt. Kein Fremdschlüssel dorthin: ein Abgleich
+-- ersetzt den Zwischenspeicher am Stück, die Bestätigung eines Menschen darf das überleben.
+--
+-- ``state`` ist der ganze Sinn der Tabelle. Ein Vorschlag ist eine Deutung des Sprachmodells
+-- und wird nie von allein bestätigt; erst was ein Mensch bestätigt hat, steht im Register und
+-- im Suchindex. Ein unbestätigtes Register verfälschte das Nacherzählen.
+CREATE TABLE IF NOT EXISTS register_entry (
+    id               INTEGER PRIMARY KEY,
+    kind             TEXT NOT NULL CHECK (kind IN ('figur', 'ort', 'faden')),
+    name             TEXT NOT NULL,
+    description      TEXT NOT NULL,
+    foundry_actor_id TEXT,
+    state            TEXT NOT NULL CHECK (state IN ('vorschlag', 'bestaetigt')),
+    suggested_at     TEXT NOT NULL,
+    confirmed_at     TEXT,
+    UNIQUE (kind, name)
+);
+
+-- Wo ein Eintrag vorkommt. ``scene_id`` bleibt leer, wenn der Name in keiner Szene wörtlich
+-- steht — bei einem Handlungsfaden ist das der Normalfall, denn der ist gedeutet und nicht
+-- zitiert. Ein Eintrag je Sitzung und Szene wird beim Lauf ersetzt, nicht ergänzt.
+CREATE TABLE IF NOT EXISTS register_mention (
+    entry_id   INTEGER NOT NULL REFERENCES register_entry (id) ON DELETE CASCADE,
+    session_id INTEGER NOT NULL REFERENCES session (id) ON DELETE CASCADE,
+    scene_id   INTEGER REFERENCES scene (id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS register_mention_eintrag ON register_mention (entry_id, session_id);
+
 -- Der Suchindex. FTS5 steckt in SQLite, also keine neue Abhängigkeit. Eine Zeile je
 -- auffindbarem Stück; ``kind`` unterscheidet sie, damit ein Transkript später eine
 -- weitere Art bekommt und keine weitere Tabelle.
@@ -285,6 +316,28 @@ AFTER DELETE ON transcript_segment BEGIN
     WHERE kind = 'transkript' AND ref_id = old.transcript_id AND text = old.text;
 END;
 
+-- Nur Bestätigtes steht im Index: ein Vorschlag als Suchtreffer läse sich wie eine Tatsache.
+-- Die Sitzung ist die erste, in der der Eintrag vorkommt — die Suche verlangt eine, die
+-- vollständige Liste steht im Register.
+CREATE TRIGGER IF NOT EXISTS register_search_insert AFTER INSERT ON register_entry
+WHEN new.state = 'bestaetigt' BEGIN
+    INSERT INTO search_index (text, kind, ref_id, session_id, scene_id)
+    SELECT new.name || ' — ' || new.description, 'register', new.id,
+           (SELECT MIN(session_id) FROM register_mention WHERE entry_id = new.id), NULL;
+END;
+
+CREATE TRIGGER IF NOT EXISTS register_search_update AFTER UPDATE ON register_entry BEGIN
+    DELETE FROM search_index WHERE kind = 'register' AND ref_id = old.id;
+    INSERT INTO search_index (text, kind, ref_id, session_id, scene_id)
+    SELECT new.name || ' — ' || new.description, 'register', new.id,
+           (SELECT MIN(session_id) FROM register_mention WHERE entry_id = new.id), NULL
+    WHERE new.state = 'bestaetigt';
+END;
+
+CREATE TRIGGER IF NOT EXISTS register_search_delete AFTER DELETE ON register_entry BEGIN
+    DELETE FROM search_index WHERE kind = 'register' AND ref_id = old.id;
+END;
+
 -- Der Index ist abgeleitet: die Trigger halten ihn im Betrieb aktuell, dieser Neuaufbau
 -- holt beim Start, was vor ihnen entstanden ist — eine Datenbank aus Schema 4.
 DELETE FROM search_index;
@@ -300,5 +353,10 @@ INSERT INTO search_index (text, kind, ref_id, session_id, scene_id)
 SELECT s.text, 'transkript', s.transcript_id, t.session_id, NULL
 FROM transcript_segment s JOIN transcript t ON t.id = s.transcript_id;
 
-INSERT INTO meta (key, value) VALUES ('schema_version', '13')
+INSERT INTO search_index (text, kind, ref_id, session_id, scene_id)
+SELECT e.name || ' — ' || e.description, 'register', e.id,
+       (SELECT MIN(session_id) FROM register_mention WHERE entry_id = e.id), NULL
+FROM register_entry e WHERE e.state = 'bestaetigt';
+
+INSERT INTO meta (key, value) VALUES ('schema_version', '14')
 ON CONFLICT (key) DO UPDATE SET value = excluded.value;

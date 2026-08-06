@@ -24,10 +24,14 @@ from chronicle.compose.service import KIND, RUECKBLICK
 from chronicle.transcribe.service import KIND as TRANSKRIPT
 
 NOTIZ = "notiz"
+REGISTER = "register"
 
-# Die Reihenfolge ist die Reihenfolge der Ergebnisgruppen auf der Seite. Das Transkript
-# steht zuletzt: es ist das Rohmaterial, aus dem die anderen entstanden sind.
+# Die Reihenfolge ist die Reihenfolge der Ergebnisgruppen auf der Seite. Das Register
+# steht zuvorderst: es ist der Index über alle Sitzungen und beantwortet »wer war das
+# nochmal?« unmittelbar. Das Transkript steht zuletzt — es ist das Rohmaterial, aus dem
+# die anderen entstanden sind.
 LABELS = {
+    REGISTER: "Register",
     NOTIZ: "Notizen",
     KIND: "Chronik",
     RUECKBLICK: "Rückblick",

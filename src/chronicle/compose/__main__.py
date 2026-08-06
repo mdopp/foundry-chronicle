@@ -18,6 +18,7 @@ from __future__ import annotations
 import logging
 import sys
 
+from chronicle import register
 from chronicle.compose.service import compose_session, recap_session
 from chronicle.config import Config
 from chronicle.discord.rueckblick import deliver
@@ -39,6 +40,7 @@ def main(argv: list[str] | None = None) -> int:
     print(chronik.message)
     print(rueckblick.message)
     print(deliver(config, sitzung))
+    print(register.suggest(config, sitzung).message)
     return 1 if chronik.reason or rueckblick.reason else 0
 
 

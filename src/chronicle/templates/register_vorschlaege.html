@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block titel %}Vorschläge fürs Register — Foundry Chronicle{% endblock %}
+{% block inhalt %}
+
+<section class="karte">
+  <h2>Vorschläge fürs Register</h2>
+  <p class="gedaempft">Nach jeder Chronik schlägt das Sprachmodell Einträge vor. Das sind
+    <strong>Deutungen, keine Fakten</strong> — ins Register kommt nur, was hier bestätigt wird.
+    Wer nichts entscheidet, lässt die Zeile stehen; sie steht beim nächsten Mal wieder da.</p>
+</section>
+
+{% if not vorschlaege %}
+<section class="karte">
+  <p>Nichts zu entscheiden. Vorschläge entstehen, wenn eine Chronik geschrieben wird.</p>
+  <p><a href="{{ url_for('register_seite') }}">Zum Register</a></p>
+</section>
+{% else %}
+<form method="post" action="{{ url_for('register_entscheiden') }}">
+  <section class="karte">
+    {% for eintrag in vorschlaege %}
+    <div class="abschnitt deutung">
+      <h4>{{ eintrag.name }} <span class="gedaempft">— {{ eintrag.label }}</span></h4>
+      <p>{{ eintrag.description }}</p>
+      {% if eintrag.mentions %}
+      <p class="gedaempft">Kommt vor in:
+        {% for e in eintrag.mentions %}{{ e.title or "Sitzung vom " ~ e.played_on }}{% if e.scene_position %}, Szene {{ e.scene_position }}{% endif %}{{ " · " if not loop.last }}{% endfor %}</p>
+      {% endif %}
+
+      <label for="wahl-{{ eintrag.id }}">Ins Register?</label>
+      <select id="wahl-{{ eintrag.id }}" name="{{ feld }}{{ eintrag.id }}">
+        <option value="">— noch offen —</option>
+        <option value="ja">Ja, aufnehmen</option>
+        <option value="nein">Nein, verwerfen</option>
+      </select>
+
+      <details>
+        <summary>Richtigstellen</summary>
+        <label for="name-{{ eintrag.id }}">Name</label>
+        <input id="name-{{ eintrag.id }}" name="{{ name_feld }}{{ eintrag.id }}"
+          value="{{ eintrag.name }}">
+        <label for="satz-{{ eintrag.id }}">Der eine Satz</label>
+        <input id="satz-{{ eintrag.id }}" name="{{ satz_feld }}{{ eintrag.id }}"
+          value="{{ eintrag.description }}">
+      </details>
+    </div>
+    {% endfor %}
+
+    <div class="absenden"><button type="submit">Entscheidungen übernehmen</button></div>
+    <p class="gedaempft">Ein Ja übernimmt Name und Satz so, wie sie oben stehen. Ein Nein
+      verwirft den Vorschlag.</p>
+  </section>
+</form>
+{% endif %}
+
+{% endblock %}

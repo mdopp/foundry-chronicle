@@ -29,7 +29,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from chronicle import db, jobs, settings
+from chronicle import db, jobs, register, settings
 from chronicle.compose.service import KIND, compose_session, recap_session
 from chronicle.config import Config
 from chronicle.discord.rueckblick import deliver
@@ -160,6 +160,7 @@ def _chronik(config: Config) -> Schritt:
         compose_session(config, sitzung_id)
         recap_session(config, sitzung_id)
         deliver(config, sitzung_id)
+        register.suggest(config, sitzung_id)
         meldungen.append(GESCHRIEBEN.format(datum=datum))
     return Schritt(CHRONIK, " ".join(meldungen))
 
