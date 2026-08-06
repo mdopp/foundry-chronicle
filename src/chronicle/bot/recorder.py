@@ -153,12 +153,17 @@ class Aufnahme:
     def beenden(self) -> tuple[str, ...]:
         """Schließt die Spuren und reiht sie ein; leere Spuren bleiben nicht liegen."""
         meldungen = []
-        for spur in self._spuren.values():
+        for user_id, spur in self._spuren.items():
             spur.schliessen()
             if not spur.bytes:
                 spur.pfad.unlink()
                 continue
-            recordings.enqueue(self._config.database_path, self.session_id, spur.pfad.name)
+            recordings.enqueue(
+                self._config.database_path,
+                self.session_id,
+                spur.pfad.name,
+                discord_user_id=user_id,
+            )
             meldungen.append(
                 f"Spur »{spur.pfad.stem}« → Sitzung {self.session_id}, wartet auf den Stapel."
             )

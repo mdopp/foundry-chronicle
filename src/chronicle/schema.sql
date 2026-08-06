@@ -123,7 +123,8 @@ CREATE TABLE IF NOT EXISTS recording (
                 CHECK (status IN ('wartet', 'laeuft', 'fertig', 'gescheitert')),
     detail      TEXT,
     updated_at  TEXT NOT NULL,
-    deleted_at  TEXT
+    deleted_at  TEXT,
+    discord_user_id TEXT
 );
 
 CREATE INDEX IF NOT EXISTS recording_sitzung ON recording (session_id);
@@ -184,6 +185,21 @@ CREATE TABLE IF NOT EXISTS consent_member (
     user_id  TEXT NOT NULL,
     name     TEXT NOT NULL,
     PRIMARY KEY (event_id, user_id)
+);
+
+-- Die Personen-Zuordnung Discord ↔ Foundry. Hier steht ausschließlich **Bestätigtes**:
+-- ein Vorschlag wird bei jedem Aufruf neu gerechnet, denn ein gespeicherter Vorschlag
+-- sähe wenige Wochen später aus wie eine Zuordnung. Kein Fremdschlüssel auf
+-- ``foundry_player``: ein Abgleich ersetzt den Zwischenspeicher am Stück, die
+-- Bestätigung eines Menschen darf das überleben.
+--
+-- Die Anzeigenamen stehen nicht hier — sie liegen im Einwilligungsprotokoll und im
+-- Foundry-Zwischenspeicher. Dieselbe personenbezogene Angabe ein drittes Mal zu führen
+-- wäre keine Erleichterung.
+CREATE TABLE IF NOT EXISTS person_mapping (
+    discord_user_id TEXT PRIMARY KEY,
+    foundry_user_id TEXT NOT NULL,
+    confirmed_at    TEXT NOT NULL
 );
 
 -- Der Suchindex. FTS5 steckt in SQLite, also keine neue Abhängigkeit. Eine Zeile je
@@ -254,5 +270,5 @@ INSERT INTO search_index (text, kind, ref_id, session_id, scene_id)
 SELECT s.text, 'transkript', s.transcript_id, t.session_id, NULL
 FROM transcript_segment s JOIN transcript t ON t.id = s.transcript_id;
 
-INSERT INTO meta (key, value) VALUES ('schema_version', '10')
+INSERT INTO meta (key, value) VALUES ('schema_version', '11')
 ON CONFLICT (key) DO UPDATE SET value = excluded.value;

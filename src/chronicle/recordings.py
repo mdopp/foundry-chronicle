@@ -90,6 +90,7 @@ class Recording:
     transcript_id: int | None = None
     text: str = ""
     deleted_at: str | None = None
+    discord_user_id: str | None = None
 
 
 def _now() -> str:
@@ -112,6 +113,7 @@ def _eintrag(row: sqlite3.Row, text: str = "") -> Recording:
         transcript_id=row["transcript_id"] if "transcript_id" in row.keys() else None,
         text=text,
         deleted_at=row["deleted_at"],
+        discord_user_id=row["discord_user_id"],
     )
 
 
@@ -150,15 +152,36 @@ def accept(config, session_id: int, datei) -> Recording:
     return enqueue(config.database_path, session_id, ziel.name)
 
 
-def enqueue(database_path: Path, session_id: int, filename: str) -> Recording:
+def enqueue(
+    database_path: Path,
+    session_id: int,
+    filename: str,
+    *,
+    discord_user_id: str | None = None,
+) -> Recording:
+    """Reiht eine Spur ein.
+
+    ``discord_user_id`` steht nur bei den Spuren des Aufnahme-Bots: dort trennt Discord
+    die Audiodaten je Client, wer gesprochen hat ist also bekannt und muss nicht später
+    aus dem Dateinamen geraten werden — geraten stünde irgendwann der falsche Name über
+    einem Absatz.
+    """
     zeitpunkt = _now()
     connection = _open(database_path)
     try:
         with connection:
             cursor = connection.execute(
                 "INSERT INTO recording (session_id, filename, source, uploaded_at, status, "
-                "updated_at) VALUES (?, ?, ?, ?, ?, ?)",
-                (session_id, filename, Path(filename).stem, zeitpunkt, WARTET, zeitpunkt),
+                "updated_at, discord_user_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    session_id,
+                    filename,
+                    Path(filename).stem,
+                    zeitpunkt,
+                    WARTET,
+                    zeitpunkt,
+                    discord_user_id,
+                ),
             )
         return Recording(
             id=int(cursor.lastrowid),
@@ -167,6 +190,7 @@ def enqueue(database_path: Path, session_id: int, filename: str) -> Recording:
             source=Path(filename).stem,
             uploaded_at=zeitpunkt,
             status=WARTET,
+            discord_user_id=discord_user_id,
         )
     finally:
         connection.close()
@@ -190,7 +214,7 @@ def _mit_transkript(connection: sqlite3.Connection, row: sqlite3.Row) -> Recordi
 # Lauf ersetzt die Transkript-Zeile im Ganzen, ihre Id wäre also nicht haltbar.
 AUSWAHL = (
     "SELECT r.id, r.session_id, r.filename, r.source, r.uploaded_at, r.status, r.detail, "
-    "r.deleted_at, t.id AS transcript_id FROM recording r "
+    "r.deleted_at, r.discord_user_id, t.id AS transcript_id FROM recording r "
     "LEFT JOIN transcript t ON t.session_id = r.session_id AND t.source = r.source "
 )
 

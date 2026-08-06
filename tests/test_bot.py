@@ -271,6 +271,16 @@ def test_je_sprecher_eine_eigene_spur(konfiguration, sitzung_id, ohne_espeak):
     assert nach_name == {"Mira.wav": 960, "Brok.wav": 960}
 
 
+def test_die_spur_traegt_die_discord_id_ihres_sprechers(konfiguration, sitzung_id, ohne_espeak):
+    aufnahme = asyncio.run(recorder.starten(konfiguration, FakeStimme()))
+
+    aufnahme.schreiben(MIRA, stille(480))
+    aufnahme.beenden()
+
+    (spur,) = recordings.pending(konfiguration.database_path)
+    assert spur.discord_user_id == MIRA.id
+
+
 def test_wer_nichts_gesagt_hat_hinterlaesst_keine_spur(konfiguration, sitzung_id, ohne_espeak):
     aufnahme = asyncio.run(recorder.starten(konfiguration, FakeStimme()))
 
