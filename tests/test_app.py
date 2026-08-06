@@ -487,6 +487,23 @@ def test_mit_bot_token_verschwindet_die_einrichtungshilfe(tmp_path):
     assert "Developer Portal" not in html
 
 
+def test_der_zustellkanal_wird_im_formular_gepflegt(tmp_path):
+    config = Config(data_dir=tmp_path)
+    client = create_app(config).test_client()
+
+    assert 'name="discord_recap_channel"' in client.get("/einstellungen").get_data(as_text=True)
+    client.post("/einstellungen", data={"discord_recap_channel": "chronik"})
+
+    assert settings.effective(config).discord_recap_channel == "chronik"
+    for pfad in ("/einstellungen", "/status"):
+        assert "chronik" in client.get(pfad).get_data(as_text=True)
+
+
+def test_ohne_zustellkanal_sagt_der_status_dass_nichts_zugestellt_wird(tmp_path):
+    html = seite(Config(data_dir=tmp_path)).get_data(as_text=True)
+    assert "Kein Zustellkanal" in html
+
+
 UNKONFIGURIERT = "Foundry ist nicht eingerichtet"
 VERALTET = "Der letzte Abgleich mit Foundry ist gescheitert"
 

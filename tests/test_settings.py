@@ -76,10 +76,17 @@ def test_die_gespeicherten_werte_stehen_fest():
         "foundry_user",
         "foundry_password",
         "discord_bot_token",
+        "discord_recap_channel",
         "ollama_url",
         "ollama_model",
     )
     assert settings.SECRET_KEYS == ("foundry_password", "discord_bot_token")
+
+
+def test_der_zustellkanal_kommt_aus_der_oberflaeche_und_ist_kein_geheimnis(config):
+    settings.save(config.database_path, {"discord_recap_channel": "chronik"})
+    assert settings.effective(config).discord_recap_channel == "chronik"
+    assert settings.sources(config)["discord_recap_channel"] == settings.FRONTEND
 
 
 def test_der_bot_token_kommt_aus_der_oberflaeche_und_schlaegt_die_umgebung(config):

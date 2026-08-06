@@ -44,8 +44,15 @@
     <p>Kein Bot-Token — das ist in Ordnung. Eine Gruppe, die nur vor Ort spielt, braucht
       ihn nicht; ohne ihn bleiben Diktat-Kanal, Aufnahme und Zustellung zu.</p>
   {% endif %}
+  {% if config.discord_recap_channel %}
+    <p class="steht">Der Rückblick geht nach
+      <code>#{{ config.discord_recap_channel }}</code> — einmal je Sitzung.</p>
+  {% else %}
+    <p>Kein Zustellkanal — der Rückblick bleibt in der Chronik.</p>
+  {% endif %}
   <dl>
     <dt><code>DISCORD_BOT_TOKEN</code></dt><dd>{{ quellen.discord_bot_token }}</dd>
+    <dt><code>DISCORD_RECAP_CHANNEL</code></dt><dd>{{ quellen.discord_recap_channel }}</dd>
   </dl>
 </section>
 

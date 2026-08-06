@@ -147,6 +147,32 @@ läuft durch Discords Cloud; für Online-Gruppen ändert das nichts, für reine 
 ist es eine bewusste Entscheidung — der Discord-Teil darf leer bleiben, dann bleibt das
 Web-Formular der Weg.
 
+## Rückblick nach Discord
+
+Gegenrichtung: der Rückblick geht **in den Gruppenkanal**, nicht in den Briefkasten. Er
+wird unmittelbar vor der nächsten Sitzung gelesen, und dort ist die Gruppe ohnehin.
+Welcher Kanal, sagt *Einstellungen → Zustellkanal für den Rückblick* (z. B. `chronik`);
+**leer heißt: keine Zustellung.** Einen Zeitpunkt gibt es nicht, auf den sich zielen ließe
+— das System kennt keinen Sitzungskalender.
+
+Zugestellt wird am Ende der Komposition:
+
+```bash
+python -m chronicle.compose 7    # Chronik, Rückblick, Zustellung
+```
+
+**Eine Sitzung, eine Zustellung.** Der Zeitpunkt steht in `protocol.delivered_at`, ein
+zweiter Lauf sieht ihn und schweigt. Auch eine *neu komponierte* Fassung wird nicht noch
+einmal gepostet: der Kanal ist die Zeitachse der Gruppe, ein zweiter Rückblick darin läse
+sich wie eine zweite Sitzung. Wer die neue Fassung sehen will, liest die Chronik — dorthin
+zeigt auch der Link. Gepostet wird ausschließlich der abgelegte Rückblick; er ist per
+Konstruktion aus berechtigungsgefiltertem Material komponiert, und daran vorbei wird
+nichts hineingereicht.
+
+Discord kappt bei **2000 Zeichen**. Ein längerer Rückblick ist ein Fehler des Rückblicks
+und kein Grund zum Aufteilen: gepostet wird der Anfang plus ein Link auf die
+Protokollseite (`CHRONICLE_PUBLIC_URL`), die volle Länge steht in der Logzeile.
+
 ## Aufnahme per Discord
 
 ```bash

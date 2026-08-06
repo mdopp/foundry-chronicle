@@ -223,6 +223,7 @@ def create_app(config: Config | None = None) -> Flask:
             foundry_user=aktuell.foundry_user or "",
             passwort_gesetzt=bool(aktuell.foundry_password),
             bot_token_gesetzt=bool(aktuell.discord_bot_token),
+            discord_recap_channel=aktuell.discord_recap_channel or "",
             ollama_url=adresse,
             ollama_eigen=adresse != settings.DEFAULT_OLLAMA_URL,
             ollama_standard=settings.DEFAULT_OLLAMA_URL,

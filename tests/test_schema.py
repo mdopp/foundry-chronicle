@@ -162,6 +162,37 @@ def test_zuordnung_ueberlebt_einen_neuen_foundry_abgleich(connection, welt):
     assert zeile["summe"] == 7
 
 
+def test_ein_protokoll_aus_schema_11_bekommt_die_zustellspalte_nachgetragen(tmp_path):
+    # ``CREATE TABLE IF NOT EXISTS`` erreicht eine bestehende Tabelle nicht — hier steht
+    # deshalb die Fassung vor Schema 12, samt einem Rückblick, der noch nie zugestellt war.
+    pfad = tmp_path / "alt.sqlite3"
+    verbindung = db.connect(pfad)
+    try:
+        with verbindung:
+            verbindung.execute(
+                "CREATE TABLE protocol (id INTEGER PRIMARY KEY, session_id INTEGER NOT NULL, "
+                "kind TEXT NOT NULL, text TEXT NOT NULL, created_at TEXT NOT NULL, "
+                "UNIQUE (session_id, kind))"
+            )
+            verbindung.execute(
+                "INSERT INTO protocol (session_id, kind, text, created_at) VALUES (?, ?, ?, ?)",
+                (1, "rueckblick", "Die Runde tastete sich voran.", STAND),
+            )
+    finally:
+        verbindung.close()
+
+    db.init(pfad)
+
+    verbindung = db.connect(pfad)
+    try:
+        zeile = verbindung.execute("SELECT text, delivered_at FROM protocol").fetchone()
+    finally:
+        verbindung.close()
+    assert zeile["delivered_at"] is None
+    assert zeile["text"] == "Die Runde tastete sich voran."
+    assert db.current_schema_version(pfad) == db.SCHEMA_VERSION
+
+
 def test_ein_zweiter_lauf_des_schemas_laesst_die_daten_stehen(tmp_path):
     pfad = tmp_path / "chronicle.sqlite3"
     db.init(pfad)

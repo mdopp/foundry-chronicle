@@ -83,12 +83,20 @@ CREATE TABLE IF NOT EXISTS scene_foundry_message (
     PRIMARY KEY (scene_id, message_id)
 );
 
+-- ``delivered_at`` gilt nur dem Rückblick: wann er in den Gruppenkanal gestellt wurde. Es
+-- steht hier und nicht in einer eigenen Tabelle, weil der Wert die Zustellung genau eines
+-- Protokolls beschreibt — und weil der zweite Lauf von ``chronicle.compose`` den Text per
+-- UPSERT ersetzt, ohne diese Spalte anzufassen. Genau das ist die Zusage: **eine Sitzung,
+-- eine Zustellung.** Eine neu komponierte Fassung wird nicht noch einmal gepostet; der
+-- Kanal ist die Zeitachse der Gruppe, ein zweiter Rückblick darin läse sich wie eine
+-- zweite Sitzung. Die jeweils gültige Fassung steht in der Chronik-Ansicht.
 CREATE TABLE IF NOT EXISTS protocol (
-    id         INTEGER PRIMARY KEY,
-    session_id INTEGER NOT NULL REFERENCES session (id) ON DELETE CASCADE,
-    kind       TEXT NOT NULL CHECK (kind IN ('chronik', 'rueckblick')),
-    text       TEXT NOT NULL,
-    created_at TEXT NOT NULL,
+    id           INTEGER PRIMARY KEY,
+    session_id   INTEGER NOT NULL REFERENCES session (id) ON DELETE CASCADE,
+    kind         TEXT NOT NULL CHECK (kind IN ('chronik', 'rueckblick')),
+    text         TEXT NOT NULL,
+    created_at   TEXT NOT NULL,
+    delivered_at TEXT,
     UNIQUE (session_id, kind)
 );
 
@@ -270,5 +278,5 @@ INSERT INTO search_index (text, kind, ref_id, session_id, scene_id)
 SELECT s.text, 'transkript', s.transcript_id, t.session_id, NULL
 FROM transcript_segment s JOIN transcript t ON t.id = s.transcript_id;
 
-INSERT INTO meta (key, value) VALUES ('schema_version', '11')
+INSERT INTO meta (key, value) VALUES ('schema_version', '12')
 ON CONFLICT (key) DO UPDATE SET value = excluded.value;

@@ -4,9 +4,10 @@ import pytest
 from conftest import UNSER_KONTO
 
 import chronicle.compose.__main__ as entry
-from chronicle import db
+from chronicle import db, settings
 from chronicle.compose.composer import VERBINDUNG_TITEL
 from chronicle.compose.service import KIND, RUECKBLICK, compose_session, recap_session
+from chronicle.discord import rueckblick
 from chronicle.foundry import store
 from chronicle.foundry.world import project
 
@@ -227,6 +228,40 @@ def test_der_stapelaufruf_schreibt_beides(config, connection, welt, monkeypatch,
     assert "Chronik aus" in ausgabe
     assert "Rückblick aus" in ausgabe
     assert {z["kind"] for z in protokolle(connection, sitzung_id)} == {KIND, RUECKBLICK}
+
+
+def test_der_stapelaufruf_stellt_den_rueckblick_genau_einmal_zu(
+    config, connection, welt, monkeypatch, capsys
+):
+    sitzung_id = eine_runde(connection, welt)
+    settings.save(
+        config.database_path,
+        {"discord_bot_token": "bot-token-nur-fuer-den-test", "discord_recap_channel": "chronik"},
+    )
+    gepostet = []
+
+    class Briefkasten:
+        def channel_id(self, name):
+            return f"c-{name}"
+
+        def post(self, kanal, text):
+            gepostet.append((kanal, text))
+
+    monkeypatch.setattr(rueckblick, "DiscordClient", lambda zugang: Briefkasten())
+    monkeypatch.setenv("CHRONICLE_DATA_DIR", str(config.data_dir))
+    monkeypatch.delenv("OLLAMA_URL", raising=False)
+    monkeypatch.delenv("OLLAMA_MODEL", raising=False)
+
+    entry.main([str(sitzung_id)])
+    assert "zugestellt" in capsys.readouterr().out
+
+    # Ein zweiter Lauf komponiert neu — gepostet wird deshalb nicht noch einmal.
+    entry.main([str(sitzung_id)])
+
+    zeilen = protokolle(connection, sitzung_id)
+    abgelegt = next(z["text"] for z in zeilen if z["kind"] == RUECKBLICK)
+    assert gepostet == [("c-chronik", abgelegt)]
+    assert "war schon zugestellt" in capsys.readouterr().out
 
 
 def test_der_stapelaufruf_weist_falsche_argumente_ab(config, monkeypatch, capsys):
