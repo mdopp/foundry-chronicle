@@ -522,6 +522,9 @@ def pycord(monkeypatch):
     senken = types.ModuleType("discord.sinks")
     senken.Sink = FakeSenke
     modul.sinks = senken
+    werkzeug = types.ModuleType("discord.utils")
+    werkzeug.get_missing_voice_dependencies = lambda: ()
+    modul.utils = werkzeug
     monkeypatch.setitem(sys.modules, "discord", modul)
     monkeypatch.setattr(FakeBot, "erzeugt", [])
     return modul
@@ -542,6 +545,19 @@ def runde(pycord):
 
 def befehl(bot, name):
     return bot.gruppen[gateway.GRUPPE].befehle[name]
+
+
+def test_ohne_sprach_abhaengigkeiten_startet_der_bot_gar_nicht(konfiguration, pycord):
+    # Genau der Fall, der auf der Box rot war: py-cord verbindet sich anstandslos und
+    # schreibt eine Warnzeile, aber hören kann der Bot nichts. Das gehört an den Start,
+    # nicht mitten in den Befehl.
+    pycord.utils.get_missing_voice_dependencies = lambda: ("davey",)
+
+    with pytest.raises(BotFehler) as fehler:
+        gateway.baue(konfiguration)
+
+    assert "davey" in str(fehler.value)
+    assert FakeBot.erzeugt == []
 
 
 def test_der_bot_bringt_beide_befehle_mit_und_bekommt_den_token(konfiguration, pycord):

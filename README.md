@@ -194,6 +194,16 @@ hält alle Spuren auf einer Zeitachse. Das ist die eine bekannte Bruchstelle des
 und steckt deshalb in genau einer Datei (`chronicle/bot/gateway.py`). py-cord belegt das
 Paket `discord`; ein daneben installiertes `discord.py` schlägt sich mit ihm.
 
+**Die Sprach-Abhängigkeiten kommen aus `py-cord[voice]`, nicht aus einer eigenen Liste.**
+Dahinter stecken PyNaCl und `davey`, Discords DAVE-Ende-zu-Ende-Verschlüsselung für
+Sprache. Fehlt eines davon, verbindet sich py-cord anstandslos, schreibt eine einzige
+Warnzeile — `davey is not installed, voice will NOT be supported` — und der Bot hört
+nichts; scheitern würde erst `/aufnahme start`, mitten im Befehl. Genau so ist es einmal
+passiert. Deshalb wird die Liste nicht mehr abgeschrieben, und deshalb **prüft der Bot
+beim Start** (`discord.utils.get_missing_voice_dependencies()`) und beendet sich mit einem
+verständlichen Satz, statt sich taub anzumelden. Beide Pakete bringen fertige
+manylinux-Räder mit; im Image wird nichts übersetzt.
+
 ## Betrieb auf ServiceBay
 
 Dieses Repo ist zugleich eine **ServiceBay-Registry**: unter [`templates/`](templates/)
