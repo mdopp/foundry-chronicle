@@ -124,6 +124,20 @@ def test_die_aufnahmen_liegen_nicht_im_gesicherten_datenverzeichnis(manifest: di
     assert not pfade["chronik-aufnahmen"].startswith(daten + "/")
 
 
+def test_jedes_volume_ueberdauert_den_pod(manifest: dict) -> None:
+    # Der Fehler aus #27: ohne hostPath liegt das Aufnahmeverzeichnis in der
+    # beschreibbaren Container-Schicht und ist beim nächsten Neuaufbau des Pods weg.
+    for eintrag in manifest["spec"]["volumes"]:
+        assert "hostPath" in eintrag, eintrag["name"]
+
+
+def test_die_hostverzeichnisse_werden_bei_der_erstinstallation_angelegt(manifest: dict) -> None:
+    # Bei der Erstinstallation existiert noch keines der beiden Verzeichnisse; mit
+    # 'Directory' scheiterte der erste Start, statt sie anzulegen.
+    for eintrag in manifest["spec"]["volumes"]:
+        assert eintrag["hostPath"]["type"] == "DirectoryOrCreate", eintrag["name"]
+
+
 def test_der_bot_bekommt_die_datenbank(manifest: dict) -> None:
     # Der Token kommt aus der SQLite, nicht aus der Umgebung — also muss der Bot
     # dieselbe Datenbank sehen wie die Oberfläche, in der er gepflegt wird.
@@ -139,8 +153,15 @@ def test_mounts_treffen_ihre_volumes(manifest: dict) -> None:
             assert mount["name"] in volumes
 
 
-def test_daten_liegen_unter_data_dir(rohtext: str) -> None:
-    assert "path: {{DATA_DIR}}/daggerheart" in rohtext
+def test_beide_hostpfade_liegen_unter_data_dir(rohtext: str) -> None:
+    # Die Entscheidung zu #27, festgenagelt: die Spuren liegen *neben* dem
+    # Datenverzeichnis, damit keine dienstbezogene Auswahlliste der Plattform sie je
+    # einsammeln kann — und trotzdem unter DATA_DIR, weil ein absoluter Host-Pfad aus
+    # deren Abdeckungsprüfung herausfiele und keiner der Box im Repo stehen soll.
+    assert re.findall(r"^\s*path: (\S+)$", rohtext, re.MULTILINE) == [
+        "{{DATA_DIR}}/daggerheart",
+        "{{DATA_DIR}}/daggerheart-aufnahmen",
+    ]
 
 
 def test_remote_user_wird_erzwungen(manifest: dict) -> None:

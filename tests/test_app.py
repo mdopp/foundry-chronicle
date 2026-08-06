@@ -2,7 +2,7 @@ import pytest
 from conftest import GM_FIGUR, UNSER_KONTO, laufender_job, warte_bis
 
 import chronicle.__main__ as entry
-from chronicle import db, jobs, notes, protocol, recordings, settings
+from chronicle import db, jobs, notes, protocol, recordings, register, settings
 from chronicle.app import create_app
 from chronicle.compose import client as sprachmodell
 from chronicle.compose.client import ModelUnreachable
@@ -1178,3 +1178,91 @@ def test_ein_formular_ohne_das_feld_nimmt_die_rolle_nicht_still_zurueck(tmp_path
     config, client = mit_gruppe(tmp_path)
     client.post("/einstellungen", data={"foundry_user": "chronist"}, headers=VERWALTUNG)
     assert settings.admin_group(config.database_path) == GRUPPE
+
+
+# --- Register: browsen darf jeder, bestätigen die Verwaltung --------------------------
+
+
+def ein_vorschlag(tmp_path):
+    config, sitzung_id = eine_sitzung(tmp_path, chronik=True)
+    register.suggest(
+        config,
+        sitzung_id,
+        model=Registerfuehrer("figur | Die Wirtin | Schenkt im Krummen Ast aus."),
+    )
+    return config, register.pending(config.database_path)[0]
+
+
+class Registerfuehrer:
+    name = "register-test"
+
+    def __init__(self, antwort):
+        self._antwort = antwort
+
+    def write(self, *, system, prompt):
+        return self._antwort
+
+
+def test_das_register_steht_jedem_offen(tmp_path):
+    config, _ = eine_sitzung(tmp_path)
+    settings.save_admin_group(config.database_path, GRUPPE)
+    client = create_app(config).test_client()
+    assert client.get("/register", headers=MITSPIEL).status_code == 200
+    assert "Register" in client.get("/", headers=MITSPIEL).get_data(as_text=True)
+
+
+def test_das_bestaetigen_gehoert_der_verwaltung(tmp_path):
+    config, _ = ein_vorschlag(tmp_path)
+    settings.save_admin_group(config.database_path, GRUPPE)
+    client = create_app(config).test_client()
+    assert client.get("/register/vorschlaege", headers=MITSPIEL).status_code == 403
+    assert client.post("/register/vorschlaege", data={}, headers=MITSPIEL).status_code == 403
+    assert client.get("/register/vorschlaege", headers=VERWALTUNG).status_code == 200
+
+
+def test_ohne_eintrag_sagt_das_register_warum_da_nichts_steht(tmp_path):
+    html = gelesen(Config(data_dir=tmp_path), "/register")
+    assert "Noch kein bestätigter Eintrag" in html
+
+
+def test_ein_vorschlag_steht_nicht_im_register_sondern_wartet(tmp_path):
+    config, eintrag = ein_vorschlag(tmp_path)
+    client = create_app(config).test_client()
+    register_html = client.get("/register").get_data(as_text=True)
+    assert "Noch kein bestätigter Eintrag" in register_html
+    assert "warte" in register_html
+    assert "Die Wirtin" in client.get("/register/vorschlaege").get_data(as_text=True)
+
+
+def test_ein_ja_traegt_den_eintrag_ins_register(tmp_path):
+    config, eintrag = ein_vorschlag(tmp_path)
+    client = create_app(config).test_client()
+    antwort = client.post(
+        "/register/vorschlaege", data={f"{register.FELD}{eintrag.id}": register.JA}
+    )
+    assert antwort.status_code == 302
+    html = client.get("/register").get_data(as_text=True)
+    assert "Die Wirtin" in html
+    assert "Der Keller" in html
+
+
+def test_ohne_wahl_bleibt_der_vorschlag_stehen(tmp_path):
+    config, eintrag = ein_vorschlag(tmp_path)
+    client = create_app(config).test_client()
+    client.post("/register/vorschlaege", data={f"{register.FELD}{eintrag.id}": ""})
+    assert len(register.pending(config.database_path)) == 1
+
+
+def test_eine_id_die_nicht_in_der_liste_stand_wird_nicht_entschieden(tmp_path):
+    config, eintrag = ein_vorschlag(tmp_path)
+    client = create_app(config).test_client()
+    client.post("/register/vorschlaege", data={f"{register.FELD}{eintrag.id + 99}": register.JA})
+    assert len(register.pending(config.database_path)) == 1
+
+
+def test_ein_registertreffer_fuehrt_ins_register(tmp_path):
+    config, eintrag = ein_vorschlag(tmp_path)
+    register.decide(config.database_path, {eintrag.id: register.Entscheidung(ja=True)})
+    html = gelesen(config, "/suche?q=Wirtin")
+    assert "Registereintrag" in html
+    assert f'href="/register#eintrag-{eintrag.id}"' in html

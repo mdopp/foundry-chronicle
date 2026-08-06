@@ -303,6 +303,8 @@
              {% if request.path == url_for('sitzungen') %}aria-current="page"{% endif %}>Sitzungen</a>
           <a href="{{ url_for('protokolle') }}"
              {% if request.endpoint in ['protokolle', 'protokoll'] %}aria-current="page"{% endif %}>Protokolle</a>
+          <a href="{{ url_for('register_seite') }}"
+             {% if request.endpoint in ['register_seite', 'register_vorschlaege'] %}aria-current="page"{% endif %}>Register</a>
           <a href="{{ url_for('suche') }}"
              {% if request.path == url_for('suche') %}aria-current="page"{% endif %}>Suche</a>
           {% if verwalter %}

@@ -35,6 +35,7 @@ from chronicle import (
     people,
     protocol,
     recordings,
+    register,
     roles,
     search,
     settings,
@@ -88,6 +89,8 @@ VERWALTUNG = frozenset(
         "einrichtung_speichern",
         "zuordnung",
         "zuordnung_speichern",
+        "register_vorschlaege",
+        "register_entscheiden",
         "abgleich_anstossen",
         "chronik_anstossen",
     }
@@ -323,6 +326,41 @@ def create_app(config: Config | None = None, *, zeitplan: bool = False) -> Flask
             "suche.html",
             ergebnis=search.find(basis.database_path, request.args.get("q", "")),
         )
+
+    @app.get("/register")
+    def register_seite() -> str:
+        return render_template(
+            "register.html",
+            gruppen=register.overview(basis.database_path),
+            offene=len(register.pending(basis.database_path)),
+        )
+
+    @app.get("/register/vorschlaege")
+    def register_vorschlaege() -> str:
+        return render_template(
+            "register_vorschlaege.html",
+            vorschlaege=register.pending(basis.database_path),
+            feld=register.FELD,
+            name_feld=register.NAME_FELD,
+            satz_feld=register.SATZ_FELD,
+        )
+
+    @app.post("/register/vorschlaege")
+    def register_entscheiden() -> Response:
+        # Entschieden wird nur über Zeilen, die in der angezeigten Liste standen — ein
+        # Ja auf einen Eintrag, den niemand gesehen hat, wäre keine Bestätigung.
+        auswahl = {}
+        for eintrag in register.pending(basis.database_path):
+            wahl = request.form.get(register.FELD + str(eintrag.id), "").strip()
+            if wahl not in (register.JA, register.NEIN):
+                continue
+            auswahl[eintrag.id] = register.Entscheidung(
+                ja=wahl == register.JA,
+                name=request.form.get(register.NAME_FELD + str(eintrag.id), ""),
+                description=request.form.get(register.SATZ_FELD + str(eintrag.id), ""),
+            )
+        register.decide(basis.database_path, auswahl)
+        return redirect(url_for("register_vorschlaege"))
 
     @app.get("/zuordnung")
     def zuordnung() -> str:

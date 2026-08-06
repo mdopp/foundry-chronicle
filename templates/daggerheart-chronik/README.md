@@ -70,6 +70,29 @@ dem Einwilligungsprotokoll des Aufnahme-Bots. Die Audiospuren liegen bewusst in 
 und gehören nicht ins Backup. **Beim Einrichten der Sicherung `daggerheart-aufnahmen`
 ausschließen.**
 
+### Warum daneben und nicht darin
+
+ServiceBay sichert pro Dienst keine ganzen Bäume, sondern eine **Auswahlliste**, und die
+ist am Verzeichnis `{{DATA_DIR}}/<dienst>` verankert (ADR 0002 trennt kleinen,
+unersetzlichen Zustand von großen Massendaten). Daraus folgt die Wahl des Host-Pfads:
+
+- `{{DATA_DIR}}/daggerheart/aufnahmen` — ein Unterverzeichnis läge im Wurzelverzeichnis
+  einer künftigen Auswahlliste und bliebe nur draußen, solange jemand daran denkt, es
+  auszunehmen. Für eine Zusage an Menschen, deren Stimme aufgenommen wurde, ist das zu
+  wenig.
+- Ein absoluter Pfad neben `{{DATA_DIR}}` — fällt aus der Abdeckungsprüfung der Plattform
+  heraus, die absolute Host-Pfade nicht als Volume zählt. Das Verzeichnis wäre dann nicht
+  ausgenommen, sondern unsichtbar, und `DATA_DIR` gibt es gerade, damit kein Pfad der Box
+  im Repo steht.
+- Eine eigene Template-Variable — ein Knopf, den niemand verstellt, und der Assistent
+  fragte ihn bei jeder Installation ab.
+
+Bleibt `{{DATA_DIR}}/daggerheart-aufnahmen`: neben dem Datenverzeichnis, also außer
+Reichweite jeder dienstbezogenen Auswahlliste, und trotzdem unter `DATA_DIR`, also
+sichtbar für Abdeckungsprüfung und Massendaten-Sicherung. Der gemeinsame Namensanfang
+hält beide Verzeichnisse im Blick — auch beim Deinstallieren, wo `daggerheart-aufnahmen`
+stehen bleibt und von Hand zu löschen ist.
+
 Der Bot sagt im Sprachkanal eine **Aufbewahrungsfrist von 7 Tagen** zu und hält sie selbst
 ein: er räumt einmal beim Start und danach täglich ab, der nächtliche Stapel zusätzlich am
 Ende jedes Laufs. `python -m chronicle.transcribe --loeschen` entfernt eine Spur schon
