@@ -27,13 +27,15 @@ python -m chronicle          # http://127.0.0.1:8000
 Unter `/` wird mitgeschrieben — Sitzung, Szenen, Notizen; `/status` sagt, was
 konfiguriert ist und wann zuletzt mit Foundry abgeglichen wurde.
 
-Foundry-Adresse, -Benutzer und -Passwort sowie Ollama-Adresse und -Modell werden unter
-`/einstellungen` gepflegt und liegen in der SQLite. Die Umgebung — `FOUNDRY_URL`,
-`FOUNDRY_USER`, `FOUNDRY_PASSWORD`, `OLLAMA_URL`, `OLLAMA_MODEL` — bleibt die Vorgabe
-beim ersten Start und der Deploy-Weg; **ein in der Oberfläche gesetzter Wert gewinnt**,
-und `/status` zeigt je Wert, woher er kommt. Rein aus der Umgebung kommen weiterhin
-`DISCORD_BOT_TOKEN`, `CHRONICLE_DATA_DIR` (Vorgabe `./data`), `CHRONICLE_RECORDINGS_DIR`
-(Vorgabe `./recordings`) und `CHRONICLE_WHISPER_MODEL` (Vorgabe `small`). Fehlt die
+Foundry-Adresse, -Benutzer und -Passwort, der Discord-Bot-Token sowie Ollama-Adresse und
+-Modell werden unter `/einstellungen` gepflegt und liegen in der SQLite. Die Umgebung —
+`FOUNDRY_URL`, `FOUNDRY_USER`, `FOUNDRY_PASSWORD`, `DISCORD_BOT_TOKEN`, `OLLAMA_URL`,
+`OLLAMA_MODEL` — bleibt die Vorgabe beim ersten Start und der Deploy-Weg; **ein in der
+Oberfläche gesetzter Wert gewinnt**, und `/status` zeigt je Wert, woher er kommt. Die
+beiden Geheimnisse werden nie angezeigt, nur *ob* sie gesetzt sind; ein leer
+abgesendetes Feld heißt unverändert. Rein aus der Umgebung kommen weiterhin
+`CHRONICLE_DATA_DIR` (Vorgabe `./data`), `CHRONICLE_RECORDINGS_DIR` (Vorgabe
+`./recordings`) und `CHRONICLE_WHISPER_MODEL` (Vorgabe `small`). Fehlt die
 Foundry-Konfiguration, startet der Dienst trotzdem und erklärt auf `/status`, was fehlt.
 
 Ein eigenes Login gibt es nicht: angemeldet wird am Proxy (ServiceBay-ADR 0001), der
@@ -77,6 +79,34 @@ laden nie ein echtes herunter.
 `data/`, im Image `/aufnahmen` gegen `/data`). Gesichert wird die SQLite; Audiospuren
 gehören nie ins Backup und werden nach einem erfolgreichen Lauf entbehrlich — gelöscht
 werden sie aber nur auf ausdrückliches Verlangen.
+
+## Diktat per Discord
+
+Die Oberfläche ist nur im Heimnetz erreichbar, der Diktat-Moment aber auf dem Heimweg.
+Discord ist von überall erreichbar und von Natur aus ein Briefkasten: einwerfen, wann es
+einem einfällt — geholt wird, wenn der Dienst das nächste Mal läuft.
+
+```bash
+python -m chronicle.discord     # den Kanal #diktat leeren — vor der Transkription
+```
+
+Der Bot liest **genau einen** Kanal, nach Namenskonvention `#diktat`. Eine Sprachnachricht
+dort reiht sich in dieselbe Warteschlange ein wie ein Upload; eine Textnachricht wird zur
+Notiz der zuletzt angelegten Sitzung. Beides quittiert der Bot mit ✅ und **einer** Antwort;
+was weder Audio noch Text ist, bekommt ein ⚠ und bleibt liegen. Gibt es noch keine Sitzung,
+wartet der Einwurf sichtbar, statt sich eine zu erfinden — angelegt wird sie von Hand, dann
+holt der nächste Lauf ihn nach.
+
+Autorisierung ist Discords eigenes Rechtemodell: **wer im Kanal schreiben darf, darf
+diktieren.** Deshalb ein eigener Kanal und nie der Gruppenkanal — das Rohdiktat ist der
+ungefilterte Gedankenstrom des Erzählenden, Spoiler und Spielleitungssicht inklusive.
+
+Geholt wird **per REST im Stapel, nicht über eine dauerhafte Gateway-Verbindung**: der Lauf
+fragt, was seit dem letzten Zeiger dazugekommen ist. Ein zweiter Lauf verdoppelt nichts —
+neben dem Zeiger steht die Kennung jeder erledigten Nachricht in der Datenbank. Das Diktat
+läuft durch Discords Cloud; für Online-Gruppen ändert das nichts, für reine Präsenzgruppen
+ist es eine bewusste Entscheidung — der Discord-Teil darf leer bleiben, dann bleibt das
+Web-Formular der Weg.
 
 ## Betrieb auf ServiceBay
 

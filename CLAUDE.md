@@ -63,12 +63,13 @@ werden zur Laufzeit gesetzt; Platzhalter sind in Ordnung, konkrete Werte nicht. 
 gilt auch für die **Foundry-Adresse** — die gehört in die Konfiguration, nicht ins Repo.
 
 **Operator-Entscheidung 2026-08-06 — das Foundry-Passwort liegt in der SQLite.** Die
-fünf Werte für Foundry und Ollama werden in der Oberfläche gepflegt (#25); ein dort
-gesetzter Wert schlägt die Umgebung, die als Vorgabe beim ersten Start bleibt. Damit
-liegt das Passwort **im Klartext in `chronicle.sqlite3` — und die geht ins Backup.** Das
-ist bewusst so entschieden: eine Homelab-Instanz, Backup auf eigenem NAS, und der
-Betrieb wäre sonst nur über ServiceBay-Template-Variablen zu ändern. Die Abwägung hängt
-an drei Bedingungen, die nicht wegfallen dürfen:
+Werte für Foundry, Discord und Ollama werden in der Oberfläche gepflegt (#25, der
+Bot-Token seit #19); ein dort gesetzter Wert schlägt die Umgebung, die als Vorgabe beim
+ersten Start bleibt. Damit liegen Passwort **und Bot-Token im Klartext in
+`chronicle.sqlite3` — und die geht ins Backup.** Das ist bewusst so entschieden: eine
+Homelab-Instanz, Backup auf eigenem NAS, und der Betrieb wäre sonst nur über
+ServiceBay-Template-Variablen zu ändern. Die Abwägung hängt an drei Bedingungen, die
+nicht wegfallen dürfen — sie gelten für **jedes** Geheimnis in `settings.SECRET_KEYS`:
 
 - Die Seite steht **hinter Authelia und dem `Remote-User`-Guard** wie jede andere.
 - Der Wert wird **nirgends angezeigt** — nicht im Formular, nicht auf `/status`, nicht in

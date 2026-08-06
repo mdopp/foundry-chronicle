@@ -36,6 +36,28 @@
   </section>
 
   <section class="karte">
+    <h2>Discord</h2>
+    <p class="gedaempft">Der Bot-Token öffnet den Diktat-Kanal <code>#diktat</code>: eine
+      Sprachnachricht dort landet in derselben Warteschlange wie ein Upload, eine
+      Textnachricht wird zur Notiz der zuletzt angelegten Sitzung. Wer im Kanal schreiben
+      darf, darf diktieren — die Rechte vergibt Discord. Ohne Token bleibt der Kanal zu;
+      eine Gruppe, die nur vor Ort spielt, braucht ihn nicht.</p>
+
+    <div class="feld">
+      <label for="discord_bot_token">Bot-Token</label>
+      <input id="discord_bot_token" name="discord_bot_token" type="password" value=""
+             autocomplete="new-password"
+             placeholder="{{ 'gesetzt' if bot_token_gesetzt else 'nicht gesetzt' }}">
+      {% if bot_token_gesetzt %}
+        <p class="gedaempft">Der Token ist <span class="steht">gesetzt</span> und wird nie
+          angezeigt. Feld leer lassen heißt: unverändert.</p>
+      {% else %}
+        <p class="gedaempft">Noch kein Bot-Token gesetzt.</p>
+      {% endif %}
+    </div>
+  </section>
+
+  <section class="karte">
     <h2>Sprachmodell</h2>
     <p class="gedaempft">Ohne Sprachmodell entsteht die Chronik trotzdem, dann geordnet
       statt formuliert.</p>
@@ -68,12 +90,13 @@
       <dt>Foundry-Adresse</dt><dd>{{ quellen.foundry_url }}</dd>
       <dt>Foundry-Benutzer</dt><dd>{{ quellen.foundry_user }}</dd>
       <dt>Foundry-Passwort</dt><dd>{{ quellen.foundry_password }}</dd>
+      <dt>Discord-Bot-Token</dt><dd>{{ quellen.discord_bot_token }}</dd>
       <dt>Ollama-Adresse</dt><dd>{{ quellen.ollama_url }}</dd>
       <dt>Ollama-Modell</dt><dd>{{ quellen.ollama_model }}</dd>
     </dl>
     <p class="gedaempft absenden">Was hier gespeichert wird, schlägt die Umgebung. Ein leer
-      abgesendetes Feld — außer dem Passwort — nimmt den Wert zurück, dann gilt wieder die
-      Umgebung.</p>
+      abgesendetes Feld — außer Passwort und Bot-Token — nimmt den Wert zurück, dann gilt
+      wieder die Umgebung.</p>
   </section>
 
   <div class="absenden"><button type="submit">Speichern</button></div>

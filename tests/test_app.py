@@ -298,7 +298,7 @@ def test_die_suche_steht_hinter_demselben_tuersteher(tmp_path):
     assert bewacht(tmp_path).get("/suche?q=schwert").status_code == 403
 
 
-def test_die_einstellungsseite_zeigt_die_fuenf_werte(tmp_path):
+def test_die_einstellungsseite_zeigt_die_gepflegten_werte(tmp_path):
     config = Config(
         foundry_url="https://foundry.example",
         foundry_user="chronist",
@@ -308,6 +308,7 @@ def test_die_einstellungsseite_zeigt_die_fuenf_werte(tmp_path):
     html = gelesen(config, "/einstellungen")
     assert "https://foundry.example" in html
     assert 'name="foundry_user"' in html
+    assert 'name="discord_bot_token"' in html
     assert 'name="ollama_url"' in html
     assert 'name="ollama_model"' in html
 
@@ -357,6 +358,49 @@ def test_ein_leeres_passwortfeld_behaelt_das_passwort(tmp_path):
     assert aktuell.foundry_user == "chronist"
 
 
+def test_der_bot_token_steht_in_keiner_antwort(tmp_path):
+    config = Config(discord_bot_token=BOT_TOKEN, data_dir=tmp_path)
+    client = create_app(config).test_client()
+    for pfad in ("/einstellungen", "/status"):
+        assert BOT_TOKEN not in client.get(pfad).get_data(as_text=True)
+    antwort = client.post("/einstellungen", data={"discord_bot_token": BOT_TOKEN})
+    assert antwort.status_code == 302
+    assert BOT_TOKEN not in antwort.get_data(as_text=True)
+    assert BOT_TOKEN not in antwort.headers["Location"]
+    assert BOT_TOKEN not in client.get("/einstellungen").get_data(as_text=True)
+    assert BOT_TOKEN not in client.get("/status").get_data(as_text=True)
+
+
+def test_die_seite_sagt_nur_ob_ein_bot_token_gesetzt_ist(tmp_path):
+    ohne = gelesen(Config(data_dir=tmp_path / "ohne"), "/einstellungen")
+    assert "Noch kein Bot-Token gesetzt" in ohne
+    mit = gelesen(Config(discord_bot_token=BOT_TOKEN, data_dir=tmp_path / "mit"), "/einstellungen")
+    assert "Der Token ist" in mit
+
+
+def test_ein_leeres_bot_token_feld_behaelt_den_token(tmp_path):
+    config = Config(data_dir=tmp_path)
+    client = create_app(config).test_client()
+    client.post("/einstellungen", data={"discord_bot_token": BOT_TOKEN})
+    client.post("/einstellungen", data={"foundry_user": "chronist", "discord_bot_token": ""})
+    aktuell = settings.effective(config)
+    assert aktuell.discord_bot_token == BOT_TOKEN
+    assert aktuell.foundry_user == "chronist"
+
+
+def test_ein_gespeicherter_bot_token_richtet_discord_ohne_umgebung_ein(tmp_path):
+    config = Config(data_dir=tmp_path)
+    client = create_app(config).test_client()
+    assert "Kein Bot-Token" in client.get("/status").get_data(as_text=True)
+
+    client.post("/einstellungen", data={"discord_bot_token": BOT_TOKEN})
+
+    assert settings.effective(config).discord_configured
+    html = client.get("/status").get_data(as_text=True)
+    assert "Bot-Token gesetzt" in html
+    assert f"<dd>{settings.FRONTEND}</dd>" in html
+
+
 def test_status_nennt_je_wert_die_quelle(tmp_path):
     config = Config(foundry_user="umgebungs-konto", data_dir=tmp_path)
     client = create_app(config).test_client()
@@ -374,6 +418,7 @@ def test_die_einstellungen_stehen_hinter_demselben_tuersteher(tmp_path):
         client.post("/einstellungen", data={"foundry_url": "https://frontend.example"}).status_code
         == 403
     )
+    assert client.post("/einstellungen", data={"discord_bot_token": BOT_TOKEN}).status_code == 403
     assert settings.stored(Config(data_dir=tmp_path).database_path) == {}
 
 
