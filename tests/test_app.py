@@ -473,3 +473,15 @@ def test_main_hat_vorgaben(monkeypatch):
     monkeypatch.delenv("CHRONICLE_PORT", raising=False)
     entry.main()
     assert aufruf == {"host": "127.0.0.1", "port": 8000}
+
+
+def test_ohne_bot_token_zeigen_die_einstellungen_die_einrichtung(tmp_path):
+    html = gelesen(Config(data_dir=tmp_path), "/einstellungen")
+    assert "Developer Portal" in html
+    assert "Message Content Intent" in html
+
+
+def test_mit_bot_token_verschwindet_die_einrichtungshilfe(tmp_path):
+    config = Config(discord_bot_token="token-aus-der-umgebung", data_dir=tmp_path)
+    html = gelesen(config, "/einstellungen")
+    assert "Developer Portal" not in html

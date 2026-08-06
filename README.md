@@ -82,6 +82,23 @@ werden sie aber nur auf ausdrückliches Verlangen.
 
 ## Diktat per Discord
 
+### Den Bot einmalig anlegen
+
+Der Bot-Account entsteht im [Discord Developer Portal](https://discord.com/developers/applications):
+
+1. **New Application** anlegen (Name z. B. „Chronik"), links **Bot** öffnen, den
+   **Token** erzeugen. Der Token wird in der Oberfläche unter *Einstellungen*
+   eingetragen — nie ins Repo, nie in eine Nachricht.
+2. Unter **Bot** die **Message Content Intent** einschalten — ohne sie liefert die
+   API keine Nachrichtentexte.
+3. **OAuth2 → URL Generator**: Scope `bot`, Rechte *View Channels, Read Message
+   History, Send Messages, Add Reactions* (Diktat-Kanal) plus *Connect* und *Use
+   Voice Activity* (Aufnahme, sobald der Recorder da ist). Die erzeugte URL öffnen
+   und den Bot auf den Server einladen.
+4. Einen Kanal **`#diktat`** anlegen. Für das Abholen per Stapel-Lauf muss der Bot
+   nur eingeladen sein — als „online" erscheint er erst, wenn der Voice-Recorder
+   eine Gateway-Verbindung hält.
+
 Die Oberfläche ist nur im Heimnetz erreichbar, der Diktat-Moment aber auf dem Heimweg.
 Discord ist von überall erreichbar und von Natur aus ein Briefkasten: einwerfen, wann es
 einem einfällt — geholt wird, wenn der Dienst das nächste Mal läuft.
