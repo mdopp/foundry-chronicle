@@ -162,11 +162,11 @@ def test_zwei_gleich_benannte_spuren_ueberschreiben_einander_nicht(config, sitzu
 # --- Die Quittung: ehrlich, ohne geratenen Fortschritt -------------------------------
 
 
-def test_die_seite_sagt_dass_es_im_naechsten_stapel_laeuft(client, sitzung_id):
+def test_die_seite_sagt_womit_das_diktat_verschriftet_wird(client, sitzung_id):
     hochladen(client, sitzung_id)
     html = seite(client, sitzung_id)
-    assert "läuft im nächsten Stapel" in html
-    assert "python -m chronicle.transcribe" in html
+    assert "Diktat empfangen" in html
+    assert "»Chronik erstellen«" in html
     assert "%" not in html.split('id="diktat"')[1]
 
 
@@ -177,7 +177,7 @@ def test_die_seite_zeigt_den_stand_des_jobs_und_nicht_nur_dass_etwas_da_ist(
     aufnahme = recordings.pending(config.database_path)[0]
     recordings.mark(config.database_path, aufnahme.id, recordings.LAEUFT)
 
-    assert "Läuft gerade" in seite(client, sitzung_id)
+    assert "Wird gerade verschriftet" in seite(client, sitzung_id)
 
 
 def test_ein_gescheiterter_lauf_steht_mit_grund_auf_der_seite(client, config, sitzung_id):
@@ -378,7 +378,7 @@ def test_die_seite_sagt_warum_die_aufnahme_weg_ist(client, config, sitzung_id):
 
     text = seite(client, sitzung_id)
     assert f"nach {recordings.RETENTION_TAGE} Tagen entfernt" in text
-    assert "läuft im nächsten Stapel" not in text
+    assert "Diktat empfangen" not in text
 
 
 def test_eine_alte_datenbank_bekommt_die_spalte_nachgetragen(tmp_path):

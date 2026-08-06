@@ -4,10 +4,9 @@
 
 <section class="karte">
   <h2 class="fehlt">Kein Zugang</h2>
-  <p>Dieser Dienst hat kein eigenes Login: angemeldet wird am Proxy, der den Header
-    <code>Remote-User</code> setzt. Dieser Request kam ohne ihn an — also am Proxy vorbei.</p>
-  <p class="gedaempft">Für den Lauf ohne Proxy bleibt
-    <code>CHRONICLE_REQUIRE_REMOTE_USER</code> aus.</p>
+  <p>Dieser Aufruf kam ohne Anmeldung an — deshalb ist hier nichts zu sehen.</p>
+  <p class="gedaempft">Ruf die Chronik über die gewohnte Adresse auf: dort meldest du dich
+    an und landest anschließend wieder hier.</p>
 </section>
 
 {% endblock %}

@@ -112,11 +112,11 @@
     {% endif %}
 
     {% if aufnahme.status == 'wartet' and not aufnahme.deleted_at %}
-    <p>Diktat empfangen — es läuft im nächsten Stapel, das Ergebnis steht morgen früh hier.
-      Bis dahin passiert nichts: der Stapel ist <code>python -m chronicle.transcribe</code>.</p>
+    <p>Diktat empfangen. Verschriftet wird es, sobald du unten »Chronik erstellen« drückst —
+      oder über Nacht von selbst.</p>
     {% elif aufnahme.status == 'laeuft' %}
-    <p>Läuft gerade. Wie weit, steht in der Logzeile des Stapellaufs — hier steht keine
-      geratene Restzeit.</p>
+    <p>Wird gerade verschriftet. Diese Seite neu laden zeigt den Stand; eine geratene
+      Restzeit steht hier nicht.</p>
     {% elif aufnahme.status == 'fertig' %}
     <p class="gedaempft">{{ aufnahme.detail }}</p>
     <p>{{ aufnahme.text }}</p>
@@ -130,9 +130,9 @@
       <div class="absenden"><button type="submit" class="leise">Als Notiz übernehmen</button></div>
     </form>
     {% if not aufnahme.deleted_at %}
-    <p class="gedaempft">Die Spur liegt weiter im Aufnahmeverzeichnis, längstens {{ frist }} Tage
-      — so lange, wie der Bot es ansagt. Der Stapellauf mit <code>--loeschen</code> entfernt sie
-      schon nach einem erfolgreichen Lauf; still verschwindet sie nie.</p>
+    <p class="gedaempft">Die Aufnahme liegt noch da, längstens {{ frist }} Tage — so lange,
+      wie der Bot es im Sprachkanal ansagt. Danach wird sie gelöscht; still verschwindet
+      sie nie.</p>
     {% endif %}
     {% elif aufnahme.status == 'gescheitert' %}
     <p class="fehlt">{{ aufnahme.detail }}</p>
@@ -145,6 +145,16 @@
     <input type="file" id="diktat-datei" name="datei" accept="audio/*">
     <div class="absenden"><button type="submit" class="leise">Diktat hochladen</button></div>
   </form>
+</section>
+
+<section class="karte" id="chronik">
+  <h2>Chronik</h2>
+  <p class="gedaempft">Aus den Notizen dieser Sitzung und den Zahlen aus Foundry entstehen
+    Chronik und Rückblick. Wartende Aufnahmen werden vorher verschriftet — das kann dauern,
+    und du kannst die Seite zumachen. Ein zweiter Lauf ersetzt beides.</p>
+  {% with mit_link = true, knopf = "Chronik erstellen" %}
+  {% include "_chronik_knopf.html" %}
+  {% endwith %}
 </section>
 
 <p><a href="{{ url_for('protokoll', sitzung_id=sitzung.id) }}">Zur Chronik</a> ·

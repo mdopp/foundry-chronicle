@@ -7,105 +7,32 @@
     <p class="schrittzahl">Schritt {{ nummer }} von {{ anzahl }}</p>
 
     {% if schritt == "foundry" %}
-      <h2>Foundry</h2>
-      <p class="gedaempft">Von hier kommen die Zahlen: Würfe, Schaden, Beute. Foundry kennt
-        keinen API-Token — es braucht die Adresse sowie Benutzername und Passwort eines
-        echten Kontos. Das Protokoll sieht danach genau so viel wie dieser Mensch; am besten
-        ein eigenes Spielerkonto ohne Spielleitungsrechte.</p>
+      <h2>Woher kommen die Spieldaten?</h2>
+      <p class="gedaempft">Würfe, Schaden und Beute holt die Chronik aus Foundry — erfunden
+        wird keine Zahl. Foundry kennt keinen API-Token: es braucht die Adresse sowie
+        Benutzername und Passwort eines echten Kontos.</p>
 
-      <div class="feld">
-        <label for="foundry_url">Adresse</label>
-        <input id="foundry_url" name="foundry_url" type="url" value="{{ foundry_url }}"
-               placeholder="http://127.0.0.1:30000">
-      </div>
+      {% include "_foundry_felder.html" %}
 
-      <div class="feld">
-        <label for="foundry_user">Benutzer</label>
-        <input id="foundry_user" name="foundry_user" value="{{ foundry_user }}">
-      </div>
-
-      <div class="feld">
-        <label for="foundry_password">Passwort</label>
-        <input id="foundry_password" name="foundry_password" type="password" value=""
-               autocomplete="new-password"
-               placeholder="{{ 'gesetzt' if passwort_gesetzt else 'nicht gesetzt' }}">
-        {% if passwort_gesetzt %}
-          <p class="gedaempft">Das Passwort ist <span class="steht">gesetzt</span> und wird nie
-            angezeigt. Feld leer lassen heißt: unverändert.</p>
-        {% else %}
-          <p class="gedaempft">Noch kein Passwort gesetzt.</p>
-        {% endif %}
-      </div>
-
-      <p class="gedaempft">Ohne Foundry läuft der Dienst trotzdem — die Chronik bleibt dann
-        ohne Würfe, Schaden und Beute.</p>
+      <p class="gedaempft">Ohne Zugang wird trotzdem mitgeschrieben, die Chronik bleibt dann
+        ohne diese Zahlen.</p>
 
     {% elif schritt == "discord" %}
-      <h2>Discord</h2>
-      <p class="gedaempft">Der Bot-Token öffnet den Diktat-Kanal <code>#diktat</code> und
-        später die Aufnahme. <strong>Eine Gruppe, die nur vor Ort spielt, braucht ihn
+      <h2>Wie kommt Gesprochenes herein?</h2>
+      <p class="gedaempft">Über Discord: eine Sprachnachricht im Kanal <code>#diktat</code>
+        landet in derselben Warteschlange wie ein Upload, eine Textnachricht wird zur Notiz
+        der zuletzt angelegten Sitzung. <strong>Wer nur vor Ort spielt, braucht das
         nie</strong> — dieser Schritt ist zum Überspringen gedacht.</p>
 
-      {% if not bot_token_gesetzt %}{% include "_discord_einrichtung.html" %}{% endif %}
-
-      <div class="feld">
-        <label for="discord_bot_token">Bot-Token</label>
-        <input id="discord_bot_token" name="discord_bot_token" type="password" value=""
-               autocomplete="new-password"
-               placeholder="{{ 'gesetzt' if bot_token_gesetzt else 'nicht gesetzt' }}">
-        {% if bot_token_gesetzt %}
-          <p class="gedaempft">Der Token ist <span class="steht">gesetzt</span> und wird nie
-            angezeigt. Feld leer lassen heißt: unverändert.</p>
-        {% else %}
-          <p class="gedaempft">Noch kein Bot-Token gesetzt.</p>
-        {% endif %}
-      </div>
-
-      <div class="feld">
-        <label for="discord_recap_channel">Zustellkanal für den Rückblick</label>
-        <input id="discord_recap_channel" name="discord_recap_channel"
-               value="{{ discord_recap_channel }}" placeholder="chronik">
-        <p class="gedaempft">Der Kanal der ganzen Gruppe — nicht <code>#diktat</code>.
-          <strong>Feld leer heißt: keine Zustellung.</strong></p>
-      </div>
+      {% include "_discord_felder.html" %}
 
     {% else %}
-      <h2>Sprachmodell</h2>
-      <p class="gedaempft">Ohne Sprachmodell entsteht die Chronik trotzdem, dann geordnet
-        statt formuliert. Auch dieser Schritt ist überspringbar.</p>
+      <h2>Wer formuliert die Chronik?</h2>
+      <p class="gedaempft">Ein Sprachmodell ordnet die Notizen und schreibt sie aus. Ohne
+        Sprachmodell entsteht die Chronik trotzdem, dann geordnet statt formuliert — auch
+        dieser Schritt ist überspringbar.</p>
 
-      <div class="feld">
-        {% if ollama_eigen %}
-          <label for="ollama_url">Ollama-Adresse</label>
-          <input id="ollama_url" name="ollama_url" type="url" value="{{ ollama_url }}"
-                 placeholder="{{ ollama_standard }}">
-          <p class="gedaempft">Feld leeren heißt: wieder das Ollama dieser Box.</p>
-        {% else %}
-          <p>Gefragt wird das <strong>Ollama dieser Box</strong> <span class="gedaempft">— der
-            Standard</span>.</p>
-          <details>
-            <summary>Ollama läuft woanders</summary>
-            <label for="ollama_url">Ollama-Adresse</label>
-            <input id="ollama_url" name="ollama_url" type="url" value=""
-                   placeholder="{{ ollama_standard }}">
-          </details>
-        {% endif %}
-      </div>
-
-      <div class="feld">
-        <label for="ollama_model">Modell</label>
-        {% if modelle %}
-          <select id="ollama_model" name="ollama_model">
-            <option value="">— keins, dann wird nur geordnet —</option>
-            {% for name in modelle %}
-            <option value="{{ name }}"{% if name == ollama_model %} selected{% endif %}>{{ name }}</option>
-            {% endfor %}
-          </select>
-        {% else %}
-          <input id="ollama_model" name="ollama_model" value="{{ ollama_model }}">
-        {% endif %}
-        <p class="gedaempft">{{ modell_hinweis }}</p>
-      </div>
+      {% include "_modell_felder.html" %}
     {% endif %}
 
     <div class="absenden knoepfe">

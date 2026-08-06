@@ -2,201 +2,181 @@
 {% block titel %}Einstellungen — Foundry Chronicle{% endblock %}
 {% block inhalt %}
 
+{% if remote_user %}
+<p class="gedaempft">Angemeldet als <strong>{{ remote_user }}</strong>.</p>
+{% else %}
+<p class="hinweis">Niemand ist angemeldet — wer diese Adresse erreicht, sieht alles.</p>
+{% endif %}
+
 <form method="post" action="{{ url_for('einstellungen_speichern') }}">
 
-  <section class="karte">
-    <h2>Foundry</h2>
-    <p class="gedaempft">Foundry kennt keinen API-Token: es braucht die Adresse sowie
-      Benutzername und Passwort eines echten Kontos. Das Protokoll sieht danach genau so
-      viel wie dieser Mensch — am besten ein eigenes Spielerkonto ohne Spielleitungsrechte.</p>
+  <section class="karte" id="zustand">
+    <h2>Woher kommen die Spieldaten?</h2>
+    <p class="gedaempft">Würfe, Schaden und Beute holt die Chronik aus Foundry — erfunden
+      wird keine Zahl. Ohne Zugang wird trotzdem mitgeschrieben, die Chronik bleibt dann
+      ohne diese Zahlen.</p>
 
-    <div class="feld">
-      <label for="foundry_url">Adresse</label>
-      <input id="foundry_url" name="foundry_url" type="url" value="{{ foundry_url }}"
-             placeholder="http://127.0.0.1:30000">
-    </div>
+    {% if config.foundry_configured %}
+      <p class="steht">Zugang steht: <code>{{ config.foundry_user }}</code> auf
+        <code>{{ config.foundry_url }}</code>. Das Passwort wird nie angezeigt.</p>
+    {% else %}
+      <p class="fehlt">Noch kein Zugang zu Foundry. Trag Adresse, Benutzer und Passwort ein
+        und speichere — danach holt »Jetzt abgleichen« die Zahlen.</p>
+    {% endif %}
 
-    <div class="feld">
-      <label for="foundry_user">Benutzer</label>
-      <input id="foundry_user" name="foundry_user" value="{{ foundry_user }}">
-    </div>
+    {% include "_foundry_felder.html" %}
 
-    <div class="feld">
-      <label for="foundry_password">Passwort</label>
-      <input id="foundry_password" name="foundry_password" type="password" value=""
-             autocomplete="new-password"
-             placeholder="{{ 'gesetzt' if passwort_gesetzt else 'nicht gesetzt' }}">
-      {% if passwort_gesetzt %}
-        <p class="gedaempft">Das Passwort ist <span class="steht">gesetzt</span> und wird nie
-          angezeigt. Feld leer lassen heißt: unverändert.</p>
-      {% else %}
-        <p class="gedaempft">Noch kein Passwort gesetzt.</p>
-      {% endif %}
+    <h3>Letzter Abgleich</h3>
+    <p class="{{ 'fehlt' if abgleich.stale else 'steht' }}">{{ abgleich.message }}</p>
+    {% if abgleich.snapshot %}
+    <dl>
+      <dt>Regelwerk</dt><dd><code>{{ abgleich.snapshot.system }}</code></dd>
+      <dt>Spieler</dt><dd>{{ abgleich.snapshot.players | length }}</dd>
+      <dt>Charaktere</dt><dd>{{ abgleich.snapshot.characters | length }}</dd>
+      <dt>Chat-Nachrichten</dt><dd>{{ abgleich.snapshot.messages | length }}</dd>
+    </dl>
+    {% endif %}
+    {% if abgleich_job and abgleich_job.laeuft %}
+    <p class="hinweis">Die Zahlen aus Foundry werden gerade geholt. Diese Seite neu laden
+      zeigt, wann es durch ist.</p>
+    <div class="absenden"><button type="button" class="leise" disabled>Jetzt abgleichen</button></div>
+    {% else %}
+    {% if abgleich_job and abgleich_job.gescheitert %}<p class="fehlt">{{ abgleich_job.error }}</p>{% endif %}
+    <p class="gedaempft">Geänderte Felder vorher speichern — der Abgleich nimmt den zuletzt
+      gespeicherten Zugang.</p>
+    <div class="absenden">
+      <button type="submit" class="leise" form="abgleich">Jetzt abgleichen</button>
     </div>
+    {% endif %}
+
+    {% if nachtlauf and nachtlauf.abgleich %}
+    <p class="{{ 'steht' if nachtlauf.abgleich.gelungen else 'fehlt' }}">Nachts am
+      {{ nachtlauf.zeitpunkt }}: {{ nachtlauf.abgleich.text }}</p>
+    {% endif %}
   </section>
 
   <section class="karte">
-    <h2>Discord</h2>
-    <p class="gedaempft">Der Bot-Token öffnet den Diktat-Kanal <code>#diktat</code>: eine
-      Sprachnachricht dort landet in derselben Warteschlange wie ein Upload, eine
-      Textnachricht wird zur Notiz der zuletzt angelegten Sitzung. Wer im Kanal schreiben
-      darf, darf diktieren — die Rechte vergibt Discord. Ohne Token bleibt der Kanal zu;
-      eine Gruppe, die nur vor Ort spielt, braucht ihn nicht.</p>
+    <h2>Wie kommt Gesprochenes herein?</h2>
+    <p class="gedaempft">Über Discord: eine Sprachnachricht im Kanal <code>#diktat</code>
+      landet in derselben Warteschlange wie ein Upload, eine Textnachricht wird zur Notiz
+      der zuletzt angelegten Sitzung. Wer dort schreiben darf, darf diktieren.</p>
 
-    {% if not bot_token_gesetzt %}{% include "_discord_einrichtung.html" %}{% endif %}
+    {% if config.discord_configured %}
+      <p class="steht">Bot-Token gesetzt — der Bot liest <code>#diktat</code> mit. Was dort
+        ankommt, findest du bei der zuletzt angelegten Sitzung. Der Token wird nie angezeigt.</p>
+    {% else %}
+      <p>Kein Bot-Token — das ist in Ordnung. Wer nur vor Ort spielt, braucht ihn nie; ohne
+        ihn bleiben Diktat-Kanal, Aufnahme und Zustellung zu, alles andere läuft weiter.</p>
+    {% endif %}
+    {% if config.discord_recap_channel %}
+      <p class="steht">Der Rückblick geht nach
+        <code>#{{ config.discord_recap_channel }}</code> — einmal je Sitzung.</p>
+    {% else %}
+      <p>Kein Zustellkanal — der Rückblick bleibt in der Chronik und wird nirgends gepostet.</p>
+    {% endif %}
 
-    <div class="feld">
-      <label for="discord_bot_token">Bot-Token</label>
-      <input id="discord_bot_token" name="discord_bot_token" type="password" value=""
-             autocomplete="new-password"
-             placeholder="{{ 'gesetzt' if bot_token_gesetzt else 'nicht gesetzt' }}">
-      {% if bot_token_gesetzt %}
-        <p class="gedaempft">Der Token ist <span class="steht">gesetzt</span> und wird nie
-          angezeigt. Feld leer lassen heißt: unverändert.</p>
-      {% else %}
-        <p class="gedaempft">Noch kein Bot-Token gesetzt.</p>
-      {% endif %}
-    </div>
+    {% include "_discord_felder.html" %}
 
-    <div class="feld">
-      <label for="discord_recap_channel">Zustellkanal für den Rückblick</label>
-      <input id="discord_recap_channel" name="discord_recap_channel"
-             value="{{ discord_recap_channel }}" placeholder="chronik">
-      <p class="gedaempft">Der Kanal der ganzen Gruppe — nicht <code>#diktat</code>. Steht
-        hier ein Name, stellt <code>python -m chronicle.compose</code> jeden neu
-        komponierten Rückblick genau einmal dorthin zu. <strong>Feld leer heißt: keine
-        Zustellung.</strong> Eine neu komponierte Fassung wird nicht noch einmal
-        gepostet.</p>
-    </div>
+    <p class="gedaempft">Wessen Stimme über welchem Absatz steht, entscheidest du in der
+      <a href="{{ url_for('zuordnung') }}">Personen-Zuordnung</a> — vorgeschlagen wird,
+      bestätigt wird von Hand.</p>
 
-    <p class="gedaempft">Wessen Stimme über welchem Absatz steht, sagt die
-      <a href="{{ url_for('zuordnung') }}">Personen-Zuordnung</a>: Discord-Ids stehen nirgends in
-      Foundry, also wird vorgeschlagen und einmal von Hand bestätigt.</p>
+    {% if nachtlauf and nachtlauf.diktat %}
+    <p class="{{ 'steht' if nachtlauf.diktat.gelungen else 'fehlt' }}">Nachts am
+      {{ nachtlauf.zeitpunkt }}, Briefkasten: {{ nachtlauf.diktat.text }}</p>
+    {% endif %}
+    {% if nachtlauf and nachtlauf.transkript %}
+    <p class="{{ 'steht' if nachtlauf.transkript.gelungen else 'fehlt' }}">Nachts am
+      {{ nachtlauf.zeitpunkt }}, Aufnahmen: {{ nachtlauf.transkript.text }}</p>
+    {% endif %}
   </section>
 
   <section class="karte">
-    <h2>Sprachmodell</h2>
-    <p class="gedaempft">Ohne Sprachmodell entsteht die Chronik trotzdem, dann geordnet
-      statt formuliert.</p>
+    <h2>Wer formuliert die Chronik?</h2>
+    <p class="gedaempft">Ein Sprachmodell ordnet die Notizen und schreibt sie aus. Ohne
+      Sprachmodell entsteht die Chronik trotzdem, dann geordnet statt formuliert.</p>
 
-    <div class="feld">
-      {% if ollama_eigen %}
-        <label for="ollama_url">Ollama-Adresse</label>
-        <input id="ollama_url" name="ollama_url" type="url" value="{{ ollama_url }}"
-               placeholder="{{ ollama_standard }}">
-        <p class="gedaempft">Feld leeren heißt: wieder das Ollama dieser Box.</p>
-      {% else %}
-        <p>Gefragt wird das <strong>Ollama dieser Box</strong> <span class="gedaempft">— der
-          Standard</span>.</p>
-        <details>
-          <summary>Ollama läuft woanders</summary>
-          <label for="ollama_url">Ollama-Adresse</label>
-          <input id="ollama_url" name="ollama_url" type="url" value=""
-                 placeholder="{{ ollama_standard }}">
-        </details>
-      {% endif %}
-    </div>
+    {% if not modell_erreichbar %}
+      <p class="fehlt">Nicht erreichbar — dann wird nur geordnet, nicht formuliert: Notizen
+        nach Szenen, die Zahlen aus Foundry wörtlich, keine Prosa. Adresse unten prüfen und
+        speichern.</p>
+    {% elif config.ollama_configured %}
+      <p class="steht">Bereit — <code>{{ config.ollama_model }}</code> formuliert die
+        nächste Chronik.</p>
+    {% elif not ollama_model %}
+      <p class="hinweis">Kein Modell gewählt — dann wird nur geordnet, nicht formuliert.
+        Wähle unten eins und speichere.</p>
+    {% else %}
+      <p class="hinweis">Noch keine Ollama-Adresse gespeichert — dann wird nur geordnet,
+        nicht formuliert. Trag sie unten ein und speichere.</p>
+    {% endif %}
 
-    <div class="feld">
-      <label for="ollama_model">Modell</label>
-      {% if modelle %}
-        <select id="ollama_model" name="ollama_model">
-          <option value="">— keins, dann wird nur geordnet —</option>
-          {% for name in modelle %}
-          <option value="{{ name }}"{% if name == ollama_model %} selected{% endif %}>{{ name }}</option>
-          {% endfor %}
-        </select>
-      {% else %}
-        <input id="ollama_model" name="ollama_model" value="{{ ollama_model }}">
-      {% endif %}
-      <p class="gedaempft">{{ modell_hinweis }}</p>
-    </div>
+    {% include "_modell_felder.html" %}
+
+    {% if nachtlauf and nachtlauf.chronik %}
+    <p class="{{ 'steht' if nachtlauf.chronik.gelungen else 'fehlt' }}">Nachts am
+      {{ nachtlauf.zeitpunkt }}: {{ nachtlauf.chronik.text }}</p>
+    {% endif %}
   </section>
 
-  <p class="gedaempft">Was hier gespeichert wird, schlägt die Umgebung. Ein leer
-    abgesendetes Feld — außer Passwort und Bot-Token — nimmt den Wert zurück, dann gilt
-    wieder die Umgebung. Woher jeder einzelne Wert gerade stammt, steht unten im
-    <a href="#zustand">Zustand</a>.</p>
+  <section class="karte" id="nachts">
+    <h2>Wann läuft das alles von allein?</h2>
+    <p class="gedaempft">Einmal in der Nacht holt die Chronik von selbst, was im
+      Diktat-Kanal liegt, verschriftet die wartenden Aufnahmen, holt die Zahlen aus Foundry
+      und schreibt Chronik und Rückblick für jede Sitzung, zu der etwas Neues dazugekommen
+      ist. Was nicht eingerichtet ist, wird dabei übersprungen. Die Knöpfe hier und auf der
+      Sitzung bleiben für den Fall, dass du nicht bis morgen früh warten willst.</p>
+
+    <div class="feld">
+      <label for="nightly_time">Uhrzeit</label>
+      <input id="nightly_time" name="nightly_time" type="time" value="{{ nightly_time }}"
+             required>
+      <p class="gedaempft">Nach der Uhr des Servers. War er zu dieser Zeit aus, wird nichts
+        nachgeholt — dann kommt der Lauf in der nächsten Nacht.</p>
+    </div>
+
+    {% if nachtlauf and nachtlauf.laeuft %}
+      <p class="hinweis">Der Lauf vom {{ nachtlauf.zeitpunkt }} ist noch unterwegs. Diese
+        Seite neu laden zeigt, wann er durch ist.</p>
+    {% elif nachtlauf and nachtlauf.fehler %}
+      <p class="fehlt">{{ nachtlauf.fehler }}</p>
+    {% elif nachtlauf %}
+      <p class="steht">Zuletzt gelaufen am {{ nachtlauf.zeitpunkt }} — was dabei
+        herauskam, steht oben bei der jeweiligen Frage.</p>
+    {% else %}
+      <p>Noch keine Nacht gelaufen. Der erste Lauf kommt um {{ nightly_time }}.</p>
+    {% endif %}
+  </section>
+
+  <p class="gedaempft">Ein leer abgesendetes Feld — außer Passwort und Bot-Token — nimmt den
+    Wert zurück.</p>
 
   <div class="absenden"><button type="submit">Speichern</button></div>
 </form>
 
-<section class="karte" id="zustand">
-  <h2>Zustand</h2>
+{# Ein Formular im Formular ist kein gültiges HTML: der Knopf steht über »form« oben in der
+   Foundry-Karte, das Formular dazu hier unten. #}
+<form id="abgleich" method="post" action="{{ url_for('abgleich_anstossen') }}" hidden>
+  <input type="hidden" name="zurueck" value="{{ request.path }}">
+</form>
 
-  <h3>Zugang</h3>
-  {% if config.require_remote_user %}
-    <p class="steht">Die Haustür steht am Proxy: ohne den Header <code>Remote-User</code>
-      wird jeder Request abgewiesen. Ein eigenes Login gibt es nicht.</p>
-    <p class="gedaempft">Angemeldet als <code>{{ remote_user }}</code>.</p>
-  {% else %}
-    <p class="hinweis">Die Header-Prüfung ist aus — wer den Port erreicht, sieht alles.
-      Das ist für den Lauf ohne Proxy gedacht; auf der Box gehört
-      <code>CHRONICLE_REQUIRE_REMOTE_USER=1</code> in die Umgebung.</p>
-  {% endif %}
-
-  <h3>Foundry</h3>
-  {% if config.foundry_configured %}
-    <p class="steht">Konfiguriert als <code>{{ config.foundry_user }}</code> auf
-      <code>{{ config.foundry_url }}</code>. Das Passwort wird nie angezeigt.</p>
-  {% else %}
-    <p class="fehlt">Nicht konfiguriert — der Dienst läuft, holt aber nichts aus Foundry.</p>
-  {% endif %}
-  <dl>
-    <dt><code>FOUNDRY_URL</code></dt><dd>{{ quellen.foundry_url }}</dd>
-    <dt><code>FOUNDRY_USER</code></dt><dd>{{ quellen.foundry_user }}</dd>
-    <dt><code>FOUNDRY_PASSWORD</code></dt><dd>{{ quellen.foundry_password }}</dd>
-  </dl>
-
-  <h3>Discord</h3>
-  {% if config.discord_configured %}
-    <p class="steht">Bot-Token gesetzt. Der Diktat-Kanal <code>#diktat</code> wird im
-      Stapel geleert: <code>python -m chronicle.discord</code>. Der Token wird nie
-      angezeigt.</p>
-  {% else %}
-    <p>Kein Bot-Token — das ist in Ordnung. Eine Gruppe, die nur vor Ort spielt, braucht
-      ihn nicht; ohne ihn bleiben Diktat-Kanal, Aufnahme und Zustellung zu.</p>
-  {% endif %}
-  {% if config.discord_recap_channel %}
-    <p class="steht">Der Rückblick geht nach
-      <code>#{{ config.discord_recap_channel }}</code> — einmal je Sitzung.</p>
-  {% else %}
-    <p>Kein Zustellkanal — der Rückblick bleibt in der Chronik.</p>
-  {% endif %}
-  <dl>
-    <dt><code>DISCORD_BOT_TOKEN</code></dt><dd>{{ quellen.discord_bot_token }}</dd>
-    <dt><code>DISCORD_RECAP_CHANNEL</code></dt><dd>{{ quellen.discord_recap_channel }}</dd>
-  </dl>
-
-  <h3>Sprachmodell</h3>
-  {% if config.ollama_configured %}
-    <p class="steht">Ollama unter <code>{{ config.ollama_url }}</code>, Modell
-      <code>{{ config.ollama_model }}</code>.</p>
-  {% else %}
-    <p>Kein Sprachmodell — die Chronik entsteht trotzdem, dann geordnet statt formuliert:
-      Notizen nach Szenen, Foundry-Fakten wörtlich, keine Prosa.</p>
-  {% endif %}
-  <dl>
-    <dt><code>OLLAMA_URL</code></dt><dd>{{ quellen.ollama_url }}</dd>
-    <dt><code>OLLAMA_MODEL</code></dt><dd>{{ quellen.ollama_model }}</dd>
-  </dl>
-
-  <h3>Abgleich</h3>
-  <p class="{{ 'fehlt' if abgleich.stale else 'steht' }}">{{ abgleich.message }}</p>
-  {% if abgleich.snapshot %}
-  <dl>
-    <dt>Regelwerk</dt><dd><code>{{ abgleich.snapshot.system }}</code></dd>
-    <dt>Spieler</dt><dd>{{ abgleich.snapshot.players | length }}</dd>
-    <dt>Charaktere</dt><dd>{{ abgleich.snapshot.characters | length }}</dd>
-    <dt>Chat-Nachrichten</dt><dd>{{ abgleich.snapshot.messages | length }}</dd>
-  </dl>
-  {% endif %}
-
-  <h3>Speicher</h3>
+<details class="karte">
+  <summary>Technikdetails</summary>
   <dl>
     <dt>Datenbank</dt><dd><code>{{ config.database_path }}</code></dd>
     <dt>Schema-Stand</dt><dd>{{ schema_version }}</dd>
   </dl>
-</section>
+  <p class="gedaempft">Woher jeder Wert gerade stammt — was hier gespeichert ist, schlägt
+    die Umgebung:</p>
+  <dl>
+    <dt><code>FOUNDRY_URL</code></dt><dd>{{ quellen.foundry_url }}</dd>
+    <dt><code>FOUNDRY_USER</code></dt><dd>{{ quellen.foundry_user }}</dd>
+    <dt><code>FOUNDRY_PASSWORD</code></dt><dd>{{ quellen.foundry_password }}</dd>
+    <dt><code>DISCORD_BOT_TOKEN</code></dt><dd>{{ quellen.discord_bot_token }}</dd>
+    <dt><code>DISCORD_RECAP_CHANNEL</code></dt><dd>{{ quellen.discord_recap_channel }}</dd>
+    <dt><code>OLLAMA_URL</code></dt><dd>{{ quellen.ollama_url }}</dd>
+    <dt><code>OLLAMA_MODEL</code></dt><dd>{{ quellen.ollama_model }}</dd>
+  </dl>
+</details>
 
 {% endblock %}

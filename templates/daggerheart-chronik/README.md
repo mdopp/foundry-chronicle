@@ -38,7 +38,7 @@ Der Pod hat zwei Container aus demselben Image:
 
 | Container | Befehl | Wofür |
 |---|---|---|
-| `chronik` | `waitress-serve` (Vorgabe des Images) | die Oberfläche hinter Authelia |
+| `chronik` | `waitress-serve` (Vorgabe des Images) | die Oberfläche hinter Authelia **und der nächtliche Lauf** |
 | `bot` | `python -m chronicle.bot` | der Aufnahme-Bot am Discord-Gateway |
 
 Der Bot ist ein eigener, dauerhafter Prozess, weil Sprache nur mitgeschnitten werden kann,
@@ -46,6 +46,14 @@ während sie gesprochen wird. Den Token liest er aus derselben SQLite wie die Ob
 deshalb teilen beide Container `/data`. **Ohne Token beendet er sich mit einem Satz** und
 wird von der Neustart-Regel des Pods wieder gestartet — das ist erwartet und kein Fehler;
 nach dem Eintragen unter `/einstellungen` findet ihn der nächste Start.
+
+**Einen dritten Container für den nächtlichen Lauf gibt es bewusst nicht.** Der Zeitplan
+hängt in `chronik`, und zwar aus zwei Gründen: der Bot existiert ohne Token gar nicht, eine
+Präsenzgruppe hat aber trotzdem Aufnahmen zu verschriften; und ein Lauf ist eine Zeile in
+der `job`-Tabelle, deren Absturzerkennung nur trägt, solange **ein** Prozess solche Zeilen
+anlegt. Wer hier einen Container ergänzt, macht aus jedem laufenden Lauf einen
+»unterbrochenen« im Auge des anderen Prozesses. Die Uhrzeit steht unter `/einstellungen`,
+Vorgabe 04:00 nach der Uhr der Box; ein verpasstes Fenster wird nicht nachgeholt.
 
 ## Daten
 

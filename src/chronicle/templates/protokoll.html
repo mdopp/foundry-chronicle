@@ -13,16 +13,23 @@
 <section class="karte">
   {% if protokoll %}
   <article class="chronik">{{ protokoll.html }}</article>
-  <p class="gedaempft chronik-fuss">Erzeugt am {{ protokoll.created_at[:10] }}. Ein neuer Lauf
-    ersetzt sie: <code>python -m chronicle.compose {{ sitzung.id }}</code></p>
+  <div class="gedaempft chronik-fuss">
+    <p>Erstellt am {{ protokoll.created_at[:10] }}. Neu erstellen ersetzt sie — auch die
+      Notizen, die seitdem dazugekommen sind, sind dann drin.</p>
+    {% with mit_link = false, knopf = "Chronik neu erstellen" %}
+    {% include "_chronik_knopf.html" %}
+    {% endwith %}
+  </div>
   {% else %}
   <h2>Noch keine Chronik</h2>
-  <p>Für {{ sitzung.title or "die Sitzung vom " ~ sitzung.played_on }} ist die Komposition
-    noch nicht gelaufen. Sie läuft im Stapel, nicht auf Knopfdruck:</p>
-  <p><code>python -m chronicle.compose {{ sitzung.id }}</code></p>
-  <p class="gedaempft">Danach stehen hier Chronik und Rückblick — derselbe Lauf schreibt
-    beides. Ohne Sprachmodell werden sie geordnet statt formuliert; die Notizen und die
-    belegten Foundry-Fakten stehen trotzdem drin.</p>
+  <p>Für {{ sitzung.title or "die Sitzung vom " ~ sitzung.played_on }} ist noch keine
+    Chronik erstellt worden. Ein Druck auf den Knopf schreibt Chronik und Rückblick;
+    wartende Aufnahmen werden vorher verschriftet.</p>
+  <p class="gedaempft">Ohne Sprachmodell werden beide geordnet statt formuliert; die
+    Notizen und die belegten Foundry-Fakten stehen trotzdem drin.</p>
+  {% with mit_link = false, knopf = "Chronik erstellen" %}
+  {% include "_chronik_knopf.html" %}
+  {% endwith %}
   {% endif %}
 </section>
 

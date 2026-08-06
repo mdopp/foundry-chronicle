@@ -4,8 +4,8 @@ Die Haustür steht am Proxy (ServiceBay-ADR 0001): Authelia setzt ``Remote-User`
 App baut kein eigenes Login. Erzwungen wird der Header nur, wenn die Umgebung es sagt —
 sonst wäre ``python -m chronicle`` ohne Proxy nicht startbar.
 
-Fehlt die Foundry-Konfiguration, läuft der Dienst trotzdem und erklärt im Abschnitt
-``Zustand`` der Einstellungen, was fehlt — eine harte Abhängigkeit rechtfertigt eine
+Fehlt die Foundry-Konfiguration, läuft der Dienst trotzdem und erklärt in der
+Foundry-Karte der Einstellungen, was fehlt — eine harte Abhängigkeit rechtfertigt eine
 verständliche Meldung, keine Startverweigerung. Mitgeschrieben wird auch dann.
 
 Beim ersten Mal führt ``/einrichtung`` durch dieselben Speicherwege in Schritten, statt
@@ -15,13 +15,29 @@ dasselbe Formular wie ``/einstellungen`` und ruft denselben ``settings.save``-We
 ``basis`` ist die Umgebung beim Start; gefragt wird nie sie, sondern
 ``settings.effective(basis)`` — ein in ``/einstellungen`` gesetzter Wert gewinnt und
 wirkt ohne Neustart.
+
+Der nächtliche Lauf hängt an ``dienst()`` und nicht an ``create_app``: eine App, die nur
+befragt wird — im Test, im Skript —, soll nicht anfangen zu arbeiten. Er läuft hier und
+nicht im Aufnahme-Bot, weil es den ohne Bot-Token gar nicht gibt (siehe
+``chronicle.nightly``).
 """
 
 from __future__ import annotations
 
 from flask import Flask, Response, abort, g, redirect, render_template, request, url_for
 
-from chronicle import db, foundry, notes, people, protocol, recordings, search, settings
+from chronicle import (
+    db,
+    foundry,
+    jobs,
+    nightly,
+    notes,
+    people,
+    protocol,
+    recordings,
+    search,
+    settings,
+)
 from chronicle.compose import client as sprachmodell
 from chronicle.compose.client import ModelError
 from chronicle.compose.service import RUECKBLICK
@@ -32,6 +48,7 @@ REMOTE_USER_HEADER = "Remote-User"
 
 UNKONFIGURIERT = "unkonfiguriert"
 VERALTET = "veraltet"
+ABGLEICH_LAEUFT = "laeuft"
 
 # Die Einstellungen erklären den Verbindungszustand selbst und ausführlich, der Wizard
 # ist die Einrichtung; ein Band darüber wäre dort nur eine Dopplung.
@@ -60,12 +77,14 @@ UEBERSPRINGEN = "ueberspringen"
 SPAETER = "spaeter"
 
 
-def create_app(config: Config | None = None) -> Flask:
+def create_app(config: Config | None = None, *, zeitplan: bool = False) -> Flask:
     app = Flask(__name__)
     basis = config if config is not None else Config.from_env()
     app.config["CHRONICLE"] = basis
     app.config["MAX_CONTENT_LENGTH"] = recordings.MAX_BYTES
     db.init(basis.database_path)
+    if zeitplan:
+        nightly.starten(basis)
 
     @app.before_request
     def tuersteher() -> tuple[str, int] | None:
@@ -85,12 +104,42 @@ def create_app(config: Config | None = None) -> Flask:
         return url_for("einrichtung")
 
     @app.context_processor
-    def verbindungsband() -> dict[str, str | None]:
-        if g.get("abgewiesen") or request.endpoint in OHNE_BAND:
-            return {"verbindung": None, "zugang": None}
+    def verbindungsband() -> dict[str, object]:
+        # ``abgleich_job`` steht auch dort, wo kein Band hängt: die Einstellungen zeigen
+        # denselben Lauf im Abschnitt »Zustand«, nur ausführlicher.
+        if g.get("abgewiesen"):
+            return {"verbindung": None, "zugang": None, "abgleich_job": None}
+        lauf = jobs.latest(basis.database_path, jobs.ABGLEICH)
+        if request.endpoint in OHNE_BAND:
+            return {"verbindung": None, "zugang": None, "abgleich_job": lauf}
         if not settings.effective(basis).foundry_configured:
-            return {"verbindung": UNKONFIGURIERT, "zugang": zugang_ziel()}
-        return {"verbindung": VERALTET if foundry.failed(basis) else None, "zugang": None}
+            return {"verbindung": UNKONFIGURIERT, "zugang": zugang_ziel(), "abgleich_job": lauf}
+        if lauf is not None and lauf.laeuft:
+            return {"verbindung": ABGLEICH_LAEUFT, "zugang": None, "abgleich_job": lauf}
+        verbindung = VERALTET if foundry.failed(basis) else None
+        return {"verbindung": verbindung, "zugang": None, "abgleich_job": lauf}
+
+    def zurueck(fallback: str) -> str:
+        ziel = request.form.get("zurueck", "")
+        # Nur ein Pfad dieses Dienstes — »//woanders« führte aus ihm hinaus.
+        return ziel if ziel.startswith("/") and not ziel.startswith("//") else fallback
+
+    @app.post("/abgleich")
+    def abgleich_anstossen() -> Response:
+        jobs.start(basis, jobs.ABGLEICH, lambda: jobs.abgleich(basis))
+        return redirect(zurueck(url_for("einstellungen", _anchor="zustand")))
+
+    @app.post("/sitzungen/<int:sitzung_id>/chronik")
+    def chronik_anstossen(sitzung_id: int) -> Response:
+        if notes.session(basis.database_path, sitzung_id) is None:
+            abort(404)
+        jobs.start(
+            basis,
+            jobs.CHRONIK,
+            lambda: jobs.chronik(basis, sitzung_id),
+            session_id=sitzung_id,
+        )
+        return redirect(url_for("protokoll", sitzung_id=sitzung_id))
 
     def einrichtung_offen() -> bool:
         # Die Einrichtung steht offen, solange Foundry fehlt — nicht nur beim ersten
@@ -135,7 +184,14 @@ def create_app(config: Config | None = None) -> Flask:
             frist=recordings.RETENTION_TAGE,
             diktat_fehler=diktat_fehler,
             transkript_fehler=transkript_fehler,
+            **chronik_stand(sitzung_id),
         )
+
+    def chronik_stand(sitzung_id: int) -> dict[str, object]:
+        return {
+            "chronik_job": jobs.latest(basis.database_path, jobs.CHRONIK, sitzung_id),
+            "chronik_laeuft": jobs.running(basis.database_path, jobs.CHRONIK),
+        }
 
     @app.get("/sitzungen/<int:sitzung_id>")
     def sitzung(sitzung_id: int) -> str:
@@ -223,6 +279,7 @@ def create_app(config: Config | None = None) -> Flask:
             sitzung=daten,
             protokoll=protocol.stored(basis.database_path, sitzung_id),
             rueckblick=protocol.stored(basis.database_path, sitzung_id, RUECKBLICK),
+            **chronik_stand(sitzung_id),
         )
 
     @app.get("/suche")
@@ -257,7 +314,7 @@ def create_app(config: Config | None = None) -> Flask:
     def felder(*, mit_modellen: bool = True) -> dict[str, object]:
         aktuell = settings.effective(basis)
         adresse = aktuell.ollama_url or settings.DEFAULT_OLLAMA_URL
-        modelle, hinweis = _modelle(adresse) if mit_modellen else ((), "")
+        modelle, hinweis, erreichbar = _modelle(adresse) if mit_modellen else ((), "", True)
         return {
             "foundry_url": aktuell.foundry_url or "",
             "foundry_user": aktuell.foundry_user or "",
@@ -270,6 +327,7 @@ def create_app(config: Config | None = None) -> Flask:
             "ollama_model": aktuell.ollama_model or "",
             "modelle": modelle,
             "modell_hinweis": hinweis,
+            "modell_erreichbar": erreichbar,
         }
 
     def uebernehmen(namen: tuple[str, ...]) -> None:
@@ -293,12 +351,15 @@ def create_app(config: Config | None = None) -> Flask:
             schema_version=db.current_schema_version(basis.database_path),
             abgleich=foundry.current(basis),
             remote_user=request.headers.get(REMOTE_USER_HEADER),
+            nightly_time=settings.nightly_time(basis.database_path),
+            nachtlauf=nightly.letzter(basis.database_path),
             **felder(),
         )
 
     @app.post("/einstellungen")
     def einstellungen_speichern() -> Response:
         uebernehmen(settings.KEYS)
+        settings.save_nightly_time(basis.database_path, request.form.get(settings.NIGHTLY_KEY, ""))
         return redirect(url_for("einstellungen"))
 
     @app.get("/einrichtung")
@@ -350,11 +411,20 @@ def create_app(config: Config | None = None) -> Flask:
     return app
 
 
-def _modelle(adresse: str) -> tuple[tuple[str, ...], str]:
+def dienst() -> Flask:
+    """Der Einstieg des Servers — dieselbe App, dazu der nächtliche Zeitplan.
+
+    Der Faden hängt hier und nicht an ``create_app``, damit eine App, die nur befragt
+    wird, nicht anfängt zu arbeiten.
+    """
+    return create_app(zeitplan=True)
+
+
+def _modelle(adresse: str) -> tuple[tuple[str, ...], str, bool]:
     try:
         namen = sprachmodell.installed_models(adresse)
-    except ModelError as fehler:
-        return (), f"{fehler} — Modellnamen von Hand eintragen."
+    except ModelError:
+        return (), "Die Auswahl lädt gerade nicht — Modellnamen von Hand eintragen.", False
     if not namen:
-        return (), f"{adresse} antwortet, hat aber kein Textmodell installiert."
-    return namen, f"{len(namen)} Modelle auf {adresse} gefunden."
+        return (), "Dort liegt noch kein Textmodell — Modellnamen von Hand eintragen.", True
+    return namen, f"{len(namen)} Modelle stehen zur Auswahl.", True

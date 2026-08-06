@@ -108,11 +108,11 @@ def station_1_aufsetzen(tmp_path):
     schritt = hole(client, "/einrichtung", folgen=True).get_data(as_text=True)
     assert "Schritt 1 von 3" in schritt
 
-    # Der alte Status-Pfad steht in Lesezeichen; er landet im Abschnitt »Zustand«.
+    # Der alte Status-Pfad steht in Lesezeichen; er landet bei der Foundry-Karte.
     assert hole(client, "/status").status_code == 301
     seite = hole(client, "/status", folgen=True).get_data(as_text=True)
-    assert "Nicht konfiguriert" in seite
-    assert "Kein Sprachmodell" in seite
+    assert "Noch kein Zugang zu Foundry" in seite
+    assert "dann wird nur geordnet, nicht formuliert" in seite
     return config, client
 
 
@@ -150,7 +150,7 @@ def station_2_konfigurieren(client, mock_foundry, mock_ollama):
     assert ollama_mock.EINBETTUNG not in formular
 
     status = hole(client, "/status", folgen=True).get_data(as_text=True)
-    assert "Konfiguriert als" in status
+    assert "Zugang steht" in status
     assert foundry_mock.PASSWORT not in status
 
 

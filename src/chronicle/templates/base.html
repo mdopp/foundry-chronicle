@@ -316,13 +316,17 @@
         </nav>
       </header>
       {% if verbindung == "unkonfiguriert" %}
-      <p class="band">Foundry ist nicht eingerichtet — mitgeschrieben wird trotzdem, die
+      <div class="band"><p>Foundry ist nicht eingerichtet — mitgeschrieben wird trotzdem, die
         Chronik bleibt dann aber ohne Würfe, Schaden und Beute.
-        <a href="{{ zugang }}">Zugang eintragen</a></p>
+        <a href="{{ zugang }}">Zugang eintragen</a></p></div>
+      {% elif verbindung == "laeuft" %}
+      <div class="band"><p>Die Zahlen aus Foundry werden gerade geholt. Diese Seite neu
+        laden zeigt, wann es durch ist.</p></div>
       {% elif verbindung == "veraltet" %}
-      <p class="band">Der letzte Abgleich mit Foundry ist gescheitert — was hier steht,
+      <div class="band"><p>Der letzte Abgleich mit Foundry ist gescheitert — was hier steht,
         stammt aus dem Zwischenspeicher.
         <a href="{{ url_for('einstellungen', _anchor='zustand') }}">Woran es lag</a></p>
+        {% include "_abgleich_knopf.html" %}</div>
       {% endif %}
       <main>{% block inhalt %}{% endblock %}</main>
     </div>

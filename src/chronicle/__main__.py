@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import os
 
-from chronicle.app import create_app
+from chronicle.app import dienst
 
 
 def main() -> None:
-    create_app().run(
+    dienst().run(
         host=os.environ.get("CHRONICLE_HOST", "127.0.0.1"),
         port=int(os.environ.get("CHRONICLE_PORT", "8000")),
     )
