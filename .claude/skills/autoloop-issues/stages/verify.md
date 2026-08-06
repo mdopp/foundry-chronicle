@@ -15,8 +15,12 @@ The expensive pipeline runs **once per batch**, never once per issue. Deploying 
 ## Steps (once #12 exists)
 
 1. **Deploy the merged state.** Install or refresh the service through ServiceBay on the node so the code under test really is the merge SHA — not a stale image. Confirm which revision is running rather than assuming.
-2. **Exercise what the batch changed**, from the checklist the seal wrote into `verify-set --detail`. That checklist is the contract; if it is missing or empty, say so instead of inventing one.
-3. **Prefer observing real behaviour over reading logs.** Where a path can be driven — create a session, type a note, run a composition, open the protocol view — drive it. Where it cannot (no Discord voice hardware, no live Foundry), say so **explicitly** in `detail` rather than asserting it works.
+2. **Run the synthetic walkthrough in the container** — it is a script, not a list of steps you re-interpret each run (`CLAUDE.md` » Skripte statt Prosa):
+   ```bash
+   podman exec daggerheart-chronik-chronik python /app/scripts/verify_e2e.py
+   ```
+   It starts its **own** throwaway instance (fresh `CHRONICLE_DATA_DIR` under `/tmp`, free port, `CHRONICLE_REQUIRE_REMOTE_USER=1`, no Ollama/Foundry/Discord values) and drives session → scene → note → deterministic composition → protocol page carries the note → a Rückblick exists → `/suche` finds the marker → a request without `Remote-User` gets 403 → cleanup. **Exit code decides**; paste its output into `detail` unabridged. The group's real data is never touched, so this does not replace looking at the live instance — it proves the path works on the deployed image.
+3. **Exercise what else the batch changed**, from the checklist the seal wrote into `verify-set --detail`. That checklist is the contract; if it is missing or empty, say so instead of inventing one. Where a path cannot be driven (no Discord voice hardware, no live Foundry), say so **explicitly** in `detail` rather than asserting it works.
 4. **Watch for the failure modes this project actually has**, not generic ones:
    - a number in a generated protocol that is not in Foundry's chat log,
    - notes that vanish on reload,

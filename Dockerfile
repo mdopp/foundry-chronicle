@@ -23,6 +23,10 @@ RUN apt-get update \
 # /aufnahmen liegt neben /data und nicht darin: nur /data wird gesichert, und die
 # Audiospuren gehören nie ins Backup. Beide Container des Pods hängen dasselbe Volume
 # dort ein — der Bot schreibt die Spuren, der Stapel liest sie.
+# Der synthetische Durchstich der Verify-Stufe läuft im Container gegen eine
+# Wegwerf-Instanz; ohne ihn im Image bliebe er ein Playbook-Absatz statt eines Laufs.
+COPY scripts/verify_e2e.py /app/scripts/verify_e2e.py
+
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     CHRONICLE_HOST=0.0.0.0 \

@@ -9,6 +9,8 @@ coverage.xml
 data
 docs
 scripts
+# Ausgenommen: der Durchstich der Verify-Stufe wird im Container aufgerufen.
+!scripts/verify_e2e.py
 templates
 tests
 **/__pycache__
