@@ -6,8 +6,10 @@ trägt `runde_id`; gelesen und geschrieben wird ausschließlich über `db.scoped
 eine Abfrage ohne Runde zurückweist. Die Weboberfläche kennt noch keine Runden und arbeitet
 bis zu ihrer Abschaltung (#69) stillschweigend in der ersten.
 
-Konfiguration: Foundry-URL + Zugangsdaten je Runde, Discord-Bot-Token für die Instanz —
-das ist unser Token und nicht das einer Gruppe. Alles andere kommt aus Foundry.
+Konfiguration: Foundry-Adresse und -Benutzer je Runde, Discord-Bot-Token für die Instanz —
+das ist unser Token und nicht das einer Gruppe. Das Foundry-Passwort wird **nirgends**
+gespeichert: es wird beim Abgleich erfragt, lebt im Arbeitsspeicher und wird verbraucht
+(#64). Alles andere kommt aus Foundry.
 
 Wie der Zugriff auf Foundry technisch läuft, steht in [`foundry-zugriff.md`](foundry-zugriff.md).
 

@@ -8,7 +8,7 @@ import time
 
 import pytest
 
-from chronicle import jobs
+from chronicle import jobs, zugang
 from chronicle import runde as runden
 from chronicle.config import Config
 
@@ -25,7 +25,11 @@ UNBETEILIGTES_KONTO = "Ehemaliges Konto"
 GM_FIGUR = "Der Schattenfuerst"
 GM_GEFLUESTER = "Der Schattenfuerst wartet im Keller."
 
+WELT_ID = "der-krumme-ast"
+WELT_TITEL = "Der Krumme Ast"
+
 WELT = {
+    "world": {"id": WELT_ID, "title": WELT_TITEL},
     "system": {"id": "daggerheart"},
     "users": [
         {"_id": UNSER_KONTO, "name": "Chronist", "role": 1, "email": VERWORFENE_ADRESSE},
@@ -179,11 +183,18 @@ def welt():
     return WELT
 
 
+@pytest.fixture(autouse=True)
+def ohne_gemerkte_passwoerter():
+    """Kein Passwort eines Tests liegt im nächsten noch im Speicher."""
+    zugang.vergiss_alle()
+    yield
+    zugang.vergiss_alle()
+
+
 @pytest.fixture
 def config(tmp_path):
     return Config(
         foundry_url="https://foundry.example/",
         foundry_user="Chronist",
-        foundry_password=PASSWORT,
         data_dir=tmp_path,
     )

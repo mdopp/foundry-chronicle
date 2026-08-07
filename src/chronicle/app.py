@@ -44,6 +44,7 @@ from chronicle import (
     roles,
     search,
     settings,
+    zugang,
 )
 from chronicle import runde as runden
 from chronicle.compose import client as sprachmodell
@@ -74,7 +75,7 @@ OHNE_BAND = frozenset(
 # Die Reihenfolge des Wizards und die Felder, für die ein Schritt zuständig ist. Ein
 # Schritt speichert nur seine eigenen — sonst nähme er den übrigen Schritten den Wert.
 SCHRITTE = (
-    ("foundry", ("foundry_url", "foundry_user", "foundry_password")),
+    ("foundry", ("foundry_url", "foundry_user")),
     ("discord", ("discord_bot_token", "discord_recap_channel")),
     ("ollama", ("ollama_url", "ollama_model")),
 )
@@ -173,6 +174,10 @@ def create_app(config: Config | None = None, *, zeitplan: bool = False) -> Flask
 
     @app.post("/abgleich")
     def abgleich_anstossen() -> Response:
+        # Das Passwort kommt mit dem Knopf und geht in den Arbeitsspeicher, nicht in die
+        # Datenbank; der Lauf verbraucht es. Der ganze Weg fällt mit #69 weg — in Discord
+        # fragt ein Modal danach.
+        zugang.merken(runde, request.form.get("foundry_password", ""))
         jobs.start(basis, runde, jobs.ABGLEICH, lambda: jobs.abgleich(basis, runde))
         return redirect(zurueck(url_for("einstellungen", _anchor="zustand")))
 
@@ -398,7 +403,6 @@ def create_app(config: Config | None = None, *, zeitplan: bool = False) -> Flask
         return {
             "foundry_url": aktuell.foundry_url or "",
             "foundry_user": aktuell.foundry_user or "",
-            "passwort_gesetzt": bool(aktuell.foundry_password),
             "bot_token_gesetzt": bool(aktuell.discord_bot_token),
             "discord_recap_channel": aktuell.discord_recap_channel or "",
             "ollama_url": adresse,

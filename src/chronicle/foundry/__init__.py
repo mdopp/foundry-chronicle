@@ -14,6 +14,7 @@ from chronicle.foundry.model import (
     Player,
     Roll,
     SyncState,
+    World,
     WorldSnapshot,
 )
 from chronicle.foundry.service import current, failed, sync
@@ -30,6 +31,7 @@ __all__ = [
     "Player",
     "Roll",
     "SyncState",
+    "World",
     "WorldSnapshot",
     "current",
     "failed",

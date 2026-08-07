@@ -1,4 +1,4 @@
-"""Vorrang, Quellenauskunft und das Behalten des Passworts.
+"""Vorrang, Quellenauskunft — und dass das Foundry-Passwort hier keinen Platz mehr hat.
 
 Kein Wert hier ist ein echtes Geheimnis — sie stehen alle nur in diesem Test.
 """
@@ -9,8 +9,7 @@ from conftest import runde
 from chronicle import db, settings
 from chronicle.config import Config
 
-AUS_DER_UMGEBUNG = "passwort-aus-der-umgebung"
-AUS_DEM_FRONTEND = "passwort-aus-dem-frontend"
+AUS_DEM_FRONTEND = "konto-aus-dem-frontend"
 
 
 @pytest.fixture
@@ -18,7 +17,6 @@ def config(tmp_path):
     gesetzt = Config(
         foundry_url="https://umgebung.example",
         foundry_user="umgebungs-konto",
-        foundry_password=AUS_DER_UMGEBUNG,
         ollama_url="http://umgebung.example:11434",
         ollama_model="umgebungs-modell",
         data_dir=tmp_path,
@@ -34,12 +32,12 @@ def test_ohne_eintrag_bleibt_die_umgebung_stehen(config):
 def test_ein_gesetzter_wert_schlaegt_die_umgebung(config):
     settings.save(
         runde(config),
-        {"foundry_url": "https://frontend.example", "foundry_password": AUS_DEM_FRONTEND},
+        {"foundry_url": "https://frontend.example", "foundry_user": AUS_DEM_FRONTEND},
     )
     aktuell = settings.effective(config, runde(config))
     assert aktuell.foundry_url == "https://frontend.example"
-    assert aktuell.foundry_password == AUS_DEM_FRONTEND
-    assert aktuell.foundry_user == "umgebungs-konto"
+    assert aktuell.foundry_user == AUS_DEM_FRONTEND
+    assert aktuell.ollama_model == "umgebungs-modell"
 
 
 def test_ein_leerer_wert_nimmt_den_eintrag_zurueck(config):
@@ -96,13 +94,12 @@ def test_die_gespeicherten_werte_stehen_fest():
     assert settings.KEYS == (
         "foundry_url",
         "foundry_user",
-        "foundry_password",
         "discord_bot_token",
         "discord_recap_channel",
         "ollama_url",
         "ollama_model",
     )
-    assert settings.SECRET_KEYS == ("foundry_password", "discord_bot_token")
+    assert settings.SECRET_KEYS == ("discord_bot_token",)
 
 
 def test_der_zustellkanal_kommt_aus_der_oberflaeche_und_ist_kein_geheimnis(config):
@@ -126,10 +123,45 @@ def test_der_bot_token_kommt_aus_der_oberflaeche_und_schlaegt_die_umgebung(confi
 
 
 def test_is_set_sagt_ob_aber_nicht_was(config, tmp_path):
-    assert settings.is_set(config, runde(config), "foundry_password")
-    leer = Config(data_dir=tmp_path / "ohne-passwort")
+    settings.save(runde(config), {"discord_bot_token": "platzhalter-token"})
+    assert settings.is_set(config, runde(config), "discord_bot_token")
+    leer = Config(data_dir=tmp_path / "ohne-token")
     db.init(leer.database_path)
-    assert not settings.is_set(leer, runde(leer), "foundry_password")
+    assert not settings.is_set(leer, runde(leer), "discord_bot_token")
+
+
+def test_das_foundry_passwort_laesst_sich_gar_nicht_erst_speichern(config):
+    """Der Schlüsselraum kennt es nicht — ein Aufrufer kann es nicht hineinschreiben."""
+    settings.save(runde(config), {"foundry_password": "steht-nur-in-diesem-test"})
+    assert settings.stored(runde(config)) == {}
+    assert "foundry_password" not in settings.KEYS
+    assert not hasattr(settings.effective(config, runde(config)), "foundry_password")
+
+
+def test_ein_alter_bestand_wird_beim_start_geloescht(config):
+    """Was vor #64 gepflegt wurde, liegt im Klartext in der Datei — es wird verworfen."""
+    verworfen = "altbestand-nur-in-diesem-test"
+    connection = db.connect(config.database_path)
+    try:
+        with connection:
+            connection.execute(
+                "INSERT INTO settings (runde_id, key, value) VALUES (?, 'foundry_password', ?)",
+                (runde(config).id, verworfen),
+            )
+    finally:
+        connection.close()
+
+    db.init(config.database_path)
+
+    connection = db.connect(config.database_path)
+    try:
+        zeilen = connection.execute("SELECT key, value FROM settings").fetchall()
+    finally:
+        connection.close()
+    assert [z["key"] for z in zeilen if z["key"] == "foundry_password"] == []
+    assert verworfen not in config.database_path.read_bytes().decode("utf-8", errors="ignore")
+    # Ein zweiter Lauf findet nichts mehr zu tun und beschwert sich nicht.
+    db.init(config.database_path)
 
 
 def test_ein_zweiter_schemalauf_laesst_die_einstellungen_stehen(config):

@@ -4,15 +4,18 @@ Die Umgebung ist die Vorgabe beim ersten Start und bleibt der Deploy-Weg; **ein 
 Wert gewinnt.** Damit das keine zwei Wahrheiten werden, liest kein Aufrufer diese Werte
 mehr selbst aus der Umgebung — er nimmt ``effective``.
 
-**Gepflegt wird je Runde.** Foundry-Adresse, Konto, Passwort, Zustellkanal und Modell
-gehören der Gruppe, die spielt. Genau einer nicht: der **Discord-Bot-Token** ist unser
-Token und gehört der Instanz — er steht in ``chronicle.instanz`` und wird hier nur noch
-eingeblendet, damit ``effective`` eine vollständige ``Config`` liefert.
+**Gepflegt wird je Runde.** Foundry-Adresse, Konto, Zustellkanal und Modell gehören der
+Gruppe, die spielt. Genau einer nicht: der **Discord-Bot-Token** ist unser Token und
+gehört der Instanz — er steht in ``chronicle.instanz`` und wird hier nur noch eingeblendet,
+damit ``effective`` eine vollständige ``Config`` liefert.
 
-Foundry-Passwort und Bot-Token liegen dadurch im Klartext in der SQLite. Aus diesem Modul
-kommen sie nur dahin zurück, wo sie hingehören: in den Anmelde-Aufruf und in den
-Authorization-Header. Für die Anzeige gibt es ``is_set`` — *ob* etwas gesetzt ist, nie
-*was*.
+**Das Foundry-Passwort gibt es hier nicht mehr** (#64). Es ist der Schlüssel zu einem
+fremden Server, und eine Instanz, die mehrere Runden trägt, hält kein fremdes Geheimnis
+vor. Es lebt im Arbeitsspeicher (``chronicle.zugang``) und wird vom Abgleich verbraucht.
+
+Der Bot-Token liegt dadurch als einziger im Klartext in der SQLite. Aus diesem Modul kommt
+er nur dahin zurück, wo er hingehört: in den Authorization-Header. Für die Anzeige gibt es
+``is_set`` — *ob* etwas gesetzt ist, nie *was*.
 """
 
 from __future__ import annotations
@@ -28,14 +31,13 @@ from chronicle.runde import Runde
 KEYS = (
     "foundry_url",
     "foundry_user",
-    "foundry_password",
     "discord_bot_token",
     "discord_recap_channel",
     "ollama_url",
     "ollama_model",
 )
 
-SECRET_KEYS = ("foundry_password", "discord_bot_token")
+SECRET_KEYS = ("discord_bot_token",)
 
 # Der eine Wert aus KEYS, der nicht der Runde gehört. Er wird nach ``chronicle.instanz``
 # durchgereicht, statt in der Einstellungstabelle einer Runde zu liegen.

@@ -12,15 +12,6 @@
     Chronik sieht genau so viel wie dieser Mensch.</p>
 </div>
 
-<div class="feld">
-  <label for="foundry_password">Passwort</label>
-  <input id="foundry_password" name="foundry_password" type="password" value=""
-         autocomplete="new-password"
-         placeholder="{{ 'gesetzt' if passwort_gesetzt else 'nicht gesetzt' }}">
-  {% if passwort_gesetzt %}
-    <p class="gedaempft">Das Passwort ist <span class="steht">gesetzt</span> und wird nie
-      angezeigt. Feld leer lassen heißt: unverändert.</p>
-  {% else %}
-    <p class="gedaempft">Noch kein Passwort gesetzt.</p>
-  {% endif %}
-</div>
+<p class="gedaempft">Ein Passwortfeld gibt es hier nicht:
+  <strong>das Passwort wird nirgends gespeichert</strong>. Es wird beim Abgleich gefragt,
+  gilt für diesen einen und ist danach vergessen.</p>

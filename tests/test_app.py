@@ -2,7 +2,7 @@ import pytest
 from conftest import GM_FIGUR, UNSER_KONTO, laufender_job, runde, warte_bis
 
 import chronicle.__main__ as entry
-from chronicle import db, instanz, jobs, notes, protocol, recordings, register, settings
+from chronicle import db, instanz, jobs, notes, protocol, recordings, register, settings, zugang
 from chronicle.app import create_app
 from chronicle.compose import client as sprachmodell
 from chronicle.compose.client import ModelUnreachable
@@ -52,14 +52,12 @@ def test_konfiguriert_zeigt_url_und_benutzer_aber_kein_geheimnis(tmp_path):
     config = Config(
         foundry_url="https://foundry.example",
         foundry_user="chronist",
-        foundry_password=PASSWORT,
         discord_bot_token=BOT_TOKEN,
         data_dir=tmp_path,
     )
     html = seite(config).get_data(as_text=True)
     assert "https://foundry.example" in html
     assert "chronist" in html
-    assert PASSWORT not in html
     assert BOT_TOKEN not in html
 
 
@@ -311,7 +309,6 @@ def test_die_einstellungsseite_zeigt_die_gepflegten_werte(tmp_path):
     config = Config(
         foundry_url="https://foundry.example",
         foundry_user="chronist",
-        foundry_password=PASSWORT,
         data_dir=tmp_path,
     )
     html = gelesen(config, "/einstellungen")
@@ -323,29 +320,50 @@ def test_die_einstellungsseite_zeigt_die_gepflegten_werte(tmp_path):
 
 
 def test_das_passwort_steht_in_keiner_antwort(tmp_path):
-    config = Config(foundry_password=PASSWORT, data_dir=tmp_path)
+    config = Config(data_dir=tmp_path)
     client = create_app(config).test_client()
-    for pfad in ("/einstellungen", "/status", "/einrichtung/foundry"):
-        assert PASSWORT not in client.get(pfad, follow_redirects=True).get_data(as_text=True)
-    antwort = client.post("/einstellungen", data={"foundry_password": PASSWORT})
+    antwort = client.post("/abgleich", data={"foundry_password": PASSWORT})
     assert antwort.status_code == 302
     assert PASSWORT not in antwort.get_data(as_text=True)
     assert PASSWORT not in antwort.headers["Location"]
-    assert PASSWORT not in client.get("/einstellungen").get_data(as_text=True)
+    assert warte_bis(lambda: not jobs.running(runde(config), jobs.ABGLEICH))
+    for pfad in ("/einstellungen", "/status", "/einrichtung/foundry"):
+        assert PASSWORT not in client.get(pfad, follow_redirects=True).get_data(as_text=True)
 
 
-def test_die_seite_sagt_nur_ob_ein_passwort_gesetzt_ist(tmp_path):
-    ohne = gelesen(Config(data_dir=tmp_path / "ohne"), "/einstellungen")
-    assert "Noch kein Passwort gesetzt" in ohne
-    mit = gelesen(Config(foundry_password=PASSWORT, data_dir=tmp_path / "mit"), "/einstellungen")
-    assert "Das Passwort ist" in mit
+def test_das_passwort_wird_nirgends_gespeichert(tmp_path):
+    """Es geht durch den Abgleich und ist danach weg — auch aus der Datei."""
+    config = Config(
+        foundry_url="https://foundry.example", foundry_user="chronist", data_dir=tmp_path
+    )
+    client = create_app(config).test_client()
+    client.post("/abgleich", data={"foundry_password": PASSWORT})
+    assert warte_bis(lambda: not jobs.running(runde(config), jobs.ABGLEICH))
+    assert settings.stored(runde(config)) == {}
+    assert not zugang.ist_gemerkt(runde(config))
+    roh = b""
+    for datei in (config.database_path, config.database_path.with_suffix(".sqlite3-wal")):
+        if datei.exists():
+            roh += datei.read_bytes()
+    assert PASSWORT not in roh.decode("utf-8", errors="ignore")
+
+
+def test_das_formular_hat_kein_passwortfeld_mehr_und_sagt_warum(tmp_path):
+    for pfad in ("/einstellungen", "/einrichtung/foundry"):
+        assert "das Passwort wird nirgends gespeichert" in gelesen(Config(data_dir=tmp_path), pfad)
+    # Der Wizard hat gar keins mehr; das eine in den Einstellungen gehört dem Abgleich
+    # und nicht dem Speichern-Formular.
+    assert 'name="foundry_password"' not in gelesen(
+        Config(data_dir=tmp_path), "/einrichtung/foundry"
+    )
+    einstellungen = gelesen(Config(data_dir=tmp_path), "/einstellungen")
+    assert 'name="foundry_password" type="password" form="abgleich"' in einstellungen
 
 
 def test_gespeichertes_schlaegt_die_umgebung(tmp_path):
     config = Config(
         foundry_url="https://umgebung.example",
         foundry_user="umgebungs-konto",
-        foundry_password=PASSWORT,
         data_dir=tmp_path,
     )
     client = create_app(config).test_client()
@@ -357,14 +375,13 @@ def test_gespeichertes_schlaegt_die_umgebung(tmp_path):
         assert "https://umgebung.example" not in html
 
 
-def test_ein_leeres_passwortfeld_behaelt_das_passwort(tmp_path):
+def test_ein_passwort_im_speichern_formular_wird_nicht_uebernommen(tmp_path):
+    """Selbst wer das Feld von Hand nachbaut, bekommt keinen gespeicherten Wert."""
     config = Config(data_dir=tmp_path)
     client = create_app(config).test_client()
-    client.post("/einstellungen", data={"foundry_password": PASSWORT})
-    client.post("/einstellungen", data={"foundry_user": "chronist", "foundry_password": ""})
-    aktuell = settings.effective(config, runde(config))
-    assert aktuell.foundry_password == PASSWORT
-    assert aktuell.foundry_user == "chronist"
+    client.post("/einstellungen", data={"foundry_user": "chronist", "foundry_password": PASSWORT})
+    assert settings.stored(runde(config)) == {"foundry_user": "chronist"}
+    assert not zugang.ist_gemerkt(runde(config))
 
 
 def test_der_bot_token_steht_in_keiner_antwort(tmp_path):
@@ -626,7 +643,6 @@ def test_mit_foundry_gibt_es_keinen_wizard(tmp_path):
     config = Config(
         foundry_url="https://foundry.example",
         foundry_user="chronist",
-        foundry_password=PASSWORT,
         data_dir=tmp_path,
     )
     assert create_app(config).test_client().get("/").status_code == 200
@@ -648,7 +664,7 @@ def test_der_wizard_beginnt_bei_foundry(tmp_path):
     html = client.get("/einrichtung/foundry").get_data(as_text=True)
     assert "Schritt 1 von 3" in html
     assert 'name="foundry_url"' in html
-    assert 'name="foundry_password"' in html
+    assert 'name="foundry_user"' in html
 
 
 def test_der_discord_schritt_traegt_die_bestehende_einrichtungsanleitung(tmp_path):
@@ -677,7 +693,11 @@ def test_der_wizard_speichert_ueber_denselben_weg_wie_die_einstellungen(tmp_path
     assert antwort.headers["Location"] == "/einrichtung/discord"
     aktuell = settings.effective(config, runde(config))
     assert aktuell.foundry_url == "https://foundry.example"
-    assert aktuell.foundry_password == PASSWORT
+    assert aktuell.foundry_user == "chronist"
+    assert settings.stored(runde(config)) == {
+        "foundry_url": "https://foundry.example",
+        "foundry_user": "chronist",
+    }
     assert settings.sources(config, runde(config))["foundry_url"] == settings.FRONTEND
 
 

@@ -57,6 +57,16 @@ FAKTEN = (foundry_mock.ANKUNFT, foundry_mock.STURZ, foundry_mock.WIRTIN)
 SUCHBEGRIFF = "Zisterne"
 
 
+class NurEineWelt:
+    """Ein Foundry, das eine andere Welt offen hat — dafür reicht der Rohdump."""
+
+    def __init__(self, welt):
+        self._welt = welt
+
+    def fetch_world(self):
+        return foundry_mock.UNSER_KONTO, self._welt
+
+
 @pytest.fixture
 def mock_foundry():
     server = foundry_mock.MockFoundry()
@@ -119,17 +129,15 @@ def station_1_aufsetzen(tmp_path):
 
 
 def station_2_konfigurieren(client, mock_foundry, mock_ollama):
-    """Der Wizard, Schritt für Schritt — ein Geheimnis geht nie in eine URL."""
+    """Der Wizard, Schritt für Schritt — das Passwort wird hier gar nicht erst gefragt."""
     antwort = sende(
         client,
         "/einrichtung/foundry",
         foundry_url=mock_foundry.url,
         foundry_user=foundry_mock.BENUTZER,
-        foundry_password=foundry_mock.PASSWORT,
     )
     assert antwort.status_code == 302
     assert antwort.headers["Location"] == "/einrichtung/discord"
-    assert foundry_mock.PASSWORT not in antwort.headers["Location"]
 
     # Eine Präsenzgruppe braucht keinen Bot — überspringen ist immer möglich.
     antwort = sende(client, "/einrichtung/discord", tat="ueberspringen")
@@ -148,6 +156,7 @@ def station_2_konfigurieren(client, mock_foundry, mock_ollama):
 
     formular = hole(client, "/einstellungen").get_data(as_text=True)
     assert foundry_mock.PASSWORT not in formular
+    assert "das Passwort wird nirgends gespeichert" in formular
     assert ollama_mock.MODELL in formular
     assert ollama_mock.EINBETTUNG not in formular
 
@@ -158,7 +167,12 @@ def station_2_konfigurieren(client, mock_foundry, mock_ollama):
 
 def station_3_erster_abgleich(config, client):
     """Der Handschlag über eine echte Verbindung — und die Filterung vor dem Speicher."""
-    stand = foundry.sync(config, runde(config))
+    # Ohne Passwort gibt es keinen Versuch: es steht nirgends und wird hier gereicht.
+    ohne = foundry.sync(config, runde(config))
+    assert ohne.stale
+    assert "nirgends gespeichert" in ohne.message
+
+    stand = foundry.sync(config, runde(config), passwort=foundry_mock.PASSWORT)
     assert not stand.stale, stand.message
     welt = stand.snapshot
     assert welt.system == "daggerheart"
@@ -183,6 +197,17 @@ def station_3_erster_abgleich(config, client):
     ]
 
     assert "daggerheart" in hole(client, "/status", folgen=True).get_data(as_text=True)
+
+    # Die Runde hängt jetzt an dieser Welt. Zeigt der Server eine andere, wird nichts
+    # übernommen — sonst stünde die falsche Kampagne in dieser Chronik.
+    fremde = dict(foundry_mock.WELT, world={"id": "andere-welt", "title": "Eine andere Welt"})
+    verweigert = foundry.sync(
+        config, runde(config), passwort=foundry_mock.PASSWORT, client=NurEineWelt(fremde)
+    )
+    assert verweigert.stale
+    assert "andere Welt" in verweigert.message
+    assert foundry_mock.WELT_TITEL in verweigert.message
+    assert len(foundry.current(config, runde(config)).snapshot.messages) == len(welt.messages)
 
 
 def station_4_erste_sitzung(client, config):

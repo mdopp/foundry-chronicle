@@ -39,6 +39,7 @@ from chronicle import (
     register,
     search,
     settings,
+    zugang,
 )
 from chronicle import runde as runden
 from chronicle.compose import service as compose_service
@@ -54,6 +55,10 @@ from chronicle.transcribe import service as transcribe_service
 # Die Datenschicht. Was hier drinsteht, unterliegt dem Gate; ``chronicle.db`` und
 # ``chronicle.runde`` sind ihr Fundament und ``chronicle.instanz`` gehört ausdrücklich der
 # Instanz — die drei stehen deshalb nicht in der Liste, sondern haben eigene Tests.
+#
+# ``chronicle.zugang`` steht mit drin, obwohl es nichts speichert: es hält je Runde etwas
+# vor, und ein Merkzettel, den die falsche Runde einlöst, wäre dasselbe Leck eine Etage
+# höher.
 SCHICHT = (
     notes,
     protocol,
@@ -72,6 +77,7 @@ SCHICHT = (
     merge,
     discord_service,
     discord_rueckblick,
+    zugang,
 )
 
 # Woran ein Aufruf erkannt wird, der Daten anfasst: er nimmt eine Konfiguration, einen
@@ -193,6 +199,7 @@ def fuellen(config: Config, runde, marke: str) -> dict[str, int]:
     )
     people.confirm(runde, {"d-1": "u-1"})
     settings.save(runde, {"foundry_url": f"https://{marke}.example", "ollama_model": marke})
+    zugang.merken(runde, f"passwort-{marke}")
     return {
         "sitzung": sitzung,
         "szene": szene.id,
@@ -261,7 +268,10 @@ ABFRAGEN = {
     "settings.nightly_at": lambda c, r, i: settings.nightly_at("04:00"),
     "service.current": lambda c, r, i: foundry_service.current(c, r),
     "service.failed": lambda c, r, i: foundry_service.failed(c, r),
+    "zugang.passwort": lambda c, r, i: zugang.passwort(r),
+    "zugang.ist_gemerkt": lambda c, r, i: zugang.ist_gemerkt(r),
     "store.load": lambda c, r, i: _mit_scope(r, foundry_store.load),
+    "store.world": lambda c, r, i: _mit_scope(r, foundry_store.world),
     "store.last_failure": lambda c, r, i: _mit_scope(r, foundry_store.last_failure),
     "store.message": lambda c, r, i: _mit_scope(
         r,
@@ -310,7 +320,10 @@ SCHREIBER = frozenset(
         "settings.save",
         "settings.save_nightly_time",
         "service.sync",
+        "zugang.merken",
+        "zugang.vergiss",
         "store.save",
+        "store.bind_world",
         "store.record_failure",
         "service.compose_session",
         "service.recap_session",
@@ -469,6 +482,16 @@ def test_bot_token_gehoert_der_instanz_und_nicht_der_runde(zwei_runden):
     finally:
         connection.close()
     assert "discord_bot_token" not in gepflegt
+
+
+def test_das_gemerkte_passwort_gehoert_genau_einer_runde(zwei_runden):
+    """Der Merkzettel ist keine Ausnahme von der Trennung, nur weil er nichts speichert."""
+    _config, a, b, _ids = zwei_runden
+    assert zugang.passwort(a) == f"passwort-{MARKE[1]}"
+    assert zugang.passwort(b) == f"passwort-{MARKE[2]}"
+    zugang.vergiss(a)
+    assert zugang.passwort(a) is None
+    assert zugang.passwort(b) == f"passwort-{MARKE[2]}"
 
 
 def test_auftraege_serialisieren_ueber_alle_runden(zwei_runden, monkeypatch):

@@ -11,9 +11,11 @@ from __future__ import annotations
 from collections.abc import Mapping
 
 from chronicle.foundry import permissions, systems
-from chronicle.foundry.model import Character, ChatMessage, Player, WorldSnapshot
+from chronicle.foundry.model import Character, ChatMessage, Player, World, WorldSnapshot
 
 UNKNOWN_SYSTEM = "unbekannt"
+
+UNKNOWN_WORLD = "unbenannte Welt"
 
 
 def _system_id(raw: Mapping) -> str:
@@ -21,6 +23,19 @@ def _system_id(raw: Mapping) -> str:
     if isinstance(system, Mapping):
         return str(system.get("id") or UNKNOWN_SYSTEM)
     return str(system or UNKNOWN_SYSTEM)
+
+
+def identity(raw: Mapping) -> World:
+    """Die Welt-Kennung aus dem Rohdump — der ``world``-Block trägt sie.
+
+    Sie steht bewusst nicht im ``WorldSnapshot``: sie ist keine gefilterte Spielinformation,
+    sondern eine Eigenschaft der Verbindung, und sie wird gebraucht, **bevor** irgendetwas
+    gespeichert wird.
+    """
+    welt = raw.get("world")
+    welt = welt if isinstance(welt, Mapping) else {}
+    kennung = str(welt.get("id") or "")
+    return World(id=kennung, title=str(welt.get("title") or kennung or UNKNOWN_WORLD))
 
 
 def _documents(raw: Mapping, name: str) -> list[Mapping]:

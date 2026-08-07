@@ -55,6 +55,20 @@ class ChatMessage:
 
 
 @dataclass(frozen=True)
+class World:
+    """Welche Welt der Server gerade zeigt.
+
+    Ein Foundry-Server hostet immer nur **eine** Welt. Wer mehrere Runden auf einem Server
+    fährt, wechselt sie — und ein Abgleich zöge sonst das Chat-Log der falschen Kampagne in
+    die falsche Chronik. Die Kennung steht deshalb bei der Runde und wird bei jedem
+    Abgleich verglichen.
+    """
+
+    id: str
+    title: str
+
+
+@dataclass(frozen=True)
 class WorldSnapshot:
     system: str
     fetched_at: str

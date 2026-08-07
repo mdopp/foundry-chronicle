@@ -102,7 +102,7 @@ WELT_ANTWORT = {"users": [], "actors": [], "messages": []}
 
 
 def client(config, http, sockets, **kwargs):
-    return FoundryClient(config, http=lambda: http, socket=sockets, **kwargs)
+    return FoundryClient(config, PASSWORT, http=lambda: http, socket=sockets, **kwargs)
 
 
 def test_handschlag_laeuft_in_vier_schritten(config):
@@ -194,15 +194,29 @@ def test_antwort_ohne_daten_wird_zu_nicht_erreichbar(config):
 
 def test_ohne_konfiguration_wird_gar_nicht_erst_verbunden(tmp_path):
     with pytest.raises(FoundryNotConfigured) as fehler:
-        FoundryClient(Config(data_dir=tmp_path))
-    assert "das Passwort" in str(fehler.value)
+        FoundryClient(Config(data_dir=tmp_path), PASSWORT)
+    assert "die Adresse und der Benutzer" in str(fehler.value)
     assert "FOUNDRY_" not in str(fehler.value)
+
+
+def test_ohne_passwort_wird_gar_nicht_erst_verbunden(config):
+    """Das Passwort steht nirgends — fehlt es, sagt die Meldung genau das."""
+    with pytest.raises(FoundryNotConfigured) as fehler:
+        FoundryClient(config)
+    assert "nirgends gespeichert" in str(fehler.value)
 
 
 def test_die_variablennamen_stehen_im_log_und_nicht_in_der_meldung(tmp_path, caplog):
     with caplog.at_level(logging.WARNING), pytest.raises(FoundryNotConfigured):
-        FoundryClient(Config(data_dir=tmp_path))
-    assert "FOUNDRY_PASSWORD" in caplog.text
+        FoundryClient(Config(data_dir=tmp_path), PASSWORT)
+    assert "FOUNDRY_USER" in caplog.text
+
+
+def test_das_passwort_steht_in_keiner_logzeile_beim_fehlenden_zugang(config, caplog):
+    """Auch die Meldung über das fehlende Passwort nennt keines."""
+    with caplog.at_level(logging.DEBUG), pytest.raises(FoundryNotConfigured):
+        FoundryClient(config, "")
+    assert PASSWORT not in caplog.text
 
 
 def test_das_passwort_steht_in_keiner_logzeile(config, caplog):

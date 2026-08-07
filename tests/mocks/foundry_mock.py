@@ -57,7 +57,11 @@ STURZ_FURCHT = 4
 
 WIRTIN_SUMME = 13
 
+WELT_ID = "halber-mond"
+WELT_TITEL = "Die Chronik vom Halben Mond"
+
 WELT = {
+    "world": {"id": WELT_ID, "title": WELT_TITEL},
     "system": {"id": "daggerheart"},
     "users": [
         {"_id": UNSER_KONTO, "name": BENUTZER, "role": 1},

@@ -21,9 +21,10 @@ noch einmal deklariert.
 
 ## Eingerichtet wird nach dem ersten Start, nicht im Assistenten
 
-**Foundry-Adresse, -Benutzer und -Passwort, der Discord-Bot-Token sowie Ollama-Adresse
-und -Modell sind keine Template-Variablen.** Sie werden unter `/einstellungen` gepflegt
-und liegen in der SQLite; der Dienst liest sie von dort, nicht aus der Umgebung. Beim
+**Foundry-Adresse und -Benutzer, der Discord-Bot-Token sowie Ollama-Adresse und -Modell
+sind keine Template-Variablen.** Sie werden unter `/einstellungen` gepflegt und liegen in
+der SQLite; der Dienst liest sie von dort, nicht aus der Umgebung. Das Foundry-Passwort
+liegt auch dort nicht — es wird beim Abgleich gefragt und danach vergessen. Beim
 ersten Aufruf führt er in Schritten hindurch; bis sie gesetzt sind, startet er trotzdem
 und erklärt im Abschnitt *Zustand* der Einstellungen, was fehlt.
 
