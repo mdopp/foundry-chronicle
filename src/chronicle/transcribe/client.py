@@ -1,4 +1,4 @@
-"""Der Zugang zum Spracherkenner: faster-whisper auf der CPU, in int8.
+"""Der Zugang zum Spracherkenner: faster-whisper, auf der Karte wenn eine da ist.
 
 Die Schnittstelle ist absichtlich schmal — eine Datei hinein, Segmente heraus. Alles,
 was ein echtes Modell lädt, steckt in dieser Datei; die Tests setzen hier ein erfundenes
@@ -9,9 +9,15 @@ Modell ein und laden deshalb nie etwas herunter.
 Schnipsel verschlechtern vor allem die Erkennung von Eigennamen — und ein Rollenspiel
 besteht aus erfundenen Eigennamen.
 
-Kein GPU-Pfad: ``cpu``/``int8`` sind hier festverdrahtet, nicht konfigurierbar. Das
-Zwei- bis Fünffache der Echtzeit ist im Stapel über Nacht kein Problem, eine
-Grafikkarte im Anforderungsprofil dagegen schon.
+**Die Zusage ist »läuft ohne Karte«, nicht »nutzt keine« (#84).** Ist CUDA da, läuft
+``large-v3-turbo`` in ``float16``; ist keine da, bleibt es bei ``cpu``/``int8`` und
+``small`` wie bisher. Erfundene Eigennamen erkennt das große Modell deutlich besser —
+mehr, als der auf 224 Token gedeckelte Vorspann je gutmachen kann. Eine Karte wird
+damit nirgends zur Voraussetzung; die Erkennung ist überschreibbar (``config``).
+
+Und sie ist **nicht verlässlich frei**: Ollama hält sein Modell geladen und teilt sich
+dieselben 16 GB. Schlägt das Laden auf der Karte fehl, fällt der Lauf auf die CPU
+zurück, statt die Nacht abzubrechen — ein langsamer Lauf schlägt einen gescheiterten.
 """
 
 from __future__ import annotations
@@ -24,9 +30,54 @@ from typing import Protocol
 
 logger = logging.getLogger(__name__)
 
+# Ohne Karte. Bleibt die Vorgabe, damit eine Instanz ohne CUDA genau wie bisher läuft.
 DEVICE = "cpu"
 
 COMPUTE_TYPE = "int8"
+
+CPU_MODEL = "small"
+
+# Mit Karte. ``large-v3-turbo`` statt ``large-v3``: fast dieselbe Güte bei deutlich
+# weniger VRAM — und die 16 GB teilt sich die Transkription mit Ollama.
+CUDA_DEVICE = "cuda"
+
+CUDA_COMPUTE_TYPE = "float16"
+
+CUDA_MODEL = "large-v3-turbo"
+
+
+def cuda_verfuegbar() -> bool:
+    """Ob ctranslate2 — der Unterbau von faster-whisper — eine Karte sieht.
+
+    Ohne das Paket ist die Antwort ``False`` statt ein Fehler: eine Dev-Installation
+    ohne das Extra ``transcribe`` soll die Erkennung trotzdem beantworten können.
+    """
+    try:
+        import ctranslate2
+    except ImportError:
+        return False
+    try:
+        return int(ctranslate2.get_cuda_device_count()) > 0
+    except Exception:  # pragma: no cover - Treiber da, aber unbrauchbar
+        return False
+
+
+def geraet_und_rechenart(gewuenscht: str | None, *, cuda: bool) -> tuple[str, str]:
+    """Gerät und Rechenart: der Wunsch schlägt den Fund, der Fund schlägt die Vorgabe.
+
+    Die Rechenart ist kein eigener Regler, sondern folgt dem Gerät — ``float16`` auf der
+    Karte, ``int8`` auf der CPU. Wer die Karte für Ollama frei braucht, setzt das Gerät
+    auf ``cpu`` und bekommt exakt das Verhalten von früher.
+    """
+    if gewuenscht == CUDA_DEVICE or (gewuenscht is None and cuda):
+        return CUDA_DEVICE, CUDA_COMPUTE_TYPE
+    return DEVICE, COMPUTE_TYPE
+
+
+def vorgabemodell(geraet: str) -> str:
+    """Das Modell, das zum Gerät passt — überschreibbar über die Konfiguration."""
+    return CUDA_MODEL if geraet == CUDA_DEVICE else CPU_MODEL
+
 
 NICHT_INSTALLIERT = (
     "faster-whisper ist nicht installiert — im Image ist es dabei, "
@@ -73,19 +124,47 @@ def _whisper_model(model_size: str, *, device: str, compute_type: str):
 class FasterWhisper:
     def __init__(
         self,
-        model_size: str,
+        model_size: str | None = None,
         *,
+        device: str | None = None,
+        cuda: bool | None = None,
         loader: Callable[..., object] = _whisper_model,
     ) -> None:
-        self._name = model_size
-        self._model = loader(model_size, device=DEVICE, compute_type=COMPUTE_TYPE)
+        gefunden = cuda_verfuegbar() if cuda is None else cuda
+        geraet, rechenart = geraet_und_rechenart(device, cuda=gefunden)
+        name = model_size or vorgabemodell(geraet)
+        try:
+            self._model = loader(name, device=geraet, compute_type=rechenart)
+        except TranscriberNotInstalled:
+            # Gar kein faster-whisper — daran ändert die CPU nichts.
+            raise
+        except Exception as fehler:
+            if geraet == DEVICE:
+                raise
+            # Karte belegt, zu klein oder Treiber quer: die Nacht läuft langsam weiter,
+            # statt abzubrechen. Ollama teilt sich dieselben 16 GB (#84).
+            logger.warning("Karte nicht nutzbar (%s) — weiter auf der CPU", fehler)
+            geraet, rechenart = DEVICE, COMPUTE_TYPE
+            name = model_size or vorgabemodell(geraet)
+            self._model = loader(name, device=geraet, compute_type=rechenart)
+        self._name = name
+        self._device = geraet
+        self._compute_type = rechenart
 
     @property
     def name(self) -> str:
         return self._name
 
+    @property
+    def device(self) -> str:
+        return self._device
+
+    @property
+    def compute_type(self) -> str:
+        return self._compute_type
+
     def transcribe(self, audio_path: Path, *, vocabulary: str = "") -> Iterator[Segment]:
-        logger.info("Spracherkenner %s auf %s, %s", self._name, DEVICE, COMPUTE_TYPE)
+        logger.info("Spracherkenner %s auf %s, %s", self._name, self._device, self._compute_type)
         segmente, _ = self._model.transcribe(str(audio_path), initial_prompt=vocabulary or None)
         for teil in segmente:
             yield Segment(start=float(teil.start), end=float(teil.end), text=str(teil.text))

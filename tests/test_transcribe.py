@@ -14,7 +14,7 @@ from chronicle import db, recordings, search
 from chronicle.config import Config
 from chronicle.foundry import store
 from chronicle.foundry.world import project
-from chronicle.transcribe import service, vocabulary
+from chronicle.transcribe import client, service, vocabulary
 from chronicle.transcribe.client import (
     COMPUTE_TYPE,
     DEVICE,
@@ -315,7 +315,13 @@ def test_modellgroesse_und_ablageort_kommen_aus_der_umgebung():
         {"CHRONICLE_WHISPER_MODEL": "medium", "CHRONICLE_RECORDINGS_DIR": "/spuren"}
     )
     assert (gesetzt.whisper_model, str(gesetzt.recordings_dir)) == ("medium", "/spuren")
-    assert Config.from_env({}).whisper_model == "small"
+    # Leer heißt automatisch: über das Gerät entschieden, nicht hier festgelegt (#84).
+    assert Config.from_env({}).whisper_model is None
+
+
+def test_das_geraet_kommt_aus_der_umgebung_und_ist_sonst_offen():
+    assert Config.from_env({"CHRONICLE_WHISPER_DEVICE": "cpu"}).whisper_device == "cpu"
+    assert Config.from_env({}).whisper_device is None
 
 
 # --- Der echte Erkenner, ohne echtes Modell -----------------------------------------
@@ -328,10 +334,97 @@ def test_der_erkenner_laeuft_auf_der_cpu_in_int8():
         geladen.update(size=model_size, device=device, compute_type=compute_type)
         return Spur()
 
-    erkenner = FasterWhisper("small", loader=loader)
+    erkenner = FasterWhisper("small", loader=loader, cuda=False)
 
     assert geladen == {"size": "small", "device": DEVICE, "compute_type": COMPUTE_TYPE}
     assert erkenner.name == "small"
+
+
+# --- Karte nutzen, ohne sie zur Pflicht zu machen (#84) ------------------------------
+
+
+def test_ohne_karte_bleibt_alles_wie_bisher():
+    assert client.geraet_und_rechenart(None, cuda=False) == (DEVICE, COMPUTE_TYPE)
+    assert client.vorgabemodell(DEVICE) == client.CPU_MODEL
+
+
+def test_mit_karte_laeuft_das_grosse_modell_in_float16():
+    assert client.geraet_und_rechenart(None, cuda=True) == (
+        client.CUDA_DEVICE,
+        client.CUDA_COMPUTE_TYPE,
+    )
+    assert client.vorgabemodell(client.CUDA_DEVICE) == client.CUDA_MODEL
+
+
+def test_der_wunsch_schlaegt_den_fund_in_beide_richtungen():
+    # Karte da, aber für Ollama frei gehalten.
+    assert client.geraet_und_rechenart("cpu", cuda=True) == (DEVICE, COMPUTE_TYPE)
+    # Karte nicht gefunden, trotzdem verlangt — der Fehlschlag fällt später auf CPU.
+    assert client.geraet_und_rechenart("cuda", cuda=False) == (
+        client.CUDA_DEVICE,
+        client.CUDA_COMPUTE_TYPE,
+    )
+
+
+def test_ein_gesetztes_modell_schlaegt_die_vorgabe_des_geraets():
+    geladen = {}
+
+    def loader(model_size, *, device, compute_type):
+        geladen.update(size=model_size, device=device)
+        return Spur()
+
+    FasterWhisper("medium", loader=loader, cuda=True)
+
+    assert geladen == {"size": "medium", "device": client.CUDA_DEVICE}
+
+
+def test_ohne_gesetztes_modell_entscheidet_das_geraet():
+    geladen = {}
+
+    def loader(model_size, *, device, compute_type):
+        geladen.update(size=model_size, device=device, compute_type=compute_type)
+        return Spur()
+
+    erkenner = FasterWhisper(loader=loader, cuda=True)
+
+    assert geladen == {
+        "size": client.CUDA_MODEL,
+        "device": client.CUDA_DEVICE,
+        "compute_type": client.CUDA_COMPUTE_TYPE,
+    }
+    assert (erkenner.name, erkenner.device) == (client.CUDA_MODEL, client.CUDA_DEVICE)
+
+
+def test_eine_belegte_karte_bricht_die_nacht_nicht_ab():
+    versuche = []
+
+    def loader(model_size, *, device, compute_type):
+        versuche.append((model_size, device))
+        if device == client.CUDA_DEVICE:
+            raise RuntimeError("CUDA out of memory")
+        return Spur()
+
+    erkenner = FasterWhisper(loader=loader, cuda=True)
+
+    # Erst die Karte, dann die CPU — mit dem Modell, das zur CPU passt.
+    assert versuche == [
+        (client.CUDA_MODEL, client.CUDA_DEVICE),
+        (client.CPU_MODEL, DEVICE),
+    ]
+    assert (erkenner.device, erkenner.compute_type) == (DEVICE, COMPUTE_TYPE)
+
+
+def test_ein_fehlschlag_auf_der_cpu_wird_nicht_verschluckt():
+    def loader(model_size, *, device, compute_type):
+        raise RuntimeError("kaputt")
+
+    with pytest.raises(RuntimeError, match="kaputt"):
+        FasterWhisper(loader=loader, cuda=False)
+
+
+def test_ohne_ctranslate2_meldet_die_erkennung_keine_karte(monkeypatch):
+    monkeypatch.setitem(sys.modules, "ctranslate2", None)
+    assert client.cuda_verfuegbar() is False
 
 
 def test_der_erkenner_bekommt_die_ganze_spur_und_den_vorspann(tmp_path):

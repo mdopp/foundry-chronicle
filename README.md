@@ -70,7 +70,8 @@ unverändert. Die Ollama-Adresse hat eine dritte Stufe: ist weder
 etwas gespeichert noch etwas in der Umgebung gesetzt, gilt `http://127.0.0.1:11434` — das
 Ollama der Box. Offen bleibt dann allein die Modellwahl. Rein aus der Umgebung kommen weiterhin
 `CHRONICLE_DATA_DIR` (Vorgabe `./data`), `CHRONICLE_RECORDINGS_DIR` (Vorgabe
-`./recordings`) und `CHRONICLE_WHISPER_MODEL` (Vorgabe `small`). Fehlt die
+`./recordings`) sowie `CHRONICLE_WHISPER_MODEL` und `CHRONICLE_WHISPER_DEVICE` (beide
+leer = automatisch, siehe [Transkription](#transkription)). Fehlt die
 Foundry-Konfiguration, startet der Dienst trotzdem und erklärt im *Zustand*, was fehlt.
 
 Ein eigenes Login gibt es nicht: angemeldet wird am Proxy (ServiceBay-ADR 0001), der
@@ -107,9 +108,14 @@ und Anruf, ein Browser-Tab nicht — und die Quelle bleibt erhalten, bis das Tra
 taugt.
 
 Der Dateiname wird die Quellenkennung der Spur; ein zweiter Lauf ersetzt sie, statt zu
-verdoppeln. Erkannt wird `small` auf CPU mit int8 — grob das Zwei- bis Fünffache der
-Echtzeit, also **keine Grafikkarte**; `CHRONICLE_WHISPER_MODEL` setzt eine andere Größe,
-ein Feld in der Oberfläche gibt es dafür nicht. Als Vokabular werden die Eigennamen
+verdoppeln. **Eine Grafikkarte ist keine Voraussetzung — aber wenn eine da ist, wird sie
+genutzt:** mit CUDA läuft `large-v3-turbo` in `float16`, ohne Karte `small` auf CPU mit
+int8, grob das Zwei- bis Fünffache der Echtzeit. Das große Modell erkennt erfundene
+Eigennamen deutlich besser, und davon lebt ein Rollenspiel. `CHRONICLE_WHISPER_DEVICE`
+(`cpu`/`cuda`) und `CHRONICLE_WHISPER_MODEL` überschreiben die Erkennung — `cpu` hält die
+Karte für Ollama frei, das sich dieselben 16 GB teilt; ein Fehlschlag auf der Karte fällt
+auf die CPU zurück, statt den Nachtlauf abzubrechen. Felder in der Oberfläche gibt es
+dafür nicht. Als Vokabular werden die Eigennamen
 dieser Sitzung vorgespannt — erst, wer im Chat-Log gesprochen hat, dann der übrige
 Foundry-Zwischenspeicher, hart auf rund 224 Token gekappt.
 

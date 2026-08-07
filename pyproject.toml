@@ -17,7 +17,9 @@ server = ["waitress>=3.0"]
 # Eigenes Extra, weil faster-whisper mit ctranslate2 und onnxruntime dreistellige
 # Megabyte zieht: das Image bringt es mit, eine Dev-Installation und die CI bleiben
 # schlank. Die Tests setzen ein erfundenes Modell ein und laden nichts herunter.
-transcribe = ["faster-whisper>=1.0"]
+# >=1.1, weil erst dort ``large-v3-turbo`` aufgelöst wird — das Modell, das auf einer
+# vorhandenen Karte läuft (#84). Ohne Karte ändert die Fassung nichts.
+transcribe = ["faster-whisper>=1.1"]
 # Eigenes Extra für den Aufnahme-Bot: py-cord ist ein Gateway-Client mit Sprach-Anhang,
 # den weder der Webdienst noch der nächtliche Stapel braucht. Audio zu empfangen ist von
 # Discord nicht offiziell unterstützt — die Bruchstelle bleibt damit auf ein Extra und
