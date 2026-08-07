@@ -7,7 +7,7 @@ Kein Test lädt ein Modell herunter: der echte Spracherkenner steckt hinter
 import sys
 
 import pytest
-from conftest import UNSER_KONTO
+from conftest import UNSER_KONTO, runde
 
 import chronicle.transcribe.__main__ as entry
 from chronicle import db, recordings, search
@@ -70,28 +70,28 @@ def config(tmp_path):
 
 
 @pytest.fixture
-def connection(config):
-    db.init(config.database_path)
-    verbindung = db.connect(config.database_path)
-    yield verbindung
-    verbindung.close()
+def scope(config):
+    zugang = db.scoped(runde(config))
+    yield zugang
+    zugang.close()
 
 
-def sitzung(connection, *, title="Der Keller"):
-    zeiger = connection.execute(
-        "INSERT INTO session (played_on, title, created_at) VALUES ('2026-08-05', ?, ?)",
-        (title, STAND),
+def sitzung(scope, *, title="Der Keller"):
+    zeiger = scope.execute(
+        "INSERT INTO session (runde_id, played_on, title, created_at) "
+        "VALUES (?, '2026-08-05', ?, ?)",
+        (scope.runde_id, title, STAND),
     )
-    connection.commit()
+    scope.commit()
     return int(zeiger.lastrowid)
 
 
-def segmente(connection, session_id):
-    return connection.execute(
+def segmente(scope, session_id):
+    return scope.execute(
         "SELECT s.start_ms, s.end_ms, s.text FROM transcript_segment s "
         "JOIN transcript t ON t.id = s.transcript_id "
-        "WHERE t.session_id = ? ORDER BY s.start_ms",
-        (session_id,),
+        "WHERE s.runde_id = ? AND t.session_id = ? ORDER BY s.start_ms",
+        (scope.runde_id, session_id),
     ).fetchall()
 
 
@@ -134,20 +134,21 @@ def test_ohne_namen_gibt_es_keinen_vorspann():
     assert vocabulary.prompt(()) == ""
 
 
-def test_die_namen_der_sitzung_stehen_vor_dem_zwischenspeicher(connection, welt):
-    store.save(connection, project(welt, UNSER_KONTO, fetched_at=STAND))
-    sitzung_id = sitzung(connection)
-    zeiger = connection.execute(
-        "INSERT INTO scene (session_id, position, created_at) VALUES (?, 1, ?)",
-        (sitzung_id, STAND),
+def test_die_namen_der_sitzung_stehen_vor_dem_zwischenspeicher(scope, welt):
+    store.save(scope, project(welt, UNSER_KONTO, fetched_at=STAND))
+    sitzung_id = sitzung(scope)
+    zeiger = scope.execute(
+        "INSERT INTO scene (runde_id, session_id, position, created_at) VALUES (?, ?, 1, ?)",
+        (scope.runde_id, sitzung_id, STAND),
     )
-    connection.execute(
-        "INSERT INTO scene_foundry_message (scene_id, message_id) VALUES (?, 'm-wurf')",
-        (int(zeiger.lastrowid),),
+    scope.execute(
+        "INSERT INTO scene_foundry_message (runde_id, scene_id, message_id) "
+        "VALUES (?, ?, 'm-wurf')",
+        (scope.runde_id, int(zeiger.lastrowid)),
     )
-    connection.commit()
+    scope.commit()
 
-    namen = service.names(connection, sitzung_id)
+    namen = service.names(scope, sitzung_id)
 
     assert namen[0] == "Brok Eisenfaust"
     assert "Aelin Sturmwind" in namen[1:]
@@ -177,85 +178,91 @@ def test_die_zeitmarke_ist_lesbar():
 # --- Der Lauf -----------------------------------------------------------------------
 
 
-def test_eine_spur_wird_zu_segmenten_mit_zeitstempeln(config, connection, spur):
-    sitzung_id = sitzung(connection)
+def test_eine_spur_wird_zu_segmenten_mit_zeitstempeln(config, scope, spur):
+    sitzung_id = sitzung(scope)
 
-    ergebnis = service.transcribe_session(config, sitzung_id, spur, model=Erkenner())
+    ergebnis = service.transcribe_session(config, runde(config), sitzung_id, spur, model=Erkenner())
 
     assert ergebnis.source == "mira"
     assert ergebnis.segment_count == 2
-    zeilen = segmente(connection, sitzung_id)
+    zeilen = segmente(scope, sitzung_id)
     assert [(z["start_ms"], z["end_ms"]) for z in zeilen] == [(0, 2500), (2500, 61250)]
     assert zeilen[0]["text"] == "Wir brechen bei Sonnenaufgang auf."
 
 
-def test_das_vokabular_der_sitzung_geht_in_den_erkenner(config, connection, spur, welt):
-    store.save(connection, project(welt, UNSER_KONTO, fetched_at=STAND))
-    sitzung_id = sitzung(connection)
+def test_das_vokabular_der_sitzung_geht_in_den_erkenner(config, scope, spur, welt):
+    store.save(scope, project(welt, UNSER_KONTO, fetched_at=STAND))
+    sitzung_id = sitzung(scope)
     erkenner = Erkenner()
 
-    ergebnis = service.transcribe_session(config, sitzung_id, spur, model=erkenner)
+    ergebnis = service.transcribe_session(config, runde(config), sitzung_id, spur, model=erkenner)
 
     assert "Aelin Sturmwind" in erkenner.vokabular
-    erwartet = vocabulary.capped(service.names(connection, sitzung_id))
+    erwartet = vocabulary.capped(service.names(scope, sitzung_id))
     assert ergebnis.vocabulary_names == len(erwartet)
 
 
-def test_ein_zweiter_lauf_ersetzt_die_spur(config, connection, spur):
-    sitzung_id = sitzung(connection)
-    service.transcribe_session(config, sitzung_id, spur, model=Erkenner())
+def test_ein_zweiter_lauf_ersetzt_die_spur(config, scope, spur):
+    sitzung_id = sitzung(scope)
+    service.transcribe_session(config, runde(config), sitzung_id, spur, model=Erkenner())
 
     service.transcribe_session(
         config,
+        runde(config),
         sitzung_id,
         spur,
         model=Erkenner(Segment(start=0.0, end=1.0, text="Noch einmal von vorn.")),
     )
 
-    zeilen = segmente(connection, sitzung_id)
+    zeilen = segmente(scope, sitzung_id)
     assert [z["text"] for z in zeilen] == ["Noch einmal von vorn."]
-    assert connection.execute("SELECT COUNT(*) FROM transcript").fetchone()[0] == 1
+    anzahl = scope.execute(
+        "SELECT COUNT(*) FROM transcript WHERE runde_id = ?", (scope.runde_id,)
+    ).fetchone()[0]
+    assert anzahl == 1
 
 
-def test_zwei_spuren_einer_sitzung_stehen_nebeneinander(config, connection, spur):
-    sitzung_id = sitzung(connection)
+def test_zwei_spuren_einer_sitzung_stehen_nebeneinander(config, scope, spur):
+    sitzung_id = sitzung(scope)
     zweite = spur.with_name("brok.ogg")
     zweite.write_bytes(b"auch kein echtes Audio")
 
-    service.transcribe_session(config, sitzung_id, spur, model=Erkenner())
-    service.transcribe_session(config, sitzung_id, zweite, model=Erkenner())
+    service.transcribe_session(config, runde(config), sitzung_id, spur, model=Erkenner())
+    service.transcribe_session(config, runde(config), sitzung_id, zweite, model=Erkenner())
 
-    quellen = connection.execute("SELECT source FROM transcript ORDER BY source").fetchall()
+    quellen = scope.execute(
+        "SELECT source FROM transcript WHERE runde_id = ? ORDER BY source", (scope.runde_id,)
+    ).fetchall()
     assert [z["source"] for z in quellen] == ["brok", "mira"]
 
 
-def test_eine_unbekannte_sitzung_bekommt_kein_transkript(config, connection, spur):
-    assert service.transcribe_session(config, 999, spur, model=Erkenner()) is None
+def test_eine_unbekannte_sitzung_bekommt_kein_transkript(config, scope, spur):
+    assert service.transcribe_session(config, runde(config), 999, spur, model=Erkenner()) is None
 
 
-def test_die_aufnahme_bleibt_liegen(config, connection, spur):
-    service.transcribe_session(config, sitzung(connection), spur, model=Erkenner())
+def test_die_aufnahme_bleibt_liegen(config, scope, spur):
+    service.transcribe_session(config, runde(config), sitzung(scope), spur, model=Erkenner())
     assert spur.exists()
 
 
-def test_geloescht_wird_nur_auf_verlangen(config, connection, spur):
+def test_geloescht_wird_nur_auf_verlangen(config, scope, spur):
     service.transcribe_session(
-        config, sitzung(connection), spur, model=Erkenner(), delete_audio=True
+        config, runde(config), sitzung(scope), spur, model=Erkenner(), delete_audio=True
     )
     assert not spur.exists()
 
 
-def test_der_fortschritt_meldet_die_stelle_im_band_ohne_restzeit(config, connection, spur, caplog):
+def test_der_fortschritt_meldet_die_stelle_im_band_ohne_restzeit(config, scope, spur, caplog):
     with caplog.at_level("INFO"):
-        service.transcribe_session(config, sitzung(connection), spur, model=Erkenner())
+        service.transcribe_session(config, runde(config), sitzung(scope), spur, model=Erkenner())
     assert "transkribiert bis 0:01:01" in caplog.text
 
 
-def test_die_segmente_sind_ueber_die_suche_zu_finden(config, connection, spur):
-    sitzung_id = sitzung(connection)
-    service.transcribe_session(config, sitzung_id, spur, model=Erkenner())
+def test_die_segmente_sind_ueber_die_suche_zu_finden(config, scope, spur):
+    sitzung_id = sitzung(scope)
+    service.transcribe_session(config, runde(config), sitzung_id, spur, model=Erkenner())
 
-    ergebnis = search.find(config.database_path, "Schwert")
+    ergebnis = search.find(runde(config), "Schwert")
 
     assert [gruppe.kind for gruppe in ergebnis.groups] == [service.KIND]
     treffer = ergebnis.groups[0].hits[0]
@@ -263,28 +270,29 @@ def test_die_segmente_sind_ueber_die_suche_zu_finden(config, connection, spur):
     assert "<mark>Schwert</mark>" in str(treffer.snippet)
 
 
-def test_ein_zweiter_lauf_laesst_nichts_verworfenes_im_index(config, connection, spur):
-    sitzung_id = sitzung(connection)
-    service.transcribe_session(config, sitzung_id, spur, model=Erkenner())
+def test_ein_zweiter_lauf_laesst_nichts_verworfenes_im_index(config, scope, spur):
+    sitzung_id = sitzung(scope)
+    service.transcribe_session(config, runde(config), sitzung_id, spur, model=Erkenner())
 
     service.transcribe_session(
         config,
+        runde(config),
         sitzung_id,
         spur,
         model=Erkenner(Segment(start=0.0, end=1.0, text="Eine Kerze statt eines Schwertes.")),
     )
 
-    assert len(search.find(config.database_path, "Schwert").groups[0].hits) == 1
+    assert len(search.find(runde(config), "Schwert").groups[0].hits) == 1
 
 
-def test_eine_datenbank_ohne_index_traegt_die_transkripte_beim_start_nach(config, connection, spur):
-    service.transcribe_session(config, sitzung(connection), spur, model=Erkenner())
-    with connection:
-        connection.execute("DELETE FROM search_index")
+def test_eine_datenbank_ohne_index_traegt_die_transkripte_beim_start_nach(config, scope, spur):
+    service.transcribe_session(config, runde(config), sitzung(scope), spur, model=Erkenner())
+    with scope:
+        scope.execute("DELETE FROM search_index WHERE runde_id = ?", (scope.runde_id,))
 
     db.init(config.database_path)
 
-    assert search.find(config.database_path, "Schwert").groups
+    assert search.find(runde(config), "Schwert").groups
 
 
 # --- Ablageort und Umgebung ---------------------------------------------------------
@@ -355,21 +363,21 @@ def test_ein_fehlendes_faster_whisper_wird_verstaendlich_gemeldet(monkeypatch):
 # --- Der Stapelaufruf ---------------------------------------------------------------
 
 
-def test_der_stapelaufruf_transkribiert_eine_spur(config, connection, spur, monkeypatch, capsys):
-    sitzung_id = sitzung(connection)
+def test_der_stapelaufruf_transkribiert_eine_spur(config, scope, spur, monkeypatch, capsys):
+    sitzung_id = sitzung(scope)
     monkeypatch.setattr(entry.Config, "from_env", classmethod(lambda cls: config))
     monkeypatch.setattr(service, "model_from_config", lambda _config: Erkenner())
 
     assert entry.main([str(sitzung_id), "mira.ogg"]) == 0
 
     assert "2 Segmente" in capsys.readouterr().out
-    assert len(segmente(connection, sitzung_id)) == 2
+    assert len(segmente(scope, sitzung_id)) == 2
 
 
 def test_der_stapelaufruf_loescht_die_spur_nur_mit_schalter(
-    config, connection, spur, monkeypatch, capsys
+    config, scope, spur, monkeypatch, capsys
 ):
-    sitzung_id = sitzung(connection)
+    sitzung_id = sitzung(scope)
     monkeypatch.setattr(entry.Config, "from_env", classmethod(lambda cls: config))
     monkeypatch.setattr(service, "model_from_config", lambda _config: Erkenner())
 
@@ -380,7 +388,7 @@ def test_der_stapelaufruf_loescht_die_spur_nur_mit_schalter(
     assert not spur.exists()
 
 
-def test_der_stapelaufruf_weist_falsche_argumente_ab(config, connection, spur, monkeypatch, capsys):
+def test_der_stapelaufruf_weist_falsche_argumente_ab(config, scope, spur, monkeypatch, capsys):
     monkeypatch.setattr(entry.Config, "from_env", classmethod(lambda cls: config))
 
     assert entry.main(["1"]) == 2
@@ -390,20 +398,20 @@ def test_der_stapelaufruf_weist_falsche_argumente_ab(config, connection, spur, m
 
 
 def test_ohne_argumente_wird_die_warteschlange_abgearbeitet(
-    config, connection, spur, monkeypatch, capsys
+    config, scope, spur, monkeypatch, capsys
 ):
-    sitzung_id = sitzung(connection)
+    sitzung_id = sitzung(scope)
     monkeypatch.setattr(entry.Config, "from_env", classmethod(lambda cls: config))
     monkeypatch.setattr(service, "model_from_config", lambda _config: Erkenner())
 
     assert entry.main([]) == 0
     assert entry.LEER in capsys.readouterr().out
 
-    recordings.enqueue(config.database_path, sitzung_id, spur.name)
+    recordings.enqueue(runde(config), sitzung_id, spur.name)
     assert entry.main([]) == 0
 
     assert "2 Segmente" in capsys.readouterr().out
-    assert len(segmente(connection, sitzung_id)) == 2
+    assert len(segmente(scope, sitzung_id)) == 2
 
 
 def test_der_stapelaufruf_meldet_eine_unbekannte_sitzung(config, spur, monkeypatch, capsys):
@@ -415,9 +423,9 @@ def test_der_stapelaufruf_meldet_eine_unbekannte_sitzung(config, spur, monkeypat
 
 
 def test_der_stapelaufruf_meldet_ein_fehlendes_faster_whisper(
-    config, connection, spur, monkeypatch, capsys
+    config, scope, spur, monkeypatch, capsys
 ):
-    sitzung_id = sitzung(connection)
+    sitzung_id = sitzung(scope)
     monkeypatch.setattr(entry.Config, "from_env", classmethod(lambda cls: config))
     monkeypatch.setitem(sys.modules, "faster_whisper", None)
 

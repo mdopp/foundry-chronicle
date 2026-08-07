@@ -29,9 +29,9 @@ from __future__ import annotations
 import sqlite3
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, replace
-from pathlib import Path
 
 from chronicle import db, people
+from chronicle.runde import Runde
 from chronicle.transcribe.service import zeitmarke
 
 UNLESBAR = "»{marke}« ist keine Zeitmarke — erwartet wird 1:02:03 oder 02:03."
@@ -44,9 +44,10 @@ SPUREN = (
     "SELECT r.discord_user_id AS discord_user_id, r.source AS source, "
     "s.start_ms AS start_ms, s.end_ms AS end_ms, s.text AS text "
     "FROM transcript t "
-    "JOIN recording r ON r.session_id = t.session_id AND r.source = t.source "
+    "JOIN recording r ON r.runde_id = t.runde_id AND r.session_id = t.session_id "
+    "AND r.source = t.source "
     "JOIN transcript_segment s ON s.transcript_id = t.id "
-    "WHERE t.session_id = ? AND r.discord_user_id IS NOT NULL "
+    "WHERE t.runde_id = ? AND t.session_id = ? AND r.discord_user_id IS NOT NULL "
     "ORDER BY s.start_ms, r.source, s.id"
 )
 
@@ -106,14 +107,14 @@ def _verschraenken(
     return tuple(aussagen)
 
 
-def conversation(database_path: Path, session_id: int) -> tuple[Utterance, ...]:
+def conversation(runde: Runde, session_id: int) -> tuple[Utterance, ...]:
     """Die Spuren einer Sitzung als eine Unterhaltung — leer, wenn keine mitläuft."""
-    sprecher = people.speakers(database_path)
-    connection = db.connect(database_path)
+    sprecher = people.speakers(runde)
+    scope = db.scoped(runde)
     try:
-        zeilen = connection.execute(SPUREN, (session_id,)).fetchall()
+        zeilen = scope.execute(SPUREN, (scope.runde_id, session_id)).fetchall()
     finally:
-        connection.close()
+        scope.close()
     return _verschraenken(zeilen, sprecher)
 
 

@@ -12,6 +12,7 @@ from __future__ import annotations
 import logging
 import sys
 
+from chronicle import runde as runden
 from chronicle.config import Config
 from chronicle.discord.client import DiscordError
 from chronicle.discord.service import LEER, run
@@ -20,7 +21,8 @@ from chronicle.discord.service import LEER, run
 def main() -> int:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     try:
-        meldungen = run(Config.from_env())
+        config = Config.from_env()
+        meldungen = run(config, runden.erste(config.database_path))
     except DiscordError as fehler:
         print(str(fehler))
         return 2

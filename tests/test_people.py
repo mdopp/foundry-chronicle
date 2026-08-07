@@ -5,7 +5,7 @@ Prüfung. Alle Namen sind erfunden, wie überall in diesen Tests.
 """
 
 import pytest
-from conftest import UNSER_KONTO
+from conftest import UNSER_KONTO, runde
 
 from chronicle import consent, db, notes, people, recordings
 from chronicle.app import create_app
@@ -26,18 +26,17 @@ LEITUNG_IN_FOUNDRY = "u-leitung"
 
 @pytest.fixture
 def eingerichtet(config, welt):
-    db.init(config.database_path)
-    verbindung = db.connect(config.database_path)
+    scope = db.scoped(runde(config))
     try:
-        store.save(verbindung, project(welt, UNSER_KONTO, fetched_at=STAND))
+        store.save(scope, project(welt, UNSER_KONTO, fetched_at=STAND))
     finally:
-        verbindung.close()
+        scope.close()
     return config
 
 
 def angesagt(config, *mitglieder, session_id=None):
     consent.record(
-        config.database_path,
+        runde(config),
         session_id=session_id,
         kind=consent.ANSAGE,
         guild_id="g-1",
@@ -49,14 +48,16 @@ def angesagt(config, *mitglieder, session_id=None):
 
 
 def gespeichert(config):
-    verbindung = db.connect(config.database_path)
+    scope = db.scoped(runde(config))
     try:
         return {
             z["discord_user_id"]: z["foundry_user_id"]
-            for z in verbindung.execute("SELECT * FROM person_mapping")
+            for z in scope.execute(
+                "SELECT * FROM person_mapping WHERE runde_id = ?", (scope.runde_id,)
+            )
         }
     finally:
-        verbindung.close()
+        scope.close()
 
 
 def spieler(*namen):
@@ -85,7 +86,7 @@ def test_ohne_kandidaten_gibt_es_nichts_vorzuschlagen():
 def test_ein_vorschlag_wird_nicht_gespeichert(eingerichtet):
     angesagt(eingerichtet, MIRA)
 
-    (person,) = people.overview(eingerichtet.database_path).personen
+    (person,) = people.overview(runde(eingerichtet)).personen
 
     assert person.suggestion is not None
     assert person.suggestion.id == MIRA_IN_FOUNDRY
@@ -96,9 +97,9 @@ def test_ein_vorschlag_wird_nicht_gespeichert(eingerichtet):
 def test_ein_bereits_vergebener_spieler_wird_kein_zweites_mal_vorgeschlagen(eingerichtet):
     zweite_mira = consent.Member(id="4003", name="Mira")
     angesagt(eingerichtet, MIRA, zweite_mira)
-    people.confirm(eingerichtet.database_path, {MIRA.id: MIRA_IN_FOUNDRY})
+    people.confirm(runde(eingerichtet), {MIRA.id: MIRA_IN_FOUNDRY})
 
-    nach_id = {p.discord_user_id: p for p in people.overview(eingerichtet.database_path).personen}
+    nach_id = {p.discord_user_id: p for p in people.overview(runde(eingerichtet)).personen}
 
     assert nach_id[MIRA.id].confirmed.id == MIRA_IN_FOUNDRY
     assert nach_id[zweite_mira.id].suggestion is None
@@ -107,9 +108,9 @@ def test_ein_bereits_vergebener_spieler_wird_kein_zweites_mal_vorgeschlagen(eing
 def test_bestaetigt_stehen_der_spielername_und_seine_figuren(eingerichtet):
     angesagt(eingerichtet, MIRA)
 
-    people.confirm(eingerichtet.database_path, {MIRA.id: MIRA_IN_FOUNDRY})
+    people.confirm(runde(eingerichtet), {MIRA.id: MIRA_IN_FOUNDRY})
 
-    (person,) = people.overview(eingerichtet.database_path).personen
+    (person,) = people.overview(runde(eingerichtet)).personen
     assert person.confirmed.name == "Mira"
     assert person.confirmed.characters == ("Aelin Sturmwind",)
     assert person.suggestion is None
@@ -117,9 +118,9 @@ def test_bestaetigt_stehen_der_spielername_und_seine_figuren(eingerichtet):
 
 def test_keine_zuordnung_nimmt_eine_bestaetigung_zurueck(eingerichtet):
     angesagt(eingerichtet, MIRA)
-    people.confirm(eingerichtet.database_path, {MIRA.id: MIRA_IN_FOUNDRY})
+    people.confirm(runde(eingerichtet), {MIRA.id: MIRA_IN_FOUNDRY})
 
-    people.confirm(eingerichtet.database_path, {MIRA.id: ""})
+    people.confirm(runde(eingerichtet), {MIRA.id: ""})
 
     assert gespeichert(eingerichtet) == {}
 
@@ -128,22 +129,22 @@ def test_der_zuletzt_protokollierte_anzeigename_gewinnt(eingerichtet):
     angesagt(eingerichtet, MIRA)
     angesagt(eingerichtet, consent.Member(id=MIRA.id, name="Mira am Handy"))
 
-    (person,) = people.overview(eingerichtet.database_path).personen
+    (person,) = people.overview(runde(eingerichtet)).personen
 
     assert person.discord_name == "Mira am Handy"
 
 
 def test_die_zuordnung_ueberlebt_einen_neuen_foundry_abgleich(eingerichtet, welt):
     angesagt(eingerichtet, MIRA)
-    people.confirm(eingerichtet.database_path, {MIRA.id: MIRA_IN_FOUNDRY})
+    people.confirm(runde(eingerichtet), {MIRA.id: MIRA_IN_FOUNDRY})
 
-    verbindung = db.connect(eingerichtet.database_path)
+    scope = db.scoped(runde(eingerichtet))
     try:
-        store.save(verbindung, project(welt, UNSER_KONTO, fetched_at=SPAETER))
+        store.save(scope, project(welt, UNSER_KONTO, fetched_at=SPAETER))
     finally:
-        verbindung.close()
+        scope.close()
 
-    (person,) = people.overview(eingerichtet.database_path).personen
+    (person,) = people.overview(runde(eingerichtet)).personen
     assert person.confirmed.name == "Mira"
 
 
@@ -155,7 +156,7 @@ def test_die_zuordnung_speichert_keinen_namen(config):
     finally:
         verbindung.close()
 
-    assert spalten == {"discord_user_id", "foundry_user_id", "confirmed_at"}
+    assert spalten == {"runde_id", "discord_user_id", "foundry_user_id", "confirmed_at"}
 
 
 def test_die_seite_uebernimmt_den_vorschlag_erst_nach_dem_absenden(eingerichtet):
@@ -206,13 +207,13 @@ def test_ohne_aufnahme_steht_da_wovon_die_liste_lebt(eingerichtet):
 
 def test_die_spur_traegt_den_foundry_namen_sobald_bestaetigt(eingerichtet):
     sitzung_id = notes.create_session(
-        eingerichtet.database_path, played_on="2026-08-06", title="Der Keller"
+        runde(eingerichtet), played_on="2026-08-06", title="Der Keller"
     )
     angesagt(eingerichtet, MIRA, session_id=sitzung_id)
     recordings.enqueue(
-        eingerichtet.database_path, sitzung_id, "sitzung1-Mira.wav", discord_user_id=MIRA.id
+        runde(eingerichtet), sitzung_id, "sitzung1-Mira.wav", discord_user_id=MIRA.id
     )
-    people.confirm(eingerichtet.database_path, {MIRA.id: MIRA_IN_FOUNDRY})
+    people.confirm(runde(eingerichtet), {MIRA.id: MIRA_IN_FOUNDRY})
 
     seite = create_app(eingerichtet).test_client().get(f"/sitzungen/{sitzung_id}")
 
@@ -223,11 +224,11 @@ def test_die_spur_traegt_den_foundry_namen_sobald_bestaetigt(eingerichtet):
 
 def test_eine_unzugeordnete_spur_zeigt_den_discord_namen_und_den_weg_dorthin(eingerichtet):
     sitzung_id = notes.create_session(
-        eingerichtet.database_path, played_on="2026-08-06", title="Der Keller"
+        runde(eingerichtet), played_on="2026-08-06", title="Der Keller"
     )
     angesagt(eingerichtet, DAVEY, session_id=sitzung_id)
     recordings.enqueue(
-        eingerichtet.database_path, sitzung_id, "sitzung1-Davey.wav", discord_user_id=DAVEY.id
+        runde(eingerichtet), sitzung_id, "sitzung1-Davey.wav", discord_user_id=DAVEY.id
     )
 
     html = (
@@ -244,9 +245,9 @@ def test_eine_unzugeordnete_spur_zeigt_den_discord_namen_und_den_weg_dorthin(ein
 
 def test_ein_diktat_ohne_sprecher_bekommt_keine_beschriftung(eingerichtet):
     sitzung_id = notes.create_session(
-        eingerichtet.database_path, played_on="2026-08-06", title="Der Keller"
+        runde(eingerichtet), played_on="2026-08-06", title="Der Keller"
     )
-    recordings.enqueue(eingerichtet.database_path, sitzung_id, "sitzung1-heimweg.m4a")
+    recordings.enqueue(runde(eingerichtet), sitzung_id, "sitzung1-heimweg.m4a")
 
     html = (
         create_app(eingerichtet)

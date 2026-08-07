@@ -16,14 +16,13 @@ Hier steht nur, welche Id zu welcher gehört.
 from __future__ import annotations
 
 import json
-import sqlite3
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from difflib import SequenceMatcher
-from pathlib import Path
 
 from chronicle import db
+from chronicle.runde import Runde
 
 # Der Name des Formularfeldes je Zeile — die Discord-Id hängt hinten dran.
 FELD = "person-"
@@ -61,43 +60,49 @@ def _now() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds")
 
 
-def _open(database_path: Path) -> sqlite3.Connection:
-    return db.connect(database_path)
-
-
-def _spieler(connection: sqlite3.Connection) -> tuple[Spieler, ...]:
+def _spieler(scope: db.Scope) -> tuple[Spieler, ...]:
     figuren: dict[str, list[str]] = {}
-    for zeile in connection.execute("SELECT name, owner_ids FROM foundry_character ORDER BY name"):
+    for zeile in scope.execute(
+        "SELECT name, owner_ids FROM foundry_character WHERE runde_id = ? ORDER BY name",
+        (scope.runde_id,),
+    ):
         for besitzer in json.loads(zeile["owner_ids"]):
             figuren.setdefault(besitzer, []).append(zeile["name"])
     return tuple(
         Spieler(id=z["id"], name=z["name"], characters=tuple(figuren.get(z["id"], ())))
-        for z in connection.execute("SELECT id, name FROM foundry_player ORDER BY name")
+        for z in scope.execute(
+            "SELECT id, name FROM foundry_player WHERE runde_id = ? ORDER BY name",
+            (scope.runde_id,),
+        )
     )
 
 
-def _mitglieder(connection: sqlite3.Connection) -> tuple[tuple[str, str], ...]:
+def _mitglieder(scope: db.Scope) -> tuple[tuple[str, str], ...]:
     # Der zuletzt protokollierte Anzeigename gewinnt — Discord-Namen ändern sich.
-    zeilen = connection.execute(
-        "SELECT user_id, name FROM consent_member ORDER BY event_id"
+    zeilen = scope.execute(
+        "SELECT user_id, name FROM consent_member WHERE runde_id = ? ORDER BY event_id",
+        (scope.runde_id,),
     ).fetchall()
     neueste = {z["user_id"]: z["name"] for z in zeilen}
     return tuple(sorted(neueste.items(), key=lambda paar: paar[1].casefold()))
 
 
-def _bestaetigt(connection: sqlite3.Connection) -> dict[str, str]:
+def _bestaetigt(scope: db.Scope) -> dict[str, str]:
     return {
         z["discord_user_id"]: z["foundry_user_id"]
-        for z in connection.execute("SELECT discord_user_id, foundry_user_id FROM person_mapping")
+        for z in scope.execute(
+            "SELECT discord_user_id, foundry_user_id FROM person_mapping WHERE runde_id = ?",
+            (scope.runde_id,),
+        )
     }
 
 
-def _stand(database_path: Path) -> tuple[tuple[Spieler, ...], dict[str, str], tuple]:
-    connection = _open(database_path)
+def _stand(runde: Runde) -> tuple[tuple[Spieler, ...], dict[str, str], tuple]:
+    scope = db.scoped(runde)
     try:
-        return _spieler(connection), _bestaetigt(connection), _mitglieder(connection)
+        return _spieler(scope), _bestaetigt(scope), _mitglieder(scope)
     finally:
-        connection.close()
+        scope.close()
 
 
 def _aehnlich(links: str, rechts: str) -> float:
@@ -118,9 +123,9 @@ def suggest(name: str, kandidaten: Sequence[Spieler]) -> Spieler | None:
     return bewertet[0][1]
 
 
-def overview(database_path: Path) -> Uebersicht:
+def overview(runde: Runde) -> Uebersicht:
     """Wer aufgenommen wurde, wem er zugeordnet ist und was vorzuschlagen wäre."""
-    spieler, bestaetigt, mitglieder = _stand(database_path)
+    spieler, bestaetigt, mitglieder = _stand(runde)
     nach_id = {s.id: s for s in spieler}
     vergeben = set(bestaetigt.values())
     frei = [s for s in spieler if s.id not in vergeben]
@@ -138,12 +143,12 @@ def overview(database_path: Path) -> Uebersicht:
     return Uebersicht(personen=tuple(personen), spieler=spieler)
 
 
-def speakers(database_path: Path) -> dict[str, Person]:
+def speakers(runde: Runde) -> dict[str, Person]:
     """Je Discord-Id, wie eine Spur zu beschriften ist — ohne Vorschläge.
 
     Ein Vorschlag darf hier nicht auftauchen: an einer Spur stünde er wie eine Tatsache.
     """
-    spieler, bestaetigt, mitglieder = _stand(database_path)
+    spieler, bestaetigt, mitglieder = _stand(runde)
     nach_id = {s.id: s for s in spieler}
     return {
         user_id: Person(
@@ -155,24 +160,26 @@ def speakers(database_path: Path) -> dict[str, Person]:
     }
 
 
-def confirm(database_path: Path, auswahl: Mapping[str, str]) -> None:
+def confirm(runde: Runde, auswahl: Mapping[str, str]) -> None:
     """Schreibt fest, was ein Mensch ausgewählt hat; ein leerer Wert nimmt zurück."""
     zeitpunkt = _now()
-    connection = _open(database_path)
+    scope = db.scoped(runde)
     try:
-        with connection:
+        with scope:
             for user_id, foundry_user_id in auswahl.items():
                 if not foundry_user_id:
-                    connection.execute(
-                        "DELETE FROM person_mapping WHERE discord_user_id = ?", (user_id,)
+                    scope.execute(
+                        "DELETE FROM person_mapping WHERE runde_id = ? AND discord_user_id = ?",
+                        (scope.runde_id, user_id),
                     )
                     continue
-                connection.execute(
-                    "INSERT INTO person_mapping (discord_user_id, foundry_user_id, confirmed_at) "
-                    "VALUES (?, ?, ?) ON CONFLICT (discord_user_id) DO UPDATE SET "
+                scope.execute(
+                    "INSERT INTO person_mapping "
+                    "(runde_id, discord_user_id, foundry_user_id, confirmed_at) "
+                    "VALUES (?, ?, ?, ?) ON CONFLICT (runde_id, discord_user_id) DO UPDATE SET "
                     "foundry_user_id = excluded.foundry_user_id, "
                     "confirmed_at = excluded.confirmed_at",
-                    (user_id, foundry_user_id, zeitpunkt),
+                    (scope.runde_id, user_id, foundry_user_id, zeitpunkt),
                 )
     finally:
-        connection.close()
+        scope.close()

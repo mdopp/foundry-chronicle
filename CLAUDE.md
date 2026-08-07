@@ -1,8 +1,9 @@
 # Foundry Chronicle — Hausregeln
 
 Sitzungsprotokolle für Tisch-Rollenspiel: aus Notizen und Foundrys Chat-Log wird eine
-lesbare Chronik. **Eine Instanz pro Gruppe.** Siehe Epic #1 für die tragenden
-Entscheidungen und `docs/architektur.md` für das Bild.
+lesbare Chronik. **Eine Instanz trägt mehrere Runden** (Epic #62 löst darin »eine Instanz
+pro Gruppe« aus Epic #1 ab). Siehe Epic #1 und #62 für die tragenden Entscheidungen und
+`docs/architektur.md` für das Bild.
 
 Diese Regeln gelten für jede Sitzung, Mensch oder Agent.
 
@@ -98,10 +99,14 @@ SQLite-Datei ist klein und enthält alles Unersetzliche.
 - Kleinste Änderung, die die Aufgabe löst. Ein Fehler braucht kein Aufräumen drumherum.
 - Drei ähnliche Zeilen schlagen eine verfrühte Abstraktion. Keine spekulative
   Fehlerbehandlung für Fälle, die nicht eintreten können.
-- **Eine Instanz pro Gruppe** ist eine tragende Entscheidung: kein `group_id`, keine
-  Mandantentrennung, keine Zugriffskontrolle **zwischen** Gruppen. Nicht auf Vorrat bauen.
-  Gemeint ist damit die Trennung zwischen Runden — **innerhalb** der Instanz gibt es seit
-  der Operator-Entscheidung 2026-08-06 zwei Rollen: Mitspielen und Verwalten (#51). Die
+- **Die Trennung zwischen Runden ist die wichtigste Sicherheitseigenschaft** (#62/#63 —
+  sie ersetzt »eine Instanz pro Gruppe«). Jede runden-eigene Tabelle trägt `runde_id`,
+  jeder Zugriff läuft über `db.scoped(runde)`, rohes SQL daneben gibt es nicht, und
+  `tests/test_isolation.py` ist das Dauergate: eine neue Funktion ohne Runden-Argument
+  fällt durch. Ein vergessenes `WHERE runde_id = ?` ist kein Fehler, sondern ein Leck
+  zwischen fremden Kampagnen.
+  **Innerhalb** einer Instanz gibt es seit der Operator-Entscheidung 2026-08-06 zwei
+  Rollen für die Weboberfläche: Mitspielen und Verwalten (#51). Die
   Rolle kommt aus einer Gruppe, die der Proxy mitliefert; ein leerer Gruppenname heißt
   weiterhin: alle dürfen alles. Entschieden wird sie an genau einer Stelle
   (`chronicle.roles`).

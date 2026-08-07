@@ -11,6 +11,7 @@ from urllib.parse import unquote
 
 import pytest
 import requests
+from conftest import runde
 
 import chronicle.discord.__main__ as entry
 from chronicle import db, notes, recordings, settings
@@ -150,7 +151,7 @@ def config(tmp_path):
 
 @pytest.fixture
 def sitzung_id(config):
-    return notes.create_session(config.database_path, played_on="2026-08-06", title="Der Keller")
+    return notes.create_session(runde(config), played_on="2026-08-06", title="Der Keller")
 
 
 def klient(config, api):
@@ -158,7 +159,7 @@ def klient(config, api):
 
 
 def leeren(config, api):
-    return run(config, client=klient(config, api))
+    return run(config, runde(config), client=klient(config, api))
 
 
 # --- Der Kanal: genau einer, gefunden über den Namen ---------------------------------
@@ -183,14 +184,14 @@ def test_ohne_token_wird_kein_klient_gebaut(tmp_path):
 
 def test_ohne_token_laeuft_der_stapel_trotzdem_und_sagt_es(tmp_path):
     config = Config(data_dir=tmp_path)
-    assert run(config) == (service.NICHT_EINGERICHTET,)
+    assert run(config, runde(config)) == (service.NICHT_EINGERICHTET,)
 
 
 def test_ein_in_der_oberflaeche_gesetzter_token_reicht(tmp_path, monkeypatch):
     config = Config(data_dir=tmp_path / "daten", recordings_dir=tmp_path / "aufnahmen")
     db.init(config.database_path)
-    settings.save(config.database_path, {"discord_bot_token": TOKEN})
-    notes.create_session(config.database_path, played_on="2026-08-06")
+    settings.save(runde(config), {"discord_bot_token": TOKEN})
+    notes.create_session(runde(config), played_on="2026-08-06")
     api = FakeDiscord(nachricht("100", text="Die Wirtin hat gelogen."))
     gebaut = []
 
@@ -199,7 +200,7 @@ def test_ein_in_der_oberflaeche_gesetzter_token_reicht(tmp_path, monkeypatch):
         return klient(zugang, api)
 
     monkeypatch.setattr(service, "DiscordClient", gemerkt)
-    meldungen = run(config)
+    meldungen = run(config, runde(config))
 
     assert gebaut == [TOKEN]
     assert "Notiz" in meldungen[0]
@@ -216,7 +217,7 @@ def test_eine_sprachnachricht_landet_in_derselben_warteschlange(config, sitzung_
 
     meldungen = leeren(config, api)
 
-    warteschlange = recordings.pending(config.database_path)
+    warteschlange = recordings.pending(runde(config))
     assert [(zeile.session_id, zeile.status) for zeile in warteschlange] == [
         (sitzung_id, recordings.WARTET)
     ]
@@ -259,7 +260,7 @@ def test_ein_zu_grosser_anhang_wird_verstaendlich_abgewiesen(config, sitzung_id)
 
     assert "größer als" in meldungen[0]
     assert api.abrufe == []
-    assert recordings.pending(config.database_path) == ()
+    assert recordings.pending(runde(config)) == ()
     assert api.reaktionen == [("100", service.WARNUNG)]
 
 
@@ -282,21 +283,21 @@ def test_eine_textnachricht_wird_zur_notiz_der_sitzung(config, sitzung_id):
 
     leeren(config, api)
 
-    szene = notes.session(config.database_path, sitzung_id).scenes[-1]
+    szene = notes.session(runde(config), sitzung_id).scenes[-1]
     assert [eintrag.text for eintrag in szene.notes] == ["Die Wirtin hat gelogen."]
     assert api.reaktionen == [("100", service.HAKEN)]
     assert api.antworten == [("100", service.NOTIZ_QUITTUNG.format(datum="2026-08-06"))]
 
 
 def test_die_notiz_geht_an_die_zuletzt_angelegte_sitzung(config):
-    aelter = notes.create_session(config.database_path, played_on="2026-09-01")
-    juenger = notes.create_session(config.database_path, played_on="2026-08-01")
+    aelter = notes.create_session(runde(config), played_on="2026-09-01")
+    juenger = notes.create_session(runde(config), played_on="2026-08-01")
     api = FakeDiscord(nachricht("100", text="Der Keller war eine Falle."))
 
     leeren(config, api)
 
-    assert notes.session(config.database_path, aelter).note_count == 0
-    assert notes.session(config.database_path, juenger).note_count == 1
+    assert notes.session(runde(config), aelter).note_count == 0
+    assert notes.session(runde(config), juenger).note_count == 1
 
 
 def test_was_weder_audio_noch_text_ist_wird_sichtbar_uebersprungen(config, sitzung_id):
@@ -316,7 +317,7 @@ def test_die_eigene_quittung_kommt_nicht_als_diktat_zurueck(config, sitzung_id):
     leeren(config, api)
     leeren(config, api)
 
-    assert notes.session(config.database_path, sitzung_id).note_count == 1
+    assert notes.session(runde(config), sitzung_id).note_count == 1
     assert len(api.antworten) == 1
     assert api.reaktionen == [("100", service.HAKEN)]
 
@@ -335,8 +336,8 @@ def test_ohne_sitzung_wartet_das_diktat_sichtbar(config):
     assert meldungen == (service.OHNE_SITZUNG,)
     assert api.reaktionen == [("100", service.WARNUNG)]
     assert api.antworten == [("100", service.OHNE_SITZUNG)]
-    assert recordings.pending(config.database_path) == ()
-    assert service.cursor(config.database_path) is None
+    assert recordings.pending(runde(config)) == ()
+    assert service.cursor(runde(config)) is None
 
 
 def test_ein_wartendes_diktat_wird_nachgeholt_und_nicht_zweimal_beantwortet(config):
@@ -346,13 +347,13 @@ def test_ein_wartendes_diktat_wird_nachgeholt_und_nicht_zweimal_beantwortet(conf
     )
     leeren(config, api)
 
-    sitzung_id = notes.create_session(config.database_path, played_on="2026-08-06")
+    sitzung_id = notes.create_session(runde(config), played_on="2026-08-06")
     leeren(config, api)
 
-    assert [zeile.session_id for zeile in recordings.pending(config.database_path)] == [sitzung_id]
+    assert [zeile.session_id for zeile in recordings.pending(runde(config))] == [sitzung_id]
     assert len(api.antworten) == 2
     assert api.antworten[1] == ("100", service.QUITTUNG)
-    assert service.cursor(config.database_path) == "100"
+    assert service.cursor(runde(config)) == "100"
 
 
 # --- Zweimal laufen darf nichts verdoppeln -------------------------------------------
@@ -369,9 +370,9 @@ def test_ein_zweiter_lauf_holt_nichts_doppelt(config, sitzung_id):
     zweiter = leeren(config, api)
 
     assert zweiter == ()
-    assert notes.session(config.database_path, sitzung_id).note_count == 1
-    assert len(recordings.for_session(config.database_path, sitzung_id)) == 1
-    assert service.cursor(config.database_path) == "101"
+    assert notes.session(runde(config), sitzung_id).note_count == 1
+    assert len(recordings.for_session(runde(config), sitzung_id)) == 1
+    assert service.cursor(runde(config)) == "101"
 
 
 def test_ohne_zeiger_bleibt_die_kennung_die_garantie(config, sitzung_id):
@@ -384,7 +385,7 @@ def test_ohne_zeiger_bleibt_die_kennung_die_garantie(config, sitzung_id):
     connection.close()
 
     assert leeren(config, api) == ()
-    assert notes.session(config.database_path, sitzung_id).note_count == 1
+    assert notes.session(runde(config), sitzung_id).note_count == 1
 
 
 def test_neue_nachrichten_werden_ab_dem_zeiger_geholt(config, sitzung_id):
@@ -394,9 +395,9 @@ def test_neue_nachrichten_werden_ab_dem_zeiger_geholt(config, sitzung_id):
     api.nachrichten.append(nachricht("102", text="Zweite."))
     leeren(config, api)
 
-    szene = notes.session(config.database_path, sitzung_id).scenes[-1]
+    szene = notes.session(runde(config), sitzung_id).scenes[-1]
     assert [eintrag.text for eintrag in szene.notes] == ["Erste.", "Zweite."]
-    assert service.cursor(config.database_path) == "102"
+    assert service.cursor(runde(config)) == "102"
 
 
 def test_der_zeiger_rueckt_nur_ueber_erledigtes(config):
@@ -407,7 +408,7 @@ def test_der_zeiger_rueckt_nur_ueber_erledigtes(config):
 
     leeren(config, api)
 
-    assert service.cursor(config.database_path) is None
+    assert service.cursor(runde(config)) is None
     assert len(api.antworten) == 2
 
 
@@ -472,7 +473,7 @@ def test_der_stapelaufruf_leert_den_kanal(config, sitzung_id, monkeypatch, capsy
     assert entry.main() == 0
 
     assert "Notiz" in capsys.readouterr().out
-    assert notes.session(config.database_path, sitzung_id).note_count == 1
+    assert notes.session(runde(config), sitzung_id).note_count == 1
 
 
 def test_ein_leerer_briefkasten_ist_kein_fehlschlag(config, sitzung_id, monkeypatch, capsys):

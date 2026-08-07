@@ -25,11 +25,9 @@ so meist nur bei seiner Sitzung an — er ist gedeutet und nicht zitiert.
 from __future__ import annotations
 
 import logging
-import sqlite3
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from pathlib import Path
 
 from chronicle import db, settings
 from chronicle.compose import client
@@ -37,6 +35,7 @@ from chronicle.compose.client import ModelError, TextModel
 from chronicle.compose.composer import numbers
 from chronicle.compose.service import KIND as CHRONIK
 from chronicle.config import Config
+from chronicle.runde import Runde
 
 logger = logging.getLogger(__name__)
 
@@ -91,24 +90,26 @@ AUFTRAG = "Nenne die Registereinträge dieser Sitzung."
 
 SZENENTEXT = (
     "SELECT c.id AS scene_id, n.text AS text FROM scene c "
-    "JOIN note n ON n.scene_id = c.id WHERE c.session_id = ? "
+    "JOIN note n ON n.scene_id = c.id WHERE c.runde_id = ? AND c.session_id = ? "
     "UNION ALL "
     "SELECT c.id AS scene_id, COALESCE(m.speaker_alias, '') || ' ' || m.content AS text "
     "FROM scene c JOIN scene_foundry_message v ON v.scene_id = c.id "
-    "JOIN foundry_message m ON m.id = v.message_id WHERE c.session_id = ?"
+    "JOIN foundry_message m ON m.id = v.message_id AND m.runde_id = v.runde_id "
+    "WHERE c.runde_id = ? AND c.session_id = ?"
 )
 
 EINTRAEGE = (
     "SELECT e.id, e.kind, e.name, e.description, e.state, a.name AS actor_name "
-    "FROM register_entry e LEFT JOIN foundry_character a ON a.id = e.foundry_actor_id "
-    "WHERE e.state = ? ORDER BY e.kind, e.name"
+    "FROM register_entry e LEFT JOIN foundry_character a "
+    "ON a.id = e.foundry_actor_id AND a.runde_id = e.runde_id "
+    "WHERE e.runde_id = ? AND e.state = ? ORDER BY e.kind, e.name"
 )
 
 ERWAEHNUNGEN = (
     "SELECT m.entry_id, m.session_id, m.scene_id, s.played_on, s.title, c.position "
     "FROM register_mention m JOIN session s ON s.id = m.session_id "
     "LEFT JOIN scene c ON c.id = m.scene_id "
-    "ORDER BY s.played_on, s.id, c.position"
+    "WHERE m.runde_id = ? ORDER BY s.played_on, s.id, c.position"
 )
 
 
@@ -217,41 +218,41 @@ def _belegt(kandidaten: tuple[Candidate, ...], chronik: str) -> tuple[Candidate,
     return tuple(gehalten)
 
 
-def _szenentext(connection: sqlite3.Connection, session_id: int) -> dict[int, str]:
+def _szenentext(scope: db.Scope, session_id: int) -> dict[int, str]:
     je_szene: dict[int, str] = {}
-    for zeile in connection.execute(SZENENTEXT, (session_id, session_id)):
+    werte = (scope.runde_id, session_id, scope.runde_id, session_id)
+    for zeile in scope.execute(SZENENTEXT, werte):
         je_szene[zeile["scene_id"]] = je_szene.get(zeile["scene_id"], "") + " " + zeile["text"]
     return {szene: text.casefold() for szene, text in je_szene.items()}
 
 
-def _aktoren(connection: sqlite3.Connection) -> dict[str, str]:
+def _aktoren(scope: db.Scope) -> dict[str, str]:
     return {
         zeile["name"].casefold(): zeile["id"]
-        for zeile in connection.execute("SELECT id, name FROM foundry_character")
+        for zeile in scope.execute(
+            "SELECT id, name FROM foundry_character WHERE runde_id = ?", (scope.runde_id,)
+        )
     }
 
 
-def _ablegen(
-    connection: sqlite3.Connection,
-    session_id: int,
-    kandidaten: tuple[Candidate, ...],
-) -> int:
-    je_szene = _szenentext(connection, session_id)
-    aktoren = _aktoren(connection)
+def _ablegen(scope: db.Scope, session_id: int, kandidaten: tuple[Candidate, ...]) -> int:
+    je_szene = _szenentext(scope, session_id)
+    aktoren = _aktoren(scope)
     zeitpunkt = _now()
     offen = 0
-    with connection:
+    with scope:
         for kandidat in kandidaten:
-            connection.execute(
+            scope.execute(
                 "INSERT INTO register_entry "
-                "(kind, name, description, foundry_actor_id, state, suggested_at) "
-                "VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (kind, name) DO UPDATE SET "
+                "(runde_id, kind, name, description, foundry_actor_id, state, suggested_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT (runde_id, kind, name) DO UPDATE SET "
                 # Ein bestätigter Satz gehört einem Menschen und wird nicht überschrieben.
                 "description = CASE WHEN register_entry.state = ? THEN excluded.description "
                 "ELSE register_entry.description END, "
                 "foundry_actor_id = COALESCE(register_entry.foundry_actor_id, "
                 "excluded.foundry_actor_id), suggested_at = excluded.suggested_at",
                 (
+                    scope.runde_id,
                     kandidat.kind,
                     kandidat.name,
                     kandidat.description,
@@ -261,43 +262,49 @@ def _ablegen(
                     VORSCHLAG,
                 ),
             )
-            zeile = connection.execute(
-                "SELECT id, state FROM register_entry WHERE kind = ? AND name = ?",
-                (kandidat.kind, kandidat.name),
+            zeile = scope.execute(
+                "SELECT id, state FROM register_entry WHERE runde_id = ? AND kind = ? AND name = ?",
+                (scope.runde_id, kandidat.kind, kandidat.name),
             ).fetchone()
             eintrag_id = int(zeile["id"])
             offen += zeile["state"] == VORSCHLAG
-            connection.execute(
-                "DELETE FROM register_mention WHERE entry_id = ? AND session_id = ?",
-                (eintrag_id, session_id),
+            scope.execute(
+                "DELETE FROM register_mention "
+                "WHERE runde_id = ? AND entry_id = ? AND session_id = ?",
+                (scope.runde_id, eintrag_id, session_id),
             )
             gesucht = kandidat.name.casefold()
             szenen = [szene for szene, text in je_szene.items() if gesucht in text]
-            verweise = [(eintrag_id, session_id, szene) for szene in szenen]
-            connection.executemany(
-                "INSERT INTO register_mention (entry_id, session_id, scene_id) VALUES (?, ?, ?)",
-                verweise or [(eintrag_id, session_id, None)],
+            verweise = [(scope.runde_id, eintrag_id, session_id, szene) for szene in szenen]
+            scope.executemany(
+                "INSERT INTO register_mention (runde_id, entry_id, session_id, scene_id) "
+                "VALUES (?, ?, ?, ?)",
+                verweise or [(scope.runde_id, eintrag_id, session_id, None)],
             )
     return offen
 
 
-def suggest(config: Config, session_id: int, *, model: TextModel | None = None) -> Suggested:
+def suggest(
+    config: Config, runde: Runde, session_id: int, *, model: TextModel | None = None
+) -> Suggested:
     """Nach der Komposition: was das Modell aus der Chronik als Eintrag vorschlägt.
 
     Ohne Modell oder ohne Chronik gibt es keine Vorschläge und einen Satz, der sagt warum
     — geraten wird nichts.
     """
     db.init(config.database_path)
-    connection = db.connect(config.database_path)
+    scope = db.scoped(runde)
     try:
-        zeile = connection.execute(
-            "SELECT text FROM protocol WHERE session_id = ? AND kind = ?",
-            (session_id, CHRONIK),
+        zeile = scope.execute(
+            "SELECT text FROM protocol WHERE runde_id = ? AND session_id = ? AND kind = ?",
+            (scope.runde_id, session_id, CHRONIK),
         ).fetchone()
         if zeile is None:
             return Suggested(reason=OHNE_CHRONIK)
         chronik = zeile["text"]
-        schreiber = model if model is not None else client.from_config(settings.effective(config))
+        schreiber = (
+            model if model is not None else client.from_config(settings.effective(config, runde))
+        )
         if schreiber is None:
             return Suggested(reason=OHNE_MODELL)
         try:
@@ -306,14 +313,14 @@ def suggest(config: Config, session_id: int, *, model: TextModel | None = None) 
             logger.warning("Register bleibt ohne neuen Vorschlag: %s", fehler)
             return Suggested(reason=NICHT_ERREICHBAR)
         kandidaten = _belegt(parse(antwort), chronik)
-        return Suggested(count=_ablegen(connection, session_id, kandidaten))
+        return Suggested(count=_ablegen(scope, session_id, kandidaten))
     finally:
-        connection.close()
+        scope.close()
 
 
-def _erwaehnungen(connection: sqlite3.Connection) -> dict[int, list[Mention]]:
+def _erwaehnungen(scope: db.Scope) -> dict[int, list[Mention]]:
     je_eintrag: dict[int, list[Mention]] = {}
-    for zeile in connection.execute(ERWAEHNUNGEN):
+    for zeile in scope.execute(ERWAEHNUNGEN, (scope.runde_id,)):
         je_eintrag.setdefault(zeile["entry_id"], []).append(
             Mention(
                 session_id=zeile["session_id"],
@@ -326,13 +333,13 @@ def _erwaehnungen(connection: sqlite3.Connection) -> dict[int, list[Mention]]:
     return je_eintrag
 
 
-def _lesen(database_path: Path, state: str) -> tuple[Entry, ...]:
-    connection = db.connect(database_path)
+def _lesen(runde: Runde, state: str) -> tuple[Entry, ...]:
+    scope = db.scoped(runde)
     try:
-        zeilen = connection.execute(EINTRAEGE, (state,)).fetchall()
-        je_eintrag = _erwaehnungen(connection)
+        zeilen = scope.execute(EINTRAEGE, (scope.runde_id, state)).fetchall()
+        je_eintrag = _erwaehnungen(scope)
     finally:
-        connection.close()
+        scope.close()
     return tuple(
         Entry(
             id=zeile["id"],
@@ -347,9 +354,9 @@ def _lesen(database_path: Path, state: str) -> tuple[Entry, ...]:
     )
 
 
-def overview(database_path: Path) -> tuple[Group, ...]:
+def overview(runde: Runde) -> tuple[Group, ...]:
     """Das Register selbst — nur Bestätigtes, nach Art gruppiert."""
-    eintraege = _lesen(database_path, BESTAETIGT)
+    eintraege = _lesen(runde, BESTAETIGT)
     return tuple(
         Group(
             kind=art,
@@ -361,12 +368,12 @@ def overview(database_path: Path) -> tuple[Group, ...]:
     )
 
 
-def pending(database_path: Path) -> tuple[Entry, ...]:
+def pending(runde: Runde) -> tuple[Entry, ...]:
     """Was auf ein Ja oder Nein wartet."""
-    return _lesen(database_path, VORSCHLAG)
+    return _lesen(runde, VORSCHLAG)
 
 
-def decide(database_path: Path, auswahl: Mapping[int, Entscheidung]) -> None:
+def decide(runde: Runde, auswahl: Mapping[int, Entscheidung]) -> None:
     """Schreibt fest, was ein Mensch entschieden hat; ein Nein verwirft den Vorschlag.
 
     Nur Zeilen, die noch Vorschlag sind: ein bestätigter Eintrag wird hier nicht erneut
@@ -374,29 +381,30 @@ def decide(database_path: Path, auswahl: Mapping[int, Entscheidung]) -> None:
     Name schon vergeben ist — sie bleibt Vorschlag, statt das Formular scheitern zu lassen.
     """
     zeitpunkt = _now()
-    connection = db.connect(database_path)
+    scope = db.scoped(runde)
     try:
-        with connection:
+        with scope:
             for eintrag_id, entscheidung in auswahl.items():
                 if not entscheidung.ja:
-                    connection.execute(
-                        "DELETE FROM register_entry WHERE id = ? AND state = ?",
-                        (eintrag_id, VORSCHLAG),
+                    scope.execute(
+                        "DELETE FROM register_entry WHERE runde_id = ? AND id = ? AND state = ?",
+                        (scope.runde_id, eintrag_id, VORSCHLAG),
                     )
                     continue
-                connection.execute(
+                scope.execute(
                     "UPDATE OR IGNORE register_entry SET "
                     "name = COALESCE(NULLIF(?, ''), name), "
                     "description = COALESCE(NULLIF(?, ''), description), "
-                    "state = ?, confirmed_at = ? WHERE id = ? AND state = ?",
+                    "state = ?, confirmed_at = ? WHERE runde_id = ? AND id = ? AND state = ?",
                     (
                         entscheidung.name.strip(),
                         entscheidung.description.strip(),
                         BESTAETIGT,
                         zeitpunkt,
+                        scope.runde_id,
                         eintrag_id,
                         VORSCHLAG,
                     ),
                 )
     finally:
-        connection.close()
+        scope.close()

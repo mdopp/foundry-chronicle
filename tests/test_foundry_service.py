@@ -7,6 +7,7 @@ from conftest import (
     UNBETEILIGTES_KONTO,
     UNSER_KONTO,
     VERWORFENE_ADRESSE,
+    runde,
 )
 
 import chronicle.foundry.__main__ as batch
@@ -37,7 +38,7 @@ def gespeicherter_text(config):
 
 
 def test_erfolgreicher_abgleich_meldet_den_umfang(config, welt):
-    zustand = service.sync(config, client=Abgleich(welt))
+    zustand = service.sync(config, runde(config), client=Abgleich(welt))
     assert not zustand.stale
     assert zustand.snapshot.system == "daggerheart"
     assert "2 Spieler" in zustand.message
@@ -46,14 +47,14 @@ def test_erfolgreicher_abgleich_meldet_den_umfang(config, welt):
 
 
 def test_der_zwischenspeicher_ueberlebt_den_prozess(config, welt):
-    service.sync(config, client=Abgleich(welt))
-    zustand = service.current(config)
+    service.sync(config, runde(config), client=Abgleich(welt))
+    zustand = service.current(config, runde(config))
     assert not zustand.stale
     assert len(zustand.snapshot.messages) == 3
 
 
 def test_gefiltert_wird_vor_dem_zwischenspeicher(config, welt):
-    service.sync(config, client=Abgleich(welt))
+    service.sync(config, runde(config), client=Abgleich(welt))
     inhalt = gespeicherter_text(config)
     assert "Brok Eisenfaust" in inhalt
     assert GM_FIGUR not in inhalt
@@ -64,13 +65,15 @@ def test_gefiltert_wird_vor_dem_zwischenspeicher(config, welt):
 
 
 def test_ohne_abgleich_gibt_es_eine_erklaerung_statt_einer_leeren_liste(config):
-    zustand = service.current(config)
+    zustand = service.current(config, runde(config))
     assert zustand.snapshot is None
     assert "Noch kein Abgleich" in zustand.message
 
 
 def test_foundry_aus_und_noch_kein_stand_erklaert_das(config):
-    zustand = service.sync(config, client=Abgleich(fehler=FoundryUnreachable("keine Antwort")))
+    zustand = service.sync(
+        config, runde(config), client=Abgleich(fehler=FoundryUnreachable("keine Antwort"))
+    )
     assert zustand.stale
     assert zustand.snapshot is None
     assert "nicht erreichbar" in zustand.message
@@ -78,8 +81,10 @@ def test_foundry_aus_und_noch_kein_stand_erklaert_das(config):
 
 
 def test_foundry_aus_liefert_den_letzten_stand_plus_meldung(config, welt):
-    service.sync(config, client=Abgleich(welt))
-    zustand = service.sync(config, client=Abgleich(fehler=FoundryUnreachable("keine Antwort")))
+    service.sync(config, runde(config), client=Abgleich(welt))
+    zustand = service.sync(
+        config, runde(config), client=Abgleich(fehler=FoundryUnreachable("keine Antwort"))
+    )
     assert zustand.stale
     assert len(zustand.snapshot.messages) == 3
     assert "nicht erreichbar" in zustand.message
@@ -87,21 +92,22 @@ def test_foundry_aus_liefert_den_letzten_stand_plus_meldung(config, welt):
 
 
 def test_die_meldung_ueberlebt_bis_zum_naechsten_aufruf(config, welt):
-    service.sync(config, client=Abgleich(welt))
-    service.sync(config, client=Abgleich(fehler=FoundryUnreachable("keine Antwort")))
-    assert service.current(config).stale
+    service.sync(config, runde(config), client=Abgleich(welt))
+    service.sync(config, runde(config), client=Abgleich(fehler=FoundryUnreachable("keine Antwort")))
+    assert service.current(config, runde(config)).stale
 
 
 def test_ein_gelungener_abgleich_raeumt_die_meldung_weg(config, welt):
-    service.sync(config, client=Abgleich(fehler=FoundryUnreachable("keine Antwort")))
-    service.sync(config, client=Abgleich(welt))
-    assert not service.current(config).stale
+    service.sync(config, runde(config), client=Abgleich(fehler=FoundryUnreachable("keine Antwort")))
+    service.sync(config, runde(config), client=Abgleich(welt))
+    assert not service.current(config, runde(config)).stale
 
 
 def test_ohne_konfiguration_meldet_der_abgleich_das_verstaendlich(tmp_path):
     from chronicle.config import Config
 
-    zustand = service.sync(Config(data_dir=tmp_path))
+    leer = Config(data_dir=tmp_path)
+    zustand = service.sync(leer, runde(leer))
     assert zustand.stale
     assert "die Adresse, der Benutzer und das Passwort" in zustand.message
     assert "in den Einstellungen" in zustand.message
@@ -112,27 +118,35 @@ def test_die_meldung_nennt_nur_das_wirklich_fehlende(tmp_path):
     from chronicle.config import Config
 
     halb = Config(data_dir=tmp_path, foundry_url="https://foundry.example", foundry_user="chronist")
-    zustand = service.sync(halb)
+    zustand = service.sync(halb, runde(halb))
     assert "fehlt noch das Passwort" in zustand.message
     assert "Adresse" not in zustand.message
 
 
 def test_kein_passwort_in_den_logzeilen_eines_abgleichs(config, welt, caplog):
     with caplog.at_level(logging.DEBUG):
-        service.sync(config, client=Abgleich(welt))
-        service.sync(config, client=Abgleich(fehler=FoundryUnreachable("keine Antwort")))
+        service.sync(config, runde(config), client=Abgleich(welt))
+        service.sync(
+            config, runde(config), client=Abgleich(fehler=FoundryUnreachable("keine Antwort"))
+        )
     assert caplog.records
     assert PASSWORT not in caplog.text
 
 
 def test_stapellauf_meldet_erfolg_und_misserfolg_ueber_den_rueckgabewert(config, welt, monkeypatch):
-    monkeypatch.setattr(batch, "sync", lambda _config: service.sync(config, client=Abgleich(welt)))
+    monkeypatch.setattr(
+        batch,
+        "sync",
+        lambda _config, _runde: service.sync(config, runde(config), client=Abgleich(welt)),
+    )
     monkeypatch.setattr(batch.Config, "from_env", classmethod(lambda cls: config))
     assert batch.main() == 0
 
     monkeypatch.setattr(
         batch,
         "sync",
-        lambda _config: service.sync(config, client=Abgleich(fehler=FoundryUnreachable("aus"))),
+        lambda _config, _runde: service.sync(
+            config, runde(config), client=Abgleich(fehler=FoundryUnreachable("aus"))
+        ),
     )
     assert batch.main() == 1

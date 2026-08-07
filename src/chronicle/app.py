@@ -13,8 +13,12 @@ fünf gleichrangige Reiter hinzustellen. Der Wizard schreibt nichts selbst: er f
 dasselbe Formular wie ``/einstellungen`` und ruft denselben ``settings.save``-Weg auf.
 
 ``basis`` ist die Umgebung beim Start; gefragt wird nie sie, sondern
-``settings.effective(basis)`` — ein in ``/einstellungen`` gesetzter Wert gewinnt und
+``settings.effective(basis, runde)`` — ein in ``/einstellungen`` gesetzter Wert gewinnt und
 wirkt ohne Neustart.
+
+Diese Oberfläche kennt **keine Runden**: sie arbeitet stillschweigend in der ersten. Mit
+#69 verschwindet sie ganz, Discord wird die Oberfläche — bis dahin ist das die ehrlichste
+Übersetzung des alten »eine Instanz pro Gruppe« in die neue Welt.
 
 Der nächtliche Lauf hängt an ``dienst()`` und nicht an ``create_app``: eine App, die nur
 befragt wird — im Test, im Skript —, soll nicht anfangen zu arbeiten. Er läuft hier und
@@ -29,6 +33,7 @@ from flask import Flask, Response, abort, g, redirect, render_template, request,
 from chronicle import (
     db,
     foundry,
+    instanz,
     jobs,
     nightly,
     notes,
@@ -40,6 +45,7 @@ from chronicle import (
     search,
     settings,
 )
+from chronicle import runde as runden
 from chronicle.compose import client as sprachmodell
 from chronicle.compose.client import ModelError
 from chronicle.compose.service import RUECKBLICK
@@ -105,6 +111,10 @@ def create_app(config: Config | None = None, *, zeitplan: bool = False) -> Flask
     app.config["CHRONICLE"] = basis
     app.config["MAX_CONTENT_LENGTH"] = recordings.MAX_BYTES
     db.init(basis.database_path)
+    # Die Oberfläche kennt keine Runden: sie arbeitet stillschweigend in der ersten. Mit
+    # #69 verschwindet sie, und mit ihr diese Zeile — bis dahin ist sie die ehrlichste
+    # Übersetzung von »eine Instanz pro Gruppe« in die neue Welt.
+    runde = runden.erste(basis.database_path)
     if zeitplan:
         nightly.starten(basis)
 
@@ -131,7 +141,7 @@ def create_app(config: Config | None = None, *, zeitplan: bool = False) -> Flask
     def zugang_ziel() -> str:
         # Nach einem »Später« ist die Einrichtung abgehakt und das Band führt in die
         # Einstellungen — sonst zurück in den Wizard.
-        if settings.onboarding_done(basis.database_path):
+        if instanz.onboarding_done(basis.database_path):
             return url_for("einstellungen")
         return url_for("einrichtung")
 
@@ -142,11 +152,11 @@ def create_app(config: Config | None = None, *, zeitplan: bool = False) -> Flask
         if g.get("abgewiesen"):
             return {"verbindung": None, "zugang": None, "abgleich_job": None, "verwalter": False}
         verwalter = roles.ist_verwalter(request, basis.database_path)
-        lauf = jobs.latest(basis.database_path, jobs.ABGLEICH)
+        lauf = jobs.latest(runde, jobs.ABGLEICH)
         rahmen = {"verbindung": None, "zugang": None, "abgleich_job": lauf, "verwalter": verwalter}
         if request.endpoint in OHNE_BAND:
             return rahmen
-        if not settings.effective(basis).foundry_configured:
+        if not settings.effective(basis, runde).foundry_configured:
             # Der Weg in die Einrichtung steht nur dem offen, der sie auch gehen darf.
             return rahmen | {
                 "verbindung": UNKONFIGURIERT,
@@ -154,7 +164,7 @@ def create_app(config: Config | None = None, *, zeitplan: bool = False) -> Flask
             }
         if lauf is not None and lauf.laeuft:
             return rahmen | {"verbindung": ABGLEICH_LAEUFT}
-        return rahmen | {"verbindung": VERALTET if foundry.failed(basis) else None}
+        return rahmen | {"verbindung": VERALTET if foundry.failed(basis, runde) else None}
 
     def zurueck(fallback: str) -> str:
         ziel = request.form.get("zurueck", "")
@@ -163,17 +173,18 @@ def create_app(config: Config | None = None, *, zeitplan: bool = False) -> Flask
 
     @app.post("/abgleich")
     def abgleich_anstossen() -> Response:
-        jobs.start(basis, jobs.ABGLEICH, lambda: jobs.abgleich(basis))
+        jobs.start(basis, runde, jobs.ABGLEICH, lambda: jobs.abgleich(basis, runde))
         return redirect(zurueck(url_for("einstellungen", _anchor="zustand")))
 
     @app.post("/sitzungen/<int:sitzung_id>/chronik")
     def chronik_anstossen(sitzung_id: int) -> Response:
-        if notes.session(basis.database_path, sitzung_id) is None:
+        if notes.session(runde, sitzung_id) is None:
             abort(404)
         jobs.start(
             basis,
+            runde,
             jobs.CHRONIK,
-            lambda: jobs.chronik(basis, sitzung_id),
+            lambda: jobs.chronik(basis, runde, sitzung_id),
             session_id=sitzung_id,
         )
         return redirect(url_for("protokoll", sitzung_id=sitzung_id))
@@ -181,9 +192,9 @@ def create_app(config: Config | None = None, *, zeitplan: bool = False) -> Flask
     def einrichtung_offen() -> bool:
         # Die Einrichtung steht offen, solange Foundry fehlt — nicht nur beim ersten
         # Aufruf. Wer sie nicht jetzt machen will, legt sie mit »Später« beiseite.
-        if settings.onboarding_done(basis.database_path):
+        if instanz.onboarding_done(basis.database_path):
             return False
-        return not settings.effective(basis).foundry_configured
+        return not settings.effective(basis, runde).foundry_configured
 
     @app.get("/")
     def sitzungen() -> str | Response:
@@ -192,14 +203,14 @@ def create_app(config: Config | None = None, *, zeitplan: bool = False) -> Flask
             return redirect(url_for("einrichtung"))
         return render_template(
             "sitzungen.html",
-            sitzungen=notes.sessions(basis.database_path),
+            sitzungen=notes.sessions(runde),
             heute=notes.today(),
         )
 
     @app.post("/")
     def neue_sitzung() -> Response:
         sitzung_id = notes.create_session(
-            basis.database_path,
+            runde,
             played_on=request.form.get("played_on", ""),
             title=request.form.get("title", ""),
         )
@@ -210,15 +221,15 @@ def create_app(config: Config | None = None, *, zeitplan: bool = False) -> Flask
         diktat_fehler: str | None = None,
         transkript_fehler: str | None = None,
     ) -> str:
-        daten = notes.session(basis.database_path, sitzung_id)
+        daten = notes.session(runde, sitzung_id)
         if daten is None:
             abort(404)
         return render_template(
             "sitzung.html",
             sitzung=daten,
-            aufnahmen=recordings.for_session(basis.database_path, sitzung_id),
-            sprecher=people.speakers(basis.database_path),
-            transkript=merge.conversation(basis.database_path, sitzung_id),
+            aufnahmen=recordings.for_session(runde, sitzung_id),
+            sprecher=people.speakers(runde),
+            transkript=merge.conversation(runde, sitzung_id),
             frist=recordings.RETENTION_TAGE,
             diktat_fehler=diktat_fehler,
             transkript_fehler=transkript_fehler,
@@ -227,8 +238,8 @@ def create_app(config: Config | None = None, *, zeitplan: bool = False) -> Flask
 
     def chronik_stand(sitzung_id: int) -> dict[str, object]:
         return {
-            "chronik_job": jobs.latest(basis.database_path, jobs.CHRONIK, sitzung_id),
-            "chronik_laeuft": jobs.running(basis.database_path, jobs.CHRONIK),
+            "chronik_job": jobs.latest(runde, jobs.CHRONIK, sitzung_id),
+            "chronik_laeuft": jobs.running(runde, jobs.CHRONIK),
         }
 
     @app.get("/sitzungen/<int:sitzung_id>")
@@ -237,43 +248,41 @@ def create_app(config: Config | None = None, *, zeitplan: bool = False) -> Flask
 
     @app.post("/sitzungen/<int:sitzung_id>/szenen")
     def neue_szene(sitzung_id: int) -> Response:
-        szene_id = notes.add_scene(
-            basis.database_path, sitzung_id, title=request.form.get("title", "")
-        )
+        szene_id = notes.add_scene(runde, sitzung_id, title=request.form.get("title", ""))
         if szene_id is None:
             abort(404)
         return redirect(url_for("sitzung", sitzung_id=sitzung_id, _anchor=f"szene-{szene_id}"))
 
     @app.post("/szenen/<int:szene_id>/notizen")
     def neue_notiz(szene_id: int) -> Response:
-        sitzung_id = notes.session_of_scene(basis.database_path, szene_id)
+        sitzung_id = notes.session_of_scene(runde, szene_id)
         if sitzung_id is None:
             abort(404)
-        notes.add_note(basis.database_path, szene_id, request.form.get("text", ""))
+        notes.add_note(runde, szene_id, request.form.get("text", ""))
         return redirect(url_for("sitzung", sitzung_id=sitzung_id, _anchor=f"szene-{szene_id}"))
 
     @app.post("/sitzungen/<int:sitzung_id>/diktat")
     def neues_diktat(sitzung_id: int) -> Response | tuple[str, int]:
-        if notes.session(basis.database_path, sitzung_id) is None:
+        if notes.session(runde, sitzung_id) is None:
             abort(404)
         try:
-            recordings.accept(basis, sitzung_id, request.files.get("datei"))
+            recordings.accept(basis, runde, sitzung_id, request.files.get("datei"))
         except recordings.Rejected as fehler:
             return sitzungsseite(sitzung_id, diktat_fehler=str(fehler)), 400
         return redirect(url_for("sitzung", sitzung_id=sitzung_id, _anchor="diktat"))
 
     @app.post("/aufnahmen/<int:aufnahme_id>/notiz")
     def diktat_uebernehmen(aufnahme_id: int) -> Response:
-        aufnahme = recordings.get(basis.database_path, aufnahme_id)
+        aufnahme = recordings.get(runde, aufnahme_id)
         if aufnahme is None or not aufnahme.text:
             abort(404)
         gewaehlt = request.form.get("scene_id", "")
         if not gewaehlt.isdigit():
             abort(404)
         szene_id = int(gewaehlt)
-        if notes.session_of_scene(basis.database_path, szene_id) != aufnahme.session_id:
+        if notes.session_of_scene(runde, szene_id) != aufnahme.session_id:
             abort(404)
-        notes.add_note(basis.database_path, szene_id, aufnahme.text)
+        notes.add_note(runde, szene_id, aufnahme.text)
         return redirect(
             url_for("sitzung", sitzung_id=aufnahme.session_id, _anchor=f"szene-{szene_id}")
         )
@@ -284,19 +293,17 @@ def create_app(config: Config | None = None, *, zeitplan: bool = False) -> Flask
         if not gewaehlt.isdigit():
             abort(404)
         szene_id = int(gewaehlt)
-        if notes.session_of_scene(basis.database_path, szene_id) != sitzung_id:
+        if notes.session_of_scene(runde, szene_id) != sitzung_id:
             abort(404)
         try:
             von = merge.marke_ms(request.form.get("von", ""))
             bis = merge.marke_ms(request.form.get("bis", ""))
         except ValueError as fehler:
             return sitzungsseite(sitzung_id, transkript_fehler=str(fehler)), 400
-        abschnitt = merge.span(
-            merge.conversation(basis.database_path, sitzung_id), von=von, bis=bis
-        )
+        abschnitt = merge.span(merge.conversation(runde, sitzung_id), von=von, bis=bis)
         if not abschnitt:
             return sitzungsseite(sitzung_id, transkript_fehler=merge.LEERE_SPANNE), 400
-        notes.add_note(basis.database_path, szene_id, merge.note_text(abschnitt))
+        notes.add_note(runde, szene_id, merge.note_text(abschnitt))
         return redirect(url_for("sitzung", sitzung_id=sitzung_id, _anchor=f"szene-{szene_id}"))
 
     @app.errorhandler(413)
@@ -305,18 +312,18 @@ def create_app(config: Config | None = None, *, zeitplan: bool = False) -> Flask
 
     @app.get("/protokolle")
     def protokolle() -> str:
-        return render_template("protokolle.html", eintraege=protocol.entries(basis.database_path))
+        return render_template("protokolle.html", eintraege=protocol.entries(runde))
 
     @app.get("/sitzungen/<int:sitzung_id>/protokoll")
     def protokoll(sitzung_id: int) -> str:
-        daten = notes.session(basis.database_path, sitzung_id)
+        daten = notes.session(runde, sitzung_id)
         if daten is None:
             abort(404)
         return render_template(
             "protokoll.html",
             sitzung=daten,
-            protokoll=protocol.stored(basis.database_path, sitzung_id),
-            rueckblick=protocol.stored(basis.database_path, sitzung_id, RUECKBLICK),
+            protokoll=protocol.stored(runde, sitzung_id),
+            rueckblick=protocol.stored(runde, sitzung_id, RUECKBLICK),
             **chronik_stand(sitzung_id),
         )
 
@@ -324,22 +331,22 @@ def create_app(config: Config | None = None, *, zeitplan: bool = False) -> Flask
     def suche() -> str:
         return render_template(
             "suche.html",
-            ergebnis=search.find(basis.database_path, request.args.get("q", "")),
+            ergebnis=search.find(runde, request.args.get("q", "")),
         )
 
     @app.get("/register")
     def register_seite() -> str:
         return render_template(
             "register.html",
-            gruppen=register.overview(basis.database_path),
-            offene=len(register.pending(basis.database_path)),
+            gruppen=register.overview(runde),
+            offene=len(register.pending(runde)),
         )
 
     @app.get("/register/vorschlaege")
     def register_vorschlaege() -> str:
         return render_template(
             "register_vorschlaege.html",
-            vorschlaege=register.pending(basis.database_path),
+            vorschlaege=register.pending(runde),
             feld=register.FELD,
             name_feld=register.NAME_FELD,
             satz_feld=register.SATZ_FELD,
@@ -350,7 +357,7 @@ def create_app(config: Config | None = None, *, zeitplan: bool = False) -> Flask
         # Entschieden wird nur über Zeilen, die in der angezeigten Liste standen — ein
         # Ja auf einen Eintrag, den niemand gesehen hat, wäre keine Bestätigung.
         auswahl = {}
-        for eintrag in register.pending(basis.database_path):
+        for eintrag in register.pending(runde):
             wahl = request.form.get(register.FELD + str(eintrag.id), "").strip()
             if wahl not in (register.JA, register.NEIN):
                 continue
@@ -359,20 +366,20 @@ def create_app(config: Config | None = None, *, zeitplan: bool = False) -> Flask
                 name=request.form.get(register.NAME_FELD + str(eintrag.id), ""),
                 description=request.form.get(register.SATZ_FELD + str(eintrag.id), ""),
             )
-        register.decide(basis.database_path, auswahl)
+        register.decide(runde, auswahl)
         return redirect(url_for("register_vorschlaege"))
 
     @app.get("/zuordnung")
     def zuordnung() -> str:
         return render_template(
             "zuordnung.html",
-            uebersicht=people.overview(basis.database_path),
+            uebersicht=people.overview(runde),
             feld=people.FELD,
         )
 
     @app.post("/zuordnung")
     def zuordnung_speichern() -> Response:
-        uebersicht = people.overview(basis.database_path)
+        uebersicht = people.overview(runde)
         bekannt = {spieler.id for spieler in uebersicht.spieler}
         # Gespeichert wird nur, was in der angezeigten Liste stand: diese Tabelle sagt
         # später, wessen Stimme wessen Absatz ist, und nimmt deshalb keinen Wert an, den
@@ -381,11 +388,11 @@ def create_app(config: Config | None = None, *, zeitplan: bool = False) -> Flask
         for person in uebersicht.personen:
             gewaehlt = request.form.get(people.FELD + person.discord_user_id, "").strip()
             auswahl[person.discord_user_id] = gewaehlt if gewaehlt in bekannt else ""
-        people.confirm(basis.database_path, auswahl)
+        people.confirm(runde, auswahl)
         return redirect(url_for("zuordnung"))
 
     def felder(*, mit_modellen: bool = True) -> dict[str, object]:
-        aktuell = settings.effective(basis)
+        aktuell = settings.effective(basis, runde)
         adresse = str(aktuell.ollama_url)
         modelle, hinweis, erreichbar = _modelle(adresse) if mit_modellen else ((), "", True)
         return {
@@ -413,19 +420,19 @@ def create_app(config: Config | None = None, *, zeitplan: bool = False) -> Flask
         for name in namen:
             if name in settings.SECRET_KEYS and request.form.get(name, "").strip():
                 werte[name] = request.form[name]
-        settings.save(basis.database_path, werte)
+        settings.save(runde, werte)
 
     def einstellungsseite(sperr_gruppe: str | None = None) -> str:
         return render_template(
             "einstellungen.html",
-            quellen=settings.sources(basis),
-            config=settings.effective(basis),
+            quellen=settings.sources(basis, runde),
+            config=settings.effective(basis, runde),
             schema_version=db.current_schema_version(basis.database_path),
-            abgleich=foundry.current(basis),
+            abgleich=foundry.current(basis, runde),
             remote_user=request.headers.get(REMOTE_USER_HEADER),
-            nightly_time=settings.nightly_time(basis.database_path),
-            nachtlauf=nightly.letzter(basis.database_path),
-            admin_group=settings.admin_group(basis.database_path)
+            nightly_time=settings.nightly_time(runde),
+            nachtlauf=nightly.letzter(runde),
+            admin_group=instanz.admin_group(basis.database_path)
             if sperr_gruppe is None
             else sperr_gruppe,
             sperr_gruppe=sperr_gruppe,
@@ -439,17 +446,17 @@ def create_app(config: Config | None = None, *, zeitplan: bool = False) -> Flask
     @app.post("/einstellungen")
     def einstellungen_speichern() -> Response | str:
         uebernehmen(settings.KEYS)
-        settings.save_nightly_time(basis.database_path, request.form.get(settings.NIGHTLY_KEY, ""))
+        settings.save_nightly_time(runde, request.form.get(settings.NIGHTLY_KEY, ""))
         # Ein gar nicht abgesendetes Feld heißt »unverändert«: ein Formular ohne dieses
         # Feld darf die Verwaltungsrolle nicht still zurücknehmen.
-        gruppe = request.form.get(settings.ADMIN_GROUP_KEY)
+        gruppe = request.form.get(instanz.ADMIN_GROUP_KEY)
         if gruppe is None:
             return redirect(url_for("einstellungen"))
         if request.form.get(BESTAETIGT) != "ja" and not roles.traegt(
             request.headers.get(roles.GRUPPEN_HEADER), gruppe
         ):
             return einstellungsseite(sperr_gruppe=gruppe.strip())
-        settings.save_admin_group(basis.database_path, gruppe)
+        instanz.save_admin_group(basis.database_path, gruppe)
         return redirect(url_for("einstellungen"))
 
     @app.get("/einrichtung")
@@ -476,14 +483,14 @@ def create_app(config: Config | None = None, *, zeitplan: bool = False) -> Flask
             abort(404)
         tat = request.form.get("tat")
         if tat == SPAETER:
-            settings.finish_onboarding(basis.database_path)
+            instanz.finish_onboarding(basis.database_path)
             return redirect(url_for("sitzungen"))
         if tat != UEBERSPRINGEN:
             uebernehmen(SCHRITT_FELDER[schritt])
         namen = [name for name, _ in SCHRITTE]
         naechster = namen.index(schritt) + 1
         if naechster == len(namen):
-            settings.finish_onboarding(basis.database_path)
+            instanz.finish_onboarding(basis.database_path)
             return redirect(url_for("sitzungen"))
         return redirect(url_for("einrichtung_schritt", schritt=namen[naechster]))
 

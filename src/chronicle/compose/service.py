@@ -11,7 +11,6 @@ Rohmaterial — er ist der zweite Ausgang derselben Komposition.
 
 from __future__ import annotations
 
-import sqlite3
 from datetime import UTC, datetime
 
 from chronicle import db, settings
@@ -21,6 +20,7 @@ from chronicle.compose.composer import Composition, SceneMaterial, SessionMateri
 from chronicle.compose.recap import Recap, RecapMaterial, recap
 from chronicle.config import Config
 from chronicle.foundry import store
+from chronicle.runde import Runde
 
 KIND = "chronik"
 RUECKBLICK = "rueckblick"
@@ -34,27 +34,29 @@ def _now() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds")
 
 
-def material(connection: sqlite3.Connection, session_id: int) -> SessionMaterial | None:
-    kopf = connection.execute(
-        "SELECT id, played_on, title FROM session WHERE id = ?", (session_id,)
+def material(scope: db.Scope, session_id: int) -> SessionMaterial | None:
+    kopf = scope.execute(
+        "SELECT id, played_on, title FROM session WHERE runde_id = ? AND id = ?",
+        (scope.runde_id, session_id),
     ).fetchone()
     if kopf is None:
         return None
-    szenen = connection.execute(
-        "SELECT id, position, title FROM scene WHERE session_id = ? ORDER BY position",
-        (session_id,),
+    szenen = scope.execute(
+        "SELECT id, position, title FROM scene WHERE runde_id = ? AND session_id = ? "
+        "ORDER BY position",
+        (scope.runde_id, session_id),
     ).fetchall()
-    notizen = connection.execute(
+    notizen = scope.execute(
         "SELECT n.scene_id, n.text FROM note n JOIN scene c ON n.scene_id = c.id "
-        "WHERE c.session_id = ? ORDER BY n.id",
-        (session_id,),
+        "WHERE n.runde_id = ? AND c.session_id = ? ORDER BY n.id",
+        (scope.runde_id, session_id),
     ).fetchall()
-    fakten = connection.execute(
+    fakten = scope.execute(
         "SELECT v.scene_id AS scene_id, m.* FROM scene_foundry_message v "
         "JOIN scene c ON c.id = v.scene_id "
-        "JOIN foundry_message m ON m.id = v.message_id "
-        "WHERE c.session_id = ? ORDER BY m.timestamp, m.id",
-        (session_id,),
+        "JOIN foundry_message m ON m.id = v.message_id AND m.runde_id = v.runde_id "
+        "WHERE v.runde_id = ? AND c.session_id = ? ORDER BY m.timestamp, m.id",
+        (scope.runde_id, session_id),
     ).fetchall()
 
     je_szene_notizen: dict[int, list[str]] = {}
@@ -80,19 +82,21 @@ def material(connection: sqlite3.Connection, session_id: int) -> SessionMaterial
     )
 
 
-def recap_material(connection: sqlite3.Connection, session_id: int) -> RecapMaterial | None:
-    kopf = connection.execute(
+def recap_material(scope: db.Scope, session_id: int) -> RecapMaterial | None:
+    kopf = scope.execute(
         "SELECT s.id, s.played_on, s.title, p.text FROM session s "
-        "JOIN protocol p ON p.session_id = s.id AND p.kind = ? WHERE s.id = ?",
-        (KIND, session_id),
+        "JOIN protocol p ON p.session_id = s.id AND p.kind = ? "
+        "WHERE s.runde_id = ? AND s.id = ?",
+        (KIND, scope.runde_id, session_id),
     ).fetchone()
     if kopf is None:
         return None
-    frueher = connection.execute(
+    frueher = scope.execute(
         "SELECT p.text FROM protocol p JOIN session s ON s.id = p.session_id "
-        "WHERE p.kind = ? AND (s.played_on < ? OR (s.played_on = ? AND s.id < ?)) "
+        "WHERE p.runde_id = ? AND p.kind = ? "
+        "AND (s.played_on < ? OR (s.played_on = ? AND s.id < ?)) "
         "ORDER BY s.played_on DESC, s.id DESC LIMIT ?",
-        (RUECKBLICK, kopf["played_on"], kopf["played_on"], session_id, FRUEHERE),
+        (scope.runde_id, RUECKBLICK, kopf["played_on"], kopf["played_on"], session_id, FRUEHERE),
     ).fetchall()
     return RecapMaterial(
         session_id=kopf["id"],
@@ -103,47 +107,50 @@ def recap_material(connection: sqlite3.Connection, session_id: int) -> RecapMate
     )
 
 
-def save(
-    connection: sqlite3.Connection, session_id: int, text: str, at: str, kind: str = KIND
-) -> None:
-    with connection:
-        connection.execute(
-            "INSERT INTO protocol (session_id, kind, text, created_at) VALUES (?, ?, ?, ?) "
+def save(scope: db.Scope, session_id: int, text: str, at: str, kind: str = KIND) -> None:
+    with scope:
+        scope.execute(
+            "INSERT INTO protocol (runde_id, session_id, kind, text, created_at) "
+            "VALUES (?, ?, ?, ?, ?) "
             "ON CONFLICT (session_id, kind) DO UPDATE SET text = excluded.text, "
             "created_at = excluded.created_at",
-            (session_id, kind, text, at),
+            (scope.runde_id, session_id, kind, text, at),
         )
 
 
 def compose_session(
-    config: Config, session_id: int, *, model: TextModel | None = None
+    config: Config, runde: Runde, session_id: int, *, model: TextModel | None = None
 ) -> Composition | None:
     db.init(config.database_path)
-    connection = db.connect(config.database_path)
+    scope = db.scoped(runde)
     try:
-        stoff = material(connection, session_id)
+        stoff = material(scope, session_id)
         if stoff is None:
             return None
-        gewaehlt = model if model is not None else client.from_config(settings.effective(config))
+        gewaehlt = (
+            model if model is not None else client.from_config(settings.effective(config, runde))
+        )
         ergebnis = compose(stoff, gewaehlt)
-        save(connection, session_id, ergebnis.text, _now())
+        save(scope, session_id, ergebnis.text, _now())
         return ergebnis
     finally:
-        connection.close()
+        scope.close()
 
 
 def recap_session(
-    config: Config, session_id: int, *, model: TextModel | None = None
+    config: Config, runde: Runde, session_id: int, *, model: TextModel | None = None
 ) -> Recap | None:
     db.init(config.database_path)
-    connection = db.connect(config.database_path)
+    scope = db.scoped(runde)
     try:
-        stoff = recap_material(connection, session_id)
+        stoff = recap_material(scope, session_id)
         if stoff is None:
             return None
-        gewaehlt = model if model is not None else client.from_config(settings.effective(config))
+        gewaehlt = (
+            model if model is not None else client.from_config(settings.effective(config, runde))
+        )
         ergebnis = recap(stoff, gewaehlt)
-        save(connection, session_id, ergebnis.text, _now(), kind=RUECKBLICK)
+        save(scope, session_id, ergebnis.text, _now(), kind=RUECKBLICK)
         return ergebnis
     finally:
-        connection.close()
+        scope.close()

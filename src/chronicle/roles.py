@@ -16,7 +16,7 @@ from pathlib import Path
 
 from flask import Request
 
-from chronicle import settings
+from chronicle import instanz
 
 # Der Proxy schickt die Gruppen als kommagetrennte Liste. Der Name steht hier und in
 # keiner gerenderten Seite: Proxy-Innenleben hilft beim Bedienen niemandem.
@@ -36,4 +36,4 @@ def traegt(kopfzeile: str | None, gruppe: str) -> bool:
 
 
 def ist_verwalter(request: Request, database_path: Path) -> bool:
-    return traegt(request.headers.get(GRUPPEN_HEADER), settings.admin_group(database_path))
+    return traegt(request.headers.get(GRUPPEN_HEADER), instanz.admin_group(database_path))

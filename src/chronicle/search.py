@@ -15,12 +15,12 @@ from __future__ import annotations
 import re
 import sqlite3
 from dataclasses import dataclass
-from pathlib import Path
 
 from markupsafe import Markup, escape
 
 from chronicle import db
 from chronicle.compose.service import KIND, RUECKBLICK
+from chronicle.runde import Runde
 from chronicle.transcribe.service import KIND as TRANSKRIPT
 
 NOTIZ = "notiz"
@@ -52,7 +52,7 @@ SUCHE = (
     "session.played_on AS played_on, session.title AS title, "
     f"snippet(search_index, 0, '{AUF}', '{ZU}', ' … ', 12) AS ausschnitt "
     "FROM search_index JOIN session ON session.id = search_index.session_id "
-    "WHERE search_index MATCH ? ORDER BY rank LIMIT ?"
+    "WHERE search_index MATCH ? AND search_index.runde_id = ? ORDER BY rank LIMIT ?"
 )
 
 
@@ -115,12 +115,16 @@ def _groups(rows: list[sqlite3.Row]) -> tuple[Group, ...]:
     )
 
 
-def find(database_path: Path, query: str, *, limit: int = TREFFER) -> Result:
+def find(runde: Runde, query: str, *, limit: int = TREFFER) -> Result:
     ausdruck = expression(query)
-    connection = db.connect(database_path)
+    scope = db.scoped(runde)
     try:
-        gefuellt = connection.execute("SELECT EXISTS (SELECT 1 FROM search_index)").fetchone()[0]
-        zeilen = connection.execute(SUCHE, (ausdruck, limit)).fetchall() if ausdruck else []
+        gefuellt = scope.execute(
+            "SELECT EXISTS (SELECT 1 FROM search_index WHERE runde_id = ?)", (scope.runde_id,)
+        ).fetchone()[0]
+        zeilen = (
+            scope.execute(SUCHE, (ausdruck, scope.runde_id, limit)).fetchall() if ausdruck else []
+        )
     finally:
-        connection.close()
+        scope.close()
     return Result(query=query.strip(), groups=_groups(zeilen), indexed=bool(gefuellt))

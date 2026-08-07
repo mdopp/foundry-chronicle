@@ -6,16 +6,19 @@ kosten.
 
 Die Szenenfolge ist im Präsenzfall die einzige Zeitachse: ``position`` zählt hoch, die
 Zeitstempel aus Foundry taugen dafür nicht.
+
+Alles hier gehört einer Runde und wird nur über sie erreicht — auch dort, wo eine Id
+allein schon eindeutig wäre. Eine Szenen-Id aus einer fremden Runde ist kein Fund,
+sondern ein Datenleck.
 """
 
 from __future__ import annotations
 
-import sqlite3
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
-from pathlib import Path
 
 from chronicle import db
+from chronicle.runde import Runde
 
 
 @dataclass(frozen=True)
@@ -51,43 +54,40 @@ def today() -> str:
     return date.today().isoformat()
 
 
-def _open(database_path: Path) -> sqlite3.Connection:
-    return db.connect(database_path)
-
-
-def create_session(database_path: Path, *, played_on: str = "", title: str = "") -> int:
+def create_session(runde: Runde, *, played_on: str = "", title: str = "") -> int:
     zeitpunkt = _now()
-    connection = _open(database_path)
+    scope = db.scoped(runde)
     try:
-        with connection:
-            cursor = connection.execute(
-                "INSERT INTO session (played_on, title, created_at) VALUES (?, ?, ?)",
-                (played_on.strip() or today(), title.strip() or None, zeitpunkt),
+        with scope:
+            cursor = scope.execute(
+                "INSERT INTO session (runde_id, played_on, title, created_at) VALUES (?, ?, ?, ?)",
+                (scope.runde_id, played_on.strip() or today(), title.strip() or None, zeitpunkt),
             )
             sitzung = int(cursor.lastrowid)
             # Wer eine Sitzung anlegt, will sofort tippen — die erste Szene steht schon da.
-            connection.execute(
-                "INSERT INTO scene (session_id, position, title, created_at) "
-                "VALUES (?, 1, NULL, ?)",
-                (sitzung, zeitpunkt),
+            scope.execute(
+                "INSERT INTO scene (runde_id, session_id, position, title, created_at) "
+                "VALUES (?, ?, 1, NULL, ?)",
+                (scope.runde_id, sitzung, zeitpunkt),
             )
         return sitzung
     finally:
-        connection.close()
+        scope.close()
 
 
-def sessions(database_path: Path) -> tuple[Session, ...]:
-    connection = _open(database_path)
+def sessions(runde: Runde) -> tuple[Session, ...]:
+    scope = db.scoped(runde)
     try:
-        rows = connection.execute(
+        rows = scope.execute(
             "SELECT s.id, s.played_on, s.title, "
             "(SELECT COUNT(*) FROM scene WHERE session_id = s.id) AS szenen, "
             "(SELECT COUNT(*) FROM note n JOIN scene c ON n.scene_id = c.id "
             " WHERE c.session_id = s.id) AS notizen "
-            "FROM session s ORDER BY s.played_on DESC, s.id DESC"
+            "FROM session s WHERE s.runde_id = ? ORDER BY s.played_on DESC, s.id DESC",
+            (scope.runde_id,),
         ).fetchall()
     finally:
-        connection.close()
+        scope.close()
     return tuple(
         Session(
             id=r["id"],
@@ -100,25 +100,28 @@ def sessions(database_path: Path) -> tuple[Session, ...]:
     )
 
 
-def session(database_path: Path, session_id: int) -> Session | None:
-    connection = _open(database_path)
+def session(runde: Runde, session_id: int) -> Session | None:
+    scope = db.scoped(runde)
     try:
-        kopf = connection.execute(
-            "SELECT id, played_on, title FROM session WHERE id = ?", (session_id,)
+        kopf = scope.execute(
+            "SELECT id, played_on, title FROM session WHERE runde_id = ? AND id = ?",
+            (scope.runde_id, session_id),
         ).fetchone()
         if kopf is None:
             return None
-        szenen = connection.execute(
-            "SELECT id, position, title FROM scene WHERE session_id = ? ORDER BY position",
-            (session_id,),
+        szenen = scope.execute(
+            "SELECT id, position, title FROM scene WHERE runde_id = ? AND session_id = ? "
+            "ORDER BY position",
+            (scope.runde_id, session_id),
         ).fetchall()
-        notizen = connection.execute(
+        notizen = scope.execute(
             "SELECT n.id, n.scene_id, n.text, n.created_at FROM note n "
-            "JOIN scene c ON n.scene_id = c.id WHERE c.session_id = ? ORDER BY n.id",
-            (session_id,),
+            "JOIN scene c ON n.scene_id = c.id "
+            "WHERE n.runde_id = ? AND c.session_id = ? ORDER BY n.id",
+            (scope.runde_id, session_id),
         ).fetchall()
     finally:
-        connection.close()
+        scope.close()
     je_szene: dict[int, list[Note]] = {}
     for r in notizen:
         eintrag = Note(id=r["id"], text=r["text"], created_at=r["created_at"])
@@ -142,60 +145,73 @@ def session(database_path: Path, session_id: int) -> Session | None:
     )
 
 
-def latest_session(database_path: Path) -> Session | None:
+def latest_session(runde: Runde) -> Session | None:
     """Die zuletzt angelegte Sitzung — das Ziel für alles, was ohne Adresse hereinkommt.
 
     Nicht die zuletzt gespielte: ein nachgetragenes Datum würde sonst die Zielsitzung
     eines Diktats verschieben, das längst unterwegs ist.
     """
-    connection = _open(database_path)
+    scope = db.scoped(runde)
     try:
-        zeile = connection.execute("SELECT id FROM session ORDER BY id DESC LIMIT 1").fetchone()
+        zeile = scope.execute(
+            "SELECT id FROM session WHERE runde_id = ? ORDER BY id DESC LIMIT 1",
+            (scope.runde_id,),
+        ).fetchone()
     finally:
-        connection.close()
-    return None if zeile is None else session(database_path, int(zeile["id"]))
+        scope.close()
+    return None if zeile is None else session(runde, int(zeile["id"]))
 
 
-def add_scene(database_path: Path, session_id: int, *, title: str = "") -> int | None:
-    connection = _open(database_path)
+def add_scene(runde: Runde, session_id: int, *, title: str = "") -> int | None:
+    scope = db.scoped(runde)
     try:
-        bekannt = connection.execute("SELECT 1 FROM session WHERE id = ?", (session_id,)).fetchone()
+        bekannt = scope.execute(
+            "SELECT 1 FROM session WHERE runde_id = ? AND id = ?", (scope.runde_id, session_id)
+        ).fetchone()
         if bekannt is None:
             return None
-        with connection:
-            cursor = connection.execute(
-                "INSERT INTO scene (session_id, position, title, created_at) "
-                "SELECT ?, COALESCE(MAX(position), 0) + 1, ?, ? FROM scene WHERE session_id = ?",
-                (session_id, title.strip() or None, _now(), session_id),
+        with scope:
+            cursor = scope.execute(
+                "INSERT INTO scene (runde_id, session_id, position, title, created_at) "
+                "SELECT ?, ?, COALESCE(MAX(position), 0) + 1, ?, ? FROM scene "
+                "WHERE session_id = ?",
+                (scope.runde_id, session_id, title.strip() or None, _now(), session_id),
             )
         return int(cursor.lastrowid)
     finally:
-        connection.close()
+        scope.close()
 
 
-def session_of_scene(database_path: Path, scene_id: int) -> int | None:
-    connection = _open(database_path)
+def session_of_scene(runde: Runde, scene_id: int) -> int | None:
+    scope = db.scoped(runde)
     try:
-        row = connection.execute(
-            "SELECT session_id FROM scene WHERE id = ?", (scene_id,)
+        row = scope.execute(
+            "SELECT session_id FROM scene WHERE runde_id = ? AND id = ?",
+            (scope.runde_id, scene_id),
         ).fetchone()
     finally:
-        connection.close()
+        scope.close()
     return None if row is None else int(row["session_id"])
 
 
-def add_note(database_path: Path, scene_id: int, text: str) -> int | None:
+def add_note(runde: Runde, scene_id: int, text: str) -> int | None:
     inhalt = text.strip()
     if not inhalt:
         return None
     zeitpunkt = _now()
-    connection = _open(database_path)
+    scope = db.scoped(runde)
     try:
-        with connection:
-            cursor = connection.execute(
-                "INSERT INTO note (scene_id, text, created_at, updated_at) VALUES (?, ?, ?, ?)",
-                (scene_id, inhalt, zeitpunkt, zeitpunkt),
+        bekannt = scope.execute(
+            "SELECT 1 FROM scene WHERE runde_id = ? AND id = ?", (scope.runde_id, scene_id)
+        ).fetchone()
+        if bekannt is None:
+            return None
+        with scope:
+            cursor = scope.execute(
+                "INSERT INTO note (runde_id, scene_id, text, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (scope.runde_id, scene_id, inhalt, zeitpunkt, zeitpunkt),
             )
         return int(cursor.lastrowid)
     finally:
-        connection.close()
+        scope.close()

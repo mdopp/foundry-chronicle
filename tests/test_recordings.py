@@ -11,6 +11,7 @@ import io
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from conftest import runde
 
 from chronicle import db, notes, recordings
 from chronicle.app import create_app
@@ -47,7 +48,7 @@ def config(tmp_path):
 @pytest.fixture
 def sitzung_id(config):
     db.init(config.database_path)
-    return notes.create_session(config.database_path, played_on="2026-08-06", title="Der Keller")
+    return notes.create_session(runde(config), played_on="2026-08-06", title="Der Keller")
 
 
 @pytest.fixture
@@ -80,7 +81,7 @@ def test_ein_upload_landet_auf_der_platte_und_in_der_warteschlange(client, confi
     assert antwort.status_code == 302
     spuren = list(config.recordings_dir.iterdir())
     assert [pfad.read_bytes() for pfad in spuren] == [DIKTAT]
-    warteschlange = recordings.pending(config.database_path)
+    warteschlange = recordings.pending(runde(config))
     assert [(zeile.session_id, zeile.filename) for zeile in warteschlange] == [
         (sitzung_id, spuren[0].name)
     ]
@@ -97,7 +98,7 @@ def test_mehrere_diktate_je_sitzung_stehen_nebeneinander(client, config, sitzung
     hochladen(client, sitzung_id)
 
     assert len(list(config.recordings_dir.iterdir())) == 2
-    assert len(recordings.for_session(config.database_path, sitzung_id)) == 2
+    assert len(recordings.for_session(runde(config), sitzung_id)) == 2
 
 
 def test_ohne_datei_wird_verstaendlich_abgewiesen(client, config, sitzung_id):
@@ -105,7 +106,7 @@ def test_ohne_datei_wird_verstaendlich_abgewiesen(client, config, sitzung_id):
 
     assert antwort.status_code == 400
     assert "Keine Datei ausgewählt" in antwort.get_data(as_text=True)
-    assert recordings.for_session(config.database_path, sitzung_id) == ()
+    assert recordings.for_session(runde(config), sitzung_id) == ()
 
 
 def test_was_kein_audio_ist_wird_verstaendlich_abgewiesen(client, config, sitzung_id):
@@ -124,7 +125,7 @@ def test_eine_leere_datei_hinterlaesst_nichts(client, config, sitzung_id):
     assert antwort.status_code == 400
     assert "leer" in antwort.get_data(as_text=True)
     assert list(config.recordings_dir.iterdir()) == []
-    assert recordings.for_session(config.database_path, sitzung_id) == ()
+    assert recordings.for_session(runde(config), sitzung_id) == ()
 
 
 def test_eine_zu_grosse_spur_wird_abgewiesen_statt_den_speicher_zu_fuellen(config, sitzung_id):
@@ -174,18 +175,16 @@ def test_die_seite_zeigt_den_stand_des_jobs_und_nicht_nur_dass_etwas_da_ist(
     client, config, sitzung_id
 ):
     hochladen(client, sitzung_id)
-    aufnahme = recordings.pending(config.database_path)[0]
-    recordings.mark(config.database_path, aufnahme.id, recordings.LAEUFT)
+    aufnahme = recordings.pending(runde(config))[0]
+    recordings.mark(runde(config), aufnahme.id, recordings.LAEUFT)
 
     assert "Wird gerade verschriftet" in seite(client, sitzung_id)
 
 
 def test_ein_gescheiterter_lauf_steht_mit_grund_auf_der_seite(client, config, sitzung_id):
     hochladen(client, sitzung_id)
-    aufnahme = recordings.pending(config.database_path)[0]
-    recordings.mark(
-        config.database_path, aufnahme.id, recordings.GESCHEITERT, "faster-whisper fehlt."
-    )
+    aufnahme = recordings.pending(runde(config))[0]
+    recordings.mark(runde(config), aufnahme.id, recordings.GESCHEITERT, "faster-whisper fehlt.")
 
     assert "faster-whisper fehlt." in seite(client, sitzung_id)
 
@@ -212,7 +211,7 @@ def test_der_upload_steht_hinter_demselben_tuersteher(config, sitzung_id):
 
     assert client.post(f"/sitzungen/{sitzung_id}/diktat", data=datei()).status_code == 403
     assert client.post("/aufnahmen/1/notiz", data={"scene_id": "1"}).status_code == 403
-    assert recordings.for_session(config.database_path, sitzung_id) == ()
+    assert recordings.for_session(runde(config), sitzung_id) == ()
 
 
 # --- Derselbe Stapel, dieselbe Warteschlange ----------------------------------------
@@ -221,10 +220,10 @@ def test_der_upload_steht_hinter_demselben_tuersteher(config, sitzung_id):
 def test_der_stapel_macht_aus_dem_diktat_ein_transkript(client, config, sitzung_id):
     hochladen(client, sitzung_id)
 
-    meldungen = service.run_queue(config, model=Erkenner())
+    meldungen = service.run_queue(config, runde(config), model=Erkenner())
 
     assert "2 Segmente" in meldungen[0]
-    aufnahme = recordings.for_session(config.database_path, sitzung_id)[0]
+    aufnahme = recordings.for_session(runde(config), sitzung_id)[0]
     assert aufnahme.status == recordings.FERTIG
     assert aufnahme.text == "Auf dem Heimweg fällt mir ein: die Wirtin hat gelogen."
     assert aufnahme.text in seite(client, sitzung_id)
@@ -235,16 +234,16 @@ def test_ein_leerer_lauf_laedt_kein_modell(config, monkeypatch):
         raise AssertionError("ohne Wartende wird kein Modell geladen")
 
     monkeypatch.setattr(service, "model_from_config", keins)
-    assert service.run_queue(config) == ()
+    assert service.run_queue(config, runde(config)) == ()
 
 
 def test_eine_verschwundene_spur_wird_gemeldet_statt_still_zu_scheitern(client, config, sitzung_id):
     hochladen(client, sitzung_id)
     next(config.recordings_dir.iterdir()).unlink()
 
-    service.run_queue(config, model=Erkenner())
+    service.run_queue(config, runde(config), model=Erkenner())
 
-    aufnahme = recordings.for_session(config.database_path, sitzung_id)[0]
+    aufnahme = recordings.for_session(runde(config), sitzung_id)[0]
     assert aufnahme.status == recordings.GESCHEITERT
     assert "liegt nicht mehr da" in aufnahme.detail
 
@@ -255,27 +254,27 @@ def test_eine_kaputte_spur_nimmt_die_uebrigen_nicht_mit(client, config, sitzung_
     erkenner = Erkenner()
     echte_spur = service.transcribe_session
 
-    def stolpert(config_, session_id, audio_path, **kwargs):
+    def stolpert(config_, runde_, session_id, audio_path, **kwargs):
         if "kaputt" in audio_path.name:
             raise RuntimeError("Datei lässt sich nicht dekodieren")
-        return echte_spur(config_, session_id, audio_path, **kwargs)
+        return echte_spur(config_, runde_, session_id, audio_path, **kwargs)
 
     monkeypatch.setattr(service, "transcribe_session", stolpert)
-    service.run_queue(config, model=erkenner)
+    service.run_queue(config, runde(config), model=erkenner)
 
-    stände = [zeile.status for zeile in recordings.for_session(config.database_path, sitzung_id)]
+    stände = [zeile.status for zeile in recordings.for_session(runde(config), sitzung_id)]
     assert stände == [recordings.GESCHEITERT, recordings.FERTIG]
 
 
 def test_die_spur_bleibt_liegen_und_geht_nur_auf_verlangen(client, config, sitzung_id):
     hochladen(client, sitzung_id)
 
-    service.run_queue(config, model=Erkenner())
+    service.run_queue(config, runde(config), model=Erkenner())
     assert len(list(config.recordings_dir.iterdir())) == 1
 
-    aufnahme = recordings.for_session(config.database_path, sitzung_id)[0]
-    recordings.mark(config.database_path, aufnahme.id, recordings.WARTET)
-    service.run_queue(config, model=Erkenner(), delete_audio=True)
+    aufnahme = recordings.for_session(runde(config), sitzung_id)[0]
+    recordings.mark(runde(config), aufnahme.id, recordings.WARTET)
+    service.run_queue(config, runde(config), model=Erkenner(), delete_audio=True)
     assert list(config.recordings_dir.iterdir()) == []
 
 
@@ -289,9 +288,9 @@ def test_ein_fehlendes_faster_whisper_laesst_die_warteschlange_stehen(
 
     monkeypatch.setattr(service, "model_from_config", ohne_modell)
     with pytest.raises(TranscriberNotInstalled):
-        service.run_queue(config)
+        service.run_queue(config, runde(config))
 
-    assert recordings.pending(config.database_path)[0].status == recordings.WARTET
+    assert recordings.pending(runde(config))[0].status == recordings.WARTET
 
 
 # --- Die zugesagte Frist ------------------------------------------------------------
@@ -311,14 +310,14 @@ def altern(config, aufnahme_id, tage):
 
 def test_was_aelter_ist_als_die_frist_wird_geloescht(client, config, sitzung_id):
     hochladen(client, sitzung_id)
-    (aufnahme,) = recordings.for_session(config.database_path, sitzung_id)
+    (aufnahme,) = recordings.for_session(runde(config), sitzung_id)
     altern(config, aufnahme.id, recordings.RETENTION_TAGE + 1)
 
-    (meldung,) = recordings.sweep(config)
+    (meldung,) = recordings.sweep(config, runde(config))
 
     assert list(config.recordings_dir.iterdir()) == []
     assert str(recordings.RETENTION_TAGE) in meldung
-    nachher = recordings.get(config.database_path, aufnahme.id)
+    nachher = recordings.get(runde(config), aufnahme.id)
     assert nachher is not None
     assert nachher.deleted_at
     assert nachher.filename == aufnahme.filename
@@ -326,55 +325,55 @@ def test_was_aelter_ist_als_die_frist_wird_geloescht(client, config, sitzung_id)
 
 def test_was_juenger_ist_bleibt_liegen(client, config, sitzung_id):
     hochladen(client, sitzung_id)
-    (aufnahme,) = recordings.for_session(config.database_path, sitzung_id)
+    (aufnahme,) = recordings.for_session(runde(config), sitzung_id)
     altern(config, aufnahme.id, recordings.RETENTION_TAGE - 1)
 
-    assert recordings.sweep(config) == ()
+    assert recordings.sweep(config, runde(config)) == ()
     assert len(list(config.recordings_dir.iterdir())) == 1
-    assert recordings.get(config.database_path, aufnahme.id).deleted_at is None
+    assert recordings.get(runde(config), aufnahme.id).deleted_at is None
 
 
 def test_der_lauf_darf_beliebig_oft_kommen(client, config, sitzung_id):
     hochladen(client, sitzung_id)
-    (aufnahme,) = recordings.for_session(config.database_path, sitzung_id)
+    (aufnahme,) = recordings.for_session(runde(config), sitzung_id)
     altern(config, aufnahme.id, recordings.RETENTION_TAGE + 1)
 
-    zuerst = recordings.sweep(config)
+    zuerst = recordings.sweep(config, runde(config))
 
     assert len(zuerst) == 1
-    assert recordings.sweep(config) == ()
-    assert recordings.expired(config.database_path) == ()
+    assert recordings.sweep(config, runde(config)) == ()
+    assert recordings.expired(runde(config)) == ()
 
 
 def test_eine_abgeraeumte_spur_kommt_nicht_in_die_warteschlange_zurueck(client, config, sitzung_id):
     hochladen(client, sitzung_id)
-    (aufnahme,) = recordings.for_session(config.database_path, sitzung_id)
+    (aufnahme,) = recordings.for_session(runde(config), sitzung_id)
     altern(config, aufnahme.id, recordings.RETENTION_TAGE + 1)
-    recordings.sweep(config)
+    recordings.sweep(config, runde(config))
 
-    assert recordings.pending(config.database_path) == ()
-    assert service.run_queue(config, model=Erkenner()) == ()
+    assert recordings.pending(runde(config)) == ()
+    assert service.run_queue(config, runde(config), model=Erkenner()) == ()
 
 
 def test_der_naechtliche_stapel_setzt_die_frist_auch_ohne_arbeit_durch(client, config, sitzung_id):
     hochladen(client, sitzung_id)
-    (aufnahme,) = recordings.for_session(config.database_path, sitzung_id)
-    service.run_queue(config, model=Erkenner())
+    (aufnahme,) = recordings.for_session(runde(config), sitzung_id)
+    service.run_queue(config, runde(config), model=Erkenner())
     altern(config, aufnahme.id, recordings.RETENTION_TAGE + 1)
 
-    (meldung,) = service.run_queue(config)
+    (meldung,) = service.run_queue(config, runde(config))
 
     assert "gelöscht" in meldung
     assert list(config.recordings_dir.iterdir()) == []
     # Das Transkript bleibt — gelöscht wird die Audiodatei, nicht die Geschichte.
-    assert recordings.get(config.database_path, aufnahme.id).text
+    assert recordings.get(runde(config), aufnahme.id).text
 
 
 def test_die_seite_sagt_warum_die_aufnahme_weg_ist(client, config, sitzung_id):
     hochladen(client, sitzung_id)
-    (aufnahme,) = recordings.for_session(config.database_path, sitzung_id)
+    (aufnahme,) = recordings.for_session(runde(config), sitzung_id)
     altern(config, aufnahme.id, recordings.RETENTION_TAGE + 1)
-    recordings.sweep(config)
+    recordings.sweep(config, runde(config))
 
     text = seite(client, sitzung_id)
     assert f"nach {recordings.RETENTION_TAGE} Tagen entfernt" in text
@@ -417,26 +416,26 @@ def test_eine_alte_datenbank_bekommt_die_spalte_nachgetragen(tmp_path):
 
 def test_das_transkript_laesst_sich_einer_szene_als_notiz_zuordnen(client, config, sitzung_id):
     hochladen(client, sitzung_id)
-    service.run_queue(config, model=Erkenner())
-    aufnahme = recordings.for_session(config.database_path, sitzung_id)[0]
-    szene = notes.session(config.database_path, sitzung_id).scenes[0]
+    service.run_queue(config, runde(config), model=Erkenner())
+    aufnahme = recordings.for_session(runde(config), sitzung_id)[0]
+    szene = notes.session(runde(config), sitzung_id).scenes[0]
 
     antwort = client.post(
         f"/aufnahmen/{aufnahme.id}/notiz", data={"scene_id": str(szene.id)}, follow_redirects=True
     )
 
     assert antwort.status_code == 200
-    notiz = notes.session(config.database_path, sitzung_id).scenes[0].notes[0]
+    notiz = notes.session(runde(config), sitzung_id).scenes[0].notes[0]
     assert notiz.text == aufnahme.text
 
 
 def test_ein_transkript_geht_nicht_in_eine_fremde_szene(client, config, sitzung_id):
     hochladen(client, sitzung_id)
-    service.run_queue(config, model=Erkenner())
-    aufnahme = recordings.for_session(config.database_path, sitzung_id)[0]
+    service.run_queue(config, runde(config), model=Erkenner())
+    aufnahme = recordings.for_session(runde(config), sitzung_id)[0]
     fremde = notes.session(
-        config.database_path,
-        notes.create_session(config.database_path, played_on="2026-08-13"),
+        runde(config),
+        notes.create_session(runde(config), played_on="2026-08-13"),
     ).scenes[0]
 
     assert client.post(f"/aufnahmen/{aufnahme.id}/notiz", data={"scene_id": "0"}).status_code == 404
@@ -450,8 +449,8 @@ def test_ein_transkript_geht_nicht_in_eine_fremde_szene(client, config, sitzung_
 
 def test_ohne_transkript_gibt_es_nichts_zu_uebernehmen(client, config, sitzung_id):
     hochladen(client, sitzung_id)
-    aufnahme = recordings.pending(config.database_path)[0]
-    szene = notes.session(config.database_path, sitzung_id).scenes[0]
+    aufnahme = recordings.pending(runde(config))[0]
+    szene = notes.session(runde(config), sitzung_id).scenes[0]
 
     antwort = client.post(f"/aufnahmen/{aufnahme.id}/notiz", data={"scene_id": str(szene.id)})
 

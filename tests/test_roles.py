@@ -1,6 +1,6 @@
 """Die Kopfzeile des Proxys ist Rohtext — hier steht, was daraus wird."""
 
-from chronicle import db, roles, settings
+from chronicle import db, instanz, roles
 from chronicle.config import Config
 
 GRUPPE = "chronik-verwaltung"
@@ -47,6 +47,6 @@ def test_ist_verwalter_liest_die_gespeicherte_gruppe(tmp_path):
     db.init(config.database_path)
     assert roles.ist_verwalter(Anfrage(), config.database_path)
 
-    settings.save_admin_group(config.database_path, GRUPPE)
+    instanz.save_admin_group(config.database_path, GRUPPE)
     assert not roles.ist_verwalter(Anfrage(), config.database_path)
     assert roles.ist_verwalter(Anfrage(f"spieler, {GRUPPE}"), config.database_path)

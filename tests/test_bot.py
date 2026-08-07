@@ -18,6 +18,7 @@ from array import array
 from pathlib import Path
 
 import pytest
+from conftest import runde as erste_runde
 
 import chronicle.bot.__main__ as entry
 from chronicle import consent, db, notes, recordings, settings
@@ -67,7 +68,7 @@ def konfiguration(tmp_path):
 @pytest.fixture
 def sitzung_id(konfiguration):
     db.init(konfiguration.database_path)
-    return notes.create_session(konfiguration.database_path, played_on="2026-08-06")
+    return notes.create_session(erste_runde(konfiguration), played_on="2026-08-06")
 
 
 @pytest.fixture
@@ -222,7 +223,7 @@ def test_das_einwilligungsprotokoll_haelt_kanal_wortlaut_und_anwesende(
 ):
     asyncio.run(recorder.starten(konfiguration, FakeStimme()))
 
-    (eintrag,) = consent.for_session(konfiguration.database_path, sitzung_id)
+    (eintrag,) = consent.for_session(erste_runde(konfiguration), sitzung_id)
     assert eintrag.kind == consent.ANSAGE
     assert (eintrag.guild_id, eintrag.channel_id, eintrag.channel_name) == (
         KANAL.guild_id,
@@ -238,13 +239,13 @@ def test_das_einwilligungsprotokoll_haelt_kanal_wortlaut_und_anwesende(
 
 
 def test_vor_der_ansage_wird_keine_spur_geschrieben(konfiguration, sitzung_id):
-    aufnahme = Aufnahme(konfiguration, sitzung_id, KANAL)
+    aufnahme = Aufnahme(konfiguration, erste_runde(konfiguration), sitzung_id, KANAL)
 
     with pytest.raises(NichtAngesagt):
         aufnahme.schreiben(MIRA, stille(10))
 
     assert not konfiguration.recordings_dir.exists()
-    assert recordings.pending(konfiguration.database_path) == ()
+    assert recordings.pending(erste_runde(konfiguration)) == ()
 
 
 def test_ohne_sitzung_wird_nicht_einmal_angesagt(konfiguration, ohne_espeak):
@@ -265,7 +266,7 @@ def test_je_sprecher_eine_eigene_spur(konfiguration, sitzung_id, ohne_espeak):
     aufnahme.schreiben(MIRA, stille(480))
     meldungen = aufnahme.beenden()
 
-    eingereiht = recordings.pending(konfiguration.database_path)
+    eingereiht = recordings.pending(erste_runde(konfiguration))
     assert len(eingereiht) == 2
     assert len(meldungen) == 2
     nach_name = {}
@@ -282,7 +283,7 @@ def test_die_spur_traegt_die_discord_id_ihres_sprechers(konfiguration, sitzung_i
     aufnahme.schreiben(MIRA, stille(480))
     aufnahme.beenden()
 
-    (spur,) = recordings.pending(konfiguration.database_path)
+    (spur,) = recordings.pending(erste_runde(konfiguration))
     assert spur.discord_user_id == MIRA.id
 
 
@@ -293,7 +294,7 @@ def test_wer_nichts_gesagt_hat_hinterlaesst_keine_spur(konfiguration, sitzung_id
 
     assert aufnahme.beenden() == (recorder.NICHTS_GESPROCHEN,)
     assert list(konfiguration.recordings_dir.glob("sitzung*")) == []
-    assert recordings.pending(konfiguration.database_path) == ()
+    assert recordings.pending(erste_runde(konfiguration)) == ()
 
 
 def test_ein_namenloser_sprecher_bekommt_seine_kennung(konfiguration, sitzung_id, ohne_espeak):
@@ -302,7 +303,7 @@ def test_ein_namenloser_sprecher_bekommt_seine_kennung(konfiguration, sitzung_id
     aufnahme.schreiben(consent.Member(id="4009", name="漢字"), stille(48))
     aufnahme.beenden()
 
-    (spur,) = recordings.pending(konfiguration.database_path)
+    (spur,) = recordings.pending(erste_runde(konfiguration))
     assert spur.filename.endswith("sprecher-4009.wav")
 
 
@@ -313,7 +314,7 @@ def test_der_nachzuegler_hoert_die_ansage_noch_einmal(konfiguration, sitzung_id,
     asyncio.run(recorder.nachzuegler(konfiguration, stimme, aufnahme, SPAET))
 
     assert stimme.ablauf == ["ansage", "mitschnitt", "ansage"]
-    erste, spaet = consent.for_session(konfiguration.database_path, sitzung_id)
+    erste, spaet = consent.for_session(erste_runde(konfiguration), sitzung_id)
     assert erste.kind == consent.ANSAGE
     assert spaet.kind == consent.NACHZUEGLER
     assert [wer.name for wer in spaet.members] == [SPAET.name]
@@ -331,7 +332,7 @@ def test_stoppen_beendet_den_mitschnitt_trennt_und_reiht_ein(
 
     assert stimme.ablauf == ["ansage", "mitschnitt", "mitschnitt-ende", "getrennt"]
     assert not aufnahme.laeuft
-    assert len(recordings.pending(konfiguration.database_path)) == 1
+    assert len(recordings.pending(erste_runde(konfiguration))) == 1
     assert "wartet auf den Stapel" in meldungen[0]
 
 
@@ -371,7 +372,7 @@ def test_ohne_token_startet_der_bot_nicht(tmp_path, monkeypatch, capsys):
 def test_der_token_aus_der_oberflaeche_schlaegt_die_umgebung(tmp_path, monkeypatch):
     aus_der_umgebung = Config(discord_bot_token="alt", data_dir=tmp_path)
     db.init(aus_der_umgebung.database_path)
-    settings.save(aus_der_umgebung.database_path, {"discord_bot_token": TOKEN})
+    settings.save(erste_runde(aus_der_umgebung), {"discord_bot_token": TOKEN})
     monkeypatch.setattr(entry.Config, "from_env", classmethod(lambda cls: aus_der_umgebung))
     gesehen = []
 
@@ -596,7 +597,7 @@ def test_start_tritt_bei_sagt_an_und_schneidet_dann_mit(
     assert len(verbindung.gespielt) == 1
     assert verbindung.schneidet
     assert ctx.antworten == [recorder.GESTARTET]
-    (eintrag,) = consent.for_session(konfiguration.database_path, sitzung_id)
+    (eintrag,) = consent.for_session(erste_runde(konfiguration), sitzung_id)
     assert {wer.name for wer in eintrag.members} == {MIRA.name, BROK.name}
 
 
@@ -647,7 +648,7 @@ def test_die_senke_schreibt_je_sprecher_eine_spur(konfiguration, sitzung_id, ohn
     assert runde.kanal.verbindung.getrennt
     assert senke.finished
     spuren = {
-        spur.filename.split("-")[-1] for spur in recordings.pending(konfiguration.database_path)
+        spur.filename.split("-")[-1] for spur in recordings.pending(erste_runde(konfiguration))
     }
     assert spuren == {"Mira.wav", "Brok.wav"}
     assert "wartet auf den Stapel" in ctx.antworten[0]
@@ -679,7 +680,7 @@ def test_wer_spaeter_dazukommt_hoert_die_ansage_noch_einmal(
     )
 
     assert len(runde.kanal.verbindung.gespielt) == 2
-    _, nachzuegler = consent.for_session(konfiguration.database_path, sitzung_id)
+    _, nachzuegler = consent.for_session(erste_runde(konfiguration), sitzung_id)
     assert nachzuegler.kind == consent.NACHZUEGLER
     assert [wer.name for wer in nachzuegler.members] == [SPAET.name]
 
@@ -700,7 +701,7 @@ def test_ein_ortswechsel_im_selben_kanal_sagt_nichts_noch_einmal(
     )
 
     assert len(runde.kanal.verbindung.gespielt) == 1
-    assert len(consent.for_session(konfiguration.database_path, sitzung_id)) == 1
+    assert len(consent.for_session(erste_runde(konfiguration), sitzung_id)) == 1
 
 
 def test_der_bot_setzt_die_frist_selbst_durch(konfiguration, sitzung_id, runde, monkeypatch):
@@ -736,7 +737,7 @@ def test_ohne_laufende_aufnahme_bleibt_der_beitritt_folgenlos(konfiguration, sit
         )
     )
 
-    assert consent.for_session(konfiguration.database_path, sitzung_id) == ()
+    assert consent.for_session(erste_runde(konfiguration), sitzung_id) == ()
 
 
 def test_ein_stolpernder_befehl_antwortet_trotzdem(
@@ -796,7 +797,7 @@ class LeererReader:
 
 
 def echte_senke(konfiguration, sitzung_id):
-    aufnahme = Aufnahme(konfiguration, sitzung_id, KANAL)
+    aufnahme = Aufnahme(konfiguration, erste_runde(konfiguration), sitzung_id, KANAL)
     aufnahme.ansage_protokollieren((MIRA,))
     return aufnahme, gateway._senke(aufnahme)
 
@@ -858,7 +859,7 @@ def test_pycords_datenform_landet_in_der_spur_des_sprechers(konfiguration, sitzu
     senke.write(daten, daten.source)
     aufnahme.beenden()
 
-    (spur,) = recordings.pending(konfiguration.database_path)
+    (spur,) = recordings.pending(erste_runde(konfiguration))
     assert spur.filename.endswith(f"{MIRA.name}.wav")
 
 
@@ -870,5 +871,5 @@ def test_ein_sprecher_ohne_konto_bekommt_eine_ehrlich_benannte_spur(konfiguratio
     senke.write(VoiceData(packet=None, source=None, pcm=stille(480)), None)
     aufnahme.beenden()
 
-    (spur,) = recordings.pending(konfiguration.database_path)
+    (spur,) = recordings.pending(erste_runde(konfiguration))
     assert spur.filename.endswith(f"{gateway.UNBEKANNT}.wav")

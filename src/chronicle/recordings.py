@@ -33,6 +33,8 @@ from pathlib import Path
 from werkzeug.utils import secure_filename
 
 from chronicle import db
+from chronicle import runde as runden
+from chronicle.runde import Runde
 
 logger = logging.getLogger(__name__)
 
@@ -97,10 +99,6 @@ def _now() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds")
 
 
-def _open(database_path: Path) -> sqlite3.Connection:
-    return db.connect(database_path)
-
-
 def _eintrag(row: sqlite3.Row, text: str = "") -> Recording:
     return Recording(
         id=row["id"],
@@ -134,7 +132,7 @@ def target_path(recordings_dir: Path, session_id: int, name: str) -> Path:
     return ziel
 
 
-def accept(config, session_id: int, datei) -> Recording:
+def accept(config, runde: Runde, session_id: int, datei) -> Recording:
     """Nimmt eine hochgeladene Spur an und reiht sie ein."""
     name = (getattr(datei, "filename", None) or "").strip()
     if not name:
@@ -149,11 +147,11 @@ def accept(config, session_id: int, datei) -> Recording:
     if ziel.stat().st_size == 0:
         ziel.unlink()
         raise Rejected(f"»{name}« kam leer an — die Aufnahme noch einmal hochladen.")
-    return enqueue(config.database_path, session_id, ziel.name)
+    return enqueue(runde, session_id, ziel.name)
 
 
 def enqueue(
-    database_path: Path,
+    runde: Runde,
     session_id: int,
     filename: str,
     *,
@@ -167,13 +165,14 @@ def enqueue(
     einem Absatz.
     """
     zeitpunkt = _now()
-    connection = _open(database_path)
+    scope = db.scoped(runde)
     try:
-        with connection:
-            cursor = connection.execute(
-                "INSERT INTO recording (session_id, filename, source, uploaded_at, status, "
-                "updated_at, discord_user_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        with scope:
+            cursor = scope.execute(
+                "INSERT INTO recording (runde_id, session_id, filename, source, uploaded_at, "
+                "status, updated_at, discord_user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 (
+                    scope.runde_id,
                     session_id,
                     filename,
                     Path(filename).stem,
@@ -193,21 +192,22 @@ def enqueue(
             discord_user_id=discord_user_id,
         )
     finally:
-        connection.close()
+        scope.close()
 
 
-def _text(connection: sqlite3.Connection, transcript_id: int) -> str:
-    zeilen = connection.execute(
-        "SELECT text FROM transcript_segment WHERE transcript_id = ? ORDER BY start_ms, id",
-        (transcript_id,),
+def _text(scope: db.Scope, transcript_id: int) -> str:
+    zeilen = scope.execute(
+        "SELECT text FROM transcript_segment WHERE runde_id = ? AND transcript_id = ? "
+        "ORDER BY start_ms, id",
+        (scope.runde_id, transcript_id),
     ).fetchall()
     return " ".join(zeile["text"] for zeile in zeilen)
 
 
-def _mit_transkript(connection: sqlite3.Connection, row: sqlite3.Row) -> Recording:
+def _mit_transkript(scope: db.Scope, row: sqlite3.Row) -> Recording:
     if row["transcript_id"] is None:
         return _eintrag(row)
-    return _eintrag(row, _text(connection, row["transcript_id"]))
+    return _eintrag(row, _text(scope, row["transcript_id"]))
 
 
 # Verbunden wird über (session_id, source) statt über einen Fremdschlüssel: ein zweiter
@@ -215,96 +215,110 @@ def _mit_transkript(connection: sqlite3.Connection, row: sqlite3.Row) -> Recordi
 AUSWAHL = (
     "SELECT r.id, r.session_id, r.filename, r.source, r.uploaded_at, r.status, r.detail, "
     "r.deleted_at, r.discord_user_id, t.id AS transcript_id FROM recording r "
-    "LEFT JOIN transcript t ON t.session_id = r.session_id AND t.source = r.source "
+    "LEFT JOIN transcript t ON t.runde_id = r.runde_id AND t.session_id = r.session_id "
+    "AND t.source = r.source WHERE r.runde_id = ? "
 )
 
 
-def for_session(database_path: Path, session_id: int) -> tuple[Recording, ...]:
-    connection = _open(database_path)
+def for_session(runde: Runde, session_id: int) -> tuple[Recording, ...]:
+    scope = db.scoped(runde)
     try:
-        rows = connection.execute(
-            AUSWAHL + "WHERE r.session_id = ? ORDER BY r.id", (session_id,)
+        rows = scope.execute(
+            AUSWAHL + "AND r.session_id = ? ORDER BY r.id", (scope.runde_id, session_id)
         ).fetchall()
-        return tuple(_mit_transkript(connection, row) for row in rows)
+        return tuple(_mit_transkript(scope, row) for row in rows)
     finally:
-        connection.close()
+        scope.close()
 
 
-def get(database_path: Path, recording_id: int) -> Recording | None:
-    connection = _open(database_path)
+def get(runde: Runde, recording_id: int) -> Recording | None:
+    scope = db.scoped(runde)
     try:
-        row = connection.execute(AUSWAHL + "WHERE r.id = ?", (recording_id,)).fetchone()
-        return None if row is None else _mit_transkript(connection, row)
+        row = scope.execute(AUSWAHL + "AND r.id = ?", (scope.runde_id, recording_id)).fetchone()
+        return None if row is None else _mit_transkript(scope, row)
     finally:
-        connection.close()
+        scope.close()
 
 
-def pending(database_path: Path) -> tuple[Recording, ...]:
+def pending(runde: Runde) -> tuple[Recording, ...]:
     """Was noch wartet — ohne die Spuren, deren Audio die Frist schon geholt hat."""
-    connection = _open(database_path)
+    scope = db.scoped(runde)
     try:
-        rows = connection.execute(
-            AUSWAHL + "WHERE r.status = ? AND r.deleted_at IS NULL ORDER BY r.id", (WARTET,)
+        rows = scope.execute(
+            AUSWAHL + "AND r.status = ? AND r.deleted_at IS NULL ORDER BY r.id",
+            (scope.runde_id, WARTET),
         ).fetchall()
     finally:
-        connection.close()
+        scope.close()
     return tuple(_eintrag(row) for row in rows)
 
 
-def mark(database_path: Path, recording_id: int, status: str, detail: str | None = None) -> None:
-    connection = _open(database_path)
+def mark(runde: Runde, recording_id: int, status: str, detail: str | None = None) -> None:
+    scope = db.scoped(runde)
     try:
-        with connection:
-            connection.execute(
-                "UPDATE recording SET status = ?, detail = ?, updated_at = ? WHERE id = ?",
-                (status, detail, _now(), recording_id),
+        with scope:
+            scope.execute(
+                "UPDATE recording SET status = ?, detail = ?, updated_at = ? "
+                "WHERE runde_id = ? AND id = ?",
+                (status, detail, _now(), scope.runde_id, recording_id),
             )
     finally:
-        connection.close()
+        scope.close()
 
 
-def expired(database_path: Path, *, tage: int = RETENTION_TAGE) -> tuple[Recording, ...]:
+def expired(runde: Runde, *, tage: int = RETENTION_TAGE) -> tuple[Recording, ...]:
     """Spuren, deren Audio die Frist überschritten hat und noch da ist."""
     grenze = (datetime.now(UTC) - timedelta(days=tage)).isoformat(timespec="seconds")
-    connection = _open(database_path)
+    scope = db.scoped(runde)
     try:
-        rows = connection.execute(
-            AUSWAHL + "WHERE r.deleted_at IS NULL AND r.uploaded_at < ? ORDER BY r.id", (grenze,)
+        rows = scope.execute(
+            AUSWAHL + "AND r.deleted_at IS NULL AND r.uploaded_at < ? ORDER BY r.id",
+            (scope.runde_id, grenze),
         ).fetchall()
     finally:
-        connection.close()
+        scope.close()
     return tuple(_eintrag(row) for row in rows)
 
 
-def _als_geloescht_vermerken(database_path: Path, recording_id: int) -> None:
+def _als_geloescht_vermerken(runde: Runde, recording_id: int) -> None:
     zeitpunkt = _now()
-    connection = _open(database_path)
+    scope = db.scoped(runde)
     try:
-        with connection:
-            connection.execute(
-                "UPDATE recording SET deleted_at = ?, updated_at = ? WHERE id = ?",
-                (zeitpunkt, zeitpunkt, recording_id),
+        with scope:
+            scope.execute(
+                "UPDATE recording SET deleted_at = ?, updated_at = ? WHERE runde_id = ? AND id = ?",
+                (zeitpunkt, zeitpunkt, scope.runde_id, recording_id),
             )
     finally:
-        connection.close()
+        scope.close()
 
 
-def sweep(config, *, tage: int = RETENTION_TAGE) -> tuple[str, ...]:
+def sweep(config, runde: Runde, *, tage: int = RETENTION_TAGE) -> tuple[str, ...]:
     """Setzt die zugesagte Frist durch: Audio weg, Zeile bleibt.
 
     Beliebig oft aufrufbar — eine bereits vermerkte Spur wird nicht noch einmal gesucht,
     und eine schon von Hand entfernte Datei ist kein Fehlschlag.
     """
     meldungen = []
-    for aufnahme in expired(config.database_path, tage=tage):
+    for aufnahme in expired(runde, tage=tage):
         (config.recordings_dir / aufnahme.filename).unlink(missing_ok=True)
-        _als_geloescht_vermerken(config.database_path, aufnahme.id)
+        _als_geloescht_vermerken(runde, aufnahme.id)
         meldung = NACH_FRIST.format(source=aufnahme.source, tage=tage)
         logger.info("%s", meldung)
         meldungen.append(meldung)
     return tuple(meldungen)
 
 
+@runden.instanzweit
+def sweep_alle(config, *, tage: int = RETENTION_TAGE) -> tuple[str, ...]:
+    """Die Frist gilt jeder Stimme auf dieser Box und nicht nur der einen Runde."""
+    meldungen: list[str] = []
+    for eine in runden.alle(config.database_path):
+        meldungen.extend(sweep(config, eine, tage=tage))
+    return tuple(meldungen)
+
+
+@runden.instanzweit
 async def taeglich(config, *, schlafen=asyncio.sleep) -> None:
     """Die Frist im dauerhaften Bot-Prozess — einmal beim Start, danach täglich.
 
@@ -312,5 +326,5 @@ async def taeglich(config, *, schlafen=asyncio.sleep) -> None:
     dann gilt, wenn eines von beidem eine Weile nicht läuft.
     """
     while True:
-        sweep(config)
+        sweep_alle(config)
         await schlafen(SWEEP_ABSTAND)
