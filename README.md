@@ -4,16 +4,21 @@ Sitzungsprotokolle für Tisch-Rollenspiel. Aus den Notizen, die während des Spi
 entstehen, und dem Chat-Log aus Foundry VTT wird eine lesbare Chronik. Bei
 Online-Sitzungen kommt eine Transkription der Discord-Sprachspuren dazu.
 
-**Eine Instanz pro Gruppe.** Konfiguration ist zweierlei: Foundry-URL + Zugangsdaten und
-Discord-Bot-Token — alles andere kommt aus Foundry.
+**Eine Instanz trägt mehrere Runden.** Eine Runde ist eine Discord-Gilde; sie bringt
+ihren eigenen Foundry-Zugang mit und sieht nichts von den anderen. Das Foundry-Passwort
+wird dabei **nirgends gespeichert** — es wird gefragt, wenn der Abgleich es braucht, und
+danach vergessen.
 
 - Architektur: [`docs/architektur.md`](docs/architektur.md)
 - Foundry-Zugriff: [`docs/foundry-zugriff.md`](docs/foundry-zugriff.md)
-- Aufbau und Reihenfolge: Epic [#1](../../issues/1)
 - Hausregeln: [`CLAUDE.md`](CLAUDE.md)
+- Aufbau: Epic [#1](../../issues/1) — die erste Ausbaustufe, abgeschlossen.
+  Epic [#62](../../issues/62) löst sie ab: Discord wird die Oberfläche.
 
-> Status: Aufbau. Issues #2–#12 sind die erste Ausbaustufe; die Präsenz-Variante
-> (#2–#7) läuft ohne Audio, ohne Bot und ohne Grafikkarte.
+> Status: Umbau. Erfassen, Ausgeben und das Runden-Modell laufen über Discord; die
+> Weboberfläche besteht daneben weiter, bis [#69](../../issues/69) sie abschaltet.
+> „Eine Instanz pro Gruppe" war die Entscheidung des ersten Epics — sie ist mit
+> [#62](../../issues/62) abgelöst.
 
 ## Entwickeln
 
@@ -73,10 +78,16 @@ Aus einer Audiospur wird Text mit Zeitstempeln — im Stapel nach der Sitzung, a
 
 ```bash
 pip install -e ".[dev,transcribe]"          # faster-whisper ist ein eigenes Extra
-python -m chronicle.transcribe              # die Warteschlange — der nächtliche Aufruf
+python -m chronicle.transcribe              # die Warteschlange — von Hand angestoßen
 python -m chronicle.transcribe 1 mira.ogg   # Sitzung 1, Spur aus ./recordings
 python -m chronicle.transcribe 1 mira.ogg --loeschen   # Aufnahme danach entfernen
 ```
+
+Von selbst läuft das alles im **nächtlichen Lauf**: abholen, verschriften, abgleichen,
+komponieren — zu einer Uhrzeit, die jede Runde für sich einstellt (Vorgabe 04:00), in
+**ihrer eigenen Zeitzone** (Vorgabe `Europe/Berlin`); der Container selbst bleibt auf
+UTC, weil eine Instanz mehrere Runden trägt. Die Stapel-Einstiege oben sind der Weg für
+Cron, Betrieb und Ungeduld.
 
 Ohne Argumente wird abgearbeitet, was über die Oberfläche hochgeladen wurde und noch
 wartet: auf der Sitzungsseite lädt ein **Diktat** — eine Sprachnotiz aus der
