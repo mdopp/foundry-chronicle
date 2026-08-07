@@ -47,6 +47,19 @@ erzeugt, trennt sichtbar zwischen Belegtem und Verbindungssätzen.
   eine menschliche Entscheidung.
 - Eingerichtet in `release-please-config.json` mit `release-type: python` gegen
   `pyproject.toml`; der Workflow läuft bei jedem Push nach `main`.
+- **`main` bleibt linear: PRs werden rebase-gemergt, nie mit Merge-Commit** (#70).
+  `Merge pull request #N from …` ist kein Conventional Commit; release-please nimmt
+  dafür ersatzweise den **PR-Titel** und schreibt dieselbe Änderung damit **zweimal**
+  ins Changelog — einmal aus dem Merge-Commit, einmal aus dem echten Commit dahinter.
+  Rebase statt Squash, weil ein Batch je Issue schon einen fertigen Conventional Commit
+  trägt und Squash acht Einträge zu einem zusammenfalten würde. Ein rein lokales
+  `Merge branch '…'` ohne PR ist unschädlich — ohne PR gibt es keinen Ersatztitel, und
+  release-please überspringt den Commit still.
+- **Voraussetzung auf GitHub-Seite:** „Allow GitHub Actions to create and approve pull
+  requests" muss in den Repo-Einstellungen an sein. Ist sie aus, legt der Lauf den
+  Release-Branch zwar an und scheitert erst am PR mit `GitHub Actions is not permitted
+  to create or approve pull requests`. Das ist eine Operator-Einstellung, keine Datei
+  im Repo.
 
 ## Tests
 
