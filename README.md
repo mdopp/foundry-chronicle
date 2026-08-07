@@ -1,8 +1,15 @@
 # Foundry Chronicle
 
-Sitzungsprotokolle für Tisch-Rollenspiel. Aus den Notizen, die während des Spiels
-entstehen, und dem Chat-Log aus Foundry VTT wird eine lesbare Chronik. Bei
-Online-Sitzungen kommt eine Transkription der Discord-Sprachspuren dazu.
+**Ein Discord-Bot, der eure Spielabende mitschreibt.** Aus dem, was ihr im Thread
+notiert, was im Sprachkanal gesprochen wird und was in eurem Foundry VTT gewürfelt
+wird, entsteht nach der Sitzung eine lesbare Chronik — Zahlen kommen ausschließlich
+aus dem Foundry-Chat-Log, erfunden werden sie nie.
+
+Bedient wird alles in Discord: `/chronik start` öffnet die Sitzung als Thread, jede
+Nachricht darin wird eine Notiz, `/aufnahme start` schneidet je Sprecher eine Spur
+mit, `/chronik fertig` schließt ab. Am Morgen liegt der Rückblick im Gruppenkanal und
+die Chronik als Markdown-Datei im Thread. Der ganze Ablauf steht weiter unten unter
+[Erfassen per Discord](#erfassen-per-discord-der-thread-ist-die-sitzung).
 
 **Eine Instanz trägt mehrere Runden.** Eine Runde ist eine Discord-Gilde; sie bringt
 ihren eigenen Foundry-Zugang mit und sieht nichts von den anderen. Das Foundry-Passwort
@@ -26,7 +33,8 @@ danach vergessen.
 python3 -m venv .venv && . .venv/bin/activate
 pip install -e ".[dev]"
 pre-commit install
-python -m chronicle          # http://127.0.0.1:8000
+python -m chronicle.bot      # der Bot — das ist der Dienst
+python -m chronicle          # die Weboberfläche, bis #69 sie abschaltet
 ```
 
 Beim ersten Mal führt `/` durch die Einrichtung — Foundry, dann Discord, dann Ollama,
