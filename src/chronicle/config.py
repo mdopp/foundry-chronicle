@@ -1,13 +1,18 @@
 """Konfiguration aus der Umgebung — die Vorgabe, nicht das letzte Wort.
 
-Die Umgebung ist der Deploy-Weg und der Stand beim ersten Start; die fünf Werte für
-Foundry und Ollama lassen sich in der Oberfläche überschreiben. Wer sie braucht, nimmt
-deshalb ``chronicle.settings.effective`` und nicht dieses Objekt direkt.
+Die Umgebung ist der Deploy-Weg und der Stand beim ersten Start; die Werte für Foundry
+und Ollama lassen sich in der Oberfläche überschreiben. Wer sie braucht, nimmt deshalb
+``chronicle.settings.effective`` und nicht dieses Objekt direkt.
 
-Foundry kennt keinen API-Token: der Zugang ist Benutzer und Passwort eines echten
-Kontos (siehe docs/foundry-zugriff.md). Passwort und Bot-Token verlassen dieses
-Objekt nie über ``repr``/``str`` — das ist der wahrscheinlichste Weg in eine Logzeile.
-Die Ollama-Adresse ist dagegen Konfiguration und kein Geheimnis; sie bleibt lesbar.
+**Das Foundry-Passwort steht hier nicht.** Es gibt keine Umgebungsvariable dafür und kein
+Feld: seit #64 lebt es allein im Arbeitsspeicher (``chronicle.zugang``). Eine Variable
+wäre ein zweiter, dauerhafter Ort — sie steht in der Dienstbeschreibung der Box —, und in
+einer Instanz mit mehreren Runden ginge das Passwort des Betreibers an *jeden*
+Foundry-Server, den irgendeine Runde einträgt. Adresse und Benutzer bleiben Konfiguration.
+
+Der Bot-Token verlässt dieses Objekt nie über ``repr``/``str`` — das ist der
+wahrscheinlichste Weg in eine Logzeile. Die Ollama-Adresse ist dagegen Konfiguration und
+kein Geheimnis; sie bleibt lesbar.
 """
 
 from __future__ import annotations
@@ -19,11 +24,11 @@ from pathlib import Path
 
 MASK = "***"
 
-FOUNDRY_VARIABLES = ("FOUNDRY_URL", "FOUNDRY_USER", "FOUNDRY_PASSWORD")
+FOUNDRY_VARIABLES = ("FOUNDRY_URL", "FOUNDRY_USER")
 
-# Dieselben drei Werte, wie sie in der Oberfläche heißen — mit Artikel, weil daraus ein
-# Satz für jemanden gebaut wird, der nie eine Umgebungsvariable gesehen hat.
-FOUNDRY_FELDER = ("die Adresse", "der Benutzer", "das Passwort")
+# Dieselben Werte, wie sie in der Oberfläche heißen — mit Artikel, weil daraus ein Satz
+# für jemanden gebaut wird, der nie eine Umgebungsvariable gesehen hat.
+FOUNDRY_FELDER = ("die Adresse", "der Benutzer")
 
 REMOTE_USER_VARIABLE = "CHRONICLE_REQUIRE_REMOTE_USER"
 
@@ -61,7 +66,6 @@ def _flag(env: Mapping[str, str], name: str) -> bool:
 class Config:
     foundry_url: str | None = None
     foundry_user: str | None = None
-    foundry_password: str | None = None
     discord_bot_token: str | None = None
     discord_recap_channel: str | None = None
     ollama_url: str | None = None
@@ -78,7 +82,6 @@ class Config:
         return cls(
             foundry_url=_value(env, "FOUNDRY_URL"),
             foundry_user=_value(env, "FOUNDRY_USER"),
-            foundry_password=_value(env, "FOUNDRY_PASSWORD"),
             discord_bot_token=_value(env, "DISCORD_BOT_TOKEN"),
             discord_recap_channel=_value(env, "DISCORD_RECAP_CHANNEL"),
             ollama_url=_value(env, "OLLAMA_URL"),
@@ -92,7 +95,7 @@ class Config:
 
     @property
     def _foundry_values(self) -> tuple[str | None, ...]:
-        return (self.foundry_url, self.foundry_user, self.foundry_password)
+        return (self.foundry_url, self.foundry_user)
 
     @property
     def missing_foundry_variables(self) -> tuple[str, ...]:
@@ -127,7 +130,6 @@ class Config:
             "Config("
             f"foundry_url={self.foundry_url!r}, "
             f"foundry_user={self.foundry_user!r}, "
-            f"foundry_password={masked(self.foundry_password)}, "
             f"discord_bot_token={masked(self.discord_bot_token)}, "
             f"discord_recap_channel={self.discord_recap_channel!r}, "
             f"ollama_url={self.ollama_url!r}, "

@@ -37,6 +37,9 @@ tables  cards  folders  users   messages  combats  settings
 Für die Chronik zählen **`messages`** (das Chat-Log), **`actors`** (Spielfiguren und
 NSCs) und **`combats`** (Kampfzustand). Der Rest ist für uns Beifang.
 
+Daneben stehen zwei Kopfblöcke, die keine Sammlung sind: **`system`** (`{id, ...}` —
+welches Regelwerk) und **`world`** (`{id, title, ...}` — welche Welt gerade offen ist).
+
 ## Drei Fallen
 
 ### Der Server filtert nicht
@@ -88,14 +91,29 @@ Die Trennlinie liegt deshalb nicht davor, sondern dahinter: ein **dünner Adapte
 System** bildet auf ein gemeinsames Modell ab, und ab dort weiß nichts mehr, welches
 Regelwerk gespielt wurde.
 
+### Ein Server hostet nur eine Welt
+
+Foundry hat immer genau eine Welt offen. Wer mehrere Runden auf einem Server fährt,
+wechselt sie zwischen den Abenden — und ein Abgleich zöge dann das Chat-Log der falschen
+Kampagne in die falsche Chronik. Die Runde merkt sich deshalb beim ersten gelungenen
+Abgleich `world.id` und `world.title`; jeder spätere vergleicht und **verweigert sich bei
+Nichtübereinstimmung**. Umgehängt wird nur ausdrücklich (`sync(..., umhaengen=True)`).
+
+Ein Dump ohne `world`-Block lässt sich nicht vergleichen und wird nicht als Wechsel
+gewertet — eine Verweigerung ohne Beleg brächte den Abgleich zum Erliegen, statt vor
+etwas zu schützen.
+
 ## Anmeldung ist Benutzer und Passwort
 
 Es gibt keinen API-Token. Der Zugang ist das Passwort eines echten Foundry-Kontos, und
 er trägt dessen Berechtigungen — das Protokoll sieht damit genau so viel wie dieser
 Mensch. Ein eigenes Konto mit passenden Rechten ist sauberer als das eines Mitspielers.
 
-Das Passwort kommt zur Laufzeit aus der Umgebung, nie aus einem Aufrufargument
-(landet sonst in der Shell-History) und nie in eine Logzeile.
+**Das Passwort wird nirgends gespeichert** (#64): nicht in der SQLite, nicht in einer
+Umgebungsvariable, nicht in einer Datei. Es wird gefragt, wenn der Abgleich es braucht,
+lebt bis dahin im Arbeitsspeicher (`chronicle.zugang`) und wird vom Abgleich verbraucht —
+auch vom gescheiterten. Hashen ginge nicht: wir müssen es vorzeigen, nicht prüfen. Und es
+steht in keinem Aufrufargument (landet sonst in der Shell-History) und in keiner Logzeile.
 
 ## Was noch offen ist
 

@@ -9,8 +9,9 @@ Vier Schritte, alle nötig, in dieser Reihenfolge:
 4. Socket.io neu verbinden — neuer Cookie *und* ``?session=<id>`` — auf das
    ``session``-Ereignis warten und dann ``world`` abrufen.
 
-Es gibt keinen API-Token: der Zugang ist Benutzer und Passwort eines echten Kontos, und
-er kommt ausschließlich aus der Konfiguration.
+Es gibt keinen API-Token: der Zugang ist Benutzer und Passwort eines echten Kontos.
+Adresse und Benutzer kommen aus der Konfiguration, **das Passwort als Argument** — es wird
+nirgends gespeichert und lebt nur im Arbeitsspeicher (``chronicle.zugang``).
 """
 
 from __future__ import annotations
@@ -47,6 +48,12 @@ class FoundryLoginFailed(FoundryError):
     pass
 
 
+OHNE_PASSWORT = (
+    "Für den Abgleich fehlt das Foundry-Passwort. Es wird nirgends gespeichert — es "
+    "gilt für einen Abgleich und wird danach vergessen."
+)
+
+
 def _zugang_fehlt(felder: tuple[str, ...]) -> str:
     aufzaehlung = felder[0] if len(felder) == 1 else f"{', '.join(felder[:-1])} und {felder[-1]}"
     return (
@@ -67,6 +74,7 @@ class FoundryClient:
     def __init__(
         self,
         config: Config,
+        passwort: str | None = None,
         *,
         http: Callable[[], object] = _http_session,
         socket: Callable[[], object] = _socket_client,
@@ -80,7 +88,11 @@ class FoundryClient:
                 ", ".join(config.missing_foundry_variables),
             )
             raise FoundryNotConfigured(_zugang_fehlt(config.missing_foundry_fields))
+        if not passwort:
+            logger.warning("Foundry-Abgleich ohne Passwort im Speicher")
+            raise FoundryNotConfigured(OHNE_PASSWORT)
         self._config = config
+        self._passwort = passwort
         self._http_factory = http
         self._socket_factory = socket
         self._timeout = timeout
@@ -161,7 +173,7 @@ class FoundryClient:
             json={
                 "action": "join",
                 "userid": user_id,
-                "password": self._config.foundry_password,
+                "password": self._passwort,
             },
         )
         try:

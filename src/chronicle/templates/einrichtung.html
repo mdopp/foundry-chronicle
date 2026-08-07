@@ -9,8 +9,9 @@
     {% if schritt == "foundry" %}
       <h2>Woher kommen die Spieldaten?</h2>
       <p class="gedaempft">Würfe, Schaden und Beute holt die Chronik aus Foundry — erfunden
-        wird keine Zahl. Foundry kennt keinen API-Token: es braucht die Adresse sowie
-        Benutzername und Passwort eines echten Kontos.</p>
+        wird keine Zahl. Foundry kennt keinen API-Token: es braucht die Adresse und den
+        Benutzernamen eines echten Kontos. Das Passwort dazu wird beim Abgleich gefragt und
+        nicht gespeichert.</p>
 
       {% include "_foundry_felder.html" %}
 

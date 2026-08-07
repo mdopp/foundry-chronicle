@@ -63,14 +63,24 @@ nicht in Tests, Fixtures oder Doku. Die Foundry-Zugangsdaten und der Discord-Bot
 werden zur Laufzeit gesetzt; Platzhalter sind in Ordnung, konkrete Werte nicht. Das
 gilt auch für die **Foundry-Adresse** — die gehört in die Konfiguration, nicht ins Repo.
 
-**Operator-Entscheidung 2026-08-06 — das Foundry-Passwort liegt in der SQLite.** Die
-Werte für Foundry, Discord und Ollama werden in der Oberfläche gepflegt (#25, der
-Bot-Token seit #19); ein dort gesetzter Wert schlägt die Umgebung, die als Vorgabe beim
-ersten Start bleibt. Damit liegen Passwort **und Bot-Token im Klartext in
-`chronicle.sqlite3` — und die geht ins Backup.** Das ist bewusst so entschieden: eine
-Homelab-Instanz, Backup auf eigenem NAS, und der Betrieb wäre sonst nur über
-ServiceBay-Template-Variablen zu ändern. Die Abwägung hängt an drei Bedingungen, die
-nicht wegfallen dürfen — sie gelten für **jedes** Geheimnis in `settings.SECRET_KEYS`:
+**Das Foundry-Passwort wird nirgends gespeichert (#64).** Es gibt kein Feld dafür, keine
+Umgebungsvariable und keine Zeile in der SQLite; die Wanderung löscht einen Bestand aus
+der Zeit davor. Hashen scheidet aus — wir müssen es Foundry **vorzeigen**, nicht prüfen —,
+also gilt die härtere Regel: gar nicht erst vorhalten. Es lebt in `chronicle.zugang` im
+Arbeitsspeicher, wird beim Abgleich erfragt und von ihm verbraucht, auch vom gescheiterten;
+was liegen bleibt, verfällt nach zwölf Stunden. Ergebnis: eine Instanz mit mehreren Runden
+speichert **kein fremdes Geheimnis**. Das löst die Operator-Entscheidung vom 2026-08-06
+für das Passwort ab; sie gilt weiter für den Bot-Token.
+
+**Operator-Entscheidung 2026-08-06 — der Bot-Token liegt in der SQLite.** Die Werte für
+Foundry, Discord und Ollama werden in der Oberfläche gepflegt (#25, der Bot-Token seit
+#19); ein dort gesetzter Wert schlägt die Umgebung, die als Vorgabe beim ersten Start
+bleibt. Damit liegt der Bot-Token **im Klartext in `chronicle.sqlite3` — und die geht ins
+Backup.** Das ist bewusst so entschieden: eine Homelab-Instanz, Backup auf eigenem NAS,
+und der Betrieb wäre sonst nur über ServiceBay-Template-Variablen zu ändern. Er ist
+außerdem **unser** Token und nicht der einer fremden Gegenstelle. Die Abwägung hängt an
+drei Bedingungen, die nicht wegfallen dürfen — sie gelten für **jedes** Geheimnis in
+`settings.SECRET_KEYS`:
 
 - Die Seite steht **hinter Authelia und dem `Remote-User`-Guard** wie jede andere.
 - Der Wert wird **nirgends angezeigt** — nicht im Formular, nicht auf `/status`, nicht in

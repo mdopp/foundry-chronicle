@@ -41,14 +41,19 @@ einer. Der Chronik-Lauf verschriftet erst die wartenden Aufnahmen und ruft dann 
 Funktionen wie `python -m chronicle.compose`: ein Knopf ist der zweite Auslöser, nicht der
 zweite Weg. Die Stapel-Einstiege unten bleiben — sie sind der Weg für Cron und Betrieb.
 
-Foundry-Adresse, -Benutzer und -Passwort, der Discord-Bot-Token sowie Ollama-Adresse und
--Modell werden unter `/einstellungen` gepflegt und liegen in der SQLite. Die Umgebung —
-`FOUNDRY_URL`, `FOUNDRY_USER`, `FOUNDRY_PASSWORD`, `DISCORD_BOT_TOKEN`, `OLLAMA_URL`,
-`OLLAMA_MODEL` — bleibt als Vorgabe beim ersten Start lesbar und ist beim Entwickeln der
-bequeme Weg; **ein in der Oberfläche gesetzter Wert gewinnt**, und der Abschnitt
-*Zustand* zeigt je Wert, woher er kommt. Das Box-Template setzt keine davon (siehe unten). Die
-beiden Geheimnisse werden nie angezeigt, nur *ob* sie gesetzt sind; ein leer
-abgesendetes Feld heißt unverändert. Die Ollama-Adresse hat eine dritte Stufe: ist weder
+Foundry-Adresse und -Benutzer, der Discord-Bot-Token sowie Ollama-Adresse und -Modell
+werden unter `/einstellungen` gepflegt und liegen in der SQLite. Die Umgebung —
+`FOUNDRY_URL`, `FOUNDRY_USER`, `DISCORD_BOT_TOKEN`, `OLLAMA_URL`, `OLLAMA_MODEL` — bleibt
+als Vorgabe beim ersten Start lesbar und ist beim Entwickeln der bequeme Weg; **ein in der
+Oberfläche gesetzter Wert gewinnt**, und der Abschnitt *Zustand* zeigt je Wert, woher er
+kommt. Das Box-Template setzt keine davon (siehe unten).
+
+**Das Foundry-Passwort wird nirgends gespeichert** — es gibt kein Feld dafür, keine
+Variable und keine Zeile in der SQLite. Der Abgleich fragt danach, verbraucht es und
+vergisst es; ein Rest im Arbeitsspeicher verfällt spätestens nach zwölf Stunden. Hashen
+ginge nicht: Foundry will es vorgezeigt, nicht geprüft. Der Bot-Token bleibt gespeichert,
+wird aber nie angezeigt, nur *ob* er gesetzt ist; ein leer abgesendetes Feld heißt
+unverändert. Die Ollama-Adresse hat eine dritte Stufe: ist weder
 etwas gespeichert noch etwas in der Umgebung gesetzt, gilt `http://127.0.0.1:11434` — das
 Ollama der Box. Offen bleibt dann allein die Modellwahl. Rein aus der Umgebung kommen weiterhin
 `CHRONICLE_DATA_DIR` (Vorgabe `./data`), `CHRONICLE_RECORDINGS_DIR` (Vorgabe

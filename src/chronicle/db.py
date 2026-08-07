@@ -24,7 +24,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:  # pragma: no cover - nur für die Typprüfung
     from chronicle.runde import Runde
 
-SCHEMA_VERSION = 15
+SCHEMA_VERSION = 16
 
 # Der Name der ersten Runde: die Bestände der Entwicklungs-Instanz wandern hier hinein,
 # und eine frische Datenbank bekommt sie ebenfalls — die Oberfläche braucht bis zu ihrer
@@ -68,6 +68,13 @@ INSTANZ_SCHLUESSEL = ("discord_bot_token", "admin_group", "onboarding_done")
 # Umgekehrt: diese lagen in ``meta`` und gehören einer Runde. Sie wandern nach
 # ``runde_meta``.
 RUNDEN_SCHLUESSEL = ("discord_cursor", "foundry_last_error", "foundry_last_error_at")
+
+# Diese Werte wurden gepflegt und werden es nicht mehr. Sie wandern nirgendwohin, sie
+# **verschwinden** — das Foundry-Passwort seit #64. Ein Bestand aus der Zeit davor liegt
+# im Klartext in der Datei und damit im Backup; ein Wert, den niemand mehr liest, soll
+# dort nicht liegen bleiben. Der Löschlauf ist idempotent und ohne Ersatz: das Passwort
+# wird ab jetzt beim Abgleich erfragt.
+VERWORFENE_SCHLUESSEL = ("foundry_password",)
 
 # ``CREATE TABLE IF NOT EXISTS`` erreicht eine bestehende Tabelle nicht mehr; eine neue
 # Spalte muss deshalb einmal nachgetragen werden. Nur additiv — mehr kann und soll dieser
@@ -214,6 +221,13 @@ def _umziehen(connection: sqlite3.Connection, runde_id: int) -> None:
         connection.execute("DELETE FROM meta WHERE key = ?", (schluessel,))
 
 
+def _geheimnisse_verwerfen(connection: sqlite3.Connection) -> None:
+    """Ein nicht mehr gepflegter Wert wird gelöscht, nicht stehen gelassen."""
+    for schluessel in VERWORFENE_SCHLUESSEL:
+        connection.execute("DELETE FROM settings WHERE key = ?", (schluessel,))
+        connection.execute("DELETE FROM meta WHERE key = ?", (schluessel,))
+
+
 def _index_verwerfen(connection: sqlite3.Connection) -> None:
     """Einen Suchindex alter Form samt Triggern verwerfen — er wird gleich neu gebaut.
 
@@ -283,6 +297,7 @@ def init(database_path: Path) -> None:
         # Datenbank legt er überhaupt erst alles an.
         connection.executescript(schema_sql())
         _umziehen(connection, erste_runde_id(connection))
+        _geheimnisse_verwerfen(connection)
         _nachtragen(connection)
         # Der Suchindex wird abgeleitet und deshalb zuletzt neu gebaut — er liest Spalten,
         # die die Wanderung erst angelegt hat.

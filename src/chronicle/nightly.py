@@ -28,7 +28,7 @@ import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
-from chronicle import db, jobs, register, settings
+from chronicle import db, jobs, register, settings, zugang
 from chronicle import runde as runden
 from chronicle.compose.service import KIND, compose_session, recap_session
 from chronicle.config import Config
@@ -55,6 +55,10 @@ INTERVALL = 60.0
 FENSTER = timedelta(hours=1)
 
 OHNE_FOUNDRY = "Kein Zugang zu Foundry — die Zahlen wurden nicht geholt."
+OHNE_PASSWORT = (
+    "Kein Foundry-Passwort im Speicher — die Zahlen wurden nicht geholt. Der Abgleich "
+    "gehört ans Sitzungsende, solange Foundry ohnehin noch läuft."
+)
 NICHTS_ZU_SCHREIBEN = "Keine Sitzung mit neuem Material — es blieb alles, wie es war."
 WARTESCHLANGE_LEER = "Nichts in der Warteschlange."
 NICHT_DURCHGEKOMMEN = "Nicht durchgekommen: {grund}"
@@ -117,6 +121,10 @@ def _transkript(config: Config, runde: Runde) -> Schritt:
 def _abgleich(config: Config, runde: Runde) -> Schritt:
     if not settings.effective(config, runde).foundry_configured:
         return Schritt(ABGLEICH, OHNE_FOUNDRY)
+    # Das Passwort ist flüchtig, und der Nachtlauf kann keines erfragen. Dass keines
+    # daliegt, ist der Normalfall und kein Fehlschlag — deshalb ein Satz statt roter Farbe.
+    if not zugang.ist_gemerkt(runde):
+        return Schritt(ABGLEICH, OHNE_PASSWORT)
     zustand = sync(config, runde)
     return Schritt(ABGLEICH, zustand.message, gelungen=not zustand.stale)
 

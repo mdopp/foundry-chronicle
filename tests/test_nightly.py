@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from conftest import laufender_job, runde, warte_bis
 
-from chronicle import db, jobs, nightly, notes, settings
+from chronicle import db, jobs, nightly, notes, settings, zugang
 from chronicle.app import create_app
 from chronicle.config import Config
 from chronicle.discord import service as diktat
@@ -115,13 +115,32 @@ def test_mit_foundry_steht_der_abgleich_zwischen_aufnahmen_und_chronik(stelle, m
         data_dir=stelle.data_dir,
         foundry_url="https://foundry.example/",
         foundry_user="Chronist",
-        foundry_password="nur-fuer-den-test",
     )
+    # Der Nachtlauf kann kein Passwort erfragen; er gleicht nur ab, wenn eines daliegt.
+    zugang.merken(runde(eingerichtet), "passwort-nur-in-diesem-test")
     mit_notiz(eingerichtet)
 
     nightly.lauf(eingerichtet, runde(eingerichtet))
 
     assert gesehen == ["diktat", "transkript", "abgleich", "chronik"]
+
+
+def test_ohne_gemerktes_passwort_wird_nachts_nicht_abgeglichen(stelle, monkeypatch):
+    """Kein Fehlschlag, sondern der Normalfall — der Abgleich gehört ans Sitzungsende."""
+    monkeypatch.setattr(
+        nightly, "sync", lambda *a, **k: pytest.fail("ohne Passwort wird nicht abgeglichen")
+    )
+    eingerichtet = Config(
+        data_dir=stelle.data_dir,
+        foundry_url="https://foundry.example/",
+        foundry_user="Chronist",
+    )
+    mit_notiz(eingerichtet)
+
+    schritte = {s["name"]: s for s in json.loads(nightly.lauf(eingerichtet, runde(eingerichtet)))}
+
+    assert schritte[nightly.ABGLEICH]["text"] == nightly.OHNE_PASSWORT
+    assert schritte[nightly.ABGLEICH]["gelungen"]
 
 
 def test_ohne_bot_token_bleibt_der_briefkasten_zu_und_der_rest_laeuft(stelle):

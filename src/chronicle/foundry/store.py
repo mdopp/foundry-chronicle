@@ -11,10 +11,23 @@ import json
 import sqlite3
 
 from chronicle import db
-from chronicle.foundry.model import Character, ChatMessage, Die, Player, Roll, WorldSnapshot
+from chronicle.foundry.model import (
+    Character,
+    ChatMessage,
+    Die,
+    Player,
+    Roll,
+    World,
+    WorldSnapshot,
+)
 
 LAST_ERROR = "foundry_last_error"
 LAST_ERROR_AT = "foundry_last_error_at"
+
+# Die Welt, an die diese Runde gebunden ist. Sie überlebt den Zwischenspeicher: ein
+# Abgleich ersetzt den Stand, die Bindung bleibt, bis jemand sie ausdrücklich umhängt.
+WORLD_ID = "foundry_world_id"
+WORLD_TITLE = "foundry_world_title"
 
 
 def _dice_json(roll: Roll) -> str:
@@ -148,6 +161,30 @@ def load(scope: db.Scope) -> WorldSnapshot | None:
         ),
         messages=tuple(message(r) for r in messages),
     )
+
+
+def world(scope: db.Scope) -> World | None:
+    """Die Welt, an die diese Runde gebunden ist — ``None``, solange keine gebunden ist."""
+    rows = scope.execute(
+        "SELECT key, value FROM runde_meta WHERE runde_id = ? AND key IN (?, ?)",
+        (scope.runde_id, WORLD_ID, WORLD_TITLE),
+    ).fetchall()
+    werte = {r["key"]: r["value"] for r in rows}
+    if WORLD_ID not in werte:
+        return None
+    return World(id=werte[WORLD_ID], title=werte.get(WORLD_TITLE) or werte[WORLD_ID])
+
+
+def bind_world(scope: db.Scope, gefunden: World) -> None:
+    with scope:
+        scope.executemany(
+            "INSERT INTO runde_meta (runde_id, key, value) VALUES (?, ?, ?) "
+            "ON CONFLICT (runde_id, key) DO UPDATE SET value = excluded.value",
+            (
+                (scope.runde_id, WORLD_ID, gefunden.id),
+                (scope.runde_id, WORLD_TITLE, gefunden.title),
+            ),
+        )
 
 
 def record_failure(scope: db.Scope, reason: str, at: str) -> None:
