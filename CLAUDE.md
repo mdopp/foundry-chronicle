@@ -7,7 +7,7 @@ pro Gruppe« aus Epic #1 ab). Siehe Epic #1 und #62 für die tragenden Entscheid
 
 Diese Regeln gelten für jede Sitzung, Mensch oder Agent.
 
-## Die drei Entscheidungen, die nicht neu verhandelt werden
+## Die Entscheidungen, die nicht neu verhandelt werden
 
 - **Transkription ist eine vorgeschaltete Stufe, kein zweiter Weg.** Präsenz- und
   Online-Sitzungen treffen sich bei der Zusammenführung. Es gibt eine Pipeline.
@@ -15,6 +15,17 @@ Diese Regeln gelten für jede Sitzung, Mensch oder Agent.
   werden eingesetzt, nie rekonstruiert.
 - **Alles nach der Aufnahme läuft im Stapel.** Keine Echtzeit, keine Latenzgrenze,
   keine GPU-Pflicht.
+- **Discord ist die Oberfläche** (#62, seit 2026-08-06). Gespielt wird dort, also wird
+  dort auch bedient: Erfassen, Auslösen, Einrichten und Bestätigen laufen über Befehle,
+  Modals und Knöpfe; Ausgaben kommen als Embed (kurz) oder als Markdown-Datei (lang).
+  Die Weboberfläche wird abgeschaltet — es bleibt `/healthz`. Wer eine neue Fähigkeit
+  baut, baut sie **in Discord**, nicht in einer Seite. Bis #69 besteht die Oberfläche
+  daneben weiter; das ist Übergang, kein zweiter Weg.
+- **Eine Instanz trägt mehrere Runden** (#62/#63). Eine Runde ist eine Discord-Gilde
+  mit eigenem Foundry-Zugang. Das löst »eine Instanz pro Gruppe« aus Epic #1 ab.
+
+Die alten Entscheidungen bleiben lesbar, wo sie abgelöst wurden — die Begründung von
+damals erklärt, warum die neue anders ausfällt.
 
 Wer davon abweichen muss, ändert das Epic per PR und verlinkt ihn. Eine Abweichung ohne
 Doku-PR gilt als nicht gemeldet.
@@ -128,11 +139,10 @@ SQLite-Datei ist klein und enthält alles Unersetzliche.
   `tests/test_isolation.py` ist das Dauergate: eine neue Funktion ohne Runden-Argument
   fällt durch. Ein vergessenes `WHERE runde_id = ?` ist kein Fehler, sondern ein Leck
   zwischen fremden Kampagnen.
-  **Innerhalb** einer Instanz gibt es seit der Operator-Entscheidung 2026-08-06 zwei
-  Rollen für die Weboberfläche: Mitspielen und Verwalten (#51). Die
-  Rolle kommt aus einer Gruppe, die der Proxy mitliefert; ein leerer Gruppenname heißt
-  weiterhin: alle dürfen alles. Entschieden wird sie an genau einer Stelle
-  (`chronicle.roles`).
+  **Innerhalb** einer Instanz trennte die Weboberfläche zwei Rollen, Mitspielen und
+  Verwalten (#51, `chronicle.roles`) — abgelöst mit #62: wer was darf, entscheidet
+  Discord über seine eigenen Kanal- und Rollenrechte. Kein eigenes Rollenmodell mehr;
+  `chronicle.roles` verschwindet mit #69.
 
 ## Kommentare
 
@@ -164,12 +174,15 @@ Assists (`get_assist`) lesen. Dieser Abschnitt ist der Extrakt, nicht der Ersatz
 - **SQLite läuft im WAL-Modus** — Plattform-Lektion gegen „database is locked".
 - **CI gatet den Image-Publish auf grüne Tests** (`needs: test`); eine CI, die nur
   baut, ist non-compliant. Kommt mit #12, ebenso pinned Tags statt `:latest`.
-- **UI folgt dem ServiceBay-Design-Standard** (`get_assist service-ui-design-standard`).
+- **UI folgt dem ServiceBay-Design-Standard** (`get_assist service-ui-design-standard`) —
+  solange es eine UI gibt. Mit #62/#69 hat der Dienst keine user-facing Seiten mehr;
+  damit wird auch **ADR 0001 (Authelia-SSO) gegenstandslos**: ohne Oberfläche gibt es
+  nichts zu schützen, Identität und Rechte liefert Discord.
 - **Läufe über ~10 s sind server-eigene, beobachtbare Jobs** — abbrechbar, neustartfest,
   Wiederanbindung über Job-Id (`get_assist long-running-process`).
-- **Erklärte Abweichung:** Flask + Jinja statt des empfohlenen FastAPI. Grund: SSR für
-  eine Handvoll Ansichten, synchron reicht; Bot und Stapel werden eigene Prozesse.
-  Der Standard erlaubt begründete Abweichungen — das hier ist die Begründung.
+- **Erklärte Abweichung, auslaufend:** Flask + Jinja statt des empfohlenen FastAPI.
+  Grund war SSR für eine Handvoll Ansichten. Mit #69 fällt die Begründung weg und mit
+  ihr fast der ganze Webteil — was bleibt, ist ein Prozess mit `/healthz` und der Bot.
 - **Standards-Lücken werden zurückgemeldet:** `standards-gap`-Issue in
   `mdopp/servicebay` (`get_assist report-standards-gaps`).
 
