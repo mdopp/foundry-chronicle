@@ -42,6 +42,7 @@ from chronicle import (
     zugang,
 )
 from chronicle import runde as runden
+from chronicle.bot import erinnern
 from chronicle.compose import service as compose_service
 from chronicle.config import Config
 from chronicle.discord import ausgabe as discord_ausgabe
@@ -80,6 +81,9 @@ SCHICHT = (
     discord_rueckblick,
     discord_ausgabe,
     zugang,
+    # Was der Bot auf einen Befehl hin antwortet, ist eine Abfrage wie jede andere: die
+    # Suche und das Register gehen hier durch die Runde der fragenden Gilde.
+    erinnern,
 )
 
 # Woran ein Aufruf erkannt wird, der Daten anfasst: er nimmt eine Konfiguration, einen
@@ -310,6 +314,13 @@ ABFRAGEN = {
     ),
     "ausgabe.dateiname": lambda c, r, i: discord_ausgabe.dateiname("2026-05-01"),
     "ausgabe.begleitung": lambda c, r, i: discord_ausgabe.begleitung(None),
+    "erinnern.suche": lambda c, r, i: erinnern.suche(r, "Keller"),
+    "erinnern.wer": lambda c, r, i: erinnern.wer(r, "Mira"),
+    "erinnern.offen": lambda c, r, i: erinnern.offen(r),
+    "erinnern.zuordnung": lambda c, r, i: erinnern.zuordnung(r),
+    "erinnern.wahlmoeglichkeiten": lambda c, r, i: erinnern.wahlmoeglichkeiten(
+        people.overview(r).personen[0], people.overview(r).spieler
+    ),
 }
 
 # Schreibende Aufrufe. Sie werden nicht auf eine Antwort geprüft, sondern darauf, dass sie
@@ -352,6 +363,8 @@ SCHREIBER = frozenset(
         "service.run",
         "rueckblick.deliver",
         "ausgabe.anhaengen",
+        "erinnern.entscheiden",
+        "erinnern.zuordnen",
     }
 )
 
@@ -494,6 +507,17 @@ def test_zuordnung_und_register_bleiben_getrennt(zwei_runden):
 
     register.decide(a, {ids[2]["eintrag"]: register.Entscheidung(ja=False)})
     assert [g.entries[0].id for g in register.overview(b)] == [ids[2]["eintrag"]]
+
+
+def test_knopf_und_menue_wirken_nur_in_der_eigenen_runde(zwei_runden):
+    """Ein Klick trägt die Kennung seiner Ansicht — entschieden wird trotzdem in *seiner* Runde."""
+    config, a, b, ids = zwei_runden
+    assert erinnern.entscheiden(a, ids[2]["eintrag"], register.FIGUR) == erinnern.SCHON_ENTSCHIEDEN
+    assert [g.entries[0].id for g in register.overview(b)] == [ids[2]["eintrag"]]
+
+    erinnern.zuordnen(a, "d-1", erinnern.KEINE)
+    assert people.overview(a).personen[0].confirmed is None
+    assert people.overview(b).personen[0].confirmed.name == f"Spielerin {MARKE[2]}"
 
 
 def test_einstellungen_gehoeren_der_runde(zwei_runden):
