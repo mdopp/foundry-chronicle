@@ -28,6 +28,32 @@ GM_GEFLUESTER = "Der Schattenfuerst wartet im Keller."
 WELT_ID = "der-krumme-ast"
 WELT_TITEL = "Der Krumme Ast"
 
+# Nutzersprache: was der Bot antwortet und was eine Seite zeigt, sagt was zu tun ist und
+# was als Nächstes passiert — nie, wie es innen gemacht wird. Aufrufe von Hand, Namen von
+# Umgebungsvariablen und Kopfzeilen des Proxys sind Innenleben; niemand muss sie kennen,
+# um die Chronik zu bedienen. Die Liste steht hier und nicht in einer Testdatei, weil
+# derselbe Sweep über die Seiten **und** über die Antworten des Bots läuft.
+SYSTEMWOERTER = (
+    "python -m",
+    "CHRONICLE_",
+    "OLLAMA_",
+    "FOUNDRY_",
+    "Remote-User",
+    "Remote-Groups",
+    "Forward-Auth",
+    "Authelia",
+    "runde_id",
+    "guild_id",
+    "thread_id",
+    "session_id",
+    "SQLite",
+)
+
+
+def systemsprache(text):
+    return [wort for wort in SYSTEMWOERTER if wort in text]
+
+
 WELT = {
     "world": {"id": WELT_ID, "title": WELT_TITEL},
     "system": {"id": "daggerheart"},

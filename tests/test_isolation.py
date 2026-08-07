@@ -108,9 +108,11 @@ def _schluessel(modul, name: str) -> str:
 
 def fuellen(config: Config, runde, marke: str) -> dict[str, int]:
     """Eine Runde mit einem vollständigen Satz Daten — überall dieselbe Marke."""
-    sitzung = notes.create_session(runde, played_on="2026-05-01", title=f"Sitzung {marke}")
+    sitzung = notes.create_session(
+        runde, played_on="2026-05-01", title=f"Sitzung {marke}", thread_id=f"thread-{marke}"
+    )
     szene = notes.session(runde, sitzung).scenes[0]
-    notes.add_note(runde, szene.id, f"Im Keller stand {marke}.")
+    notes.add_note(runde, szene.id, f"Im Keller stand {marke}.", message_id=f"nachricht-{marke}")
 
     scope = db.scoped(runde)
     try:
@@ -206,6 +208,8 @@ def fuellen(config: Config, runde, marke: str) -> dict[str, int]:
         "aufnahme": aufnahme.id,
         "transkript": transkript,
         "eintrag": eintrag,
+        "thread": f"thread-{marke}",
+        "nachricht": f"nachricht-{marke}",
     }
 
 
@@ -234,6 +238,8 @@ ABFRAGEN = {
     "notes.session": lambda c, r, i: notes.session(r, i["sitzung"]),
     "notes.latest_session": lambda c, r, i: notes.latest_session(r),
     "notes.session_of_scene": lambda c, r, i: notes.session_of_scene(r, i["szene"]),
+    "notes.session_of_thread": lambda c, r, i: notes.session_of_thread(r, i["thread"]),
+    "notes.scene_at": lambda c, r, i: notes.scene_at(r, i["sitzung"], "2026-05-01T20:00:00+00:00"),
     "notes.today": lambda c, r, i: notes.today(),
     "protocol.stored": lambda c, r, i: protocol.stored(r, i["sitzung"]),
     "protocol.entries": lambda c, r, i: protocol.entries(r),
@@ -305,6 +311,8 @@ SCHREIBER = frozenset(
         "notes.create_session",
         "notes.add_scene",
         "notes.add_note",
+        "notes.update_note",
+        "notes.remove_note",
         "recordings.enqueue",
         "recordings.accept",
         "recordings.mark",
@@ -315,6 +323,7 @@ SCHREIBER = frozenset(
         "consent.record",
         "jobs.start",
         "jobs.abgleich",
+        "jobs.abschluss",
         "jobs.chronik",
         "nightly.lauf",
         "settings.save",
@@ -442,6 +451,22 @@ def test_notiz_landet_nicht_in_der_fremden_szene(zwei_runden):
     assert notes.add_scene(a, ids[2]["sitzung"]) is None
     assert notes.session(a, ids[2]["sitzung"]) is None
     assert notes.session_of_scene(a, ids[2]["szene"]) is None
+
+
+def test_der_thread_der_fremden_runde_ist_keine_sitzung(zwei_runden):
+    """Der Thread ist die Sitzung — und ein Thread von nebenan ist keine Sitzung von hier.
+
+    Discord meldet Nachricht, Änderung und Löschung mit ihrer Kennung, sonst nichts. Ohne
+    diese Schranke schriebe ein Thread aus einem fremden Server in eine fremde Chronik.
+    """
+    config, a, b, ids = zwei_runden
+    assert notes.session_of_thread(a, ids[2]["thread"]) is None
+    assert notes.session_of_thread(a, ids[1]["thread"]) == ids[1]["sitzung"]
+
+    assert notes.update_note(a, ids[2]["nachricht"], "umgeschrieben") is False
+    assert notes.remove_note(a, ids[2]["nachricht"]) is False
+    fremde = notes.session(b, ids[2]["sitzung"]).scenes[0].notes
+    assert [notiz.text for notiz in fremde] == [f"Im Keller stand {MARKE[2]}."]
 
 
 def test_aufnahme_der_fremden_runde_bleibt_unberuehrt(zwei_runden):

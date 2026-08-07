@@ -21,16 +21,20 @@ import asyncio
 import functools
 import logging
 import wave
+from collections.abc import Callable
+from datetime import UTC
 from pathlib import Path
 
 from chronicle import consent, recordings
-from chronicle.bot import BotFehler, ansage, recorder
+from chronicle.bot import BotFehler, ansage, chronik, recorder
 from chronicle.bot.recorder import Aufnahme, Kanal
 from chronicle.config import Config
 
 logger = logging.getLogger(__name__)
 
 GRUPPE = "aufnahme"
+GRUPPE_CHRONIK = "chronik"
+BEFEHL_SZENE = "szene"
 
 NICHT_INSTALLIERT = (
     "py-cord ist nicht installiert — im Image ist es dabei, "
@@ -62,10 +66,14 @@ UNERWARTET = "unerwarteter Fehler im Bot ({typ})."
 
 HILFE = (
     "**So schneide ich eine Sitzung mit**\n"
+    "• `/chronik start` — ich lege die Sitzung an und öffne den Thread dazu; ab dort wird "
+    "jede Nachricht eine Notiz.\n"
     "• `/aufnahme start` — ich komme in deinen Sprachkanal, spiele eine hörbare Ansage "
     "und schneide **erst danach** mit, je Sprecherin und Sprecher eine eigene Spur.\n"
     "• `/aufnahme stop` — ich höre auf und gehe wieder; die Spuren wandern in den "
     "nächtlichen Lauf und werden zu Text.\n"
+    "• `/chronik fertig` — Sitzung abschließen: Zahlen holen, verschriften, Chronik "
+    "schreiben.\n"
     "• `/aufnahme hilfe` — dieser Text.\n"
     "Wer nicht aufgezeichnet werden möchte, verlässt den Sprachkanal — außerhalb nehme "
     "ich nichts auf. Wer später dazukommt, hört die Ansage noch einmal. "
@@ -233,16 +241,108 @@ class _Lauf:
         self.frist = None
 
 
+def _zeitpunkt(nachricht) -> str:
+    """Der Zeitpunkt der Nachricht in der Form, in der die Szenen ihre Trennlinien tragen.
+
+    Er und nicht die Ankunft entscheidet über die Szene — sonst rutschte eine Woche später
+    nachgetragene Nachricht ans Ende der Sitzung.
+    """
+    gestellt = getattr(nachricht, "created_at", None)
+    if gestellt is None:
+        return ""
+    return gestellt.astimezone(UTC).isoformat(timespec="seconds")
+
+
+def _nachricht(nachricht) -> chronik.Nachricht:
+    return chronik.Nachricht(
+        id=str(nachricht.id),
+        text=nachricht.content or "",
+        zeitpunkt=_zeitpunkt(nachricht),
+        anhaenge=tuple(
+            chronik.Anhang(filename=anhang.filename, size=anhang.size, speichern=anhang.save)
+            for anhang in nachricht.attachments
+        ),
+        autor_id=str(nachricht.author.id),
+    )
+
+
+def _runde_des_ereignisses(config: Config, payload):
+    """Nur die Runde der meldenden Gilde — ein Ereignis von nebenan gehört nicht hierher."""
+    if payload.guild_id is None:
+        return None
+    return chronik.runde_der_gilde(config, payload.guild_id)
+
+
+async def _thread_anlegen(ctx, name: str):
+    """Der Thread ist die Sitzung — ohne ihn wird auch keine angelegt."""
+    discord = _discord()
+    try:
+        return await ctx.channel.create_thread(name=name)
+    except discord.HTTPException as fehler:
+        raise chronik.ChronikFehler(chronik.KEIN_THREAD) from fehler
+
+
+def _melder(ziel) -> Callable[[str], None]:
+    """Der Lauf trägt sich in einem eigenen Faden zu; melden darf nur die Ereignisschleife."""
+    schleife = asyncio.get_running_loop()
+
+    def melden(text: str) -> None:
+        asyncio.run_coroutine_threadsafe(ziel.send(text), schleife)
+
+    return melden
+
+
+def _passwortfrage(config: Config, runde, session_id: int):
+    """Das Passwort wird erfragt, verbraucht und vergessen — es steht in keinem Feld.
+
+    Deshalb ein Modal und kein Befehls-Argument: ein Argument stünde als Klartext in der
+    Befehlszeile und damit im Verlauf des Kanals.
+    """
+    discord = _discord()
+
+    class Passwortfrage(discord.ui.Modal):
+        def __init__(self) -> None:
+            super().__init__(
+                discord.ui.InputText(
+                    label=chronik.PASSWORT_FELD, placeholder=chronik.PASSWORT_HINWEIS
+                ),
+                title=chronik.PASSWORT_TITEL,
+            )
+
+        async def callback(self, interaction) -> None:
+            try:
+                meldung = chronik.abschluss_starten(
+                    config,
+                    runde,
+                    session_id,
+                    self.children[0].value,
+                    melden=_melder(interaction.channel),
+                )
+            except BotFehler as fehler:
+                meldung = GESCHEITERT.format(grund=str(fehler))
+            except Exception as fehler:  # noqa: BLE001
+                logger.exception("Abschluss der Sitzung gescheitert")
+                meldung = GESCHEITERT.format(grund=UNERWARTET.format(typ=type(fehler).__name__))
+            await interaction.response.send_message(meldung, ephemeral=True)
+
+    return Passwortfrage()
+
+
 def baue(config: Config):
-    """Der Bot mit seinen beiden Befehlen — noch ohne Verbindung."""
+    """Der Bot mit seinen Befehlen und dem Thread, der die Sitzung ist — ohne Verbindung."""
     discord = _discord()
     _sprache_pruefen(discord)
     absichten = discord.Intents.none()
     absichten.guilds = True
     absichten.voice_states = True
+    # Ohne diese beiden ist der Thread ein leerer Behälter: Discord meldete weder die
+    # Nachrichten noch ihren Inhalt, und jede Notiz käme leer an.
+    absichten.messages = True
+    absichten.message_content = True
     bot = discord.Bot(intents=absichten)
     lauf = _Lauf()
     gruppe = bot.create_group(GRUPPE, "Die Sitzung mitschneiden")
+    chronikgruppe = bot.create_group(GRUPPE_CHRONIK, "Die Sitzung schreiben")
 
     @gruppe.command(name="start", description="Beitreten, ansagen, je Sprecher mitschneiden")
     @antwortet
@@ -280,6 +380,69 @@ def baue(config: Config):
     @antwortet
     async def hilfe(ctx) -> None:
         await ctx.respond(HILFE, ephemeral=True)
+
+    @chronikgruppe.command(name="start", description="Sitzung anlegen und den Thread öffnen")
+    @antwortet
+    async def chronik_start(ctx, titel: str = "") -> None:
+        runde = chronik.runde_verlangen(config, ctx.guild_id)
+        await ctx.defer(ephemeral=True)
+        thread = await _thread_anlegen(ctx, chronik.threadname(titel))
+        chronik.sitzung_anlegen(runde, str(thread.id), titel)
+        await thread.send(chronik.ANGELEGT)
+        await ctx.respond(chronik.THREAD_STEHT.format(thread=thread.mention), ephemeral=True)
+
+    @chronikgruppe.command(
+        name="fertig", description="Sitzung abschließen und die Chronik anstoßen"
+    )
+    @antwortet
+    async def chronik_fertig(ctx) -> None:
+        runde = chronik.runde_verlangen(config, ctx.guild_id)
+        sitzung = chronik.sitzung_verlangen(runde, str(ctx.channel_id))
+        await ctx.send_modal(_passwortfrage(config, runde, sitzung))
+
+    @bot.slash_command(name=BEFEHL_SZENE, description="Die Trennlinie zur nächsten Szene ziehen")
+    @antwortet
+    async def szene(ctx, name: str = "") -> None:
+        runde = chronik.runde_verlangen(config, ctx.guild_id)
+        sitzung = chronik.sitzung_verlangen(runde, str(ctx.channel_id))
+        # Sichtbar für alle: die Trennlinie gehört in den Thread, nicht nur zu dem, der
+        # sie gezogen hat.
+        await ctx.respond(chronik.szene_setzen(runde, sitzung, name), ephemeral=False)
+
+    @bot.event
+    async def on_message(nachricht) -> None:
+        if nachricht.author.bot or nachricht.guild is None:
+            return
+        runde = chronik.runde_der_gilde(config, nachricht.guild.id)
+        if runde is None:
+            return
+        sitzung = chronik.sitzung_des_threads(runde, str(nachricht.channel.id))
+        if sitzung is None:
+            return
+        try:
+            meldungen = await chronik.aufnehmen(config, runde, sitzung, _nachricht(nachricht))
+        except Exception as fehler:  # noqa: BLE001
+            logger.exception("Nachricht im Sitzungs-Thread nicht abgelegt")
+            grund = UNERWARTET.format(typ=type(fehler).__name__)
+            await nachricht.reply(chronik.NICHT_ABGELEGT.format(grund=grund))
+            return
+        for meldung in meldungen:
+            await nachricht.reply(meldung)
+
+    @bot.event
+    async def on_raw_message_edit(payload) -> None:
+        # Roh und nicht ``on_message_edit``: das gäbe es nur für Nachrichten, die der Bot
+        # seit seinem Start gesehen hat — eine Woche alte Notiz gehört auch dazu.
+        text = (payload.data or {}).get("content")
+        runde = _runde_des_ereignisses(config, payload)
+        if text is not None and runde is not None:
+            chronik.notiz_aendern(runde, str(payload.message_id), text)
+
+    @bot.event
+    async def on_raw_message_delete(payload) -> None:
+        runde = _runde_des_ereignisses(config, payload)
+        if runde is not None:
+            chronik.notiz_entfernen(runde, str(payload.message_id))
 
     @bot.event
     async def on_ready() -> None:

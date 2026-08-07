@@ -1,0 +1,664 @@
+"""Der Thread ist die Sitzung — gegen ein nachgebautes Discord, ohne Netz und ohne py-cord.
+
+Die Sätze, die dieser Suite ihren Sinn geben: **die Gilde bestimmt die Runde** — ohne eine
+passiert nichts —, **die Szene entscheidet der Zeitpunkt der Nachricht** und nicht der des
+Ablegens, und **es antwortet immer jemand**, auch wenn etwas schiefgeht.
+
+Die Attrappen der Gateway-Seite stehen in ``test_bot``; hier kommen die dazu, die es für
+Threads, Nachrichten und das Passwort-Fenster braucht.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import time
+import types
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+
+import pytest
+from conftest import GRENZE, systemsprache
+from conftest import runde as erste_runde
+from test_bot import TOKEN, FakeBot, FakeIntents, FakePCMAudio, FakeSenke
+
+import chronicle.bot.__main__ as bot_eintritt
+from chronicle import db, jobs, notes, recordings, zugang
+from chronicle import runde as runden
+from chronicle.bot import ansage, chronik, gateway, recorder
+from chronicle.config import Config
+
+GILDE = "1101"
+FREMDE_GILDE = "9909"
+
+PASSWORT = "passwort-nur-fuer-den-test"
+
+# Der Satz, den die Attrappe des Laufs zurückgibt — hier steht kein echtes Ollama dahinter.
+STEHT = "Chronik und Rückblick stehen bereit."
+
+
+# -- Die Attrappen ----------------------------------------------------------------------
+
+
+class FakeHTTPException(Exception):
+    """Was py-cord wirft, wenn Discord den Thread verweigert."""
+
+
+class FakeInputText:
+    def __init__(self, *, label="", placeholder="", **rest):
+        self.label = label
+        self.placeholder = placeholder
+        self.value = ""
+
+
+class FakeModal:
+    def __init__(self, *children, title="", **rest):
+        self.children = list(children)
+        self.title = title
+
+
+class FakeAnhang:
+    def __init__(self, filename, inhalt=b"ton-ton-ton", groesse=None):
+        self.filename = filename
+        self.size = len(inhalt) if groesse is None else groesse
+        self._inhalt = inhalt
+
+    async def save(self, ziel):
+        Path(ziel).write_bytes(self._inhalt)
+
+
+class FakeThread:
+    def __init__(self, kennung, name):
+        self.id = kennung
+        self.name = name
+        self.mention = f"<#{kennung}>"
+        self.gesendet: list[str] = []
+
+    async def send(self, text):
+        self.gesendet.append(text)
+
+
+class FakeTextkanal:
+    def __init__(self, kennung=900, *, darf=True):
+        self.id = kennung
+        self.darf = darf
+        self.threads: list[FakeThread] = []
+
+    async def create_thread(self, *, name):
+        if not self.darf:
+            raise FakeHTTPException("Missing Permissions")
+        thread = FakeThread(5000 + len(self.threads), name)
+        self.threads.append(thread)
+        return thread
+
+
+class FakeCtx:
+    def __init__(self, *, guild_id=GILDE, kanal=None):
+        self.guild_id = guild_id
+        self.channel = kanal if kanal is not None else FakeTextkanal()
+        self.channel_id = self.channel.id
+        self.antworten: list[str] = []
+        self.modale: list[FakeModal] = []
+        self.aufgeschoben = False
+
+    async def defer(self, **rest):
+        self.aufgeschoben = True
+
+    async def respond(self, text, **rest):
+        self.antworten.append(text)
+
+    async def send_modal(self, modal):
+        self.modale.append(modal)
+
+
+class FakeAntwort:
+    def __init__(self):
+        self.gesendet: list[str] = []
+
+    async def send_message(self, text, **rest):
+        self.gesendet.append(text)
+
+
+class FakeInteraction:
+    def __init__(self, kanal):
+        self.channel = kanal
+        self.response = FakeAntwort()
+
+
+class FakeNachricht:
+    def __init__(self, kennung, text="", *, kanal, gilde=GILDE, anhaenge=(), zeit=None, bot=False):
+        self.id = kennung
+        self.content = text
+        self.attachments = list(anhaenge)
+        self.created_at = zeit if zeit is not None else datetime.now(UTC)
+        self.author = types.SimpleNamespace(id=4001, bot=bot)
+        self.guild = types.SimpleNamespace(id=gilde)
+        self.channel = types.SimpleNamespace(id=kanal)
+        self.antworten: list[str] = []
+
+    async def reply(self, text):
+        self.antworten.append(text)
+
+
+def rohes_ereignis(message_id, *, gilde=GILDE, inhalt=None):
+    daten = {} if inhalt is None else {"content": inhalt}
+    return types.SimpleNamespace(message_id=message_id, guild_id=gilde, data=daten)
+
+
+# -- Die Bühne --------------------------------------------------------------------------
+
+
+@pytest.fixture
+def pycord(monkeypatch):
+    import sys
+
+    modul = types.ModuleType("discord")
+    modul.Intents = FakeIntents
+    modul.Bot = FakeBot
+    modul.PCMAudio = FakePCMAudio
+    modul.HTTPException = FakeHTTPException
+    senken = types.ModuleType("discord.sinks")
+    senken.Sink = FakeSenke
+    modul.sinks = senken
+    werkzeug = types.ModuleType("discord.utils")
+    werkzeug.get_missing_voice_dependencies = lambda: ()
+    modul.utils = werkzeug
+    oberflaeche = types.ModuleType("discord.ui")
+    oberflaeche.Modal = FakeModal
+    oberflaeche.InputText = FakeInputText
+    modul.ui = oberflaeche
+    monkeypatch.setitem(sys.modules, "discord", modul)
+    monkeypatch.setattr(FakeBot, "erzeugt", [])
+    return modul
+
+
+@pytest.fixture
+def stelle(tmp_path):
+    config = Config(
+        discord_bot_token=TOKEN,
+        data_dir=tmp_path / "daten",
+        recordings_dir=tmp_path / "aufnahmen",
+    )
+    db.init(config.database_path)
+    return config, runden.anlegen(config.database_path, "Der Krumme Ast", guild_id=GILDE)
+
+
+@pytest.fixture
+def bot(stelle, pycord):
+    config, _unsere = stelle
+    return gateway.baue(config)
+
+
+def chronikbefehl(bot, name):
+    return bot.gruppen[gateway.GRUPPE_CHRONIK].befehle[name]
+
+
+def sitzung_starten(bot, ctx=None, titel=""):
+    ctx = ctx if ctx is not None else FakeCtx()
+    asyncio.run(chronikbefehl(bot, "start")(ctx, titel))
+    thread = ctx.channel.threads[-1] if ctx.channel.threads else None
+    return ctx, thread
+
+
+def notizen(runde, sitzung_id):
+    """Alle Notizen der Sitzung, Szene für Szene."""
+    return [
+        (szene.position, notiz.text)
+        for szene in notes.session(runde, sitzung_id).scenes
+        for notiz in szene.notes
+    ]
+
+
+# -- Sitzung und Thread -----------------------------------------------------------------
+
+
+def test_der_bot_bringt_die_chronik_befehle_mit(bot):
+    assert set(bot.gruppen[gateway.GRUPPE_CHRONIK].befehle) == {"start", "fertig"}
+    assert gateway.BEFEHL_SZENE in bot.befehle
+    assert set(bot.ereignisse) >= {"on_message", "on_raw_message_edit", "on_raw_message_delete"}
+
+
+def test_ohne_nachrichten_absicht_bliebe_der_thread_ein_leerer_behaelter(bot):
+    (gebaut,) = FakeBot.erzeugt
+    assert gebaut.intents.messages and gebaut.intents.message_content
+
+
+def test_start_legt_sitzung_und_thread_an_und_sagt_wie_es_weitergeht(stelle, bot):
+    _config, unsere = stelle
+
+    ctx, thread = sitzung_starten(bot, titel="Der Keller")
+
+    sitzung_id = notes.session_of_thread(unsere, str(thread.id))
+    assert sitzung_id is not None
+    assert notes.session(unsere, sitzung_id).title == "Der Keller"
+    assert thread.name == "Der Keller"
+    assert thread.gesendet == [chronik.ANGELEGT]
+    assert ctx.antworten == [chronik.THREAD_STEHT.format(thread=thread.mention)]
+
+
+def test_ohne_titel_traegt_der_thread_das_datum(stelle, bot):
+    _ctx, thread = sitzung_starten(bot)
+    assert notes.today() in thread.name
+
+
+def test_ohne_runde_fuer_diesen_server_entsteht_nichts(stelle, bot):
+    _config, _unsere = stelle
+    ctx = FakeCtx(guild_id=FREMDE_GILDE)
+
+    asyncio.run(chronikbefehl(bot, "start")(ctx, ""))
+
+    (antwort,) = ctx.antworten
+    assert chronik.KEINE_RUNDE in antwort
+    assert ctx.channel.threads == []
+
+
+def test_ohne_thread_recht_bleibt_keine_halbe_sitzung_liegen(stelle, bot):
+    _config, unsere = stelle
+    ctx = FakeCtx(kanal=FakeTextkanal(darf=False))
+
+    asyncio.run(chronikbefehl(bot, "start")(ctx, ""))
+
+    (antwort,) = ctx.antworten
+    assert chronik.KEIN_THREAD in antwort
+    assert notes.sessions(unsere) == ()
+
+
+# -- Jede Nachricht ist eine Notiz ------------------------------------------------------
+
+
+def melden(bot, nachricht):
+    asyncio.run(bot.ereignisse["on_message"](nachricht))
+    return nachricht
+
+
+def test_eine_nachricht_im_thread_wird_zur_notiz_und_bekommt_keine_quittung(stelle, bot):
+    _config, unsere = stelle
+    _ctx, thread = sitzung_starten(bot)
+
+    nachricht = melden(bot, FakeNachricht(7001, "Wir steigen hinab.", kanal=thread.id))
+
+    sitzung_id = notes.session_of_thread(unsere, str(thread.id))
+    assert notizen(unsere, sitzung_id) == [(1, "Wir steigen hinab.")]
+    assert nachricht.antworten == []
+
+
+def test_was_der_bot_selbst_schreibt_ist_keine_notiz(stelle, bot):
+    _config, unsere = stelle
+    _ctx, thread = sitzung_starten(bot)
+
+    melden(bot, FakeNachricht(7002, chronik.ANGELEGT, kanal=thread.id, bot=True))
+
+    sitzung_id = notes.session_of_thread(unsere, str(thread.id))
+    assert notizen(unsere, sitzung_id) == []
+
+
+def test_ausserhalb_eines_sitzungs_threads_wird_nichts_abgelegt(stelle, bot):
+    _config, unsere = stelle
+    _ctx, thread = sitzung_starten(bot)
+
+    nachricht = melden(bot, FakeNachricht(7003, "Nur geplaudert.", kanal=8888))
+
+    sitzung_id = notes.session_of_thread(unsere, str(thread.id))
+    assert notizen(unsere, sitzung_id) == []
+    assert nachricht.antworten == []
+
+
+def test_aus_einem_server_ohne_runde_wird_nichts_abgelegt(stelle, bot):
+    _config, unsere = stelle
+    _ctx, thread = sitzung_starten(bot)
+
+    melden(bot, FakeNachricht(7004, "Von nebenan.", kanal=thread.id, gilde=FREMDE_GILDE))
+
+    sitzung_id = notes.session_of_thread(unsere, str(thread.id))
+    assert notizen(unsere, sitzung_id) == []
+
+
+def test_was_nicht_abgelegt_werden_konnte_bekommt_trotzdem_eine_antwort(stelle, bot, monkeypatch):
+    _ctx, thread = sitzung_starten(bot)
+
+    def stolpert(*args, **kwargs):
+        raise RuntimeError("irgendwas in der Datenschicht")
+
+    monkeypatch.setattr(notes, "add_note", stolpert)
+
+    nachricht = melden(bot, FakeNachricht(7005, "Wir steigen hinab.", kanal=thread.id))
+
+    (antwort,) = nachricht.antworten
+    assert antwort.startswith("Das konnte ich nicht ablegen:")
+    assert "RuntimeError" in antwort
+
+
+# -- Szenen -----------------------------------------------------------------------------
+
+
+def test_szene_zieht_die_trennlinie_und_das_naechste_landet_dahinter(stelle, bot):
+    _config, unsere = stelle
+    _ctx, thread = sitzung_starten(bot)
+    melden(bot, FakeNachricht(7101, "Noch im Wirtshaus.", kanal=thread.id))
+
+    szene_ctx = FakeCtx(kanal=types.SimpleNamespace(id=thread.id))
+    asyncio.run(bot.befehle[gateway.BEFEHL_SZENE](szene_ctx, "Im Keller"))
+    spaeter = datetime.now(UTC) + timedelta(seconds=5)
+    melden(bot, FakeNachricht(7102, "Die Treppe knarrt.", kanal=thread.id, zeit=spaeter))
+
+    sitzung_id = notes.session_of_thread(unsere, str(thread.id))
+    assert szene_ctx.antworten == [chronik.SZENE.format(name="Im Keller")]
+    assert notizen(unsere, sitzung_id) == [(1, "Noch im Wirtshaus."), (2, "Die Treppe knarrt.")]
+    assert [s.title for s in notes.session(unsere, sitzung_id).scenes] == [None, "Im Keller"]
+
+
+def test_eine_szene_ohne_namen_ist_trotzdem_eine_trennlinie(stelle, bot):
+    _config, unsere = stelle
+    _ctx, thread = sitzung_starten(bot)
+    ctx = FakeCtx(kanal=types.SimpleNamespace(id=thread.id))
+
+    asyncio.run(bot.befehle[gateway.BEFEHL_SZENE](ctx, "  "))
+
+    sitzung_id = notes.session_of_thread(unsere, str(thread.id))
+    assert ctx.antworten == [chronik.SZENE_OHNE_NAMEN]
+    assert len(notes.session(unsere, sitzung_id).scenes) == 2
+
+
+def test_szene_ausserhalb_eines_sitzungs_threads_sagt_es(stelle, bot):
+    ctx = FakeCtx(kanal=types.SimpleNamespace(id=8888))
+
+    asyncio.run(bot.befehle[gateway.BEFEHL_SZENE](ctx, "Im Keller"))
+
+    (antwort,) = ctx.antworten
+    assert chronik.NUR_IM_THREAD in antwort
+
+
+def test_eine_tage_spaeter_nachgetragene_nachricht_landet_in_ihrer_szene(stelle, bot):
+    """Die Szene entscheidet der Zeitpunkt der Nachricht, nicht der des Ablegens."""
+    _config, unsere = stelle
+    _ctx, thread = sitzung_starten(bot)
+    sitzung_id = notes.session_of_thread(unsere, str(thread.id))
+    notes.add_scene(unsere, sitzung_id, title="Im Keller", at="2026-08-05T21:00:00+00:00")
+    notes.add_scene(unsere, sitzung_id, title="Auf dem Dach", at="2026-08-05T23:00:00+00:00")
+
+    melden(
+        bot,
+        FakeNachricht(
+            7201,
+            "Da unten stand die Truhe.",
+            kanal=thread.id,
+            zeit=datetime(2026, 8, 5, 22, 0, tzinfo=UTC),
+        ),
+    )
+
+    assert notizen(unsere, sitzung_id) == [(2, "Da unten stand die Truhe.")]
+
+
+def test_was_vor_jeder_trennlinie_liegt_bleibt_in_der_ersten_szene(stelle, bot):
+    _config, unsere = stelle
+    _ctx, thread = sitzung_starten(bot)
+    sitzung_id = notes.session_of_thread(unsere, str(thread.id))
+    notes.add_scene(unsere, sitzung_id, title="Im Keller", at="2026-08-05T21:00:00+00:00")
+
+    melden(
+        bot,
+        FakeNachricht(
+            7202, "Ganz am Anfang.", kanal=thread.id, zeit=datetime(2020, 1, 1, tzinfo=UTC)
+        ),
+    )
+
+    assert notizen(unsere, sitzung_id) == [(1, "Ganz am Anfang.")]
+
+
+# -- Ändern und Löschen spiegeln --------------------------------------------------------
+
+
+def test_eine_geaenderte_nachricht_aendert_ihre_notiz(stelle, bot):
+    _config, unsere = stelle
+    _ctx, thread = sitzung_starten(bot)
+    melden(bot, FakeNachricht(7301, "Die Wirtin heißt Mara.", kanal=thread.id))
+
+    asyncio.run(
+        bot.ereignisse["on_raw_message_edit"](rohes_ereignis(7301, inhalt="Die Wirtin heißt Mira."))
+    )
+
+    sitzung_id = notes.session_of_thread(unsere, str(thread.id))
+    assert notizen(unsere, sitzung_id) == [(1, "Die Wirtin heißt Mira.")]
+
+
+def test_eine_aenderung_ohne_neuen_text_laesst_die_notiz_stehen(stelle, bot):
+    _config, unsere = stelle
+    _ctx, thread = sitzung_starten(bot)
+    melden(bot, FakeNachricht(7302, "Die Wirtin heißt Mira.", kanal=thread.id))
+
+    asyncio.run(bot.ereignisse["on_raw_message_edit"](rohes_ereignis(7302)))
+
+    sitzung_id = notes.session_of_thread(unsere, str(thread.id))
+    assert notizen(unsere, sitzung_id) == [(1, "Die Wirtin heißt Mira.")]
+
+
+def test_eine_geloeschte_nachricht_verschwindet_auch_bei_uns(stelle, bot):
+    _config, unsere = stelle
+    _ctx, thread = sitzung_starten(bot)
+    melden(bot, FakeNachricht(7303, "Das war falsch.", kanal=thread.id))
+
+    asyncio.run(bot.ereignisse["on_raw_message_delete"](rohes_ereignis(7303)))
+
+    sitzung_id = notes.session_of_thread(unsere, str(thread.id))
+    assert notizen(unsere, sitzung_id) == []
+
+
+def test_ein_ereignis_ohne_gilde_fasst_nichts_an(stelle, bot):
+    _config, unsere = stelle
+    _ctx, thread = sitzung_starten(bot)
+    melden(bot, FakeNachricht(7304, "Bleibt stehen.", kanal=thread.id))
+
+    asyncio.run(
+        bot.ereignisse["on_raw_message_edit"](rohes_ereignis(7304, gilde=None, inhalt="weg"))
+    )
+    asyncio.run(bot.ereignisse["on_raw_message_delete"](rohes_ereignis(7304, gilde=None)))
+
+    sitzung_id = notes.session_of_thread(unsere, str(thread.id))
+    assert notizen(unsere, sitzung_id) == [(1, "Bleibt stehen.")]
+
+
+# -- Diktat im Thread -------------------------------------------------------------------
+
+
+def test_eine_sprachnachricht_im_thread_geht_in_dieselbe_warteschlange(stelle, bot):
+    config, unsere = stelle
+    _ctx, thread = sitzung_starten(bot)
+
+    nachricht = melden(
+        bot,
+        FakeNachricht(7401, "", kanal=thread.id, anhaenge=(FakeAnhang("voice-message.ogg"),)),
+    )
+
+    (spur,) = recordings.pending(unsere)
+    assert spur.session_id == notes.session_of_thread(unsere, str(thread.id))
+    assert spur.discord_user_id == "4001"
+    assert (config.recordings_dir / spur.filename).is_file()
+    assert nachricht.antworten == [chronik.DIKTAT]
+
+
+def test_ein_anhang_ohne_ton_ist_einfach_kein_diktat(stelle, bot):
+    _config, unsere = stelle
+    _ctx, thread = sitzung_starten(bot)
+
+    nachricht = melden(
+        bot,
+        FakeNachricht(
+            7402, "Der Notizzettel.", kanal=thread.id, anhaenge=(FakeAnhang("notizen.pdf"),)
+        ),
+    )
+
+    sitzung_id = notes.session_of_thread(unsere, str(thread.id))
+    assert recordings.pending(unsere) == ()
+    assert notizen(unsere, sitzung_id) == [(1, "Der Notizzettel.")]
+    assert nachricht.antworten == []
+
+
+def test_eine_zu_grosse_aufnahme_bleibt_liegen_und_sagt_es(stelle, bot):
+    _config, unsere = stelle
+    _ctx, thread = sitzung_starten(bot)
+    riesig = FakeAnhang("lang.m4a", groesse=recordings.MAX_BYTES + 1)
+
+    nachricht = melden(bot, FakeNachricht(7403, "", kanal=thread.id, anhaenge=(riesig,)))
+
+    assert recordings.pending(unsere) == ()
+    assert nachricht.antworten == [
+        chronik.ZU_GROSS.format(name="lang.m4a", grenze=recordings.MAX_BYTES // (1024 * 1024))
+    ]
+
+
+# -- Abschließen ------------------------------------------------------------------------
+
+
+async def _bis_der_lauf_durch_ist(unsere):
+    ende = time.monotonic() + GRENZE
+    while time.monotonic() < ende and jobs.running(unsere, jobs.CHRONIK):
+        await asyncio.sleep(0.01)
+    # Der Lauf meldet sich aus seinem eigenen Faden; die Schleife muss ihn noch abholen.
+    await asyncio.sleep(0.05)
+
+
+def abschluss_fahren(bot, unsere, thread, *, passwort=PASSWORT):
+    ctx = FakeCtx(kanal=types.SimpleNamespace(id=thread.id))
+    interaktion = FakeInteraction(thread)
+
+    async def ablauf():
+        await chronikbefehl(bot, "fertig")(ctx)
+        if ctx.modale:
+            ctx.modale[0].children[0].value = passwort
+            await ctx.modale[0].callback(interaktion)
+            await _bis_der_lauf_durch_ist(unsere)
+
+    asyncio.run(ablauf())
+    return ctx, interaktion
+
+
+def test_fertig_fragt_nach_dem_passwort_und_stoesst_den_einen_lauf_an(stelle, bot, monkeypatch):
+    _config, unsere = stelle
+    _ctx, thread = sitzung_starten(bot)
+    gesehen = []
+
+    def abschluss(config, eine, session_id):
+        gesehen.append((zugang.passwort(eine), session_id))
+        return STEHT
+
+    monkeypatch.setattr(jobs, "abschluss", abschluss)
+
+    ctx, interaktion = abschluss_fahren(bot, unsere, thread)
+
+    sitzung_id = notes.session_of_thread(unsere, str(thread.id))
+    assert ctx.modale[0].title == chronik.PASSWORT_TITEL
+    assert gesehen == [(PASSWORT, sitzung_id)]
+    assert interaktion.response.gesendet == [chronik.FERTIG]
+    assert thread.gesendet == [chronik.ANGELEGT, STEHT]
+    assert jobs.latest(unsere, jobs.CHRONIK, sitzung_id).result == STEHT
+
+
+def test_das_passwort_steht_in_keiner_antwort_und_liegt_danach_nicht_mehr(stelle, bot, monkeypatch):
+    _config, unsere = stelle
+    _ctx, thread = sitzung_starten(bot)
+    monkeypatch.setattr(jobs, "abschluss", lambda config, eine, sid: STEHT)
+
+    ctx, interaktion = abschluss_fahren(bot, unsere, thread)
+
+    gesagt = " ".join(ctx.antworten + interaktion.response.gesendet + thread.gesendet)
+    assert PASSWORT not in gesagt
+    # Der Abgleich verbraucht es; hier tut das die Attrappe nicht — die harte Regel ist,
+    # dass keine Antwort es zeigt.
+    zugang.vergiss(unsere)
+    assert not zugang.ist_gemerkt(unsere)
+
+
+def test_ein_gescheiterter_lauf_meldet_sich_trotzdem_im_thread(stelle, bot, monkeypatch):
+    _config, unsere = stelle
+    _ctx, thread = sitzung_starten(bot)
+
+    def stolpert(config, eine, session_id):
+        raise RuntimeError("Ollama war aus")
+
+    monkeypatch.setattr(jobs, "abschluss", stolpert)
+
+    abschluss_fahren(bot, unsere, thread)
+
+    assert thread.gesendet[-1].startswith("Der Lauf ist nicht durchgekommen:")
+    assert "Ollama war aus" in thread.gesendet[-1]
+
+
+def test_ein_zweites_fertig_stoesst_keinen_zweiten_lauf_an(stelle, bot, monkeypatch):
+    _config, unsere = stelle
+    _ctx, thread = sitzung_starten(bot)
+    sitzung_id = notes.session_of_thread(unsere, str(thread.id))
+    monkeypatch.setattr(jobs, "running", lambda eine, kind=None: True)
+
+    interaktion = FakeInteraction(thread)
+    meldung = chronik.abschluss_starten(
+        _config, unsere, sitzung_id, PASSWORT, melden=lambda text: None
+    )
+
+    assert meldung == chronik.LAEUFT_SCHON
+    assert interaktion.response.gesendet == []
+
+
+def test_fertig_ausserhalb_eines_sitzungs_threads_sagt_es(stelle, bot):
+    ctx = FakeCtx(kanal=types.SimpleNamespace(id=8888))
+
+    asyncio.run(chronikbefehl(bot, "fertig")(ctx))
+
+    (antwort,) = ctx.antworten
+    assert chronik.NUR_IM_THREAD in antwort
+    assert ctx.modale == []
+
+
+def test_ein_stolpernder_abschluss_antwortet_trotzdem(stelle, bot, monkeypatch):
+    _config, unsere = stelle
+    _ctx, thread = sitzung_starten(bot)
+
+    def stolpert(*args, **kwargs):
+        raise RuntimeError("irgendwas in der Bibliothek")
+
+    monkeypatch.setattr(chronik, "abschluss_starten", stolpert)
+
+    _ctx2, interaktion = abschluss_fahren(bot, unsere, thread)
+
+    (antwort,) = interaktion.response.gesendet
+    assert antwort.startswith("Das hat nicht geklappt:")
+    assert "RuntimeError" in antwort
+
+
+# -- Nutzersprache, auch für den Bot ----------------------------------------------------
+
+
+def test_keine_systemsprache_in_dem_was_der_bot_sagt():
+    """Derselbe Sweep wie über die Seiten — eine Antwort ist genauso Oberfläche."""
+    verraten = {}
+    for modul in (ansage, bot_eintritt, chronik, gateway, jobs, recorder):
+        for name, wert in vars(modul).items():
+            if name.isupper() and isinstance(wert, str) and systemsprache(wert):
+                verraten[f"{modul.__name__}.{name}"] = systemsprache(wert)
+    assert not verraten
+
+
+def test_die_ansage_der_sitzung_sagt_was_zu_tun_ist(stelle, bot):
+    _ctx, thread = sitzung_starten(bot)
+    for satzteil in ("jede Nachricht", "/szene", "/chronik fertig", "Sprachnachricht"):
+        assert satzteil in thread.gesendet[0]
+
+
+def test_die_hilfe_nennt_auch_den_weg_in_die_sitzung(stelle, bot):
+    ctx = FakeCtx()
+
+    asyncio.run(bot.gruppen[gateway.GRUPPE].befehle["hilfe"](ctx))
+
+    (antwort,) = ctx.antworten
+    assert "/chronik start" in antwort and "/chronik fertig" in antwort
+
+
+# -- Der Thread einer Runde schreibt nicht in die andere ---------------------------------
+
+
+def test_der_thread_einer_fremden_runde_ist_nicht_erreichbar(stelle, bot):
+    """Dieselbe Schranke wie im Isolationsgate, hier am Weg durch den Bot."""
+    config, unsere = stelle
+    _ctx, thread = sitzung_starten(bot)
+
+    fremde = erste_runde(config)
+    assert fremde.id != unsere.id
+    assert notes.session_of_thread(fremde, str(thread.id)) is None

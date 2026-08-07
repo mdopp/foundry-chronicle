@@ -118,6 +118,38 @@ derzeit 7 Tage) räumt der Stapel sie ohnehin ab. Gelöscht wird dabei nur die A
 die Zeile bleibt mit `deleted_at` stehen, damit man sieht, dass die Spur nach Frist
 entfernt wurde und nicht verlorenging.
 
+## Erfassen per Discord: der Thread ist die Sitzung
+
+`/chronik start [Titel]` legt beides zugleich an — die Sitzung und den Thread, in dem sie
+geschrieben wird. Der Thread ist der natürliche Behälter: Anfang, Ende, Teilnehmerliste,
+Zeitachse, und die Runde tippt ohnehin dort. Darin gilt:
+
+- **Jede Nachricht ist eine Notiz** der laufenden Szene. Eingefügter Text — Log,
+  Notizzettel, was auch immer — ist einfach eine Nachricht. Der Bot quittiert sie nicht:
+  sie steht im Thread und *ist* die Notiz.
+- **`/szene <Name>`** zieht die Trennlinie zur nächsten Szene.
+- **Eine Sprachnachricht oder ein Audio-Anhang** ist ein Diktat und reiht sich in dieselbe
+  Warteschlange ein wie ein Upload — quittiert wird er, weil er den Thread verlässt.
+- **`/chronik fertig`** schließt die Sitzung ab: Abgleich mit Foundry, Transkription der
+  wartenden Spuren, Komposition — **ein** Auftrag, mit Statusmeldung im Thread. Das
+  Foundry-Passwort wird dabei in einem Fenster erfragt, einmal verwendet und vergessen
+  (siehe *Zugangsdaten*); ein Befehls-Argument stünde als Klartext im Kanalverlauf.
+
+**Nachträgliches Erfassen geht.** Eine Nachricht Tage später im Thread gehört weiter zu
+dieser Sitzung, und in welche **Szene** sie fällt, entscheidet ihr eigener Zeitpunkt: die
+letzte Trennlinie *vor* ihr. Eine bearbeitete Nachricht ändert ihre Notiz, eine gelöschte
+entfernt sie — Discord meldet beides, und ein Protokoll, das eine zurückgenommene Zeile
+festhält, wäre die falsche Sorte Gedächtnis.
+
+**Der Server bestimmt die Runde.** Eine Discord-Gilde gehört genau einer Runde; ist für
+einen Server noch keine eingerichtet, sagt der Bot das und legt nichts an, statt in
+irgendeine Chronik zu schreiben. Ohne das Recht, im Kanal einen Thread anzulegen, entsteht
+keine halbe Sitzung, sondern eine Meldung.
+
+Die Befehle trägt derselbe dauerhafte Prozess wie die Aufnahme (`python -m chronicle.bot`,
+siehe *Aufnahme per Discord*); er muss dafür laufen. Und er braucht die **Message Content
+Intent** — ohne sie kämen die Nachrichten leer an.
+
 ## Diktat per Discord
 
 ### Den Bot einmalig anlegen
