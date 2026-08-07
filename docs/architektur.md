@@ -132,6 +132,11 @@ passiert ist** — und Teile davon nacherzählen können.
   dritter Prozess: ein Lauf ist eine Zeile in der `job`-Tabelle, und deren
   Absturzerkennung trägt nur, solange genau einer solche Zeilen anlegt. Ein verpasstes
   Fenster wird nicht nachgeholt — die nächste Nacht genügt.
+- **Die Uhrzeit gehört einer Zeitzone, und die gehört der Runde.** Der Container läuft in
+  UTC und bleibt dabei: eine Instanz trägt mehrere Runden, ein festes `TZ` im Pod könnte
+  immer nur einer davon recht geben. Neben der Uhrzeit steht deshalb eine Zone je Runde
+  (Vorgabe `Europe/Berlin`); gerechnet wird über `zoneinfo`, damit 04:00 im Sommer wie im
+  Winter 04:00 heißt.
 - Die **Audiospuren sind das Einzige, was groß wird.** Nach erfolgreichem Lauf
   löschbar; Protokoll und Transkript sind klein. Der Diktat-Kanal läuft durch Discords
   Cloud — für Online-Gruppen kein Unterschied, für reine Präsenzgruppen eine bewusste

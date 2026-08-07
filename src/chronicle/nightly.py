@@ -17,6 +17,12 @@ Ein verpasstes Fenster wird nicht nachgeholt. War der Server um vier Uhr aus, is
 Material am nächsten Morgen so alt wie vorher — ein Lauf um zehn Uhr vormittags brächte
 niemandem etwas und stünde mitten im Arbeitstag auf der Maschine. Die nächste Nacht
 genügt, und in den Einstellungen steht das auch so.
+
+Die angesetzte Zeit gilt in der **Zone der Runde**, nicht in der des Prozesses. Der
+Container läuft auf der Box in UTC, und das bleibt auch so: eine Instanz trägt mehrere
+Runden, ein ``TZ`` im Pod könnte immer nur einer davon recht geben. Gerechnet wird
+deshalb über ``ZoneInfo`` — das leitet den Versatz aus der Wanduhrzeit ab, sodass 04:00
+im Sommer wie im Winter 04:00 heißt.
 """
 
 from __future__ import annotations
@@ -27,6 +33,7 @@ import threading
 import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from chronicle import db, jobs, register, settings, zugang
 from chronicle import runde as runden
@@ -190,8 +197,8 @@ def lauf(config: Config, runde: Runde) -> str:
     )
 
 
-def _ortszeit(zeitstempel: str) -> datetime:
-    return datetime.fromisoformat(zeitstempel).astimezone()
+def _ortszeit(zeitstempel: str, zone: str) -> datetime:
+    return datetime.fromisoformat(zeitstempel).astimezone(ZoneInfo(zone))
 
 
 def letzter(runde: Runde) -> Lauf | None:
@@ -206,26 +213,36 @@ def letzter(runde: Runde) -> Lauf | None:
             for eintrag in json.loads(job.result)
         }
     return Lauf(
-        zeitpunkt=_ortszeit(job.started_at).strftime("%d.%m.%Y um %H:%M"),
+        zeitpunkt=_ortszeit(job.started_at, settings.nightly_zone(runde)).strftime(
+            "%d.%m.%Y um %H:%M"
+        ),
         schritte=schritte,
         laeuft=job.laeuft,
         fehler=job.error,
     )
 
 
-def faellig(jetzt: datetime, geplant: str, zuletzt: datetime | None) -> bool:
-    """Ist die angesetzte Zeit erreicht und die Nacht noch nicht gelaufen?"""
+def faellig(jetzt: datetime, geplant: str, zuletzt: datetime | None, zone: str) -> bool:
+    """Ist die angesetzte Zeit erreicht und die Nacht noch nicht gelaufen?
+
+    Der Wechsel in die Zone der Runde ist der ganze Punkt: erst danach heißt ``hour=4``
+    vier Uhr für die Leute, die die Einstellung gesetzt haben. Verglichen wird trotzdem
+    über Zeitpunkte, nicht über Wanduhrzeiten — beide Seiten tragen ihren Versatz.
+    """
     stunde = settings.nightly_at(geplant)
-    ziel = jetzt.replace(hour=stunde.hour, minute=stunde.minute, second=0, microsecond=0)
+    ziel = jetzt.astimezone(ZoneInfo(zone)).replace(
+        hour=stunde.hour, minute=stunde.minute, second=0, microsecond=0
+    )
     if jetzt < ziel or jetzt - ziel > FENSTER:
         return False
     return zuletzt is None or zuletzt < ziel
 
 
 def _tick_runde(config: Config, runde: Runde, jetzt: datetime) -> jobs.Job | None:
+    zone = settings.nightly_zone(runde)
     vorher = jobs.latest(runde, jobs.NACHTLAUF)
-    zuletzt = None if vorher is None else _ortszeit(vorher.started_at)
-    if not faellig(jetzt, settings.nightly_time(runde), zuletzt):
+    zuletzt = None if vorher is None else _ortszeit(vorher.started_at, zone)
+    if not faellig(jetzt, settings.nightly_time(runde), zuletzt, zone):
         return None
     # Ein laufender Lauf — auch der von Hand angestoßene — schreibt dieselben Zeilen.
     # Der nächste Blick in derselben Stunde versucht es wieder.

@@ -266,13 +266,14 @@ ABFRAGEN = {
     "nightly.offen": lambda c, r, i: nightly.offen(r),
     "nightly.letzter": lambda c, r, i: nightly.letzter(r),
     "nightly.faellig": lambda c, r, i: nightly.faellig(
-        __import__("datetime").datetime.now().astimezone(), "04:00", None
+        __import__("datetime").datetime.now().astimezone(), "04:00", None, "Europe/Berlin"
     ),
     "settings.stored": lambda c, r, i: settings.stored(r),
     "settings.effective": lambda c, r, i: settings.effective(c, r),
     "settings.sources": lambda c, r, i: settings.sources(c, r),
     "settings.is_set": lambda c, r, i: settings.is_set(c, r, "foundry_url"),
     "settings.nightly_time": lambda c, r, i: settings.nightly_time(r),
+    "settings.nightly_zone": lambda c, r, i: settings.nightly_zone(r),
     "settings.nightly_at": lambda c, r, i: settings.nightly_at("04:00"),
     "service.current": lambda c, r, i: foundry_service.current(c, r),
     "service.failed": lambda c, r, i: foundry_service.failed(c, r),
@@ -335,6 +336,7 @@ SCHREIBER = frozenset(
         "nightly.lauf",
         "settings.save",
         "settings.save_nightly_time",
+        "settings.save_nightly_zone",
         "service.sync",
         "zugang.merken",
         "zugang.vergiss",

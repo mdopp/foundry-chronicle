@@ -458,13 +458,13 @@ def test_die_einstellungen_stehen_hinter_demselben_tuersteher(tmp_path):
 def test_erreichbares_ollama_bietet_die_modelle_zur_auswahl(tmp_path, monkeypatch):
     monkeypatch.setattr(sprachmodell, "installed_models", lambda adresse, **k: ("gemma4:12b",))
     html = gelesen(Config(data_dir=tmp_path), "/einstellungen")
-    assert "<select" in html
+    assert '<select id="ollama_model"' in html
     assert '<option value="gemma4:12b"' in html
 
 
 def test_ohne_ollama_bleibt_ein_textfeld_und_ein_ehrlicher_satz(tmp_path):
     html = gelesen(Config(data_dir=tmp_path), "/einstellungen")
-    assert "<select" not in html
+    assert '<select id="ollama_model"' not in html
     assert 'name="ollama_model"' in html
     assert "Nicht erreichbar — dann wird nur geordnet, nicht formuliert" in html
     assert "Modellnamen von Hand eintragen" in html

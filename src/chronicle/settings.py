@@ -23,6 +23,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import replace
 from datetime import time
+from zoneinfo import available_timezones
 
 from chronicle import db, instanz
 from chronicle.config import DEFAULT_OLLAMA_URL, Config
@@ -50,6 +51,17 @@ RUNDEN_KEYS = tuple(name for name in KEYS if name not in INSTANZ_KEYS)
 # Gruppe, die weiß, wann ihr Server ungestört ist.
 NIGHTLY_KEY = "nightly_time"
 DEFAULT_NIGHTLY_TIME = "04:00"
+
+# Und dieselbe Überlegung eine Stufe weiter: die Uhrzeit allein sagt nicht, welche Uhr
+# gemeint ist. Der Container läuft auf der Box in UTC, die Runde nicht — deshalb steht die
+# Zone neben der Zeit und gehört ebenfalls der Runde. Eine Instanz kann Runden in
+# verschiedenen Zonen tragen; ein TZ im Pod könnte immer nur einer davon recht geben.
+NIGHTLY_ZONE_KEY = "nightly_zone"
+DEFAULT_NIGHTLY_ZONE = "Europe/Berlin"
+
+# Aus der Zonendatenbank des Systems, einmal beim Import. Was hier nicht drinsteht, wird
+# nicht gespeichert — ein aus dem Formular kommender Name geht so nie an ``ZoneInfo``.
+ZONEN: tuple[str, ...] = tuple(sorted(available_timezones()))
 
 FRONTEND = "Frontend"
 UMGEBUNG = "Umgebung"
@@ -138,6 +150,23 @@ def save_nightly_time(runde: Runde, value: str) -> bool:
     return True
 
 
+def nightly_zone(runde: Runde) -> str:
+    """Die Zone, in der die Uhrzeit gilt — ein unbekannter Name ist die Vorgabe."""
+    wert = _lesen(runde, NIGHTLY_ZONE_KEY)
+    if wert is None or wert not in ZONEN:
+        return DEFAULT_NIGHTLY_ZONE
+    return wert
+
+
+def save_nightly_zone(runde: Runde, value: str) -> bool:
+    """Speichert eine Zone; ein unbekannter Name lässt die bisherige stehen."""
+    gewaehlt = value.strip()
+    if gewaehlt not in ZONEN:
+        return False
+    save(runde, {NIGHTLY_ZONE_KEY: gewaehlt})
+    return True
+
+
 def save(runde: Runde, values: Mapping[str, str | None]) -> None:
     """Leerer Wert heißt: Eintrag weg, die Umgebung gilt wieder.
 
@@ -145,7 +174,7 @@ def save(runde: Runde, values: Mapping[str, str | None]) -> None:
     ``values`` — sonst löscht ein leer abgesendetes Formularfeld es.
     """
     instanz.save(runde.database_path, values)
-    erlaubt = (*RUNDEN_KEYS, NIGHTLY_KEY)
+    erlaubt = (*RUNDEN_KEYS, NIGHTLY_KEY, NIGHTLY_ZONE_KEY)
     scope = db.scoped(runde)
     try:
         with scope:
