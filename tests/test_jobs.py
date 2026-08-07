@@ -191,3 +191,51 @@ def test_eine_verschwundene_sitzung_beendet_den_lauf_ehrlich(stelle):
     with pytest.raises(jobs.JobError) as fehler:
         jobs.chronik(stelle, runde(stelle), 999)
     assert str(fehler.value) == jobs.OHNE_SITZUNG
+
+
+def eine_sitzung_mit_notiz(stelle):
+    sitzung_id = notes.create_session(runde(stelle), played_on="2026-08-05", title="Keller")
+    szene = notes.session(runde(stelle), sitzung_id).scenes[0]
+    notes.add_note(runde(stelle), szene.id, "Wir brechen bei Sonnenaufgang auf.")
+    return sitzung_id
+
+
+def test_der_abschluss_holt_erst_die_zahlen_und_schreibt_dann(stelle, welt, monkeypatch):
+    monkeypatch.setattr(
+        jobs, "sync", lambda config, eine: foundry.sync(config, eine, client=Abgleich(welt))
+    )
+    sitzung_id = eine_sitzung_mit_notiz(stelle)
+
+    meldung = jobs.abschluss(stelle, runde(stelle), sitzung_id)
+
+    assert "stehen bereit" in meldung
+    assert protokollarten(stelle, sitzung_id) == {"chronik", "rueckblick"}
+
+
+def test_ein_ausgefallenes_foundry_kostet_nicht_die_ganze_chronik(stelle, monkeypatch):
+    """Notizen und Aufnahmen ergeben auch ohne die Zahlen eine Chronik — mit Hinweis."""
+    ausfall = Abgleich(fehler=FoundryUnreachable("keine Antwort"))
+    monkeypatch.setattr(
+        jobs, "sync", lambda config, eine: foundry.sync(config, eine, client=ausfall)
+    )
+    sitzung_id = eine_sitzung_mit_notiz(stelle)
+
+    meldung = jobs.abschluss(stelle, runde(stelle), sitzung_id)
+
+    assert "nicht erreichbar" in meldung
+    assert "stehen bereit" in meldung
+    assert protokollarten(stelle, sitzung_id) == {"chronik", "rueckblick"}
+
+
+def protokollarten(config, sitzung_id):
+    scope = db.scoped(runde(config))
+    try:
+        return {
+            zeile["kind"]
+            for zeile in scope.execute(
+                "SELECT kind FROM protocol WHERE runde_id = ? AND session_id = ?",
+                (scope.runde_id, sitzung_id),
+            )
+        }
+    finally:
+        scope.close()

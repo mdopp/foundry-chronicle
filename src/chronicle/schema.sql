@@ -81,12 +81,16 @@ CREATE INDEX IF NOT EXISTS foundry_message_zeit ON foundry_message (runde_id, ti
 -- verweisen auf **beides**, und damit kann keine Zeile an einer Sitzung einer fremden
 -- Runde hängen. Ein falsch zusammengesetztes INSERT scheitert an der Datenbank statt an
 -- der Aufmerksamkeit dessen, der es schrieb.
+-- ``thread_id`` ist der Discord-Thread, in dem diese Sitzung geschrieben wird: er hat
+-- einen Anfang, ein Ende, eine Teilnehmerliste und eine Zeitachse, und die Runde tippt
+-- ohnehin dort. Er bleibt leer, wo eine Sitzung anders entstanden ist.
 CREATE TABLE IF NOT EXISTS session (
     id         INTEGER PRIMARY KEY,
     runde_id   INTEGER NOT NULL REFERENCES runde (id) ON DELETE CASCADE,
     played_on  TEXT NOT NULL,
     title      TEXT,
     created_at TEXT NOT NULL,
+    thread_id  TEXT,
     UNIQUE (id, runde_id)
 );
 
@@ -111,13 +115,17 @@ CREATE TABLE IF NOT EXISTS scene (
     FOREIGN KEY (session_id, runde_id) REFERENCES session (id, runde_id) ON DELETE CASCADE
 );
 
+-- ``discord_message_id`` bindet die Notiz an die Nachricht, aus der sie entstand. Discord
+-- meldet Änderung und Löschung nur mit dieser Kennung — ohne sie bliebe eine gelöschte
+-- Notiz bei uns stehen, und das wäre die falsche Sorte Gedächtnis.
 CREATE TABLE IF NOT EXISTS note (
-    id         INTEGER PRIMARY KEY,
-    runde_id   INTEGER NOT NULL REFERENCES runde (id) ON DELETE CASCADE,
-    scene_id   INTEGER NOT NULL,
-    text       TEXT NOT NULL,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL,
+    id                 INTEGER PRIMARY KEY,
+    runde_id           INTEGER NOT NULL REFERENCES runde (id) ON DELETE CASCADE,
+    scene_id           INTEGER NOT NULL,
+    text               TEXT NOT NULL,
+    created_at         TEXT NOT NULL,
+    updated_at         TEXT NOT NULL,
+    discord_message_id TEXT,
     FOREIGN KEY (scene_id, runde_id) REFERENCES scene (id, runde_id) ON DELETE CASCADE
 );
 

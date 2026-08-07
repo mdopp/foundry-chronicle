@@ -414,6 +414,8 @@ class FakeIntents:
     def __init__(self):
         self.guilds = False
         self.voice_states = False
+        self.messages = False
+        self.message_content = False
 
 
 class FakeGruppe:
@@ -436,12 +438,20 @@ class FakeBot:
         FakeBot.erzeugt.append(self)
         self.intents = intents
         self.gruppen = {}
+        self.befehle = {}
         self.ereignisse = {}
         self.token = None
 
     def create_group(self, name, description=""):
         self.gruppen[name] = FakeGruppe(description)
         return self.gruppen[name]
+
+    def slash_command(self, *, name, description=""):
+        def nimm(funktion):
+            self.befehle[name] = funktion
+            return funktion
+
+        return nimm
 
     def event(self, funktion):
         self.ereignisse[funktion.__name__] = funktion

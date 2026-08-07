@@ -7,6 +7,11 @@ kosten.
 Die Szenenfolge ist im Präsenzfall die einzige Zeitachse: ``position`` zählt hoch, die
 Zeitstempel aus Foundry taugen dafür nicht.
 
+Seit die Sitzung ein Discord-Thread ist, hat eine Szene außerdem einen **Zeitpunkt**: den
+ihrer Trennlinie. Eine Notiz gehört in die letzte Szene, deren Trennlinie vor ihr liegt —
+nicht in »die aktuelle«. Nur so landet eine Nachricht, die Tage später nachgetragen wird,
+dort, wo sie hingehört, statt in der Szene, die gerade zufällig die letzte ist.
+
 Alles hier gehört einer Runde und wird nur über sie erreicht — auch dort, wo eine Id
 allein schon eindeutig wäre. Eine Szenen-Id aus einer fremden Runde ist kein Fund,
 sondern ein Datenleck.
@@ -54,14 +59,23 @@ def today() -> str:
     return date.today().isoformat()
 
 
-def create_session(runde: Runde, *, played_on: str = "", title: str = "") -> int:
+def create_session(
+    runde: Runde, *, played_on: str = "", title: str = "", thread_id: str = ""
+) -> int:
     zeitpunkt = _now()
     scope = db.scoped(runde)
     try:
         with scope:
             cursor = scope.execute(
-                "INSERT INTO session (runde_id, played_on, title, created_at) VALUES (?, ?, ?, ?)",
-                (scope.runde_id, played_on.strip() or today(), title.strip() or None, zeitpunkt),
+                "INSERT INTO session (runde_id, played_on, title, created_at, thread_id) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (
+                    scope.runde_id,
+                    played_on.strip() or today(),
+                    title.strip() or None,
+                    zeitpunkt,
+                    str(thread_id).strip() or None,
+                ),
             )
             sitzung = int(cursor.lastrowid)
             # Wer eine Sitzung anlegt, will sofort tippen — die erste Szene steht schon da.
@@ -162,7 +176,20 @@ def latest_session(runde: Runde) -> Session | None:
     return None if zeile is None else session(runde, int(zeile["id"]))
 
 
-def add_scene(runde: Runde, session_id: int, *, title: str = "") -> int | None:
+def session_of_thread(runde: Runde, thread_id: str) -> int | None:
+    """Die Sitzung hinter einem Discord-Thread — der Thread *ist* die Sitzung."""
+    scope = db.scoped(runde)
+    try:
+        row = scope.execute(
+            "SELECT id FROM session WHERE runde_id = ? AND thread_id = ?",
+            (scope.runde_id, str(thread_id)),
+        ).fetchone()
+    finally:
+        scope.close()
+    return None if row is None else int(row["id"])
+
+
+def add_scene(runde: Runde, session_id: int, *, title: str = "", at: str = "") -> int | None:
     scope = db.scoped(runde)
     try:
         bekannt = scope.execute(
@@ -175,11 +202,43 @@ def add_scene(runde: Runde, session_id: int, *, title: str = "") -> int | None:
                 "INSERT INTO scene (runde_id, session_id, position, title, created_at) "
                 "SELECT ?, ?, COALESCE(MAX(position), 0) + 1, ?, ? FROM scene "
                 "WHERE session_id = ?",
-                (scope.runde_id, session_id, title.strip() or None, _now(), session_id),
+                (
+                    scope.runde_id,
+                    session_id,
+                    title.strip() or None,
+                    at.strip() or _now(),
+                    session_id,
+                ),
             )
         return int(cursor.lastrowid)
     finally:
         scope.close()
+
+
+def scene_at(runde: Runde, session_id: int, moment: str) -> int | None:
+    """In welche Szene eine Notiz dieses Zeitpunkts gehört.
+
+    Die letzte Trennlinie **vor** dem Zeitpunkt, nicht die zuletzt gezogene: eine
+    Nachricht von Dienstag bleibt damit in der Szene von Dienstag, auch wenn sie erst
+    Freitag im Thread landet. Liegt sie vor jeder Trennlinie, bleibt die erste Szene —
+    eine Notiz ohne Szene gäbe es sonst nicht zu speichern.
+    """
+    scope = db.scoped(runde)
+    try:
+        row = scope.execute(
+            "SELECT id FROM scene WHERE runde_id = ? AND session_id = ? AND created_at <= ? "
+            "ORDER BY position DESC LIMIT 1",
+            (scope.runde_id, session_id, moment),
+        ).fetchone()
+        if row is None:
+            row = scope.execute(
+                "SELECT id FROM scene WHERE runde_id = ? AND session_id = ? "
+                "ORDER BY position LIMIT 1",
+                (scope.runde_id, session_id),
+            ).fetchone()
+    finally:
+        scope.close()
+    return None if row is None else int(row["id"])
 
 
 def session_of_scene(runde: Runde, scene_id: int) -> int | None:
@@ -194,7 +253,7 @@ def session_of_scene(runde: Runde, scene_id: int) -> int | None:
     return None if row is None else int(row["session_id"])
 
 
-def add_note(runde: Runde, scene_id: int, text: str) -> int | None:
+def add_note(runde: Runde, scene_id: int, text: str, *, message_id: str = "") -> int | None:
     inhalt = text.strip()
     if not inhalt:
         return None
@@ -208,10 +267,49 @@ def add_note(runde: Runde, scene_id: int, text: str) -> int | None:
             return None
         with scope:
             cursor = scope.execute(
-                "INSERT INTO note (runde_id, scene_id, text, created_at, updated_at) "
-                "VALUES (?, ?, ?, ?, ?)",
-                (scope.runde_id, scene_id, inhalt, zeitpunkt, zeitpunkt),
+                "INSERT INTO note (runde_id, scene_id, text, created_at, updated_at, "
+                "discord_message_id) VALUES (?, ?, ?, ?, ?, ?)",
+                (
+                    scope.runde_id,
+                    scene_id,
+                    inhalt,
+                    zeitpunkt,
+                    zeitpunkt,
+                    str(message_id).strip() or None,
+                ),
             )
         return int(cursor.lastrowid)
+    finally:
+        scope.close()
+
+
+def update_note(runde: Runde, message_id: str, text: str) -> bool:
+    """Zieht eine im Thread geänderte Nachricht nach."""
+    inhalt = text.strip()
+    if not inhalt:
+        return False
+    scope = db.scoped(runde)
+    try:
+        with scope:
+            cursor = scope.execute(
+                "UPDATE note SET text = ?, updated_at = ? "
+                "WHERE runde_id = ? AND discord_message_id = ?",
+                (inhalt, _now(), scope.runde_id, str(message_id)),
+            )
+        return cursor.rowcount > 0
+    finally:
+        scope.close()
+
+
+def remove_note(runde: Runde, message_id: str) -> bool:
+    """Was im Thread gelöscht wurde, verschwindet auch hier — sonst hielten wir es fest."""
+    scope = db.scoped(runde)
+    try:
+        with scope:
+            cursor = scope.execute(
+                "DELETE FROM note WHERE runde_id = ? AND discord_message_id = ?",
+                (scope.runde_id, str(message_id)),
+            )
+        return cursor.rowcount > 0
     finally:
         scope.close()

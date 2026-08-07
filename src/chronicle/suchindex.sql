@@ -28,6 +28,12 @@ CREATE TRIGGER IF NOT EXISTS note_search_insert AFTER INSERT ON note BEGIN
             (SELECT session_id FROM scene WHERE id = new.scene_id), new.scene_id);
 END;
 
+-- Eine im Thread nachträglich geänderte Nachricht ändert ihre Notiz; ohne diesen Trigger
+-- fände die Suche weiter den zurückgenommenen Wortlaut.
+CREATE TRIGGER IF NOT EXISTS note_search_update AFTER UPDATE ON note BEGIN
+    UPDATE search_index SET text = new.text WHERE kind = 'notiz' AND ref_id = old.id;
+END;
+
 CREATE TRIGGER IF NOT EXISTS note_search_delete AFTER DELETE ON note BEGIN
     DELETE FROM search_index WHERE kind = 'notiz' AND ref_id = old.id;
 END;
@@ -105,5 +111,5 @@ SELECT e.name || ' — ' || e.description, 'register', e.id, e.runde_id,
        (SELECT MIN(session_id) FROM register_mention WHERE entry_id = e.id), NULL
 FROM register_entry e WHERE e.state = 'bestaetigt';
 
-INSERT INTO meta (key, value) VALUES ('schema_version', '16')
+INSERT INTO meta (key, value) VALUES ('schema_version', '17')
 ON CONFLICT (key) DO UPDATE SET value = excluded.value;

@@ -1,0 +1,235 @@
+"""Der Thread ist die Sitzung.
+
+``/chronik start`` legt beides zugleich an: die Sitzung und den Discord-Thread, in dem sie
+geschrieben wird. Danach braucht es kein Formular mehr — **jede Nachricht im Thread ist
+eine Notiz**, ``/szene`` zieht die Trennlinie zur nächsten, eine Sprachnachricht wird ein
+Diktat, und ``/chronik fertig`` stößt den einen Lauf an, der aus alldem die Chronik macht.
+
+Der Thread ist der natürliche Behälter: Anfang, Ende, Teilnehmerliste, Zeitachse — und die
+Runde tippt ohnehin dort.
+
+Diese Datei kennt Discord nicht. Sie bekommt Kennungen, Text und Zeitpunkte und gibt Sätze
+zurück; wer sie damit füttert, entscheidet ``gateway.py``.
+
+Drei Regeln stehen über allem:
+
+* **Die Gilde bestimmt die Runde.** Es gibt hier keinen Rückfall auf »die erste« — ein
+  Thread aus einem fremden Server, der in eine fremde Chronik schriebe, wäre genau das
+  Leck, gegen das das Runden-Modell gebaut ist. Ohne Runde passiert nichts, und das wird
+  gesagt statt verschluckt.
+* **Die Szene entscheidet der Zeitpunkt der Nachricht**, nicht der des Ablegens. Deshalb
+  darf eine Nachricht Tage später kommen und landet trotzdem in der Szene, in die sie
+  gehört.
+* **Es antwortet immer jemand.** Was nicht abgelegt werden konnte, bekommt eine Antwort;
+  wer schweigt, lässt die Runde weiterschreiben ins Leere.
+"""
+
+from __future__ import annotations
+
+import logging
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
+from pathlib import Path
+
+from chronicle import jobs, notes, recordings, zugang
+from chronicle import runde as runden
+from chronicle.bot import BotFehler
+from chronicle.config import Config
+from chronicle.runde import Runde
+
+logger = logging.getLogger(__name__)
+
+KEINE_RUNDE = (
+    "Für diesen Server ist noch keine Runde eingerichtet — ich lege hier nichts ab und "
+    "erfinde auch keine. Das Einrichten kommt als eigener Befehl; bis dahin macht es, wer "
+    "den Bot betreibt."
+)
+
+NUR_IM_THREAD = (
+    "Das geht nur im Thread einer Sitzung. `/chronik start` beginnt eine — danach dort "
+    "weiterschreiben."
+)
+
+KEIN_THREAD = (
+    "Ich darf in diesem Kanal keinen Thread anlegen, und eine halbe Sitzung lege ich nicht "
+    "an. Gib mir das Recht dazu oder ruf mich in einem Kanal, in dem ich es habe."
+)
+
+ANGELEGT = (
+    "Die Sitzung läuft. Ab jetzt hier schreiben: **jede Nachricht wird eine Notiz**, eine "
+    "Sprachnachricht oder eine Audiodatei wird ein Diktat. `/szene <Name>` beginnt die "
+    "nächste Szene, `/chronik fertig` schließt die Sitzung ab. Wer eine Nachricht ändert "
+    "oder löscht, ändert oder löscht damit auch die Notiz."
+)
+
+THREAD_STEHT = "Die Sitzung steht: {thread} — dort geht es weiter."
+
+SZENE = "Neue Szene »{name}«. Was ab jetzt geschrieben wird, gehört dazu."
+SZENE_OHNE_NAMEN = "Neue Szene. Was ab jetzt geschrieben wird, gehört dazu."
+
+DIKTAT = "Aufnahme angekommen — verschriftet wird sie, sobald du `/chronik fertig` gibst."
+
+ZU_GROSS = "»{name}« ist größer als {grenze} MB und bleibt liegen."
+
+NICHT_ABGELEGT = (
+    "Das konnte ich nicht ablegen: {grund} Schreib es noch einmal — bleibt es dabei, "
+    "steht der Grund im Log des Bots."
+)
+
+FERTIG = (
+    "Ich schließe die Sitzung ab: die Zahlen aus Foundry holen, die Aufnahmen verschriften, "
+    "die Chronik schreiben. Das dauert seine Zeit — ich melde mich hier, wenn sie steht."
+)
+
+LAEUFT_SCHON = "Ich bin schon dabei — ich melde mich hier, wenn die Chronik steht."
+
+PASSWORT_TITEL = "Sitzung abschließen"
+PASSWORT_FELD = "Passwort für Foundry"
+PASSWORT_HINWEIS = "Nur für diesen einen Abgleich — es wird nirgends gespeichert."
+
+
+class ChronikFehler(BotFehler):
+    """Was ein Befehl im Thread nicht tun kann — gesagt wird es, still scheitert nichts."""
+
+
+@dataclass(frozen=True)
+class Anhang:
+    """Ein Anhang, so weit diese Stufe ihn braucht: Name, Größe, und wie man ihn holt."""
+
+    filename: str
+    size: int
+    speichern: Callable[[Path], Awaitable[None]]
+
+
+@dataclass(frozen=True)
+class Nachricht:
+    """Eine Nachricht im Sitzungs-Thread, ohne alles, was Discord sonst noch mitschickt."""
+
+    id: str
+    text: str = ""
+    zeitpunkt: str = ""
+    anhaenge: tuple[Anhang, ...] = ()
+    autor_id: str | None = None
+
+
+def runde_der_gilde(config: Config, guild_id: str) -> Runde | None:
+    return runden.fuer_gilde(config.database_path, str(guild_id))
+
+
+def runde_verlangen(config: Config, guild_id: str) -> Runde:
+    gefunden = runde_der_gilde(config, guild_id)
+    if gefunden is None:
+        raise ChronikFehler(KEINE_RUNDE)
+    return gefunden
+
+
+def sitzung_des_threads(runde: Runde, thread_id: str) -> int | None:
+    return notes.session_of_thread(runde, thread_id)
+
+
+def sitzung_verlangen(runde: Runde, thread_id: str) -> int:
+    sitzung = sitzung_des_threads(runde, thread_id)
+    if sitzung is None:
+        raise ChronikFehler(NUR_IM_THREAD)
+    return sitzung
+
+
+def threadname(titel: str) -> str:
+    return titel.strip() or f"Sitzung vom {notes.today()}"
+
+
+def sitzung_anlegen(runde: Runde, thread_id: str, titel: str = "") -> int:
+    return notes.create_session(runde, title=titel, thread_id=thread_id)
+
+
+def szene_setzen(runde: Runde, session_id: int, name: str, *, zeitpunkt: str = "") -> str:
+    sauber = name.strip()
+    notes.add_scene(runde, session_id, title=sauber, at=zeitpunkt)
+    return SZENE.format(name=sauber) if sauber else SZENE_OHNE_NAMEN
+
+
+def ist_diktat(dateiname: str) -> bool:
+    return Path(dateiname).suffix.lower() in recordings.SUFFIXES
+
+
+async def _diktat(
+    config: Config, runde: Runde, session_id: int, anhang: Anhang, autor_id: str | None
+) -> str:
+    if anhang.size > recordings.MAX_BYTES:
+        return ZU_GROSS.format(name=anhang.filename, grenze=recordings.MAX_BYTES // (1024 * 1024))
+    config.recordings_dir.mkdir(parents=True, exist_ok=True)
+    ziel = recordings.target_path(config.recordings_dir, session_id, anhang.filename)
+    await anhang.speichern(ziel)
+    recordings.enqueue(runde, session_id, ziel.name, discord_user_id=autor_id)
+    logger.info("Diktat aus dem Thread: %s → Sitzung %s", ziel.name, session_id)
+    return DIKTAT
+
+
+async def aufnehmen(
+    config: Config, runde: Runde, session_id: int, nachricht: Nachricht
+) -> tuple[str, ...]:
+    """Text wird Notiz, Audio wird Diktat — beides an derselben Nachricht.
+
+    Zurück kommt nur, was gesagt werden muss. Eine abgelegte Notiz sagt nichts: die
+    Nachricht steht im Thread und **ist** die Notiz; eine Quittung darunter wäre die zweite
+    Hälfte jedes Satzes eines ganzen Abends.
+    """
+    meldungen = [
+        await _diktat(config, runde, session_id, anhang, nachricht.autor_id)
+        for anhang in nachricht.anhaenge
+        if ist_diktat(anhang.filename)
+    ]
+    if nachricht.text.strip():
+        szene = notes.scene_at(runde, session_id, nachricht.zeitpunkt)
+        notes.add_note(runde, szene, nachricht.text, message_id=nachricht.id)
+    return tuple(meldungen)
+
+
+def notiz_aendern(runde: Runde, message_id: str, text: str) -> bool:
+    return notes.update_note(runde, message_id, text)
+
+
+def notiz_entfernen(runde: Runde, message_id: str) -> bool:
+    return notes.remove_note(runde, message_id)
+
+
+def _mit_meldung(
+    config: Config, runde: Runde, session_id: int, melden: Callable[[str], None]
+) -> Callable[[], str]:
+    def lauf() -> str:
+        try:
+            ergebnis = jobs.abschluss(config, runde, session_id)
+        except Exception as fehler:
+            # Der Lauf hängt an keinem Befehl mehr — ohne diese Zeile bliebe der Thread
+            # still, und niemand wüsste, dass die Chronik nicht kommt.
+            melden(jobs.NICHT_DURCHGEKOMMEN.format(grund=fehler))
+            raise
+        melden(ergebnis)
+        return ergebnis
+
+    return lauf
+
+
+def abschluss_starten(
+    config: Config,
+    runde: Runde,
+    session_id: int,
+    passwort: str,
+    *,
+    melden: Callable[[str], None],
+) -> str:
+    """Abgleich, Verschriften, Komponieren — ein Auftrag, eine Meldung im Thread.
+
+    Das Passwort wird gemerkt und vom Abgleich verbraucht; liegen bleibt es nicht.
+    """
+    if jobs.running(runde, jobs.CHRONIK):
+        return LAEUFT_SCHON
+    zugang.merken(runde, passwort)
+    auftrag = jobs.start(
+        config,
+        runde,
+        jobs.CHRONIK,
+        _mit_meldung(config, runde, session_id, melden),
+        session_id=session_id,
+    )
+    return FERTIG if auftrag is not None else jobs.BELEGT

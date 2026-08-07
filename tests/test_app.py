@@ -1,5 +1,12 @@
 import pytest
-from conftest import GM_FIGUR, UNSER_KONTO, laufender_job, runde, warte_bis
+from conftest import (
+    GM_FIGUR,
+    UNSER_KONTO,
+    laufender_job,
+    runde,
+    systemsprache,
+    warte_bis,
+)
 
 import chronicle.__main__ as entry
 from chronicle import db, instanz, jobs, notes, protocol, recordings, register, settings, zugang
@@ -973,23 +980,8 @@ def test_der_abgleich_steht_hinter_demselben_tuersteher(tmp_path):
 
 
 # --- Nutzersprache: was hier steht, sagt was zu tun ist ------------------------------
-
-
-# Header-Namen sind Proxy-Innenleben: niemand muss sie kennen, um die Chronik zu bedienen.
-SYSTEMWOERTER = (
-    "python -m",
-    "CHRONICLE_",
-    "OLLAMA_",
-    "FOUNDRY_",
-    "Remote-User",
-    "Remote-Groups",
-    "Forward-Auth",
-    "Authelia",
-)
-
-
-def systemsprache(html):
-    return [wort for wort in SYSTEMWOERTER if wort in html]
+#
+# Die Wortliste steht in ``conftest``: derselbe Sweep läuft über die Antworten des Bots.
 
 
 def test_keine_systemsprache_auf_einer_gerenderten_seite(tmp_path):

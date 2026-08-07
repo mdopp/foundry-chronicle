@@ -297,5 +297,17 @@ def chronik(config: Config, runde: Runde, session_id: int) -> str:
     return vorlauf + stand + nachsatz
 
 
+def abschluss(config: Config, runde: Runde, session_id: int) -> str:
+    """Zahlen holen, verschriften, schreiben — der eine Lauf am Ende einer Sitzung.
+
+    Ein misslungener Abgleich bricht ihn nicht ab: Notizen und Aufnahmen ergeben auch ohne
+    die Zahlen aus Foundry eine Chronik, und der Grund steht dann vorne in der Meldung.
+    Andersherum verlöre man das Geschriebene, weil der Server aus war.
+    """
+    zustand = sync(config, runde)
+    vorlauf = "" if not zustand.stale else f"{zustand.message} "
+    return vorlauf + chronik(config, runde, session_id)
+
+
 def mehrzahl(anzahl: int) -> str:
     return "n" if anzahl > 1 else ""
