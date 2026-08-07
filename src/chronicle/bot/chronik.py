@@ -31,7 +31,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from chronicle import jobs, notes, recordings, zugang
+from chronicle import jobs, lebenszyklus, notes, recordings, zugang
 from chronicle import runde as runden
 from chronicle.bot import BotFehler
 from chronicle.config import Config
@@ -41,8 +41,15 @@ logger = logging.getLogger(__name__)
 
 KEINE_RUNDE = (
     "Für diesen Server ist noch keine Runde eingerichtet — ich lege hier nichts ab und "
-    "erfinde auch keine. Das Einrichten kommt als eigener Befehl; bis dahin macht es, wer "
-    "den Bot betreibt."
+    "erfinde auch keine. `/setup` richtet sie ein; das dauert eine Minute."
+)
+
+# Die Runde ist noch da, sie schweigt nur. Das zu sagen ist wichtiger, als es zu erklären:
+# wer den Bot zurückholt, bekommt alles zurück — bis zum genannten Tag.
+GESPERRT = (
+    "Diese Runde ruht, seit ich von diesem Server geflogen bin. Bis zum {datum} liegt "
+    "alles noch da: lade mich wieder ein, dann geht es weiter, wo ihr aufgehört habt. "
+    "Danach ist es gelöscht."
 )
 
 NUR_IM_THREAD = (
@@ -113,13 +120,22 @@ class Nachricht:
 
 
 def runde_der_gilde(config: Config, guild_id: str) -> Runde | None:
-    return runden.fuer_gilde(config.database_path, str(guild_id))
+    """Die Runde dieser Gilde, sofern sie noch spricht.
+
+    Eine gesperrte gibt es hier nicht: sie ist verabschiedet und wartet nur noch auf ihre
+    Frist. Wer sie trotzdem braucht — die Wiedereinladung, der Löschlauf —, geht über
+    ``chronicle.lebenszyklus``.
+    """
+    gefunden = runden.fuer_gilde(config.database_path, str(guild_id))
+    return None if gefunden is None or gefunden.gesperrt else gefunden
 
 
 def runde_verlangen(config: Config, guild_id: str) -> Runde:
-    gefunden = runde_der_gilde(config, guild_id)
+    gefunden = runden.fuer_gilde(config.database_path, str(guild_id))
     if gefunden is None:
         raise ChronikFehler(KEINE_RUNDE)
+    if gefunden.gesperrt:
+        raise ChronikFehler(GESPERRT.format(datum=lebenszyklus.frist_datum(gefunden)))
     return gefunden
 
 

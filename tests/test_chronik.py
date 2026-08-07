@@ -37,7 +37,7 @@ from test_bot import FakeCtx as FakeSprechCtx
 import chronicle.bot.__main__ as bot_eintritt
 from chronicle import db, jobs, notes, recordings, zugang
 from chronicle import runde as runden
-from chronicle.bot import ansage, chronik, erinnern, gateway, recorder
+from chronicle.bot import ansage, chronik, einrichten, erinnern, gateway, recorder
 from chronicle.config import Config
 from chronicle.discord import ausgabe, rueckblick
 
@@ -245,7 +245,7 @@ def notizen(runde, sitzung_id):
 
 
 def test_der_bot_bringt_die_chronik_befehle_mit(bot):
-    assert set(bot.gruppen[gateway.GRUPPE_CHRONIK].befehle) == {"start", "fertig"}
+    assert set(bot.gruppen[gateway.GRUPPE_CHRONIK].befehle) == {"start", "fertig", "loeschen"}
     assert gateway.BEFEHL_SZENE in bot.befehle
     assert set(bot.ereignisse) >= {"on_message", "on_raw_message_edit", "on_raw_message_delete"}
 
@@ -711,6 +711,7 @@ def test_keine_systemsprache_in_dem_was_der_bot_sagt():
         ansage,
         bot_eintritt,
         chronik,
+        einrichten,
         erinnern,
         gateway,
         jobs,
