@@ -45,9 +45,10 @@ DEFAULT_RECORDINGS_DIR = "recordings"
 
 DATABASE_NAME = "chronicle.sqlite3"
 
-# Der Kompromiss aus Erkennung und Laufzeit auf CPU. Größer geht über die Umgebung;
-# ein Feld in der Oberfläche braucht es dafür nicht — der Wert wird einmal gesetzt.
-DEFAULT_WHISPER_MODEL = "small"
+# Modell und Gerät bleiben leer = **automatisch**: mit Karte das große Modell in
+# float16, ohne Karte ``small`` auf der CPU (``transcribe.client``). Gesetzt wird über
+# die Umgebung; ein Feld in der Oberfläche braucht es dafür nicht — einmal entschieden.
+# ``CHRONICLE_WHISPER_DEVICE=cpu`` hält die Karte für Ollama frei (#84).
 
 
 def masked(secret: str | None) -> str:
@@ -73,7 +74,8 @@ class Config:
     public_url: str | None = None
     data_dir: Path = Path(DEFAULT_DATA_DIR)
     recordings_dir: Path = Path(DEFAULT_RECORDINGS_DIR)
-    whisper_model: str = DEFAULT_WHISPER_MODEL
+    whisper_model: str | None = None
+    whisper_device: str | None = None
     require_remote_user: bool = False
 
     @classmethod
@@ -89,7 +91,8 @@ class Config:
             public_url=_value(env, "CHRONICLE_PUBLIC_URL"),
             data_dir=Path(_value(env, "CHRONICLE_DATA_DIR") or DEFAULT_DATA_DIR),
             recordings_dir=Path(_value(env, "CHRONICLE_RECORDINGS_DIR") or DEFAULT_RECORDINGS_DIR),
-            whisper_model=_value(env, "CHRONICLE_WHISPER_MODEL") or DEFAULT_WHISPER_MODEL,
+            whisper_model=_value(env, "CHRONICLE_WHISPER_MODEL"),
+            whisper_device=_value(env, "CHRONICLE_WHISPER_DEVICE"),
             require_remote_user=_flag(env, REMOTE_USER_VARIABLE),
         )
 
@@ -138,5 +141,6 @@ class Config:
             f"data_dir={str(self.data_dir)!r}, "
             f"recordings_dir={str(self.recordings_dir)!r}, "
             f"whisper_model={self.whisper_model!r}, "
+            f"whisper_device={self.whisper_device!r}, "
             f"require_remote_user={self.require_remote_user!r})"
         )

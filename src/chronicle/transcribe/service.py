@@ -138,7 +138,8 @@ def store(
 
 @runden.instanzweit
 def model_from_config(config: Config) -> SpeechModel:
-    return FasterWhisper(config.whisper_model)
+    # Beides darf leer sein: dann entscheidet der Fund der Karte (#84).
+    return FasterWhisper(config.whisper_model, device=config.whisper_device)
 
 
 def transcribe_session(
