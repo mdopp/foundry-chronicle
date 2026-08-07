@@ -25,8 +25,16 @@ from collections.abc import Callable
 from datetime import UTC
 from pathlib import Path
 
-from chronicle import consent, recordings
-from chronicle.bot import BotFehler, BotHaelt, ansage, chronik, erinnern, recorder
+from chronicle import consent, lebenszyklus, recordings
+from chronicle.bot import (
+    BotFehler,
+    BotHaelt,
+    ansage,
+    chronik,
+    einrichten,
+    erinnern,
+    recorder,
+)
 from chronicle.bot.recorder import Aufnahme, Kanal
 from chronicle.config import Config
 from chronicle.runde import Runde
@@ -40,12 +48,15 @@ BEFEHL_SZENE = "szene"
 BEFEHL_SUCHE = "suche"
 BEFEHL_WER = "wer"
 BEFEHL_ZUORDNUNG = "zuordnung"
+BEFEHL_SETUP = "setup"
 
 # Die Kennungen, mit denen ein Knopf oder ein Menü zurückkommt. Sie stehen nur in der
 # Nachricht, aus der sie stammen — entschieden wird trotzdem gegen den Stand von jetzt.
 KENNUNG_SCHILD = "eintrag"
 KENNUNG_ENTSCHEIDUNG = "entscheidung"
 KENNUNG_ZUORDNUNG = "zuordnung"
+KENNUNG_KANAL = "kanal"
+KENNUNG_LOESCHEN = "loeschen"
 
 NICHT_INSTALLIERT = (
     "py-cord ist nicht installiert — im Image ist es dabei, "
@@ -113,6 +124,8 @@ BEFEHLE = (
     "• `/wer <Name>` — was im Register über einen Namen steht.\n"
     "• `/register offen` — Vorschläge fürs Register bestätigen oder verwerfen.\n"
     "• `/zuordnung` — festhalten, wer von euch welchen Foundry-Spieler spielt.\n"
+    "• `/setup` — Foundry-Adresse, Benutzer, Zustellkanal und Uhrzeit ändern.\n"
+    "• `/chronik loeschen` — alles von dieser Runde löschen, nach Rückfrage.\n"
     "• `/aufnahme hilfe` — alles noch einmal in Ruhe.\n"
 )
 
@@ -302,6 +315,7 @@ class _Lauf:
         self.stimme: Sprachverbindung | None = None
         self.aufnahme: Aufnahme | None = None
         self.frist = None
+        self.abschied = None
 
 
 async def _mitschnitt_beenden(lauf: _Lauf, runde: Runde | None = None) -> tuple[str, ...]:
@@ -416,6 +430,154 @@ def _passwortfrage(config: Config, runde, session_id: int, lauf: _Lauf):
             await interaction.response.send_message(" ".join((*meldungen, meldung)), ephemeral=True)
 
     return Passwortfrage()
+
+
+def _begruessungskanal(gilde):
+    """Wo die Gruppe den ersten Satz liest: der Systemkanal, sonst der erste beschreibbare.
+
+    Discord garantiert keinen: der Systemkanal lässt sich abschalten, und in einem Kanal
+    ohne Schreibrecht bliebe die Nachricht ein Fehlschlag im Log. Deshalb wird gesucht,
+    statt geraten.
+    """
+    kandidaten = [
+        kanal
+        for kanal in (getattr(gilde, "system_channel", None), *getattr(gilde, "text_channels", ()))
+        if kanal is not None
+    ]
+    for kanal in kandidaten:
+        rechte = kanal.permissions_for(gilde.me)
+        if getattr(rechte, "send_messages", False):
+            return kanal
+    return None
+
+
+def _gildenname(ctx) -> str:
+    return getattr(getattr(ctx, "guild", None), "name", None) or einrichten.RUNDE_OHNE_NAMEN
+
+
+def _textkanaele(gilde) -> tuple[tuple[str, str], ...]:
+    return tuple((str(kanal.id), kanal.name) for kanal in getattr(gilde, "text_channels", ()))
+
+
+def _kanalansicht(config: Config, runde, gilde):
+    """Ein Menü mit den Textkanälen dieser Gilde — die Wahl wirkt sofort."""
+    discord = _discord()
+
+    gebaut = discord.ui.Select(
+        placeholder=einrichten.KANAL_WAEHLEN,
+        custom_id=f"{KENNUNG_KANAL}:{runde.id}",
+        options=[
+            discord.SelectOption(label=schrift, value=wert, default=vorgewaehlt)
+            for schrift, wert, vorgewaehlt in einrichten.kanalwahl(
+                config, runde, _textkanaele(gilde)
+            )
+        ],
+    )
+
+    @_geklickt
+    async def gewaehlt(interaction) -> None:
+        satz = einrichten.kanal_setzen(runde, gebaut.values[0])
+        await interaction.response.edit_message(content=satz, view=None)
+
+    gebaut.callback = gewaehlt
+
+    class Kanalansicht(discord.ui.View):
+        def __init__(self) -> None:
+            super().__init__(timeout=erinnern.FRIST)
+            self.add_item(gebaut)
+
+    return Kanalansicht()
+
+
+def _einrichtungsfenster(config: Config, ctx):
+    """Das Fenster für Adresse, Benutzer, Modell und Uhrzeit — nie für das Passwort.
+
+    Das Passwort fehlt hier mit Absicht und nicht aus Vergesslichkeit: es wird beim
+    Abschluss der Sitzung erfragt, verbraucht und vergessen. Ein Feld dafür gäbe es nur,
+    wenn wir es behalten wollten.
+    """
+    discord = _discord()
+    guild_id = ctx.guild_id
+    gildenname = _gildenname(ctx)
+    gilde = getattr(ctx, "guild", None)
+
+    class Einrichtungsfenster(discord.ui.Modal):
+        def __init__(self) -> None:
+            super().__init__(
+                discord.ui.InputText(
+                    label=einrichten.FELD_ADRESSE,
+                    placeholder=einrichten.HINWEIS_ADRESSE,
+                    required=False,
+                ),
+                discord.ui.InputText(
+                    label=einrichten.FELD_BENUTZER,
+                    placeholder=einrichten.HINWEIS_BENUTZER,
+                    required=False,
+                ),
+                discord.ui.InputText(
+                    label=einrichten.FELD_MODELL,
+                    placeholder=einrichten.HINWEIS_MODELL,
+                    required=False,
+                ),
+                discord.ui.InputText(
+                    label=einrichten.FELD_UHRZEIT,
+                    placeholder=einrichten.HINWEIS_UHRZEIT,
+                    required=False,
+                ),
+                title=einrichten.SETUP_TITEL,
+            )
+
+        async def callback(self, interaction) -> None:
+            adresse, benutzer, modell, uhrzeit = (feld.value for feld in self.children)
+            fertig = einrichten.einrichten(
+                config,
+                guild_id,
+                gildenname,
+                adresse=adresse,
+                benutzer=benutzer,
+                modell=modell,
+                uhrzeit=uhrzeit,
+            )
+            await interaction.response.send_message(
+                f"{fertig.meldung} {einrichten.KANAL_FRAGE}",
+                view=_kanalansicht(config, fertig.runde, gilde),
+                ephemeral=True,
+            )
+
+    return Einrichtungsfenster()
+
+
+def _loeschansicht(config: Config, runde):
+    """Zwei Knöpfe und kein Befehl: eine Kampagne verschwindet nicht durch einen Vertipper."""
+    discord = _discord()
+
+    ja = discord.ui.Button(
+        label=einrichten.LOESCHEN_JA, custom_id=f"{KENNUNG_LOESCHEN}:{runde.id}:ja"
+    )
+    nein = discord.ui.Button(
+        label=einrichten.LOESCHEN_NEIN, custom_id=f"{KENNUNG_LOESCHEN}:{runde.id}:nein"
+    )
+
+    @_geklickt
+    async def bestaetigt(interaction) -> None:
+        await interaction.response.edit_message(
+            content=einrichten.geloescht(config, runde), view=None
+        )
+
+    @_geklickt
+    async def verworfen(interaction) -> None:
+        await interaction.response.edit_message(content=einrichten.LOESCHEN_ABGEBROCHEN, view=None)
+
+    ja.callback = bestaetigt
+    nein.callback = verworfen
+
+    class Loeschansicht(discord.ui.View):
+        def __init__(self) -> None:
+            super().__init__(timeout=erinnern.FRIST)
+            self.add_item(ja)
+            self.add_item(nein)
+
+    return Loeschansicht()
 
 
 def _embed(gebaut: dict | None):
@@ -608,6 +770,28 @@ def baue(config: Config):
         sitzung = chronik.sitzung_verlangen(runde, str(ctx.channel_id))
         await ctx.send_modal(_passwortfrage(config, runde, sitzung, lauf))
 
+    @chronikgruppe.command(
+        name="loeschen", description="Alles von dieser Runde löschen, nach Rückfrage"
+    )
+    @antwortet
+    async def chronik_loeschen(ctx) -> None:
+        runde = chronik.runde_verlangen(config, ctx.guild_id)
+        await ctx.respond(
+            einrichten.loeschfrage(), view=_loeschansicht(config, runde), ephemeral=True
+        )
+
+    @bot.slash_command(
+        name=BEFEHL_SETUP, description="Foundry, Zustellkanal und nächtlichen Lauf einrichten"
+    )
+    @antwortet
+    async def setup(ctx) -> None:
+        # Ohne Gilde gibt es keine Runde zu beanspruchen — eine im Zwiegespräch angelegte
+        # gehörte niemandem und stünde für immer da.
+        if ctx.guild_id is None:
+            await ctx.respond(einrichten.NUR_IM_SERVER, ephemeral=True)
+            return
+        await ctx.send_modal(_einrichtungsfenster(config, ctx))
+
     @bot.slash_command(name=BEFEHL_SUCHE, description="In allem nachsehen, was geschrieben wurde")
     @antwortet
     async def suche(ctx, begriff: str = "") -> None:
@@ -683,11 +867,30 @@ def baue(config: Config):
             chronik.notiz_entfernen(runde, str(payload.message_id))
 
     @bot.event
+    async def on_guild_join(gilde) -> None:
+        # Eine Runde entsteht hier nicht — nur die verabschiedete kommt zurück. Der eine
+        # Satz muss trotzdem raus, und zwar dorthin, wo die Gruppe ihn liest.
+        text = einrichten.begruessung(config.database_path, str(gilde.id))
+        kanal = _begruessungskanal(gilde)
+        if kanal is None:
+            logger.warning("Kein Kanal zum Begrüßen in %s", gilde.id)
+            return
+        await kanal.send(text)
+
+    @bot.event
+    async def on_guild_remove(gilde) -> None:
+        einrichten.verabschieden(config.database_path, str(gilde.id))
+
+    @bot.event
     async def on_ready() -> None:
         # Der Prozess läuft ohnehin durch — er ist damit der zuverlässigste Ort, die in
         # der Ansage zugesagte Frist einzuhalten, auch wenn der nächtliche Stapel steht.
         if lauf.frist is None:
             lauf.frist = asyncio.create_task(recordings.taeglich(config))
+        # Zwei Fristen, zwei Läufe: die eine gilt jeder Audiospur auf dieser Box, die
+        # andere einer verabschiedeten Runde.
+        if lauf.abschied is None:
+            lauf.abschied = asyncio.create_task(lebenszyklus.taeglich(config))
 
     @bot.event
     async def on_voice_state_update(member, before, after) -> None:

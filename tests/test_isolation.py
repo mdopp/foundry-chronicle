@@ -32,6 +32,7 @@ from chronicle import (
     db,
     instanz,
     jobs,
+    lebenszyklus,
     nightly,
     notes,
     people,
@@ -85,6 +86,9 @@ SCHICHT = (
     # Was der Bot auf einen Befehl hin antwortet, ist eine Abfrage wie jede andere: die
     # Suche und das Register gehen hier durch die Runde der fragenden Gilde.
     erinnern,
+    # Und das Löschen erst recht: es ist der eine Aufruf, bei dem eine verwechselte Runde
+    # nicht bloß etwas zeigt, was sie nicht zeigen darf, sondern etwas fortnimmt.
+    lebenszyklus,
 )
 
 # Woran ein Aufruf erkannt wird, der Daten anfasst: er nimmt eine Konfiguration, einen
@@ -324,6 +328,7 @@ ABFRAGEN = {
     "erinnern.wahlmoeglichkeiten": lambda c, r, i: erinnern.wahlmoeglichkeiten(
         people.overview(r).personen[0], people.overview(r).spieler
     ),
+    "lebenszyklus.frist_datum": lambda c, r, i: lebenszyklus.frist_datum(r),
 }
 
 # Schreibende Aufrufe. Sie werden nicht auf eine Antwort geprüft, sondern darauf, dass sie
@@ -368,6 +373,8 @@ SCHREIBER = frozenset(
         "ausgabe.anhaengen",
         "erinnern.entscheiden",
         "erinnern.zuordnen",
+        "lebenszyklus.loeschen",
+        "lebenszyklus.freigeben",
     }
 )
 
@@ -591,6 +598,30 @@ def test_auftraege_serialisieren_ueber_alle_runden(zwei_runden, monkeypatch):
     jobs._laufend.add(laeuft.id)
     assert jobs.start(config, b, jobs.CHRONIK, lambda: "nie") is None
     assert jobs.latest(b, jobs.CHRONIK) is None
+
+
+def test_die_geloeschte_runde_nimmt_die_nachbarin_nicht_mit(zwei_runden):
+    """Der schärfste Fall der Trennung: hier verschwindet etwas, statt bloß sichtbar zu sein."""
+    config, a, b, ids = zwei_runden
+    lebenszyklus.loeschen(config, a)
+
+    assert runden.get(config.database_path, a.id) is None
+    assert runden.get(config.database_path, b.id) is not None
+    assert notes.session(b, ids[2]["sitzung"]).title == f"Sitzung {MARKE[2]}"
+    treffer = " ".join(str(h.snippet) for g in search.find(b, "Keller").groups for h in g.hits)
+    assert MARKE[2] in treffer and MARKE[1] not in treffer
+
+    connection = db.connect(config.database_path)
+    try:
+        uebrig = {
+            tabelle: connection.execute(
+                f"SELECT COUNT(*) AS anzahl FROM {tabelle} WHERE runde_id = ?", (a.id,)
+            ).fetchone()["anzahl"]
+            for tabelle in sorted(db.GESCOPTE_TABELLEN)
+        }
+    finally:
+        connection.close()
+    assert not [tabelle for tabelle, anzahl in uebrig.items() if anzahl]
 
 
 def test_nachbarrunde_wird_nicht_ueber_fremdschluessel_erreicht(zwei_runden):
