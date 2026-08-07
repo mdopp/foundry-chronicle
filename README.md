@@ -118,6 +118,39 @@ derzeit 7 Tage) räumt der Stapel sie ohnehin ab. Gelöscht wird dabei nur die A
 die Zeile bleibt mit `deleted_at` stehen, damit man sieht, dass die Spur nach Frist
 entfernt wurde und nicht verlorenging.
 
+## Einladen und Verabschieden: der Lebenszyklus einer Runde
+
+**Die Einladung ist ehrlich.** Betritt der Bot eine Gilde, sagt er in einer Nachricht, was
+er tut, wie man anfängt — und **dass er auf einem Rechner läuft, der jemand anderem
+gehört, dessen Betreiber alles lesen kann, was hier abgelegt wird.** Das steht in der
+ersten Nachricht und nicht im Kleingedruckten: eine Gruppe entscheidet sonst über ihre
+Sitzungsprotokolle, ohne zu wissen, worüber sie entscheidet. Angelegt wird beim Betreten
+noch nichts.
+
+**`/setup` richtet ein.** Ein Fenster für die Foundry-Adresse und den Benutzer, dazu die
+Wahl des Kanals, in den die fertige Chronik geht, und wahlweise Modell und Uhrzeit des
+nächtlichen Laufs. Der Aufruf beansprucht die Runde für diesen Server oder legt sie an;
+ein leeres Feld lässt den bisherigen Wert stehen. **Nach dem Passwort fragt das Fenster
+nicht** — es kommt am Sitzungsende, wird einmal benutzt und vergessen (siehe
+*Zugangsdaten*).
+
+**Der Rauswurf wirkt sofort.** Verlässt der Bot die Gilde, wird die Runde gesperrt: es
+wird nichts mehr abgelegt und nichts mehr herausgegeben. Nach **30 Tagen**
+(`lebenszyklus.FRIST_TAGE`) ist sie gelöscht; eine Wiedereinladung innerhalb der Frist
+bringt sie vollständig zurück, danach ist sie fort. Beides sagt der Bot vorher, in der
+Einladung und vor jeder Löschung. Die Frist prüft derselbe dauerhafte Prozess, der auch
+die Aufbewahrungsfrist der Aufnahmen durchsetzt — zwei Zusagen, zwei Läufe, damit ein
+Fehler in der einen die andere nicht mitnimmt.
+
+**`/chronik loeschen` erzwingt es sofort**, nach einer Rückfrage mit Knopf und einer
+vollständigen Liste dessen, was verschwindet. Und das heißt vollständig: Sitzungen,
+Szenen, Notizen, Diktate, Transkripte, Aufnahmen **samt Tondateien**, Chroniken,
+Rückblicke, Register, Zuordnung, der Foundry-Zwischenspeicher, der Suchindex — und die
+**Einwilligungsprotokolle**. Die sind der heikle Fall, denn sie belegen, dass angesagt
+wurde; sie gehen trotzdem mit. Was sie belegen, ist *wer* dabei war — anonymisiert belegen
+sie nichts mehr und wären bloß noch ein personenbezogener Rest ohne Zweck. Und sie
+verteidigen gegen einen Vorwurf zu einer Aufnahme, die es dann nicht mehr gibt.
+
 ## Erfassen per Discord: der Thread ist die Sitzung
 
 `/chronik start [Titel]` legt beides zugleich an — die Sitzung und den Thread, in dem sie
@@ -142,9 +175,10 @@ entfernt sie — Discord meldet beides, und ein Protokoll, das eine zurückgenom
 festhält, wäre die falsche Sorte Gedächtnis.
 
 **Der Server bestimmt die Runde.** Eine Discord-Gilde gehört genau einer Runde; ist für
-einen Server noch keine eingerichtet, sagt der Bot das und legt nichts an, statt in
-irgendeine Chronik zu schreiben. Ohne das Recht, im Kanal einen Thread anzulegen, entsteht
-keine halbe Sitzung, sondern eine Meldung.
+einen Server noch keine eingerichtet, sagt der Bot das und verweist auf `/setup`, statt in
+irgendeine Chronik zu schreiben. Eine gesperrte Runde gilt dabei als keine — sie ist
+verabschiedet und wartet nur noch auf ihre Frist. Ohne das Recht, im Kanal einen Thread
+anzulegen, entsteht keine halbe Sitzung, sondern eine Meldung.
 
 Die Befehle trägt derselbe dauerhafte Prozess wie die Aufnahme (`python -m chronicle.bot`,
 siehe *Aufnahme per Discord*); er muss dafür laufen. Und er braucht die **Message Content

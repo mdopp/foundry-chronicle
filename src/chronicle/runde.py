@@ -10,8 +10,9 @@ als erstes Argument, und ohne sie kommt man an keine Zeile. Sie trägt deshalb a
 Pfad zur Datenbank — ein Aufrufer, der beides getrennt weiterreicht, kann sie
 auseinanderbringen, und genau das darf hier niemand können.
 
-Der Lebenszyklus — einladen, sperren, nach Frist löschen — kommt mit #68. Hier steht nur,
-was es braucht, um eine Runde zu finden und eine anzulegen.
+Der Lebenszyklus — einladen, sperren, nach Frist löschen — steht in
+``chronicle.lebenszyklus``. Hier steht, was es braucht, um eine Runde zu finden, eine
+anzulegen und ihr anzusehen, ob sie noch spricht.
 """
 
 from __future__ import annotations
@@ -31,6 +32,14 @@ class Runde:
     guild_id: str | None
     created_at: str
     database_path: Path
+    locked_at: str | None = None
+    delete_after: str | None = None
+
+    @property
+    def gesperrt(self) -> bool:
+        """Der Bot ist nicht mehr in der Gilde: es wird nichts mehr abgelegt und nichts
+        mehr herausgegeben, bis jemand ihn zurückholt."""
+        return bool(self.locked_at)
 
 
 def instanzweit(funktion):
@@ -60,6 +69,8 @@ def _runde(zeile: sqlite3.Row, database_path: Path) -> Runde:
         guild_id=zeile["guild_id"],
         created_at=zeile["created_at"],
         database_path=database_path,
+        locked_at=zeile["locked_at"],
+        delete_after=zeile["delete_after"],
     )
 
 

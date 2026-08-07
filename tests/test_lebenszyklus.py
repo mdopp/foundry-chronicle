@@ -1,0 +1,565 @@
+"""Einladen und Verabschieden — gegen ein nachgebautes Discord, ohne Netz und ohne py-cord.
+
+Die Sätze, die dieser Suite ihren Sinn geben: **der erste Satz in einer fremden Gilde sagt,
+wem die Kiste gehört**, **ein Rauswurf wirkt sofort und nicht erst nach der Frist** — und
+**gelöscht heißt vollständig**, bis hin zur Tondatei auf der Platte und der Zeile im
+Suchindex. Was innerhalb der Frist zurückkommt, kommt ganz zurück; danach ist es fort, und
+genau das steht vorher da.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import sys
+import types
+from datetime import UTC, datetime, timedelta
+
+import pytest
+from test_bot import FakeBot, FakeIntents, FakePCMAudio, FakeSenke
+from test_chronik import FakeHTTPException, FakeInputText, FakeModal
+from test_erinnern import FakeButton, FakeEmbed, FakeSelect, FakeSelectOption, FakeView
+
+from chronicle import consent, db, lebenszyklus, notes, people, recordings, register, settings
+from chronicle import runde as runden
+from chronicle.bot import chronik, einrichten, gateway
+from chronicle.config import Config
+
+GILDE = "1101"
+GILDENAME = "Der Krumme Ast"
+NACHBARGILDE = "2202"
+
+MIRA = consent.Member(id="d-mira", name="Mira")
+
+
+# -- Die Attrappen ----------------------------------------------------------------------
+
+
+class FakeKanal:
+    def __init__(self, kennung, name, *, darf=True):
+        self.id = kennung
+        self.name = name
+        self._darf = darf
+        self.gesendet: list[str] = []
+
+    def permissions_for(self, _wer):
+        return types.SimpleNamespace(send_messages=self._darf)
+
+    async def send(self, text):
+        self.gesendet.append(text)
+
+
+class FakeGilde:
+    def __init__(self, kennung=GILDE, name=GILDENAME, *, kanaele=(), system=None):
+        self.id = kennung
+        self.name = name
+        self.text_channels = tuple(kanaele)
+        self.system_channel = system
+        self.me = object()
+
+
+class FakeAntwort:
+    def __init__(self):
+        self.gesendet: list[dict] = []
+        self.bearbeitet: list[dict] = []
+
+    async def send_message(self, text=None, *, view=None, **rest):
+        self.gesendet.append({"text": text, "view": view})
+
+    async def edit_message(self, *, content=None, view=None, **rest):
+        self.bearbeitet.append({"content": content, "view": view})
+
+
+class FakeInteraction:
+    def __init__(self):
+        self.response = FakeAntwort()
+
+
+class FakeCtx:
+    def __init__(self, *, guild_id=GILDE, gilde=None):
+        self.guild_id = guild_id
+        self.guild = gilde
+        self.channel_id = 900
+        self.antworten: list[str | None] = []
+        self.ansichten: list = []
+        self.modale: list = []
+
+    async def defer(self, **rest):
+        pass
+
+    async def respond(self, text=None, *, view=None, **rest):
+        self.antworten.append(text)
+        self.ansichten.append(view)
+
+    async def send_modal(self, modal):
+        self.modale.append(modal)
+
+
+# -- Die Bühne --------------------------------------------------------------------------
+
+
+@pytest.fixture
+def pycord(monkeypatch):
+    modul = types.ModuleType("discord")
+    modul.Intents = FakeIntents
+    modul.Bot = FakeBot
+    modul.PCMAudio = FakePCMAudio
+    modul.HTTPException = FakeHTTPException
+    modul.Embed = FakeEmbed
+    modul.SelectOption = FakeSelectOption
+    senken = types.ModuleType("discord.sinks")
+    senken.Sink = FakeSenke
+    modul.sinks = senken
+    werkzeug = types.ModuleType("discord.utils")
+    werkzeug.get_missing_voice_dependencies = lambda: ()
+    modul.utils = werkzeug
+    oberflaeche = types.ModuleType("discord.ui")
+    oberflaeche.Modal = FakeModal
+    oberflaeche.InputText = FakeInputText
+    oberflaeche.View = FakeView
+    oberflaeche.Button = FakeButton
+    oberflaeche.Select = FakeSelect
+    modul.ui = oberflaeche
+    monkeypatch.setitem(sys.modules, "discord", modul)
+    monkeypatch.setattr(FakeBot, "erzeugt", [])
+    return modul
+
+
+@pytest.fixture
+def konfiguration(tmp_path):
+    config = Config(data_dir=tmp_path / "daten", recordings_dir=tmp_path / "aufnahmen")
+    db.init(config.database_path)
+    config.recordings_dir.mkdir(parents=True, exist_ok=True)
+    return config
+
+
+@pytest.fixture
+def bot(konfiguration, pycord):
+    return gateway.baue(konfiguration)
+
+
+def fuellen(config, runde, marke):
+    """Eine Runde mit allem, was beim Löschen verschwinden muss — Datei inbegriffen."""
+    sitzung = notes.create_session(runde, played_on="2026-05-01", title=f"Sitzung {marke}")
+    szene = notes.session(runde, sitzung).scenes[0]
+    notes.add_note(runde, szene.id, f"Im Keller stand {marke}.")
+    spur = config.recordings_dir / f"{marke}-spur.wav"
+    spur.write_bytes(b"ton")
+    recordings.enqueue(runde, sitzung, spur.name, discord_user_id=MIRA.id)
+    consent.record(
+        runde,
+        session_id=sitzung,
+        kind=consent.ANSAGE,
+        guild_id=f"gilde-{marke}",
+        channel_id="kanal",
+        channel_name=f"Runde {marke}",
+        text=f"Ansage {marke}",
+        members=(MIRA,),
+    )
+    people.confirm(runde, {MIRA.id: "u-1"})
+    scope = db.scoped(runde)
+    try:
+        with scope:
+            scope.execute(
+                "INSERT INTO register_entry (runde_id, kind, name, description, state, "
+                "suggested_at) VALUES (?, 'figur', ?, 'Eine Kundschafterin', 'bestaetigt', "
+                "'2026-05-01T21:00:00')",
+                (scope.runde_id, f"Mira {marke}"),
+            )
+    finally:
+        scope.close()
+    settings.save(runde, {"foundry_url": f"https://{marke}.example"})
+    return {"sitzung": sitzung, "spur": spur}
+
+
+def zeilen(config, tabelle, runde_id):
+    connection = db.connect(config.database_path)
+    try:
+        zeile = connection.execute(
+            f"SELECT COUNT(*) AS anzahl FROM {tabelle} WHERE runde_id = ?", (runde_id,)
+        ).fetchone()
+    finally:
+        connection.close()
+    return int(zeile["anzahl"])
+
+
+def alle_zeilen(config, runde_id):
+    return {
+        tabelle: zeilen(config, tabelle, runde_id)
+        for tabelle in sorted(db.GESCOPTE_TABELLEN)
+        if tabelle != "search_index"
+    }
+
+
+def eintritt(bot, gilde):
+    asyncio.run(bot.ereignisse["on_guild_join"](gilde))
+
+
+def austritt(bot, gilde):
+    asyncio.run(bot.ereignisse["on_guild_remove"](gilde))
+
+
+def einrichtungsfenster(bot, ctx):
+    asyncio.run(bot.befehle[gateway.BEFEHL_SETUP](ctx))
+    return ctx.modale[-1]
+
+
+def ausfuellen(fenster, adresse="", benutzer="", modell="", uhrzeit=""):
+    for feld, wert in zip(fenster.children, (adresse, benutzer, modell, uhrzeit), strict=True):
+        feld.value = wert
+    interaktion = FakeInteraction()
+    asyncio.run(fenster.callback(interaktion))
+    return interaktion
+
+
+# -- Einladen ---------------------------------------------------------------------------
+
+
+def test_die_einladung_sagt_wem_die_kiste_gehoert(bot):
+    """Der harte Teil des Epics: das steht in der ersten Nachricht, nicht im Kleingedruckten."""
+    kanal = FakeKanal("300", "allgemein")
+    eintritt(bot, FakeGilde(system=kanal))
+
+    (gesagt,) = kanal.gesendet
+    assert einrichten.OFFENLEGUNG in gesagt
+    assert "jemand anderem gehört" in gesagt
+    assert "kommt an alles heran" in gesagt
+    assert "/setup" in gesagt
+
+
+def test_die_einladung_geht_in_den_ersten_kanal_in_dem_der_bot_reden_darf(bot):
+    stumm = FakeKanal("300", "regeln", darf=False)
+    offen = FakeKanal("301", "tisch")
+    eintritt(bot, FakeGilde(system=stumm, kanaele=(stumm, offen)))
+
+    assert stumm.gesendet == []
+    assert offen.gesendet == [einrichten.WILLKOMMEN]
+
+
+def test_ohne_einen_kanal_zum_reden_bleibt_es_bei_einer_zeile_im_log(bot, caplog):
+    eintritt(bot, FakeGilde(kanaele=(FakeKanal("300", "regeln", darf=False),)))
+    assert "Kein Kanal" in caplog.text
+
+
+def test_die_einladung_allein_legt_noch_keine_runde_an(konfiguration, bot):
+    eintritt(bot, FakeGilde(system=FakeKanal("300", "allgemein")))
+    assert runden.fuer_gilde(konfiguration.database_path, GILDE) is None
+
+
+# -- Einrichten -------------------------------------------------------------------------
+
+
+def test_setup_legt_die_runde_fuer_diesen_server_an(konfiguration, bot):
+    ctx = FakeCtx(gilde=FakeGilde())
+
+    fenster = einrichtungsfenster(bot, ctx)
+    ausfuellen(fenster, adresse="https://foundry.example", benutzer="Chronist")
+
+    unsere = runden.fuer_gilde(konfiguration.database_path, GILDE)
+    assert unsere is not None
+    assert unsere.name == GILDENAME
+    wirksam = settings.effective(konfiguration, unsere)
+    assert wirksam.foundry_url == "https://foundry.example"
+    assert wirksam.foundry_user == "Chronist"
+
+
+def test_setup_beansprucht_eine_vorhandene_runde_statt_einer_zweiten(konfiguration, bot):
+    vorher = runden.anlegen(konfiguration.database_path, "Alte Runde", guild_id=GILDE)
+
+    ausfuellen(einrichtungsfenster(bot, FakeCtx(gilde=FakeGilde())), benutzer="Chronist")
+
+    beansprucht = [
+        eine.id for eine in runden.alle(konfiguration.database_path) if eine.guild_id == GILDE
+    ]
+    assert beansprucht == [vorher.id]
+    assert runden.get(konfiguration.database_path, vorher.id).name == "Alte Runde"
+
+
+def test_das_einrichtungsfenster_fragt_nicht_nach_dem_passwort(bot):
+    """Es gibt kein Feld dafür — das Passwort kommt am Sitzungsende und wird verbraucht."""
+    fenster = einrichtungsfenster(bot, FakeCtx(gilde=FakeGilde()))
+
+    beschriftet = " ".join(f"{feld.label} {feld.placeholder}" for feld in fenster.children)
+    assert "asswort" not in beschriftet
+    assert len(fenster.children) == 4
+
+
+def test_ohne_server_gibt_es_keine_runde_zu_beanspruchen(konfiguration, bot):
+    ctx = FakeCtx(guild_id=None)
+
+    asyncio.run(bot.befehle[gateway.BEFEHL_SETUP](ctx))
+
+    assert ctx.antworten == [einrichten.NUR_IM_SERVER]
+    assert ctx.modale == []
+    assert runden.alle(konfiguration.database_path)[0].guild_id is None
+
+
+def test_ein_leeres_feld_laesst_den_wert_stehen(konfiguration, bot):
+    ctx = FakeCtx(gilde=FakeGilde())
+    ausfuellen(
+        einrichtungsfenster(bot, ctx), adresse="https://foundry.example", benutzer="Chronist"
+    )
+
+    ausfuellen(einrichtungsfenster(bot, ctx), modell="chronist-test")
+
+    unsere = runden.fuer_gilde(konfiguration.database_path, GILDE)
+    wirksam = settings.effective(konfiguration, unsere)
+    assert wirksam.foundry_url == "https://foundry.example"
+    assert wirksam.ollama_model == "chronist-test"
+
+
+def test_eine_unlesbare_uhrzeit_laesst_die_bisherige_stehen(konfiguration, bot):
+    interaktion = ausfuellen(
+        einrichtungsfenster(bot, FakeCtx(gilde=FakeGilde())), uhrzeit="viertel nach drei"
+    )
+
+    unsere = runden.fuer_gilde(konfiguration.database_path, GILDE)
+    assert settings.nightly_time(unsere) == settings.DEFAULT_NIGHTLY_TIME
+    assert "viertel nach drei" in interaktion.response.gesendet[0]["text"]
+
+
+def test_der_zustellkanal_wird_gewaehlt_und_wirkt_sofort(konfiguration, bot):
+    kanal = FakeKanal("777", "chroniken")
+    ctx = FakeCtx(gilde=FakeGilde(kanaele=(kanal,)))
+    interaktion = ausfuellen(einrichtungsfenster(bot, ctx), benutzer="Chronist")
+
+    ansicht = interaktion.response.gesendet[0]["view"]
+    (menue,) = ansicht.items
+    assert [option.value for option in menue.options] == [einrichten.OHNE_KANAL, "777"]
+
+    menue.values = ["777"]
+    klick = FakeInteraction()
+    asyncio.run(menue.callback(klick))
+
+    unsere = runden.fuer_gilde(konfiguration.database_path, GILDE)
+    assert settings.effective(konfiguration, unsere).discord_recap_channel == "777"
+    assert "777" in klick.response.bearbeitet[0]["content"]
+
+
+def test_kein_kanal_ist_eine_gueltige_wahl(konfiguration, bot):
+    ctx = FakeCtx(gilde=FakeGilde(kanaele=(FakeKanal("777", "chroniken"),)))
+    interaktion = ausfuellen(einrichtungsfenster(bot, ctx), benutzer="Chronist")
+    (menue,) = interaktion.response.gesendet[0]["view"].items
+
+    menue.values = [einrichten.OHNE_KANAL]
+    asyncio.run(menue.callback(FakeInteraction()))
+
+    unsere = runden.fuer_gilde(konfiguration.database_path, GILDE)
+    assert settings.effective(konfiguration, unsere).discord_recap_channel is None
+
+
+# -- Verabschieden ----------------------------------------------------------------------
+
+
+def test_der_rauswurf_sperrt_die_runde_sofort(konfiguration, bot):
+    unsere = runden.anlegen(konfiguration.database_path, GILDENAME, guild_id=GILDE)
+    fuellen(konfiguration, unsere, "alpha")
+
+    austritt(bot, FakeGilde())
+
+    gesperrt = runden.get(konfiguration.database_path, unsere.id)
+    assert gesperrt.gesperrt
+    frist = datetime.fromisoformat(gesperrt.delete_after) - datetime.fromisoformat(
+        gesperrt.locked_at
+    )
+    assert frist == timedelta(days=lebenszyklus.FRIST_TAGE)
+    # Sofort still: der Weg über die Gilde führt nicht mehr zu ihr.
+    assert chronik.runde_der_gilde(konfiguration, GILDE) is None
+
+
+def test_die_gesperrte_runde_sagt_bis_wann_alles_noch_da_ist(konfiguration, bot):
+    unsere = runden.anlegen(konfiguration.database_path, GILDENAME, guild_id=GILDE)
+    austritt(bot, FakeGilde())
+
+    with pytest.raises(chronik.ChronikFehler) as gefangen:
+        chronik.runde_verlangen(konfiguration, GILDE)
+
+    gesperrt = runden.get(konfiguration.database_path, unsere.id)
+    assert lebenszyklus.frist_datum(gesperrt) in str(gefangen.value)
+    assert "lade mich wieder ein" in str(gefangen.value)
+
+
+def test_ein_zweiter_rauswurf_verschiebt_die_frist_nicht(konfiguration, bot):
+    unsere = runden.anlegen(konfiguration.database_path, GILDENAME, guild_id=GILDE)
+    austritt(bot, FakeGilde())
+    zuerst = runden.get(konfiguration.database_path, unsere.id).delete_after
+
+    austritt(bot, FakeGilde())
+
+    assert runden.get(konfiguration.database_path, unsere.id).delete_after == zuerst
+
+
+def test_innerhalb_der_frist_bringt_die_wiedereinladung_alles_zurueck(konfiguration, bot):
+    unsere = runden.anlegen(konfiguration.database_path, GILDENAME, guild_id=GILDE)
+    ids = fuellen(konfiguration, unsere, "alpha")
+    austritt(bot, FakeGilde())
+
+    kanal = FakeKanal("300", "allgemein")
+    eintritt(bot, FakeGilde(system=kanal))
+
+    zurueck = runden.get(konfiguration.database_path, unsere.id)
+    assert not zurueck.gesperrt
+    assert notes.session(zurueck, ids["sitzung"]).title == "Sitzung alpha"
+    (gesagt,) = kanal.gesendet
+    assert GILDENAME in gesagt
+    # Auch der Rückkehr wird gesagt, wo sie steht.
+    assert einrichten.OFFENLEGUNG in gesagt
+
+
+def test_nach_der_frist_ist_die_runde_fort(konfiguration):
+    unsere = runden.anlegen(konfiguration.database_path, GILDENAME, guild_id=GILDE)
+    ids = fuellen(konfiguration, unsere, "alpha")
+    lebenszyklus.sperren(konfiguration.database_path, GILDE)
+
+    spaeter = datetime.now(UTC) + timedelta(days=lebenszyklus.FRIST_TAGE + 1)
+    (meldung,) = lebenszyklus.sweep(konfiguration, jetzt=spaeter)
+
+    assert GILDENAME in meldung
+    assert runden.fuer_gilde(konfiguration.database_path, GILDE) is None
+    assert not ids["spur"].exists()
+    assert alle_zeilen(konfiguration, unsere.id) == dict.fromkeys(
+        db.GESCOPTE_TABELLEN - {"search_index"}, 0
+    )
+
+
+def test_vor_der_frist_raeumt_der_lauf_nichts_ab(konfiguration):
+    unsere = runden.anlegen(konfiguration.database_path, GILDENAME, guild_id=GILDE)
+    fuellen(konfiguration, unsere, "alpha")
+    lebenszyklus.sperren(konfiguration.database_path, GILDE)
+
+    frueher = datetime.now(UTC) + timedelta(days=lebenszyklus.FRIST_TAGE - 1)
+
+    assert lebenszyklus.sweep(konfiguration, jetzt=frueher) == ()
+    assert runden.fuer_gilde(konfiguration.database_path, GILDE) is not None
+
+
+def test_eine_runde_ohne_rauswurf_wird_nie_faellig(konfiguration):
+    runden.anlegen(konfiguration.database_path, GILDENAME, guild_id=GILDE)
+    spaeter = datetime.now(UTC) + timedelta(days=365)
+    assert lebenszyklus.faellig(konfiguration.database_path, jetzt=spaeter) == ()
+
+
+def test_die_frist_wird_beim_start_und_danach_taeglich_geprueft(konfiguration):
+    class Schluss(Exception):
+        pass
+
+    laeufe = []
+
+    async def schlafen(sekunden):
+        laeufe.append(sekunden)
+        if len(laeufe) == 2:
+            raise Schluss
+
+    with pytest.raises(Schluss):
+        asyncio.run(lebenszyklus.taeglich(konfiguration, schlafen=schlafen))
+
+    assert laeufe == [lebenszyklus.SWEEP_ABSTAND, lebenszyklus.SWEEP_ABSTAND]
+
+
+def test_der_bot_haelt_beide_fristen_nebeneinander(konfiguration, bot, monkeypatch):
+    """Zwei Zusagen, zwei Läufe — die Aufnahmen und die verabschiedete Runde."""
+    gestartet = []
+
+    async def nie(config, **rest):
+        gestartet.append(config)
+        await asyncio.sleep(0)
+
+    monkeypatch.setattr(recordings, "taeglich", nie)
+    monkeypatch.setattr(lebenszyklus, "taeglich", nie)
+
+    async def einmal():
+        await bot.ereignisse["on_ready"]()
+        await asyncio.sleep(0)
+
+    asyncio.run(einmal())
+
+    assert len(gestartet) == 2
+
+
+# -- Sofort löschen ---------------------------------------------------------------------
+
+
+def test_die_loeschfrage_sagt_was_verschwindet(konfiguration, bot):
+    runden.anlegen(konfiguration.database_path, GILDENAME, guild_id=GILDE)
+    ctx = FakeCtx(gilde=FakeGilde())
+
+    asyncio.run(bot.gruppen[gateway.GRUPPE_CHRONIK].befehle["loeschen"](ctx))
+
+    (frage,) = ctx.antworten
+    for satzteil in ("Notizen", "Tondateien", "Chroniken", "Register", "Nachweise"):
+        assert satzteil in frage
+    assert "keine Sicherung" in frage
+    assert f"{lebenszyklus.FRIST_TAGE} Tagen" in frage
+
+
+def test_der_knopf_loescht_dateien_zeilen_und_den_suchindex(konfiguration, bot):
+    unsere = runden.anlegen(konfiguration.database_path, GILDENAME, guild_id=GILDE)
+    ids = fuellen(konfiguration, unsere, "alpha")
+    nachbar = runden.anlegen(konfiguration.database_path, "Nachbarn", guild_id=NACHBARGILDE)
+    daneben = fuellen(konfiguration, nachbar, "beta")
+
+    ctx = FakeCtx(gilde=FakeGilde())
+    asyncio.run(bot.gruppen[gateway.GRUPPE_CHRONIK].befehle["loeschen"](ctx))
+    ja, _nein = ctx.ansichten[0].items
+    klick = FakeInteraction()
+    asyncio.run(ja.callback(klick))
+
+    assert klick.response.bearbeitet[0]["content"] == einrichten.LOESCHEN_FERTIG
+    assert runden.get(konfiguration.database_path, unsere.id) is None
+    assert not ids["spur"].exists()
+    assert zeilen(konfiguration, "search_index", unsere.id) == 0
+
+    # Und der Nachbar merkt nichts davon.
+    assert daneben["spur"].exists()
+    assert notes.session(nachbar, daneben["sitzung"]).title == "Sitzung beta"
+    assert zeilen(konfiguration, "search_index", nachbar.id) > 0
+
+
+def test_die_einwilligungsprotokolle_gehen_mit(konfiguration, bot):
+    """Die eine Entscheidung dieses Umbaus: der Nachweis überlebt seinen Gegenstand nicht.
+
+    Anonymisiert belegte er nicht mehr, *wer* dabei war — und damit nichts. Übrig bliebe
+    eine Liste von Namen über Menschen, die mit dieser Instanz nichts mehr zu tun haben.
+    """
+    unsere = runden.anlegen(konfiguration.database_path, GILDENAME, guild_id=GILDE)
+    fuellen(konfiguration, unsere, "alpha")
+    assert zeilen(konfiguration, "consent_member", unsere.id) == 1
+
+    lebenszyklus.loeschen(konfiguration, unsere)
+
+    assert zeilen(konfiguration, "consent_event", unsere.id) == 0
+    assert zeilen(konfiguration, "consent_member", unsere.id) == 0
+
+
+def test_abbrechen_loescht_nichts(konfiguration, bot):
+    unsere = runden.anlegen(konfiguration.database_path, GILDENAME, guild_id=GILDE)
+    ids = fuellen(konfiguration, unsere, "alpha")
+
+    ctx = FakeCtx(gilde=FakeGilde())
+    asyncio.run(bot.gruppen[gateway.GRUPPE_CHRONIK].befehle["loeschen"](ctx))
+    _ja, nein = ctx.ansichten[0].items
+    klick = FakeInteraction()
+    asyncio.run(nein.callback(klick))
+
+    assert klick.response.bearbeitet[0]["content"] == einrichten.LOESCHEN_ABGEBROCHEN
+    assert runden.get(konfiguration.database_path, unsere.id) is not None
+    assert ids["spur"].exists()
+
+
+def test_ohne_runde_gibt_es_nichts_zu_loeschen(konfiguration, bot):
+    ctx = FakeCtx(gilde=FakeGilde())
+
+    asyncio.run(bot.gruppen[gateway.GRUPPE_CHRONIK].befehle["loeschen"](ctx))
+
+    (antwort,) = ctx.antworten
+    assert chronik.KEINE_RUNDE in antwort
+    assert ctx.ansichten == [None]
+
+
+def test_das_register_der_geloeschten_runde_ist_nicht_mehr_zu_finden(konfiguration):
+    unsere = runden.anlegen(konfiguration.database_path, GILDENAME, guild_id=GILDE)
+    fuellen(konfiguration, unsere, "alpha")
+    assert register.overview(unsere)
+
+    lebenszyklus.loeschen(konfiguration, unsere)
+
+    assert runden.fuer_gilde(konfiguration.database_path, GILDE) is None

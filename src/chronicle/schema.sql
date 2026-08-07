@@ -10,11 +10,18 @@ CREATE TABLE IF NOT EXISTS meta (
 -- wegfallen oder wechseln, die Chronik dahinter nicht. ``guild_id`` bleibt leer, bis eine
 -- Gilde die Runde für sich beansprucht; die Bestände der Entwicklungs-Instanz wandern in
 -- eine solche noch unbeanspruchte Runde.
+--
+-- ``locked_at`` und ``delete_after`` tragen den Abschied: wird der Bot aus der Gilde
+-- geworfen, ist die Runde sofort still und verschwindet nach der Frist. Zwei Spalten und
+-- nicht eine gerechnete, weil die Frist eine **Zusage** ist — sie steht als Datum da und
+-- lässt sich nicht dadurch verschieben, dass jemand später an der Konstante dreht.
 CREATE TABLE IF NOT EXISTS runde (
-    id         INTEGER PRIMARY KEY,
-    name       TEXT NOT NULL,
-    guild_id   TEXT UNIQUE,
-    created_at TEXT NOT NULL
+    id           INTEGER PRIMARY KEY,
+    name         TEXT NOT NULL,
+    guild_id     TEXT UNIQUE,
+    created_at   TEXT NOT NULL,
+    locked_at    TEXT,
+    delete_after TEXT
 );
 
 -- Merkzettel je Runde: der Zeiger auf die zuletzt abgeholte Diktat-Nachricht, der Grund

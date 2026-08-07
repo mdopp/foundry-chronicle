@@ -6,6 +6,13 @@ trägt `runde_id`; gelesen und geschrieben wird ausschließlich über `db.scoped
 eine Abfrage ohne Runde zurückweist. Die Weboberfläche kennt noch keine Runden und arbeitet
 bis zu ihrer Abschaltung (#69) stillschweigend in der ersten.
 
+Der Lebenszyklus einer Runde hängt an der Gilde (#68, `chronicle.lebenszyklus`): Beim
+Betreten sagt der Bot einmal, was er tut und **dass der Betreiber der Box alles lesen
+kann**; `/setup` beansprucht die Runde für den Server oder legt sie an. Verlässt der Bot
+die Gilde, wird sie sofort gesperrt und nach 30 Tagen vollständig gelöscht — Dateien
+eingeschlossen. Eine Wiedereinladung innerhalb der Frist stellt sie her,
+`/chronik loeschen` zieht die Löschung nach Rückfrage vor.
+
 Konfiguration: Foundry-Adresse und -Benutzer je Runde, Discord-Bot-Token für die Instanz —
 das ist unser Token und nicht das einer Gruppe. Das Foundry-Passwort wird **nirgends**
 gespeichert: es wird beim Abgleich erfragt, lebt im Arbeitsspeicher und wird verbraucht
