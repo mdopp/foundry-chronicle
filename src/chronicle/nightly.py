@@ -32,6 +32,7 @@ from chronicle import db, jobs, register, settings, zugang
 from chronicle import runde as runden
 from chronicle.compose.service import KIND, compose_session, recap_session
 from chronicle.config import Config
+from chronicle.discord.ausgabe import anhaengen
 from chronicle.discord.rueckblick import deliver
 from chronicle.discord.service import LEER as BRIEFKASTEN_LEER
 from chronicle.discord.service import run as diktat_abholen
@@ -169,8 +170,9 @@ def _chronik(config: Config, runde: Runde) -> Schritt:
         compose_session(config, runde, sitzung_id)
         recap_session(config, runde, sitzung_id)
         deliver(config, runde, sitzung_id)
+        ausgabe = anhaengen(config, runde, sitzung_id)
         register.suggest(config, runde, sitzung_id)
-        meldungen.append(GESCHRIEBEN.format(datum=datum))
+        meldungen.append(GESCHRIEBEN.format(datum=datum) + (f" {ausgabe}" if ausgabe else ""))
     return Schritt(CHRONIK, " ".join(meldungen))
 
 

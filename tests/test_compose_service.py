@@ -246,8 +246,8 @@ def test_der_stapelaufruf_stellt_den_rueckblick_genau_einmal_zu(
         def channel_id(self, name):
             return f"c-{name}"
 
-        def post(self, kanal, text):
-            gepostet.append((kanal, text))
+        def post_embed(self, kanal, eingebettet):
+            gepostet.append((kanal, eingebettet))
 
     monkeypatch.setattr(rueckblick, "DiscordClient", lambda zugang: Briefkasten())
     monkeypatch.setenv("CHRONICLE_DATA_DIR", str(config.data_dir))
@@ -262,7 +262,7 @@ def test_der_stapelaufruf_stellt_den_rueckblick_genau_einmal_zu(
 
     zeilen = protokolle(scope, sitzung_id)
     abgelegt = next(z["text"] for z in zeilen if z["kind"] == RUECKBLICK)
-    assert gepostet == [("c-chronik", abgelegt)]
+    assert gepostet == [("c-chronik", rueckblick.embed(abgelegt))]
     assert "war schon zugestellt" in capsys.readouterr().out
 
 

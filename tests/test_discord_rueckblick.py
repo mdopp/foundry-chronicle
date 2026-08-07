@@ -2,6 +2,10 @@
 
 Der Token in diesen Tests ist erfunden und steht nur hier. Gepostet wird über dasselbe
 REST-API wie der Diktat-Kanal; eine Gateway-Verbindung braucht Schreiben nicht.
+
+Der Rückblick geht als **Embed** hinaus. Was diese Suite festhält: sein Text wird dabei
+nicht umgeschrieben — die Überschriften, die Belegtes von Gedeutetem trennen, stehen im
+Embed genauso wie im abgelegten Protokoll.
 """
 
 from __future__ import annotations
@@ -25,11 +29,16 @@ DIKTAT_KANAL = "c-diktat"
 
 KANAL = "chronik"
 
-ADRESSE = "https://chronik.example"
-
 STAND = "2026-08-06T20:00:00+00:00"
 
-TEXT = "# Rückblick — Sitzung vom 2026-08-06\n\nDie Runde tastete sich voran.\n"
+TITEL = "Rückblick — Sitzung vom 2026-08-06"
+RUMPF = (
+    "### Was bisher geschah — vom Sprachmodell, nicht belegt\n"
+    "Die Runde tastete sich voran.\n\n"
+    "### Offene Fäden — Deutung des Modells, keine Fakten\n"
+    "- Wer die Wirtin bezahlt hat, blieb offen."
+)
+TEXT = f"# {TITEL}\n\n{RUMPF}\n"
 
 
 class Antwort:
@@ -62,7 +71,8 @@ class FakeDiscord:
                 ]
             )
         if method == "POST" and pfad.startswith("/channels/"):
-            self.gepostet.append((pfad.split("/")[2], kwargs["json"]["content"]))
+            (eingebettet,) = kwargs["json"]["embeds"]
+            self.gepostet.append((pfad.split("/")[2], eingebettet))
             return Antwort({})
         raise AssertionError(f"unerwarteter Aufruf: {method} {pfad}")
 
@@ -72,7 +82,6 @@ def config(tmp_path):
     gesetzt = Config(
         discord_bot_token=TOKEN,
         discord_recap_channel=KANAL,
-        public_url=ADRESSE,
         data_dir=tmp_path / "daten",
     )
     db.init(gesetzt.database_path)
@@ -139,16 +148,30 @@ def _einzige_sitzung(config):
 # --- Genau einmal --------------------------------------------------------------------
 
 
-def test_der_rueckblick_geht_unveraendert_in_den_gruppenkanal(config):
+def test_der_rueckblick_geht_als_embed_in_den_gruppenkanal(config):
     sitzung_id = sitzung(config)
     protokoll(config, sitzung_id)
     api = FakeDiscord()
 
     meldung = zustellen(config, api)
 
-    assert api.gepostet == [(CHRONIK_KANAL, TEXT)]
+    assert api.gepostet == [(CHRONIK_KANAL, {"description": RUMPF, "title": TITEL})]
     assert meldung == rueckblick.ZUGESTELLT.format(sitzung=sitzung_id, kanal=KANAL)
     assert zugestellt_am(config, sitzung_id) is not None
+
+
+def test_die_ueberschriften_der_deutung_stehen_auch_im_embed(config):
+    """Was belegt ist und was gedeutet, muss der Kanal genauso zeigen wie das Protokoll."""
+    sitzung_id = sitzung(config)
+    protokoll(config, sitzung_id)
+    api = FakeDiscord()
+
+    zustellen(config, api)
+
+    beschreibung = api.gepostet[0][1]["description"]
+    assert "### Offene Fäden — Deutung des Modells, keine Fakten" in beschreibung
+    assert "### Was bisher geschah — vom Sprachmodell, nicht belegt" in beschreibung
+    assert "<" not in beschreibung
 
 
 def test_ein_zweiter_lauf_stellt_nicht_noch_einmal_zu(config):
@@ -240,7 +263,7 @@ def test_ein_in_der_oberflaeche_gesetzter_kanal_gewinnt(tmp_path):
 
     meldung = zustellen(config, api)
 
-    assert api.gepostet == [(CHRONIK_KANAL, TEXT)]
+    assert api.gepostet == [(CHRONIK_KANAL, {"description": RUMPF, "title": TITEL})]
     assert meldung == rueckblick.ZUGESTELLT.format(sitzung=sitzung_id, kanal=KANAL)
 
 
@@ -271,38 +294,45 @@ def test_ein_unerreichbares_discord_verschiebt_die_zustellung_ohne_token(config)
     assert zugestellt_am(config, sitzung_id) is None
 
 
-# --- Die 2000-Zeichen-Grenze ---------------------------------------------------------
+# --- Die Maße eines Embeds -----------------------------------------------------------
 
 
-def test_ein_zu_langer_rueckblick_wird_gekuerzt_und_verlinkt(config, caplog):
+def test_ein_zu_langer_rueckblick_wird_ehrlich_gekuerzt_und_zeigt_auf_die_datei(config, caplog):
+    """Ein Rückblick passt per Bauart hinein; passt er doch nicht, wird nicht aufgeteilt."""
     sitzung_id = sitzung(config)
-    protokoll(config, sitzung_id, text="Wort " * 600)
+    protokoll(config, sitzung_id, text="Wort " * 1200)
     api = FakeDiscord()
 
     with caplog.at_level("WARNING"):
         zustellen(config, api)
 
-    gepostet = api.gepostet[0][1]
-    assert len(gepostet) <= rueckblick.GRENZE
-    assert gepostet.endswith(f"{ADRESSE}/sitzungen/{sitzung_id}/protokoll")
-    assert gepostet.startswith("Wort Wort")
-    assert "3000 Zeichen" in caplog.text
+    beschreibung = api.gepostet[0][1]["description"]
+    assert len(api.gepostet) == 1
+    assert len(beschreibung) <= rueckblick.TEXT_GRENZE
+    assert beschreibung.endswith(rueckblick.GEKUERZT)
+    assert beschreibung.startswith("Wort Wort")
+    assert "5999 Zeichen" in caplog.text
+    assert zugestellt_am(config, sitzung_id) is not None
 
 
-def test_ohne_oeffentliche_adresse_wird_gekuerzt_ohne_link(tmp_path):
-    config = Config(
-        discord_bot_token=TOKEN, discord_recap_channel=KANAL, data_dir=tmp_path / "daten"
-    )
-    db.init(config.database_path)
+def test_ein_zu_langer_titel_wird_gekappt(config):
     sitzung_id = sitzung(config)
-    protokoll(config, sitzung_id, text="Wort " * 600)
+    protokoll(config, sitzung_id, text="# " + "Titel " * 100 + "\n\nKurz.\n")
     api = FakeDiscord()
 
     zustellen(config, api)
 
-    gepostet = api.gepostet[0][1]
-    assert len(gepostet) <= rueckblick.GRENZE
-    assert gepostet.endswith(rueckblick.GEKUERZT_OHNE_ADRESSE)
+    assert len(api.gepostet[0][1]["title"]) == rueckblick.TITEL_GRENZE
+
+
+def test_ein_rueckblick_ohne_titelzeile_bekommt_keinen_leeren_titel(config):
+    sitzung_id = sitzung(config)
+    protokoll(config, sitzung_id, text="Nur ein Absatz.\n")
+    api = FakeDiscord()
+
+    zustellen(config, api)
+
+    assert api.gepostet[0][1] == {"description": "Nur ein Absatz."}
 
 
 def test_ein_kurzer_rueckblick_bleibt_unangetastet(config, caplog):
@@ -313,13 +343,13 @@ def test_ein_kurzer_rueckblick_bleibt_unangetastet(config, caplog):
     with caplog.at_level("WARNING"):
         zustellen(config, api)
 
-    assert api.gepostet[0][1] == TEXT
+    assert api.gepostet[0][1]["description"] == RUMPF
     assert "gekürzt" not in caplog.text
 
 
 def test_der_token_steht_in_keiner_meldung_und_keiner_logzeile(config, caplog):
     sitzung_id = sitzung(config)
-    protokoll(config, sitzung_id, text="Wort " * 600)
+    protokoll(config, sitzung_id, text="Wort " * 1200)
     api = FakeDiscord()
 
     with caplog.at_level("DEBUG"):

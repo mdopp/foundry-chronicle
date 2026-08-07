@@ -7,7 +7,8 @@ Komposition; ein zweiter Lauf ersetzt ohnehin beides.
 Die Zustellung nach Discord hängt hier und nicht am Diktat-Lauf: **hier** entsteht ein
 neuer Rückblick, und der Diktat-Lauf ist die Gegenrichtung — dort abgeholt, würde der
 Rückblick eine Nacht zu spät im Kanal stehen. Zugestellt wird höchstens einmal je
-Sitzung; ohne Kanal oder ohne Bot-Token passiert nichts und der Lauf sagt es.
+Sitzung; ohne Kanal oder ohne Bot-Token passiert nichts und der Lauf sagt es. Die Chronik
+geht denselben Weg als Datei in den Thread der Sitzung — eine neue Fassung als neue Datei.
 
 Rückgabewert 1 heißt: die Protokolle stehen, aber ohne Sprachmodell — geordnet statt
 formuliert. Das ist ein Zustand, den ein Aufrufer sehen soll, kein Absturz.
@@ -22,6 +23,7 @@ from chronicle import register
 from chronicle import runde as runden
 from chronicle.compose.service import compose_session, recap_session
 from chronicle.config import Config
+from chronicle.discord.ausgabe import anhaengen
 from chronicle.discord.rueckblick import deliver
 
 
@@ -43,6 +45,9 @@ def main(argv: list[str] | None = None) -> int:
     print(chronik.message)
     print(rueckblick.message)
     print(deliver(config, runde, sitzung))
+    hinweis = anhaengen(config, runde, sitzung)
+    if hinweis:
+        print(hinweis)
     print(register.suggest(config, runde, sitzung).message)
     return 1 if chronik.reason or rueckblick.reason else 0
 
