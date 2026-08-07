@@ -44,6 +44,7 @@ from chronicle import (
 from chronicle import runde as runden
 from chronicle.compose import service as compose_service
 from chronicle.config import Config
+from chronicle.discord import ausgabe as discord_ausgabe
 from chronicle.discord import rueckblick as discord_rueckblick
 from chronicle.discord import service as discord_service
 from chronicle.foundry import service as foundry_service
@@ -77,6 +78,7 @@ SCHICHT = (
     merge,
     discord_service,
     discord_rueckblick,
+    discord_ausgabe,
     zugang,
 )
 
@@ -301,7 +303,12 @@ ABFRAGEN = {
     "merge.span": lambda c, r, i: merge.span(()),
     "merge.note_text": lambda c, r, i: merge.note_text(()),
     "service.cursor": lambda c, r, i: discord_service.cursor(r),
-    "rueckblick.nachricht": lambda c, r, i: discord_rueckblick.nachricht("kurz", None, 1),
+    "rueckblick.embed": lambda c, r, i: discord_rueckblick.embed("# Titel\n\nKurz."),
+    "ausgabe.datei": lambda c, r, i: discord_ausgabe.datei(
+        "# Chronik", "2026-05-01T21:00:00+00:00"
+    ),
+    "ausgabe.dateiname": lambda c, r, i: discord_ausgabe.dateiname("2026-05-01"),
+    "ausgabe.begleitung": lambda c, r, i: discord_ausgabe.begleitung(None),
 }
 
 # Schreibende Aufrufe. Sie werden nicht auf eine Antwort geprüft, sondern darauf, dass sie
@@ -342,6 +349,7 @@ SCHREIBER = frozenset(
         "service.run_queue",
         "service.run",
         "rueckblick.deliver",
+        "ausgabe.anhaengen",
     }
 )
 

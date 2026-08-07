@@ -142,13 +142,20 @@ CREATE TABLE IF NOT EXISTS scene_foundry_message (
     FOREIGN KEY (scene_id, runde_id) REFERENCES scene (id, runde_id) ON DELETE CASCADE
 );
 
--- ``delivered_at`` gilt nur dem Rückblick: wann er in den Gruppenkanal gestellt wurde. Es
--- steht hier und nicht in einer eigenen Tabelle, weil der Wert die Zustellung genau eines
--- Protokolls beschreibt — und weil der zweite Lauf von ``chronicle.compose`` den Text per
--- UPSERT ersetzt, ohne diese Spalte anzufassen. Genau das ist die Zusage: **eine Sitzung,
--- eine Zustellung.** Eine neu komponierte Fassung wird nicht noch einmal gepostet; der
--- Kanal ist die Zeitachse der Gruppe, ein zweiter Rückblick darin läse sich wie eine
--- zweite Sitzung. Die jeweils gültige Fassung steht in der Chronik-Ansicht.
+-- ``delivered_at`` sagt, wann dieses Protokoll nach Discord hinausging. Es steht hier und
+-- nicht in einer eigenen Tabelle, weil der Wert die Zustellung genau eines Protokolls
+-- beschreibt — und weil der zweite Lauf von ``chronicle.compose`` den Text per UPSERT
+-- ersetzt, ohne diese Spalte anzufassen. Gelesen wird er je Art verschieden, und das ist
+-- Absicht:
+--
+-- * **Rückblick — eine Sitzung, eine Zustellung.** Steht ein Zeitpunkt da, passiert nichts
+--   mehr. Eine neu komponierte Fassung wird nicht noch einmal in den Gruppenkanal
+--   gestellt; der Kanal ist die Zeitachse der Gruppe, ein zweiter Rückblick darin läse
+--   sich wie eine zweite Sitzung.
+-- * **Chronik — eine Fassung, eine Datei.** Der Zeitpunkt ist der des letzten Anhängens im
+--   Sitzungs-Thread. Ist ``created_at`` jünger, wurde seither neu geschrieben, und die
+--   neue Fassung wird als neue Datei angehängt; die alte bleibt stehen. Der Thread ist ein
+--   Protokoll, keine Tafel.
 CREATE TABLE IF NOT EXISTS protocol (
     id           INTEGER PRIMARY KEY,
     runde_id     INTEGER NOT NULL REFERENCES runde (id) ON DELETE CASCADE,

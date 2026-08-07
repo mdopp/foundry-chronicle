@@ -35,6 +35,7 @@ from pathlib import Path
 from chronicle import db, recordings, register
 from chronicle.compose.service import compose_session, recap_session
 from chronicle.config import Config
+from chronicle.discord.ausgabe import anhaengen
 from chronicle.discord.rueckblick import deliver
 from chronicle.foundry.service import sync
 from chronicle.runde import Runde
@@ -288,13 +289,14 @@ def chronik(config: Config, runde: Runde, session_id: int) -> str:
         raise JobError(OHNE_SITZUNG)
     recap_session(config, runde, session_id)
     deliver(config, runde, session_id)
+    ausgabe = anhaengen(config, runde, session_id)
     vorschlaege = register.suggest(config, runde, session_id)
     vorlauf = "" if not wartend else VERSCHRIFTET.format(anzahl=wartend, mehr=mehrzahl(wartend))
     stand = STEHT if ergebnis.reason is None else STEHT_OHNE_MODELL
     # Der Hinweis auf offene Vorschläge steht bewusst im Ergebnis des Laufs: wird das
     # Bestätigen nicht angestoßen, wird es übersprungen, und das Register verfällt.
     nachsatz = "" if not vorschlaege.count else f" {vorschlaege.message}"
-    return vorlauf + stand + nachsatz
+    return vorlauf + stand + nachsatz + (f" {ausgabe}" if ausgabe else "")
 
 
 def abschluss(config: Config, runde: Runde, session_id: int) -> str:

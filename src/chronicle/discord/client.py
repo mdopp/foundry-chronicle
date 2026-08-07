@@ -21,6 +21,7 @@ kürzeste Weg nach draußen.
 
 from __future__ import annotations
 
+import json
 import logging
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
@@ -47,6 +48,8 @@ LIMIT = 100
 DEFAULT_TIMEOUT = 60.0
 
 BLOCK = 64 * 1024
+
+MARKDOWN = "text/markdown"
 
 
 class DiscordError(RuntimeError):
@@ -199,6 +202,22 @@ class DiscordClient:
 
     def post(self, channel_id: str, text: str) -> None:
         self._call("POST", f"/channels/{channel_id}/messages", json={"content": text})
+
+    def post_embed(self, channel_id: str, embed: Mapping) -> None:
+        self._call("POST", f"/channels/{channel_id}/messages", json={"embeds": [embed]})
+
+    def post_file(self, channel_id: str, filename: str, inhalt: bytes, text: str = "") -> None:
+        """Eine Datei in einen Kanal — ein Thread ist für Discord auch nur einer.
+
+        Anhang und Begleittext gehen in *einer* Anfrage hinaus; getrennt stünden sie im
+        Verlauf als zwei Nachrichten und ließen sich später umsortieren.
+        """
+        self._call(
+            "POST",
+            f"/channels/{channel_id}/messages",
+            data={"payload_json": json.dumps({"content": text}, ensure_ascii=False)},
+            files={"files[0]": (filename, inhalt, MARKDOWN)},
+        )
 
     def reply(self, channel_id: str, message_id: str, text: str) -> None:
         self._call(
