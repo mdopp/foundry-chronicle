@@ -23,7 +23,7 @@ import re
 from dataclasses import dataclass
 
 from chronicle.compose.client import ModelError, TextModel
-from chronicle.foundry.model import ChatMessage, Roll
+from chronicle.foundry.model import NICHT_MEHR_VORHANDEN, ChatMessage, Roll
 
 logger = logging.getLogger(__name__)
 
@@ -120,9 +120,16 @@ def _wurf(roll: Roll) -> str:
 def fact_line(message: ChatMessage) -> str:
     sprecher = message.speaker_alias or message.speaker_actor or "Ohne Sprecher"
     if message.roll is None:
-        return f"{sprecher}: {_einzeilig(message.content)}"
-    titel = message.roll.title or message.roll.kind or "Wurf"
-    return f"{sprecher} — {titel}: {_wurf(message.roll)}"
+        zeile = f"{sprecher}: {_einzeilig(message.content)}"
+    else:
+        titel = message.roll.title or message.roll.kind or "Wurf"
+        zeile = f"{sprecher} — {titel}: {_wurf(message.roll)}"
+    if not message.vanished_at:
+        return zeile
+    # Der Fakt bleibt belegt — er stand im Chat-Log, als wir ihn holten; nachschlagen kann
+    # ihn dort nur niemand mehr. Ohne den Zeitpunkt: die Zeile geht als belegter Fakt in
+    # die Zahlenschranke ein, und die Ziffern eines Zeitstempels gälten danach als belegt.
+    return f"{zeile} [{NICHT_MEHR_VORHANDEN}]"
 
 
 def _fakten(scene: SceneMaterial) -> tuple[str, ...]:

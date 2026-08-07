@@ -16,7 +16,7 @@ import chronicle.foundry.__main__ as batch
 from chronicle import zugang
 from chronicle.foundry import service, store
 from chronicle.foundry.client import FoundryUnreachable
-from chronicle.foundry.model import World
+from chronicle.foundry.model import NICHT_MEHR_VORHANDEN, World
 
 
 class Abgleich:
@@ -80,6 +80,26 @@ def test_gefiltert_wird_vor_dem_zwischenspeicher(config, welt):
     assert UNBETEILIGTES_KONTO not in inhalt
     assert VERWORFENE_ADRESSE not in inhalt
     assert "Der Keller unter dem Krummen Ast" not in inhalt
+
+
+def test_ins_archiv_kommt_nur_was_den_filter_passiert_hat(config, welt):
+    """Nachrichten werden gesammelt statt gespiegelt — Gefiltertes sammelt sich trotzdem nie."""
+    service.sync(config, runde(config), client=Abgleich(welt))
+    service.sync(config, runde(config), client=Abgleich(welt))
+    zustand = service.current(config, runde(config))
+    assert {n.id for n in zustand.snapshot.messages} == {
+        "m-aufbruch",
+        "m-wurf",
+        "m-fluester-an-uns",
+    }
+    assert GM_GEFLUESTER not in gespeicherter_text(config)
+
+
+def test_verschwundene_nachrichten_stehen_in_der_meldung(config, welt):
+    service.sync(config, runde(config), client=Abgleich(welt))
+    zustand = service.sync(config, runde(config), client=Abgleich(dict(welt, messages=[])))
+    assert "3 Chat-Nachrichten" in zustand.message
+    assert f"davon 3 {NICHT_MEHR_VORHANDEN}" in zustand.message
 
 
 def test_ohne_abgleich_gibt_es_eine_erklaerung_statt_einer_leeren_liste(config):

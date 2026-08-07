@@ -8,6 +8,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+# Der Herkunftsvermerk einer archivierten Nachricht. Er steht hier und nicht dort, wo er
+# angezeigt wird: Speicher, Abgleichsmeldung und Chronik sagen denselben Satz.
+NICHT_MEHR_VORHANDEN = "nicht mehr in Foundry vorhanden"
+
 
 @dataclass(frozen=True)
 class Die:
@@ -46,12 +50,20 @@ class Character:
 
 @dataclass(frozen=True)
 class ChatMessage:
+    """Ein Ereignis, kein Zustand — es wird archiviert, nicht gespiegelt.
+
+    ``vanished_at`` trägt den Zeitpunkt des Abgleichs, der diese Nachricht in Foundry
+    nicht mehr fand; leer heißt vorhanden. Frisch aus dem Rohdump projiziert ist er immer
+    leer, den Vermerk kennt nur der Speicher.
+    """
+
     id: str
     timestamp: int
     speaker_actor: str | None = None
     speaker_alias: str | None = None
     content: str = ""
     roll: Roll | None = None
+    vanished_at: str | None = None
 
 
 @dataclass(frozen=True)

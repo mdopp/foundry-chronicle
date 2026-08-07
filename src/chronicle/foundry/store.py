@@ -1,8 +1,17 @@
 """Der Zwischenspeicher. Was hier ankommt, ist bereits gefiltert.
 
-Foundry ist zwischen den Sitzungen oft aus; ohne diesen Stand wäre die Chronik dann
-leer. Ein Abgleich ersetzt den Stand vollständig — Foundry liefert die Welt am Stück,
-also gibt es nichts zusammenzuführen.
+Foundry ist zwischen den Sitzungen oft aus; ohne diesen Stand wäre die Chronik dann leer.
+Konten und Figuren sind **Spiegel**: ihr aktueller Stand steht in Foundry, ein Abgleich
+ersetzt sie am Stück.
+
+Chat-Nachrichten sind es nicht. Sie sind **Ereignisse** und werden hinzugefügt und
+behalten, Schlüssel ist die Foundry-Id. Das Chat-Log zu leeren ist übliche Praxis der
+Spielleitung — ein Spiegel nähme uns damit genau die Würfe weg, die eine Szene belegen.
+Die Regel für eine Nachricht, die es noch gibt, ist trotzdem *Foundry gewinnt*: eine dort
+korrigierte Nachricht wird hier übernommen, denn die Id ist stabil und meint dasselbe
+Ereignis, und ein Archiv, das einer lebenden Quelle widerspricht, wäre kein Beleg. Erst
+mit dem Verschwinden friert der zuletzt gesehene Stand ein und bekommt seinen Vermerk;
+taucht die Nachricht wieder auf, fällt der Vermerk weg — er beschreibt die Gegenwart.
 """
 
 from __future__ import annotations
@@ -28,6 +37,30 @@ LAST_ERROR_AT = "foundry_last_error_at"
 # Abgleich ersetzt den Stand, die Bindung bleibt, bis jemand sie ausdrücklich umhängt.
 WORLD_ID = "foundry_world_id"
 WORLD_TITLE = "foundry_world_title"
+
+# Die Felder einer Nachricht neben Runde, Id und Herkunftsvermerk. Einmal aufgezählt: die
+# Anweisung darunter nennt sie dreimal, und drei von Hand gepflegte Listen laufen einander
+# davon.
+FELDER = (
+    "timestamp",
+    "speaker_actor",
+    "speaker_alias",
+    "content",
+    "roll_title",
+    "roll_total",
+    "roll_formula",
+    "roll_kind",
+    "roll_critical",
+    "roll_modifier_total",
+    "roll_dice",
+)
+
+NACHRICHT_SCHREIBEN = (
+    f"INSERT INTO foundry_message (runde_id, id, vanished_at, {', '.join(FELDER)}) "
+    f"VALUES (?, ?, NULL, {', '.join('?' * len(FELDER))}) "
+    "ON CONFLICT (runde_id, id) DO UPDATE SET vanished_at = NULL, "
+    + ", ".join(f"{feld} = excluded.{feld}" for feld in FELDER)
+)
 
 
 def _dice_json(roll: Roll) -> str:
@@ -77,13 +110,14 @@ def message(row: sqlite3.Row) -> ChatMessage:
         speaker_alias=row["speaker_alias"],
         content=row["content"],
         roll=_roll(row),
+        vanished_at=row["vanished_at"],
     )
 
 
 def save(scope: db.Scope, snapshot: WorldSnapshot) -> None:
     runde_id = scope.runde_id
     with scope:
-        for tabelle in ("foundry_player", "foundry_character", "foundry_message"):
+        for tabelle in ("foundry_player", "foundry_character"):
             scope.execute(f"DELETE FROM {tabelle} WHERE runde_id = ?", (runde_id,))
         scope.execute(
             "INSERT INTO foundry_snapshot (runde_id, fetched_at, system) VALUES (?, ?, ?) "
@@ -103,10 +137,17 @@ def save(scope: db.Scope, snapshot: WorldSnapshot) -> None:
                 for f in snapshot.characters
             ],
         )
+        # Erst alles vormerken, dann das Mitgelieferte wieder freistellen. Der Umweg spart
+        # die Liste aller mitgelieferten Ids in einer einzigen Bedingung — die stieße bei
+        # einer über Jahre gewachsenen Chronik an SQLites Parametergrenze. Wer schon einen
+        # Vermerk trägt, behält seinen: er soll den ersten Abgleich ohne diese Nachricht
+        # nennen, nicht den letzten.
+        scope.execute(
+            "UPDATE foundry_message SET vanished_at = ? WHERE runde_id = ? AND vanished_at IS NULL",
+            (snapshot.fetched_at, runde_id),
+        )
         scope.executemany(
-            "INSERT INTO foundry_message (runde_id, id, timestamp, speaker_actor, speaker_alias, "
-            "content, roll_title, roll_total, roll_formula, roll_kind, roll_critical, "
-            "roll_modifier_total, roll_dice) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            NACHRICHT_SCHREIBEN,
             [
                 (
                     runde_id,

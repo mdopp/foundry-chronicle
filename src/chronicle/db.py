@@ -24,7 +24,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:  # pragma: no cover - nur für die Typprüfung
     from chronicle.runde import Runde
 
-SCHEMA_VERSION = 17
+SCHEMA_VERSION = 18
 
 # Der Name der ersten Runde: die Bestände der Entwicklungs-Instanz wandern hier hinein,
 # und eine frische Datenbank bekommt sie ebenfalls — die Oberfläche braucht bis zu ihrer
@@ -85,6 +85,7 @@ NACHGETRAGEN = (
     ("protocol", "delivered_at", "TEXT"),
     ("session", "thread_id", "TEXT"),
     ("note", "discord_message_id", "TEXT"),
+    ("foundry_message", "vanished_at", "TEXT"),
 )
 
 _TABELLENWORT = re.compile(r"\b(?:from|join|into|update)\s+([a-z_][a-z0-9_]*)", re.IGNORECASE)

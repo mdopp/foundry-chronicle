@@ -9,9 +9,11 @@ from chronicle.compose.composer import VERBINDUNG_TITEL
 from chronicle.compose.service import KIND, RUECKBLICK, compose_session, recap_session
 from chronicle.discord import rueckblick
 from chronicle.foundry import store
+from chronicle.foundry.model import NICHT_MEHR_VORHANDEN, WorldSnapshot
 from chronicle.foundry.world import project
 
 STAND = "2026-08-05T20:00:00+00:00"
+SPAETER = "2026-08-06T20:00:00+00:00"
 
 
 class Modell:
@@ -103,6 +105,20 @@ def test_die_foundry_zahl_landet_unveraendert_im_protokoll(config, scope, welt):
     assert "hope d12 = 3 · fear d12 = 1" in text
     assert "Wir brechen bei Sonnenaufgang auf." in text
     assert VERBINDUNG_TITEL in text
+
+
+def test_die_zuordnung_ueberlebt_ein_geleertes_chat_log(config, scope, welt):
+    """#61: der Wurf ist in Foundry weg, die Szene behält ihn — mit Herkunftsvermerk."""
+    sitzung_id = eine_runde(scope, welt)
+    store.save(scope, WorldSnapshot(system="daggerheart", fetched_at=SPAETER))
+    scope.commit()
+
+    ergebnis = compose_session(config, runde(config), sitzung_id, model=Modell())
+
+    assert ergebnis.fact_count == 1
+    assert "Knowledge Roll: Summe 7" in ergebnis.text
+    assert NICHT_MEHR_VORHANDEN in ergebnis.text
+    assert SPAETER not in ergebnis.text
 
 
 def test_ein_zweiter_lauf_ersetzt_die_chronik(config, scope, welt):
