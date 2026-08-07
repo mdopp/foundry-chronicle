@@ -15,6 +15,7 @@ import sys
 from collections.abc import Callable
 
 from chronicle import db, settings
+from chronicle import runde as runden
 from chronicle.bot import BotFehler
 from chronicle.config import Config
 
@@ -34,7 +35,7 @@ def main(argv: list[str] | None = None, *, gateway: Callable[[], Callable] = _ga
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     config = Config.from_env()
     db.init(config.database_path)
-    zugang = settings.effective(config)
+    zugang = settings.effective(config, runden.erste(config.database_path))
     if not zugang.discord_configured:
         print(KEIN_TOKEN)
         return 0

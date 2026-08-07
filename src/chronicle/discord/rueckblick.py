@@ -20,12 +20,12 @@ from __future__ import annotations
 
 import logging
 from datetime import UTC, datetime
-from pathlib import Path
 
 from chronicle import db, settings
 from chronicle.compose.service import RUECKBLICK
 from chronicle.config import Config
 from chronicle.discord.client import DiscordClient, DiscordError
+from chronicle.runde import Runde
 
 logger = logging.getLogger(__name__)
 
@@ -49,28 +49,30 @@ def _now() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds")
 
 
-def _protokoll(database_path: Path, session_id: int) -> tuple[str, str | None] | None:
-    connection = db.connect(database_path)
+def _protokoll(runde: Runde, session_id: int) -> tuple[str, str | None] | None:
+    scope = db.scoped(runde)
     try:
-        zeile = connection.execute(
-            "SELECT text, delivered_at FROM protocol WHERE session_id = ? AND kind = ?",
-            (session_id, RUECKBLICK),
+        zeile = scope.execute(
+            "SELECT text, delivered_at FROM protocol "
+            "WHERE runde_id = ? AND session_id = ? AND kind = ?",
+            (scope.runde_id, session_id, RUECKBLICK),
         ).fetchone()
     finally:
-        connection.close()
+        scope.close()
     return None if zeile is None else (str(zeile["text"]), zeile["delivered_at"])
 
 
-def _merken(database_path: Path, session_id: int, at: str) -> None:
-    connection = db.connect(database_path)
+def _merken(runde: Runde, session_id: int, at: str) -> None:
+    scope = db.scoped(runde)
     try:
-        with connection:
-            connection.execute(
-                "UPDATE protocol SET delivered_at = ? WHERE session_id = ? AND kind = ?",
-                (at, session_id, RUECKBLICK),
+        with scope:
+            scope.execute(
+                "UPDATE protocol SET delivered_at = ? "
+                "WHERE runde_id = ? AND session_id = ? AND kind = ?",
+                (at, scope.runde_id, session_id, RUECKBLICK),
             )
     finally:
-        connection.close()
+        scope.close()
 
 
 def _adresse(config: Config, session_id: int) -> str | None:
@@ -92,16 +94,18 @@ def nachricht(text: str, adresse: str | None, session_id: int) -> str:
     return text[: GRENZE - len(zusatz)] + zusatz
 
 
-def deliver(config: Config, session_id: int, *, client: DiscordClient | None = None) -> str:
+def deliver(
+    config: Config, runde: Runde, session_id: int, *, client: DiscordClient | None = None
+) -> str:
     """Stellt den Rückblick dieser Sitzung zu, wenn er noch nicht zugestellt ist."""
-    zugang = settings.effective(config)
+    zugang = settings.effective(config, runde)
     if not zugang.discord_configured:
         return NICHT_EINGERICHTET
     kanalname = (zugang.discord_recap_channel or "").strip().lstrip("#")
     if not kanalname:
         return KEIN_ZUSTELLKANAL
 
-    abgelegt = _protokoll(config.database_path, session_id)
+    abgelegt = _protokoll(runde, session_id)
     if abgelegt is None:
         return KEIN_RUECKBLICK.format(sitzung=session_id)
     text, zugestellt = abgelegt
@@ -121,5 +125,5 @@ def deliver(config: Config, session_id: int, *, client: DiscordClient | None = N
         return GESCHEITERT.format(sitzung=session_id, grund=fehler)
     # Erst posten, dann merken: ein fehlgeschlagener Post soll wiederholt werden. Die
     # Lücke dazwischen ist ein Prozessabbruch zwischen HTTP-200 und einem lokalen UPDATE.
-    _merken(config.database_path, session_id, _now())
+    _merken(runde, session_id, _now())
     return ZUGESTELLT.format(sitzung=session_id, kanal=kanalname)

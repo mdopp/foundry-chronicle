@@ -20,8 +20,9 @@ import math
 import os
 
 import pytest
+from conftest import runde
 
-from chronicle import db, recordings
+from chronicle import notes, recordings
 from chronicle.config import Config
 from chronicle.transcribe import service
 from chronicle.transcribe.client import Segment
@@ -135,19 +136,11 @@ def test_eine_echte_spur_laeuft_bis_vor_das_modell_durch_den_stapel(tmp_path):
     config = Config(data_dir=tmp_path / "daten", recordings_dir=tmp_path / "aufnahmen")
     config.recordings_dir.mkdir(parents=True)
     spur = _schreiben(config.recordings_dir / "mira.m4a", "aac", None)
-    db.init(config.database_path)
-    verbindung = db.connect(config.database_path)
-    try:
-        with verbindung:
-            zeiger = verbindung.execute(
-                "INSERT INTO session (played_on, title, created_at) VALUES (?, ?, ?)",
-                ("2026-08-06", "Der Keller", STAND),
-            )
-        sitzung_id = int(zeiger.lastrowid)
-    finally:
-        verbindung.close()
+    sitzung_id = notes.create_session(runde(config), played_on="2026-08-06", title="Der Keller")
 
-    ergebnis = service.transcribe_session(config, sitzung_id, spur, model=NurDekodieren())
+    ergebnis = service.transcribe_session(
+        config, runde(config), sitzung_id, spur, model=NurDekodieren()
+    )
 
     assert ergebnis.segment_count == 1
     assert abs(ergebnis.audio_seconds - DAUER) < 0.2

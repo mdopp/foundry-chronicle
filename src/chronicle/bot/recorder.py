@@ -30,8 +30,10 @@ from typing import Protocol
 from werkzeug.utils import secure_filename
 
 from chronicle import consent, notes, recordings
+from chronicle import runde as runden
 from chronicle.bot import BotFehler, ansage
 from chronicle.config import Config
+from chronicle.runde import Runde
 
 logger = logging.getLogger(__name__)
 
@@ -107,9 +109,10 @@ def _spurname(sprecher: consent.Member) -> str:
 
 
 class Aufnahme:
-    def __init__(self, config: Config, session_id: int, kanal: Kanal) -> None:
+    def __init__(self, config: Config, runde: Runde, session_id: int, kanal: Kanal) -> None:
         self.session_id = session_id
         self.kanal = kanal
+        self.runde = runde
         self._config = config
         self._spuren: dict[str, _Spur] = {}
         self._angesagt = False
@@ -122,7 +125,7 @@ class Aufnahme:
         self, mitglieder: tuple[consent.Member, ...], *, art: str = consent.ANSAGE
     ) -> int:
         kennung = consent.record(
-            self._config.database_path,
+            self.runde,
             session_id=self.session_id,
             kind=art,
             guild_id=self.kanal.guild_id,
@@ -164,7 +167,7 @@ class Aufnahme:
                 spur.pfad.unlink()
                 continue
             recordings.enqueue(
-                self._config.database_path,
+                self.runde,
                 self.session_id,
                 spur.pfad.name,
                 discord_user_id=user_id,
@@ -177,14 +180,25 @@ class Aufnahme:
         return tuple(meldungen) or (NICHTS_GESPROCHEN,)
 
 
+def runde_des_kanals(config: Config, kanal: Kanal) -> Runde:
+    """Die Runde hinter der Gilde — solange keine sie beansprucht hat, die erste.
+
+    Beansprucht wird eine Gilde beim Einladen (#68). Bis dahin trägt diese Instanz genau
+    eine Runde, und der Bot spielt in ihr.
+    """
+    beansprucht = runden.fuer_gilde(config.database_path, kanal.guild_id)
+    return beansprucht if beansprucht is not None else runden.erste(config.database_path)
+
+
 async def starten(config: Config, stimme: Stimme) -> Aufnahme:
     """Ansage spielen, Einwilligung protokollieren, dann erst mitschneiden."""
-    sitzung = notes.latest_session(config.database_path)
+    runde = runde_des_kanals(config, stimme.kanal)
+    sitzung = notes.latest_session(runde)
     if sitzung is None:
         raise AufnahmeFehler(OHNE_SITZUNG)
     gesprochen = ansage.datei(config.recordings_dir)
 
-    aufnahme = Aufnahme(config, sitzung.id, stimme.kanal)
+    aufnahme = Aufnahme(config, runde, sitzung.id, stimme.kanal)
     await stimme.ansagen(gesprochen)
     aufnahme.ansage_protokollieren(stimme.mitglieder())
     stimme.mitschneiden(aufnahme)

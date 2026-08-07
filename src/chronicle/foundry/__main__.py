@@ -5,13 +5,15 @@ from __future__ import annotations
 import logging
 import sys
 
+from chronicle import runde as runden
 from chronicle.config import Config
 from chronicle.foundry.service import sync
 
 
 def main() -> int:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
-    zustand = sync(Config.from_env())
+    config = Config.from_env()
+    zustand = sync(config, runden.erste(config.database_path))
     print(zustand.message)
     return 1 if zustand.stale else 0
 

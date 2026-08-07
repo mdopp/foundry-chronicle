@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import pytest
 import requests
+from conftest import runde
 
 from chronicle import db, settings
 from chronicle.compose.service import KIND, RUECKBLICK
@@ -79,52 +80,60 @@ def config(tmp_path):
 
 
 def sitzung(config, *, played_on="2026-08-06"):
-    connection = db.connect(config.database_path)
+    scope = db.scoped(runde(config))
     try:
-        with connection:
-            zeiger = connection.execute(
-                "INSERT INTO session (played_on, title, created_at) VALUES (?, ?, ?)",
-                (played_on, "Der Keller", STAND),
+        with scope:
+            zeiger = scope.execute(
+                "INSERT INTO session (runde_id, played_on, title, created_at) VALUES (?, ?, ?, ?)",
+                (scope.runde_id, played_on, "Der Keller", STAND),
             )
         return zeiger.lastrowid
     finally:
-        connection.close()
+        scope.close()
 
 
 def protokoll(config, sitzung_id, text=TEXT, kind=RUECKBLICK):
-    connection = db.connect(config.database_path)
+    scope = db.scoped(runde(config))
     try:
-        with connection:
-            connection.execute(
-                "INSERT INTO protocol (session_id, kind, text, created_at) VALUES (?, ?, ?, ?)",
-                (sitzung_id, kind, text, STAND),
+        with scope:
+            scope.execute(
+                "INSERT INTO protocol (runde_id, session_id, kind, text, created_at) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (scope.runde_id, sitzung_id, kind, text, STAND),
             )
     finally:
-        connection.close()
+        scope.close()
 
 
 def zugestellt_am(config, sitzung_id):
-    connection = db.connect(config.database_path)
+    scope = db.scoped(runde(config))
     try:
-        zeile = connection.execute(
-            "SELECT delivered_at FROM protocol WHERE session_id = ? AND kind = ?",
-            (sitzung_id, RUECKBLICK),
+        zeile = scope.execute(
+            "SELECT delivered_at FROM protocol WHERE runde_id = ? AND session_id = ? AND kind = ?",
+            (scope.runde_id, sitzung_id, RUECKBLICK),
         ).fetchone()
     finally:
-        connection.close()
+        scope.close()
     return zeile["delivered_at"]
 
 
 def zustellen(config, api):
-    return deliver(config, _einzige_sitzung(config), client=DiscordClient(config, http=lambda: api))
+    return deliver(
+        config,
+        runde(config),
+        _einzige_sitzung(config),
+        client=DiscordClient(config, http=lambda: api),
+    )
 
 
 def _einzige_sitzung(config):
-    connection = db.connect(config.database_path)
+    scope = db.scoped(runde(config))
     try:
-        return connection.execute("SELECT id FROM session").fetchone()["id"]
+        return scope.execute(
+            "SELECT id FROM session WHERE runde_id = ?", (scope.runde_id,)
+        ).fetchone()["id"]
     finally:
-        connection.close()
+        scope.close()
 
 
 # --- Genau einmal --------------------------------------------------------------------
@@ -160,15 +169,22 @@ def test_eine_neu_komponierte_fassung_wird_nicht_noch_einmal_gepostet(config):
     api = FakeDiscord()
     zustellen(config, api)
 
-    connection = db.connect(config.database_path)
-    with connection:
-        connection.execute(
-            "INSERT INTO protocol (session_id, kind, text, created_at) VALUES (?, ?, ?, ?) "
+    scope = db.scoped(runde(config))
+    with scope:
+        scope.execute(
+            "INSERT INTO protocol (runde_id, session_id, kind, text, created_at) "
+            "VALUES (?, ?, ?, ?, ?) "
             "ON CONFLICT (session_id, kind) DO UPDATE SET text = excluded.text, "
             "created_at = excluded.created_at",
-            (sitzung_id, RUECKBLICK, "Zweiter Anlauf.", "2026-08-07T20:00:00+00:00"),
+            (
+                scope.runde_id,
+                sitzung_id,
+                RUECKBLICK,
+                "Zweiter Anlauf.",
+                "2026-08-07T20:00:00+00:00",
+            ),
         )
-    connection.close()
+    scope.close()
 
     assert zustellen(config, api) == rueckblick.SCHON_ZUGESTELLT.format(sitzung=sitzung_id)
     assert len(api.gepostet) == 1
@@ -208,7 +224,7 @@ def test_ohne_bot_token_bleibt_die_zustellung_aus(tmp_path):
     sitzung_id = sitzung(config)
     protokoll(config, sitzung_id)
 
-    assert deliver(config, sitzung_id) == rueckblick.NICHT_EINGERICHTET
+    assert deliver(config, runde(config), sitzung_id) == rueckblick.NICHT_EINGERICHTET
     assert zugestellt_am(config, sitzung_id) is None
 
 
@@ -219,7 +235,7 @@ def test_ein_in_der_oberflaeche_gesetzter_kanal_gewinnt(tmp_path):
     db.init(config.database_path)
     sitzung_id = sitzung(config)
     protokoll(config, sitzung_id)
-    settings.save(config.database_path, {"discord_recap_channel": f"#{KANAL}"})
+    settings.save(runde(config), {"discord_recap_channel": f"#{KANAL}"})
     api = FakeDiscord()
 
     meldung = zustellen(config, api)
@@ -248,7 +264,7 @@ def test_ein_unerreichbares_discord_verschiebt_die_zustellung_ohne_token(config)
         def request(self, *args, **kwargs):
             raise requests.ConnectionError(f"Bot {TOKEN} abgelehnt")
 
-    meldung = deliver(config, sitzung_id, client=DiscordClient(config, http=Weg))
+    meldung = deliver(config, runde(config), sitzung_id, client=DiscordClient(config, http=Weg))
 
     assert "nicht zugestellt" in meldung
     assert TOKEN not in meldung

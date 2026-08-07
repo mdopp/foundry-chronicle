@@ -1,7 +1,13 @@
 # Sitzungsprotokoll — Architektur
 
-Eine Instanz pro Gruppe. Konfiguration: Foundry-URL + Zugangsdaten, Discord-Bot-Token.
-Alles andere kommt aus Foundry.
+Eine Instanz trägt mehrere **Runden** (#62/#63). Eine Runde ist der Mandant: Schlüssel nach
+außen ist die Discord-Gilde, Schlüssel nach innen die eigene Id. Jede runden-eigene Tabelle
+trägt `runde_id`; gelesen und geschrieben wird ausschließlich über `db.scoped(runde)`, das
+eine Abfrage ohne Runde zurückweist. Die Weboberfläche kennt noch keine Runden und arbeitet
+bis zu ihrer Abschaltung (#69) stillschweigend in der ersten.
+
+Konfiguration: Foundry-URL + Zugangsdaten je Runde, Discord-Bot-Token für die Instanz —
+das ist unser Token und nicht das einer Gruppe. Alles andere kommt aus Foundry.
 
 Wie der Zugriff auf Foundry technisch läuft, steht in [`foundry-zugriff.md`](foundry-zugriff.md).
 

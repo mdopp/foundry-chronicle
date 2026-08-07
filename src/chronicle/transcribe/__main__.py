@@ -20,6 +20,7 @@ from __future__ import annotations
 import logging
 import sys
 
+from chronicle import runde as runden
 from chronicle.config import Config
 from chronicle.transcribe.client import TranscriberError
 from chronicle.transcribe.service import recording_path, run_queue, transcribe_session
@@ -53,7 +54,13 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     try:
-        transkript = transcribe_session(config, int(stellen[0]), pfad, delete_audio=loeschen)
+        transkript = transcribe_session(
+            config,
+            runden.erste(config.database_path),
+            int(stellen[0]),
+            pfad,
+            delete_audio=loeschen,
+        )
     except TranscriberError as fehler:
         print(str(fehler))
         return 2
@@ -66,7 +73,8 @@ def main(argv: list[str] | None = None) -> int:
 
 def _warteschlange(loeschen: bool) -> int:
     try:
-        meldungen = run_queue(Config.from_env(), delete_audio=loeschen)
+        config = Config.from_env()
+        meldungen = run_queue(config, runden.erste(config.database_path), delete_audio=loeschen)
     except TranscriberError as fehler:
         print(str(fehler))
         return 2

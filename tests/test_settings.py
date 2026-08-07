@@ -4,6 +4,7 @@ Kein Wert hier ist ein echtes Geheimnis — sie stehen alle nur in diesem Test.
 """
 
 import pytest
+from conftest import runde
 
 from chronicle import db, settings
 from chronicle.config import Config
@@ -27,68 +28,68 @@ def config(tmp_path):
 
 
 def test_ohne_eintrag_bleibt_die_umgebung_stehen(config):
-    assert settings.effective(config) == config
+    assert settings.effective(config, runde(config)) == config
 
 
 def test_ein_gesetzter_wert_schlaegt_die_umgebung(config):
     settings.save(
-        config.database_path,
+        runde(config),
         {"foundry_url": "https://frontend.example", "foundry_password": AUS_DEM_FRONTEND},
     )
-    aktuell = settings.effective(config)
+    aktuell = settings.effective(config, runde(config))
     assert aktuell.foundry_url == "https://frontend.example"
     assert aktuell.foundry_password == AUS_DEM_FRONTEND
     assert aktuell.foundry_user == "umgebungs-konto"
 
 
 def test_ein_leerer_wert_nimmt_den_eintrag_zurueck(config):
-    settings.save(config.database_path, {"foundry_url": "https://frontend.example"})
-    settings.save(config.database_path, {"foundry_url": "   "})
-    assert settings.effective(config).foundry_url == "https://umgebung.example"
-    assert settings.stored(config.database_path) == {}
+    settings.save(runde(config), {"foundry_url": "https://frontend.example"})
+    settings.save(runde(config), {"foundry_url": "   "})
+    assert settings.effective(config, runde(config)).foundry_url == "https://umgebung.example"
+    assert settings.stored(runde(config)) == {}
 
 
 def test_speichern_ist_wiederholbar(config):
-    settings.save(config.database_path, {"ollama_model": "gemma4:12b"})
-    settings.save(config.database_path, {"ollama_model": "gemma4:e4b"})
-    assert settings.effective(config).ollama_model == "gemma4:e4b"
+    settings.save(runde(config), {"ollama_model": "gemma4:12b"})
+    settings.save(runde(config), {"ollama_model": "gemma4:e4b"})
+    assert settings.effective(config, runde(config)).ollama_model == "gemma4:e4b"
 
 
 def test_unbekannte_schluessel_landen_nicht_in_der_tabelle(config):
-    settings.save(config.database_path, {"whisper_model": "nicht-hier"})
-    assert settings.stored(config.database_path) == {}
+    settings.save(runde(config), {"whisper_model": "nicht-hier"})
+    assert settings.stored(runde(config)) == {}
 
 
 def test_die_quelle_steht_je_wert_fest(config, tmp_path):
-    settings.save(config.database_path, {"foundry_url": "https://frontend.example"})
-    quellen = settings.sources(config)
+    settings.save(runde(config), {"foundry_url": "https://frontend.example"})
+    quellen = settings.sources(config, runde(config))
     assert quellen["foundry_url"] == settings.FRONTEND
     assert quellen["foundry_user"] == settings.UMGEBUNG
 
     leer = Config(data_dir=tmp_path / "leer")
     db.init(leer.database_path)
-    assert settings.sources(leer)["foundry_url"] == settings.UNGESETZT
-    assert settings.sources(leer)["ollama_url"] == settings.STANDARD
+    assert settings.sources(leer, runde(leer))["foundry_url"] == settings.UNGESETZT
+    assert settings.sources(leer, runde(leer))["ollama_url"] == settings.STANDARD
 
 
 def test_ohne_eigene_adresse_gilt_das_ollama_dieser_box(tmp_path):
     leer = Config(data_dir=tmp_path / "leer")
     db.init(leer.database_path)
-    assert settings.effective(leer).ollama_url == settings.DEFAULT_OLLAMA_URL
+    assert settings.effective(leer, runde(leer)).ollama_url == settings.DEFAULT_OLLAMA_URL
 
 
 def test_eine_eigene_adresse_schlaegt_den_standard(config):
-    assert settings.effective(config).ollama_url == "http://umgebung.example:11434"
-    settings.save(config.database_path, {"ollama_url": "http://frontend.example:11434"})
-    assert settings.effective(config).ollama_url == "http://frontend.example:11434"
+    assert settings.effective(config, runde(config)).ollama_url == "http://umgebung.example:11434"
+    settings.save(runde(config), {"ollama_url": "http://frontend.example:11434"})
+    assert settings.effective(config, runde(config)).ollama_url == "http://frontend.example:11434"
 
 
 def test_eine_zurueckgenommene_adresse_faellt_auf_den_standard_zurueck(tmp_path):
     leer = Config(data_dir=tmp_path / "zurueck")
     db.init(leer.database_path)
-    settings.save(leer.database_path, {"ollama_url": "http://frontend.example:11434"})
-    settings.save(leer.database_path, {"ollama_url": "  "})
-    assert settings.effective(leer).ollama_url == settings.DEFAULT_OLLAMA_URL
+    settings.save(runde(leer), {"ollama_url": "http://frontend.example:11434"})
+    settings.save(runde(leer), {"ollama_url": "  "})
+    assert settings.effective(leer, runde(leer)).ollama_url == settings.DEFAULT_OLLAMA_URL
 
 
 def test_die_gespeicherten_werte_stehen_fest():
@@ -105,31 +106,34 @@ def test_die_gespeicherten_werte_stehen_fest():
 
 
 def test_der_zustellkanal_kommt_aus_der_oberflaeche_und_ist_kein_geheimnis(config):
-    settings.save(config.database_path, {"discord_recap_channel": "chronik"})
-    assert settings.effective(config).discord_recap_channel == "chronik"
-    assert settings.sources(config)["discord_recap_channel"] == settings.FRONTEND
+    settings.save(runde(config), {"discord_recap_channel": "chronik"})
+    assert settings.effective(config, runde(config)).discord_recap_channel == "chronik"
+    assert settings.sources(config, runde(config))["discord_recap_channel"] == settings.FRONTEND
 
 
 def test_der_bot_token_kommt_aus_der_oberflaeche_und_schlaegt_die_umgebung(config):
     aus_der_umgebung = Config(discord_bot_token="token-aus-der-umgebung", data_dir=config.data_dir)
-    assert settings.effective(aus_der_umgebung).discord_bot_token == "token-aus-der-umgebung"
+    assert (
+        settings.effective(aus_der_umgebung, runde(aus_der_umgebung)).discord_bot_token
+        == "token-aus-der-umgebung"
+    )
 
-    settings.save(config.database_path, {"discord_bot_token": "token-aus-dem-frontend"})
-    aktuell = settings.effective(aus_der_umgebung)
+    settings.save(runde(config), {"discord_bot_token": "token-aus-dem-frontend"})
+    aktuell = settings.effective(aus_der_umgebung, runde(aus_der_umgebung))
     assert aktuell.discord_bot_token == "token-aus-dem-frontend"
     assert aktuell.discord_configured
-    assert settings.is_set(aus_der_umgebung, "discord_bot_token")
+    assert settings.is_set(aus_der_umgebung, runde(aus_der_umgebung), "discord_bot_token")
 
 
 def test_is_set_sagt_ob_aber_nicht_was(config, tmp_path):
-    assert settings.is_set(config, "foundry_password")
+    assert settings.is_set(config, runde(config), "foundry_password")
     leer = Config(data_dir=tmp_path / "ohne-passwort")
     db.init(leer.database_path)
-    assert not settings.is_set(leer, "foundry_password")
+    assert not settings.is_set(leer, runde(leer), "foundry_password")
 
 
 def test_ein_zweiter_schemalauf_laesst_die_einstellungen_stehen(config):
-    settings.save(config.database_path, {"foundry_user": "frontend-konto"})
+    settings.save(runde(config), {"foundry_user": "frontend-konto"})
     db.init(config.database_path)
-    assert settings.effective(config).foundry_user == "frontend-konto"
+    assert settings.effective(config, runde(config)).foundry_user == "frontend-konto"
     assert db.current_schema_version(config.database_path) == db.SCHEMA_VERSION

@@ -27,15 +27,16 @@ import threading
 import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from pathlib import Path
 
 from chronicle import db, jobs, register, settings
+from chronicle import runde as runden
 from chronicle.compose.service import KIND, compose_session, recap_session
 from chronicle.config import Config
 from chronicle.discord.rueckblick import deliver
 from chronicle.discord.service import LEER as BRIEFKASTEN_LEER
 from chronicle.discord.service import run as diktat_abholen
 from chronicle.foundry.service import sync
+from chronicle.runde import Runde
 from chronicle.transcribe.service import run_queue
 
 logger = logging.getLogger(__name__)
@@ -103,43 +104,43 @@ def _sammeln(name: str, arbeit) -> Schritt:
         return Schritt(name, NICHT_DURCHGEKOMMEN.format(grund=fehler), gelungen=False)
 
 
-def _diktat(config: Config) -> Schritt:
-    meldungen = diktat_abholen(config)
+def _diktat(config: Config, runde: Runde) -> Schritt:
+    meldungen = diktat_abholen(config, runde)
     return Schritt(DIKTAT, " ".join(meldungen) if meldungen else BRIEFKASTEN_LEER)
 
 
-def _transkript(config: Config) -> Schritt:
-    meldungen = run_queue(config)
+def _transkript(config: Config, runde: Runde) -> Schritt:
+    meldungen = run_queue(config, runde)
     return Schritt(TRANSKRIPT, " ".join(meldungen) if meldungen else WARTESCHLANGE_LEER)
 
 
-def _abgleich(config: Config) -> Schritt:
-    if not settings.effective(config).foundry_configured:
+def _abgleich(config: Config, runde: Runde) -> Schritt:
+    if not settings.effective(config, runde).foundry_configured:
         return Schritt(ABGLEICH, OHNE_FOUNDRY)
-    zustand = sync(config)
+    zustand = sync(config, runde)
     return Schritt(ABGLEICH, zustand.message, gelungen=not zustand.stale)
 
 
-def offen(database_path: Path) -> tuple[tuple[int, str], ...]:
+def offen(runde: Runde) -> tuple[tuple[int, str], ...]:
     """Sitzungen, deren Material jünger ist als ihre Chronik — und solche ohne eine.
 
     Alle Zeitpunkte sind gleich geformte ISO-Zeichenketten, ein Vergleich Zeichen für
     Zeichen ist deshalb ein Vergleich der Zeit.
     """
-    connection = db.connect(database_path)
+    scope = db.scoped(runde)
     try:
-        zeilen = connection.execute(
+        zeilen = scope.execute(
             "SELECT s.id, s.played_on, "
             "(SELECT MAX(n.updated_at) FROM note n JOIN scene c ON n.scene_id = c.id "
             " WHERE c.session_id = s.id) AS notiz, "
             "(SELECT MAX(t.created_at) FROM transcript t WHERE t.session_id = s.id) AS spur, "
             "(SELECT p.created_at FROM protocol p WHERE p.session_id = s.id AND p.kind = ?) "
             " AS chronik "
-            "FROM session s ORDER BY s.id",
-            (KIND,),
+            "FROM session s WHERE s.runde_id = ? ORDER BY s.id",
+            (KIND, scope.runde_id),
         ).fetchall()
     finally:
-        connection.close()
+        scope.close()
 
     faellig = []
     for zeile in zeilen:
@@ -151,27 +152,27 @@ def offen(database_path: Path) -> tuple[tuple[int, str], ...]:
     return tuple(faellig)
 
 
-def _chronik(config: Config) -> Schritt:
-    faellig = offen(config.database_path)
+def _chronik(config: Config, runde: Runde) -> Schritt:
+    faellig = offen(runde)
     if not faellig:
         return Schritt(CHRONIK, NICHTS_ZU_SCHREIBEN)
     meldungen = []
     for sitzung_id, datum in faellig:
-        compose_session(config, sitzung_id)
-        recap_session(config, sitzung_id)
-        deliver(config, sitzung_id)
-        register.suggest(config, sitzung_id)
+        compose_session(config, runde, sitzung_id)
+        recap_session(config, runde, sitzung_id)
+        deliver(config, runde, sitzung_id)
+        register.suggest(config, runde, sitzung_id)
         meldungen.append(GESCHRIEBEN.format(datum=datum))
     return Schritt(CHRONIK, " ".join(meldungen))
 
 
-def lauf(config: Config) -> str:
+def lauf(config: Config, runde: Runde) -> str:
     """Die Kette in ihrer Reihenfolge; jeder Schritt meldet für seine eigene Karte."""
     schritte = (
-        _sammeln(DIKTAT, lambda: _diktat(config)),
-        _sammeln(TRANSKRIPT, lambda: _transkript(config)),
-        _sammeln(ABGLEICH, lambda: _abgleich(config)),
-        _sammeln(CHRONIK, lambda: _chronik(config)),
+        _sammeln(DIKTAT, lambda: _diktat(config, runde)),
+        _sammeln(TRANSKRIPT, lambda: _transkript(config, runde)),
+        _sammeln(ABGLEICH, lambda: _abgleich(config, runde)),
+        _sammeln(CHRONIK, lambda: _chronik(config, runde)),
     )
     return json.dumps(
         [{"name": s.name, "text": s.text, "gelungen": s.gelungen} for s in schritte],
@@ -183,9 +184,9 @@ def _ortszeit(zeitstempel: str) -> datetime:
     return datetime.fromisoformat(zeitstempel).astimezone()
 
 
-def letzter(database_path: Path) -> Lauf | None:
+def letzter(runde: Runde) -> Lauf | None:
     """Der jüngste nächtliche Lauf, aufgeschlüsselt nach Schritten."""
-    job = jobs.latest(database_path, jobs.NACHTLAUF)
+    job = jobs.latest(runde, jobs.NACHTLAUF)
     if job is None:
         return None
     schritte = {}
@@ -211,21 +212,36 @@ def faellig(jetzt: datetime, geplant: str, zuletzt: datetime | None) -> bool:
     return zuletzt is None or zuletzt < ziel
 
 
-def tick(config: Config, *, jetzt: datetime | None = None) -> jobs.Job | None:
-    """Ein Blick auf die Uhr — der Test dreht sie von Hand weiter."""
-    jetzt = datetime.now().astimezone() if jetzt is None else jetzt
-    vorher = jobs.latest(config.database_path, jobs.NACHTLAUF)
+def _tick_runde(config: Config, runde: Runde, jetzt: datetime) -> jobs.Job | None:
+    vorher = jobs.latest(runde, jobs.NACHTLAUF)
     zuletzt = None if vorher is None else _ortszeit(vorher.started_at)
-    if not faellig(jetzt, settings.nightly_time(config.database_path), zuletzt):
+    if not faellig(jetzt, settings.nightly_time(runde), zuletzt):
         return None
     # Ein laufender Lauf — auch der von Hand angestoßene — schreibt dieselben Zeilen.
     # Der nächste Blick in derselben Stunde versucht es wieder.
-    if jobs.running(config.database_path):
+    if jobs.running(runde):
         return None
-    logger.info("Nachtlauf beginnt")
-    return jobs.start(config, jobs.NACHTLAUF, lambda: lauf(config))
+    logger.info("Nachtlauf der Runde %s beginnt", runde.name)
+    return jobs.start(config, runde, jobs.NACHTLAUF, lambda: lauf(config, runde))
 
 
+@runden.instanzweit
+def tick(config: Config, *, jetzt: datetime | None = None) -> jobs.Job | None:
+    """Ein Blick auf die Uhr — der Test dreht sie von Hand weiter.
+
+    Jede Runde hat ihre eigene Uhrzeit und ihren eigenen Lauf; die Maschine bleibt eine.
+    Es beginnt deshalb höchstens einer, und die übrigen fälligen kommen beim nächsten
+    Blick innerhalb desselben Fensters an die Reihe.
+    """
+    jetzt = datetime.now().astimezone() if jetzt is None else jetzt
+    for eine in runden.alle(config.database_path):
+        angestossen = _tick_runde(config, eine, jetzt)
+        if angestossen is not None:
+            return angestossen
+    return None
+
+
+@runden.instanzweit
 def betreiben(config: Config, *, schlafen=time.sleep, weiter=lambda: True) -> None:
     while weiter():
         try:
@@ -237,6 +253,7 @@ def betreiben(config: Config, *, schlafen=time.sleep, weiter=lambda: True) -> No
         schlafen(INTERVALL)
 
 
+@runden.instanzweit
 def starten(config: Config) -> threading.Thread:
     faden = threading.Thread(target=betreiben, args=(config,), daemon=True, name="nachtlauf")
     faden.start()

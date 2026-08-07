@@ -17,9 +17,7 @@ kommt die Deutung dazu — die offenen Fäden sind weder belegt noch bloße Übe
 from __future__ import annotations
 
 import re
-import sqlite3
 from dataclasses import dataclass
-from pathlib import Path
 
 from markupsafe import Markup, escape
 
@@ -27,6 +25,7 @@ from chronicle import db
 from chronicle.compose.composer import BELEG_TITEL, NOTIZEN_TITEL, VERBINDUNG_TITEL
 from chronicle.compose.recap import CHRONIK_TITEL, FAEDEN_TITEL, HERGANG_TITEL
 from chronicle.compose.service import KIND
+from chronicle.runde import Runde
 
 ABSCHNITTE = {
     NOTIZEN_TITEL.lstrip("# "): "notizen",
@@ -61,35 +60,32 @@ class Entry:
     created_at: str | None = None
 
 
-def _open(database_path: Path) -> sqlite3.Connection:
-    return db.connect(database_path)
-
-
-def stored(database_path: Path, session_id: int, kind: str = KIND) -> Protocol | None:
-    connection = _open(database_path)
+def stored(runde: Runde, session_id: int, kind: str = KIND) -> Protocol | None:
+    scope = db.scoped(runde)
     try:
-        row = connection.execute(
-            "SELECT session_id, text, created_at FROM protocol WHERE session_id = ? AND kind = ?",
-            (session_id, kind),
+        row = scope.execute(
+            "SELECT session_id, text, created_at FROM protocol "
+            "WHERE runde_id = ? AND session_id = ? AND kind = ?",
+            (scope.runde_id, session_id, kind),
         ).fetchone()
     finally:
-        connection.close()
+        scope.close()
     if row is None:
         return None
     return Protocol(session_id=row["session_id"], text=row["text"], created_at=row["created_at"])
 
 
-def entries(database_path: Path) -> tuple[Entry, ...]:
-    connection = _open(database_path)
+def entries(runde: Runde) -> tuple[Entry, ...]:
+    scope = db.scoped(runde)
     try:
-        rows = connection.execute(
+        rows = scope.execute(
             "SELECT s.id, s.played_on, s.title, p.created_at FROM session s "
             "LEFT JOIN protocol p ON p.session_id = s.id AND p.kind = ? "
-            "ORDER BY s.played_on DESC, s.id DESC",
-            (KIND,),
+            "WHERE s.runde_id = ? ORDER BY s.played_on DESC, s.id DESC",
+            (KIND, scope.runde_id),
         ).fetchall()
     finally:
-        connection.close()
+        scope.close()
     return tuple(
         Entry(
             session_id=r["id"],

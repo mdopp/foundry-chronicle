@@ -9,6 +9,7 @@ import time
 import pytest
 
 from chronicle import jobs
+from chronicle import runde as runden
 from chronicle.config import Config
 
 # Großzügig — gemessen wird nicht, gewartet wird nur, bis ein Faden durch ist.
@@ -115,6 +116,26 @@ WELT = {
 }
 
 
+_gemerkt: dict = {}
+
+
+def runde(quelle):
+    """Die erste Runde zu einer Konfiguration oder einem Pfad.
+
+    Die Oberfläche und die Stapelaufrufe arbeiten bis #69 stillschweigend in ihr; die
+    Tests bis auf ``test_isolation`` deshalb auch. Wo zwei Runden gebraucht werden, legt
+    der Test die zweite selbst an.
+
+    Gemerkt wird sie, weil ``runden.erste`` das Schema anlegt — und damit auch den
+    Suchindex neu baut. Ein Test, der den Index von Hand leert, um seinen Neuaufbau zu
+    prüfen, bekäme ihn sonst schon beim Nachfragen zurück.
+    """
+    pfad = getattr(quelle, "database_path", quelle)
+    if pfad not in _gemerkt:
+        _gemerkt[pfad] = runden.erste(pfad)
+    return _gemerkt[pfad]
+
+
 def warte_bis(bedingung):
     ende = time.monotonic() + GRENZE
     while time.monotonic() < ende:
@@ -126,16 +147,19 @@ def warte_bis(bedingung):
 
 def laufender_job(database_path, kind, session_id=None):
     """Eine Zeile samt Faden-Vermerk — so sieht ein wirklich laufender Job aus."""
-    verbindung = jobs.db.connect(database_path)
+    from chronicle import db
+
+    scope = db.scoped(runde(database_path))
     try:
-        with verbindung:
-            zeiger = verbindung.execute(
-                "INSERT INTO job (kind, session_id, state, started_at) VALUES (?, ?, ?, ?)",
-                (kind, session_id, jobs.LAEUFT, "2026-08-06T10:00:00+00:00"),
+        with scope:
+            zeiger = scope.execute(
+                "INSERT INTO job (runde_id, kind, session_id, state, started_at) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (scope.runde_id, kind, session_id, jobs.LAEUFT, "2026-08-06T10:00:00+00:00"),
             )
         job_id = int(zeiger.lastrowid)
     finally:
-        verbindung.close()
+        scope.close()
     jobs._laufend.add(job_id)
     return job_id
 
@@ -144,8 +168,10 @@ def laufender_job(database_path, kind, session_id=None):
 def ohne_alte_laeufe():
     """Ein Lauf des einen Tests darf im nächsten nicht als »läuft noch« dastehen."""
     jobs._laufend.clear()
+    _gemerkt.clear()
     yield
     jobs._laufend.clear()
+    _gemerkt.clear()
 
 
 @pytest.fixture

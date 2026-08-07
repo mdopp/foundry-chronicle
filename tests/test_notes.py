@@ -1,6 +1,8 @@
 """Der wöchentliche Handgriff: Sitzung öffnen, Szene beginnen, mitschreiben."""
 
-from chronicle import notes, settings
+from conftest import runde
+
+from chronicle import instanz, notes
 from chronicle.app import create_app
 from chronicle.config import Config
 
@@ -9,7 +11,7 @@ def klient(tmp_path):
     # Diese Tests wollen die Sitzungsliste sehen; ohne Foundry führte "/" sonst
     # jedes Mal in die Einrichtung.
     client = create_app(Config(data_dir=tmp_path)).test_client()
-    settings.finish_onboarding(pfad(tmp_path))
+    instanz.finish_onboarding(pfad(tmp_path))
     return client
 
 
@@ -34,7 +36,7 @@ def test_neue_sitzung_bringt_sofort_eine_erste_szene(tmp_path):
 def test_notiz_landet_bei_der_szene_und_uebersteht_das_neuladen(tmp_path):
     client = klient(tmp_path)
     ort = sitzung_anlegen(client)
-    szene = notes.session(pfad(tmp_path), 1).scenes[0]
+    szene = notes.session(runde(pfad(tmp_path)), 1).scenes[0]
 
     antwort = client.post(f"/szenen/{szene.id}/notizen", data={"text": "Brok tritt die Tür ein."})
     assert antwort.status_code == 302
@@ -49,7 +51,7 @@ def test_leere_notiz_wird_nicht_gespeichert(tmp_path):
     client = klient(tmp_path)
     ort = sitzung_anlegen(client)
     client.post("/szenen/1/notizen", data={"text": "   "})
-    assert notes.session(pfad(tmp_path), 1).note_count == 0
+    assert notes.session(runde(pfad(tmp_path)), 1).note_count == 0
     assert client.get(ort).status_code == 200
 
 
@@ -72,7 +74,7 @@ def test_notizen_bleiben_bei_ihrer_szene(tmp_path):
     client.post("/szenen/1/notizen", data={"text": "Erst der Keller."})
     client.post("/szenen/2/notizen", data={"text": "Dann der Hafen."})
 
-    gelesen = notes.session(pfad(tmp_path), 1)
+    gelesen = notes.session(runde(pfad(tmp_path)), 1)
     assert [n.text for n in gelesen.scenes[0].notes] == ["Erst der Keller."]
     assert [n.text for n in gelesen.scenes[1].notes] == ["Dann der Hafen."]
 
@@ -86,7 +88,7 @@ def test_ohne_titel_steht_das_datum_da(tmp_path):
 def test_ohne_datum_zaehlt_heute(tmp_path):
     client = klient(tmp_path)
     client.post("/", data={"played_on": "", "title": ""})
-    assert notes.sessions(pfad(tmp_path))[0].played_on == notes.today()
+    assert notes.sessions(runde(pfad(tmp_path)))[0].played_on == notes.today()
 
 
 def test_liste_zaehlt_szenen_und_notizen(tmp_path):

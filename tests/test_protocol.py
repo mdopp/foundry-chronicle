@@ -1,6 +1,7 @@
 """Der kleinste Renderer: genau der Ausschnitt, den die Komposition schreibt."""
 
 import pytest
+from conftest import runde
 
 from chronicle import db, protocol
 from chronicle.compose.composer import BELEG_TITEL, NOTIZEN_TITEL, VERBINDUNG_TITEL
@@ -53,19 +54,18 @@ def gerendert(text=CHRONIK):
 
 
 @pytest.fixture
-def connection(config):
-    db.init(config.database_path)
-    verbindung = db.connect(config.database_path)
-    yield verbindung
-    verbindung.close()
+def scope(config):
+    zugang = db.scoped(runde(config))
+    yield zugang
+    zugang.close()
 
 
-def sitzung(connection, *, played_on="2026-08-05", title="Der Keller"):
-    zeiger = connection.execute(
-        "INSERT INTO session (played_on, title, created_at) VALUES (?, ?, ?)",
-        (played_on, title, STAND),
+def sitzung(scope, *, played_on="2026-08-05", title="Der Keller"):
+    zeiger = scope.execute(
+        "INSERT INTO session (runde_id, played_on, title, created_at) VALUES (?, ?, ?, ?)",
+        (scope.runde_id, played_on, title, STAND),
     )
-    connection.commit()
+    scope.commit()
     return zeiger.lastrowid
 
 
@@ -116,35 +116,35 @@ def test_notizen_koennen_kein_html_einschleusen():
     assert "Ein &amp; ein &lt;b&gt;Wort&lt;/b&gt;." in html
 
 
-def test_ohne_lauf_gibt_es_kein_protokoll(config, connection):
-    assert protocol.stored(config.database_path, sitzung(connection)) is None
+def test_ohne_lauf_gibt_es_kein_protokoll(config, scope):
+    assert protocol.stored(runde(config), sitzung(scope)) is None
 
 
-def test_das_abgelegte_protokoll_kommt_zurueck(config, connection):
-    sitzung_id = sitzung(connection)
-    save(connection, sitzung_id, CHRONIK, STAND)
+def test_das_abgelegte_protokoll_kommt_zurueck(config, scope):
+    sitzung_id = sitzung(scope)
+    save(scope, sitzung_id, CHRONIK, STAND)
 
-    abgelegt = protocol.stored(config.database_path, sitzung_id)
+    abgelegt = protocol.stored(runde(config), sitzung_id)
 
     assert abgelegt.text == CHRONIK
     assert abgelegt.created_at == STAND
     assert '<section class="abschnitt belegt">' in str(abgelegt.html)
 
 
-def test_die_liste_zeigt_jede_sitzung_mit_und_ohne_chronik(config, connection):
-    mit = sitzung(connection, played_on="2026-08-05", title="Der Keller")
-    ohne = sitzung(connection, played_on="2026-07-01", title="Der Hafen")
-    save(connection, mit, CHRONIK, STAND)
+def test_die_liste_zeigt_jede_sitzung_mit_und_ohne_chronik(config, scope):
+    mit = sitzung(scope, played_on="2026-08-05", title="Der Keller")
+    ohne = sitzung(scope, played_on="2026-07-01", title="Der Hafen")
+    save(scope, mit, CHRONIK, STAND)
 
-    eintraege = protocol.entries(config.database_path)
+    eintraege = protocol.entries(runde(config))
 
     assert [e.session_id for e in eintraege] == [mit, ohne]
     assert eintraege[0].created_at == STAND
     assert eintraege[1].created_at is None
 
 
-def test_ohne_sitzung_ist_die_liste_leer(config, connection):
-    assert protocol.entries(config.database_path) == ()
+def test_ohne_sitzung_ist_die_liste_leer(config, scope):
+    assert protocol.entries(runde(config)) == ()
 
 
 def test_die_offenen_faeden_bekommen_einen_eigenen_abschnitt():
@@ -156,18 +156,18 @@ def test_die_offenen_faeden_bekommen_einen_eigenen_abschnitt():
     assert '<section class="abschnitt belegt">' in html
 
 
-def test_chronik_und_rueckblick_liegen_unter_eigener_art(config, connection):
-    sitzung_id = sitzung(connection)
-    save(connection, sitzung_id, CHRONIK, STAND)
-    save(connection, sitzung_id, RUECKBLICK_TEXT, STAND, kind=RUECKBLICK)
+def test_chronik_und_rueckblick_liegen_unter_eigener_art(config, scope):
+    sitzung_id = sitzung(scope)
+    save(scope, sitzung_id, CHRONIK, STAND)
+    save(scope, sitzung_id, RUECKBLICK_TEXT, STAND, kind=RUECKBLICK)
 
-    assert protocol.stored(config.database_path, sitzung_id).text == CHRONIK
-    abgelegt = protocol.stored(config.database_path, sitzung_id, RUECKBLICK)
+    assert protocol.stored(runde(config), sitzung_id).text == CHRONIK
+    abgelegt = protocol.stored(runde(config), sitzung_id, RUECKBLICK)
     assert abgelegt.text == RUECKBLICK_TEXT
 
 
-def test_ohne_rueckblick_kommt_nichts_zurueck(config, connection):
-    sitzung_id = sitzung(connection)
-    save(connection, sitzung_id, CHRONIK, STAND)
+def test_ohne_rueckblick_kommt_nichts_zurueck(config, scope):
+    sitzung_id = sitzung(scope)
+    save(scope, sitzung_id, CHRONIK, STAND)
 
-    assert protocol.stored(config.database_path, sitzung_id, RUECKBLICK) is None
+    assert protocol.stored(runde(config), sitzung_id, RUECKBLICK) is None

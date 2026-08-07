@@ -1,7 +1,7 @@
 """Vom Speicher bis zum abgelegten Protokoll — der Stapellauf am Stück."""
 
 import pytest
-from conftest import UNSER_KONTO
+from conftest import UNSER_KONTO, runde
 
 import chronicle.compose.__main__ as entry
 from chronicle import db, settings
@@ -32,68 +32,70 @@ class Modell:
 
 
 @pytest.fixture
-def connection(config):
-    db.init(config.database_path)
-    verbindung = db.connect(config.database_path)
-    yield verbindung
-    verbindung.close()
+def scope(config):
+    zugang = db.scoped(runde(config))
+    yield zugang
+    zugang.close()
 
 
-def sitzung(connection, *, title="Der Keller", played_on="2026-08-05"):
-    zeiger = connection.execute(
-        "INSERT INTO session (played_on, title, created_at) VALUES (?, ?, ?)",
-        (played_on, title, STAND),
+def sitzung(scope, *, title="Der Keller", played_on="2026-08-05"):
+    zeiger = scope.execute(
+        "INSERT INTO session (runde_id, played_on, title, created_at) VALUES (?, ?, ?, ?)",
+        (scope.runde_id, played_on, title, STAND),
     )
     return zeiger.lastrowid
 
 
-def szene(connection, sitzung_id, *, position=1, title="Aufbruch"):
-    zeiger = connection.execute(
-        "INSERT INTO scene (session_id, position, title, created_at) VALUES (?, ?, ?, ?)",
-        (sitzung_id, position, title, STAND),
+def szene(scope, sitzung_id, *, position=1, title="Aufbruch"):
+    zeiger = scope.execute(
+        "INSERT INTO scene (runde_id, session_id, position, title, created_at) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (scope.runde_id, sitzung_id, position, title, STAND),
     )
     return zeiger.lastrowid
 
 
-def notiz(connection, szene_id, text):
-    connection.execute(
-        "INSERT INTO note (scene_id, text, created_at, updated_at) VALUES (?, ?, ?, ?)",
-        (szene_id, text, STAND, STAND),
+def notiz(scope, szene_id, text):
+    scope.execute(
+        "INSERT INTO note (runde_id, scene_id, text, created_at, updated_at) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (scope.runde_id, szene_id, text, STAND, STAND),
     )
 
 
-def fakt(connection, szene_id, message_id="m-wurf"):
-    connection.execute(
-        "INSERT INTO scene_foundry_message (scene_id, message_id) VALUES (?, ?)",
-        (szene_id, message_id),
+def fakt(scope, szene_id, message_id="m-wurf"):
+    scope.execute(
+        "INSERT INTO scene_foundry_message (runde_id, scene_id, message_id) VALUES (?, ?, ?)",
+        (scope.runde_id, szene_id, message_id),
     )
 
 
-def protokolle(connection, sitzung_id):
-    return connection.execute(
-        "SELECT kind, text, created_at FROM protocol WHERE session_id = ?", (sitzung_id,)
+def protokolle(scope, sitzung_id):
+    return scope.execute(
+        "SELECT kind, text, created_at FROM protocol WHERE runde_id = ? AND session_id = ?",
+        (scope.runde_id, sitzung_id),
     ).fetchall()
 
 
-def eine_runde(connection, welt):
-    store.save(connection, project(welt, UNSER_KONTO, fetched_at=STAND))
-    sitzung_id = sitzung(connection)
-    erste = szene(connection, sitzung_id, position=1, title="Aufbruch")
-    zweite = szene(connection, sitzung_id, position=2, title="Der Keller")
-    notiz(connection, erste, "Wir brechen bei Sonnenaufgang auf.")
-    notiz(connection, zweite, "Brok prüft, was er über den Keller weiß.")
-    fakt(connection, zweite)
-    connection.commit()
+def eine_runde(scope, welt):
+    store.save(scope, project(welt, UNSER_KONTO, fetched_at=STAND))
+    sitzung_id = sitzung(scope)
+    erste = szene(scope, sitzung_id, position=1, title="Aufbruch")
+    zweite = szene(scope, sitzung_id, position=2, title="Der Keller")
+    notiz(scope, erste, "Wir brechen bei Sonnenaufgang auf.")
+    notiz(scope, zweite, "Brok prüft, was er über den Keller weiß.")
+    fakt(scope, zweite)
+    scope.commit()
     return sitzung_id
 
 
-def test_die_foundry_zahl_landet_unveraendert_im_protokoll(config, connection, welt):
-    sitzung_id = eine_runde(connection, welt)
+def test_die_foundry_zahl_landet_unveraendert_im_protokoll(config, scope, welt):
+    sitzung_id = eine_runde(scope, welt)
 
-    ergebnis = compose_session(config, sitzung_id, model=Modell())
+    ergebnis = compose_session(config, runde(config), sitzung_id, model=Modell())
 
     assert ergebnis.fact_count == 1
-    zeilen = protokolle(connection, sitzung_id)
+    zeilen = protokolle(scope, sitzung_id)
     assert [z["kind"] for z in zeilen] == [KIND]
     text = zeilen[0]["text"]
     assert text == ergebnis.text
@@ -103,65 +105,65 @@ def test_die_foundry_zahl_landet_unveraendert_im_protokoll(config, connection, w
     assert VERBINDUNG_TITEL in text
 
 
-def test_ein_zweiter_lauf_ersetzt_die_chronik(config, connection, welt):
-    sitzung_id = eine_runde(connection, welt)
-    compose_session(config, sitzung_id, model=Modell("Erster Anlauf."))
+def test_ein_zweiter_lauf_ersetzt_die_chronik(config, scope, welt):
+    sitzung_id = eine_runde(scope, welt)
+    compose_session(config, runde(config), sitzung_id, model=Modell("Erster Anlauf."))
 
-    compose_session(config, sitzung_id, model=Modell("Zweiter Anlauf."))
+    compose_session(config, runde(config), sitzung_id, model=Modell("Zweiter Anlauf."))
 
-    zeilen = protokolle(connection, sitzung_id)
+    zeilen = protokolle(scope, sitzung_id)
     assert len(zeilen) == 1
     assert "Zweiter Anlauf." in zeilen[0]["text"]
     assert "Erster Anlauf." not in zeilen[0]["text"]
 
 
-def test_ohne_sprachmodell_entsteht_die_chronik_trotzdem(config, connection, welt):
-    sitzung_id = eine_runde(connection, welt)
+def test_ohne_sprachmodell_entsteht_die_chronik_trotzdem(config, scope, welt):
+    sitzung_id = eine_runde(scope, welt)
 
-    ergebnis = compose_session(config, sitzung_id)
+    ergebnis = compose_session(config, runde(config), sitzung_id)
 
     assert not config.ollama_configured
     assert ergebnis.reason is not None
     assert VERBINDUNG_TITEL not in ergebnis.text
     assert "Knowledge Roll: Summe 7" in ergebnis.text
-    assert protokolle(connection, sitzung_id)[0]["text"] == ergebnis.text
+    assert protokolle(scope, sitzung_id)[0]["text"] == ergebnis.text
 
 
-def test_ohne_zuordnung_traegt_die_chronik_allein_die_notizen(config, connection, welt):
-    store.save(connection, project(welt, UNSER_KONTO, fetched_at=STAND))
-    sitzung_id = sitzung(connection)
-    notiz(connection, szene(connection, sitzung_id), "Wir reden mit der Wirtin.")
-    connection.commit()
+def test_ohne_zuordnung_traegt_die_chronik_allein_die_notizen(config, scope, welt):
+    store.save(scope, project(welt, UNSER_KONTO, fetched_at=STAND))
+    sitzung_id = sitzung(scope)
+    notiz(scope, szene(scope, sitzung_id), "Wir reden mit der Wirtin.")
+    scope.commit()
 
-    ergebnis = compose_session(config, sitzung_id, model=Modell())
+    ergebnis = compose_session(config, runde(config), sitzung_id, model=Modell())
 
     assert ergebnis.fact_count == 0
     assert "Wir reden mit der Wirtin." in ergebnis.text
     assert "Belegt aus Foundry" not in ergebnis.text
 
 
-def test_eine_unbekannte_sitzung_gibt_es_nicht(config, connection):
-    assert compose_session(config, 999) is None
+def test_eine_unbekannte_sitzung_gibt_es_nicht(config, scope):
+    assert compose_session(config, runde(config), 999) is None
 
 
-def test_jede_szene_bekommt_ihren_eigenen_aufruf(config, connection, welt):
-    sitzung_id = eine_runde(connection, welt)
+def test_jede_szene_bekommt_ihren_eigenen_aufruf(config, scope, welt):
+    sitzung_id = eine_runde(scope, welt)
     modell = Modell()
 
-    compose_session(config, sitzung_id, model=modell)
+    compose_session(config, runde(config), sitzung_id, model=modell)
 
     assert len(modell.prompts) == 2
     assert "Belegte Fakten aus Foundry" in modell.prompts[1]
     assert "Belegte Fakten aus Foundry" not in modell.prompts[0]
 
 
-def test_der_rueckblick_liegt_neben_der_chronik(config, connection, welt):
-    sitzung_id = eine_runde(connection, welt)
-    compose_session(config, sitzung_id, model=Modell())
+def test_der_rueckblick_liegt_neben_der_chronik(config, scope, welt):
+    sitzung_id = eine_runde(scope, welt)
+    compose_session(config, runde(config), sitzung_id, model=Modell())
 
-    ergebnis = recap_session(config, sitzung_id, model=Modell())
+    ergebnis = recap_session(config, runde(config), sitzung_id, model=Modell())
 
-    zeilen = protokolle(connection, sitzung_id)
+    zeilen = protokolle(scope, sitzung_id)
     assert {z["kind"] for z in zeilen} == {KIND, RUECKBLICK}
     abgelegt = next(z["text"] for z in zeilen if z["kind"] == RUECKBLICK)
     assert abgelegt == ergebnis.text
@@ -170,44 +172,44 @@ def test_der_rueckblick_liegt_neben_der_chronik(config, connection, welt):
     assert "Knowledge Roll: Summe 7" in abgelegt
 
 
-def test_ohne_chronik_gibt_es_keinen_rueckblick(config, connection, welt):
-    sitzung_id = eine_runde(connection, welt)
+def test_ohne_chronik_gibt_es_keinen_rueckblick(config, scope, welt):
+    sitzung_id = eine_runde(scope, welt)
 
-    assert recap_session(config, sitzung_id, model=Modell()) is None
-    assert protokolle(connection, sitzung_id) == []
+    assert recap_session(config, runde(config), sitzung_id, model=Modell()) is None
+    assert protokolle(scope, sitzung_id) == []
 
 
-def test_ein_zweiter_lauf_ersetzt_den_rueckblick(config, connection, welt):
-    sitzung_id = eine_runde(connection, welt)
-    compose_session(config, sitzung_id, model=Modell())
-    recap_session(config, sitzung_id, model=Modell("Erster Anlauf."))
+def test_ein_zweiter_lauf_ersetzt_den_rueckblick(config, scope, welt):
+    sitzung_id = eine_runde(scope, welt)
+    compose_session(config, runde(config), sitzung_id, model=Modell())
+    recap_session(config, runde(config), sitzung_id, model=Modell("Erster Anlauf."))
 
-    recap_session(config, sitzung_id, model=Modell("Zweiter Anlauf."))
+    recap_session(config, runde(config), sitzung_id, model=Modell("Zweiter Anlauf."))
 
-    zeilen = [z for z in protokolle(connection, sitzung_id) if z["kind"] == RUECKBLICK]
+    zeilen = [z for z in protokolle(scope, sitzung_id) if z["kind"] == RUECKBLICK]
     assert len(zeilen) == 1
     assert "Zweiter Anlauf." in zeilen[0]["text"]
     assert "Erster Anlauf." not in zeilen[0]["text"]
 
 
-def test_der_rueckblick_bekommt_die_vorigen_rueckblicke_mit(config, connection, welt):
-    alt = eine_runde(connection, welt)
-    compose_session(config, alt, model=Modell())
-    recap_session(config, alt, model=Modell("Der Hafen lag hinter uns."))
-    neu = sitzung(connection, title="Der Turm", played_on="2026-08-12")
-    notiz(connection, szene(connection, neu), "Wir steigen zum Turm.")
-    connection.commit()
-    compose_session(config, neu, model=Modell())
+def test_der_rueckblick_bekommt_die_vorigen_rueckblicke_mit(config, scope, welt):
+    alt = eine_runde(scope, welt)
+    compose_session(config, runde(config), alt, model=Modell())
+    recap_session(config, runde(config), alt, model=Modell("Der Hafen lag hinter uns."))
+    neu = sitzung(scope, title="Der Turm", played_on="2026-08-12")
+    notiz(scope, szene(scope, neu), "Wir steigen zum Turm.")
+    scope.commit()
+    compose_session(config, runde(config), neu, model=Modell())
     modell = Modell()
 
-    recap_session(config, neu, model=modell)
+    recap_session(config, runde(config), neu, model=modell)
 
     assert "Der Hafen lag hinter uns." in modell.prompts[0]
     assert "Wir steigen zum Turm." in modell.prompts[0]
 
 
-def test_der_stapelaufruf_meldet_die_betriebsart(config, connection, welt, monkeypatch, capsys):
-    sitzung_id = eine_runde(connection, welt)
+def test_der_stapelaufruf_meldet_die_betriebsart(config, scope, welt, monkeypatch, capsys):
+    sitzung_id = eine_runde(scope, welt)
     monkeypatch.setenv("CHRONICLE_DATA_DIR", str(config.data_dir))
     monkeypatch.delenv("OLLAMA_URL", raising=False)
     monkeypatch.delenv("OLLAMA_MODEL", raising=False)
@@ -216,8 +218,8 @@ def test_der_stapelaufruf_meldet_die_betriebsart(config, connection, welt, monke
     assert "geordnet, nicht erzählt" in capsys.readouterr().out
 
 
-def test_der_stapelaufruf_schreibt_beides(config, connection, welt, monkeypatch, capsys):
-    sitzung_id = eine_runde(connection, welt)
+def test_der_stapelaufruf_schreibt_beides(config, scope, welt, monkeypatch, capsys):
+    sitzung_id = eine_runde(scope, welt)
     monkeypatch.setenv("CHRONICLE_DATA_DIR", str(config.data_dir))
     monkeypatch.delenv("OLLAMA_URL", raising=False)
     monkeypatch.delenv("OLLAMA_MODEL", raising=False)
@@ -227,15 +229,15 @@ def test_der_stapelaufruf_schreibt_beides(config, connection, welt, monkeypatch,
     ausgabe = capsys.readouterr().out
     assert "Chronik aus" in ausgabe
     assert "Rückblick aus" in ausgabe
-    assert {z["kind"] for z in protokolle(connection, sitzung_id)} == {KIND, RUECKBLICK}
+    assert {z["kind"] for z in protokolle(scope, sitzung_id)} == {KIND, RUECKBLICK}
 
 
 def test_der_stapelaufruf_stellt_den_rueckblick_genau_einmal_zu(
-    config, connection, welt, monkeypatch, capsys
+    config, scope, welt, monkeypatch, capsys
 ):
-    sitzung_id = eine_runde(connection, welt)
+    sitzung_id = eine_runde(scope, welt)
     settings.save(
-        config.database_path,
+        runde(config),
         {"discord_bot_token": "bot-token-nur-fuer-den-test", "discord_recap_channel": "chronik"},
     )
     gepostet = []
@@ -258,7 +260,7 @@ def test_der_stapelaufruf_stellt_den_rueckblick_genau_einmal_zu(
     # Ein zweiter Lauf komponiert neu — gepostet wird deshalb nicht noch einmal.
     entry.main([str(sitzung_id)])
 
-    zeilen = protokolle(connection, sitzung_id)
+    zeilen = protokolle(scope, sitzung_id)
     abgelegt = next(z["text"] for z in zeilen if z["kind"] == RUECKBLICK)
     assert gepostet == [("c-chronik", abgelegt)]
     assert "war schon zugestellt" in capsys.readouterr().out

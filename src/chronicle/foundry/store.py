@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import sqlite3
 
+from chronicle import db
 from chronicle.foundry.model import Character, ChatMessage, Die, Player, Roll, WorldSnapshot
 
 LAST_ERROR = "foundry_last_error"
@@ -66,52 +67,68 @@ def message(row: sqlite3.Row) -> ChatMessage:
     )
 
 
-def save(connection: sqlite3.Connection, snapshot: WorldSnapshot) -> None:
-    with connection:
+def save(scope: db.Scope, snapshot: WorldSnapshot) -> None:
+    runde_id = scope.runde_id
+    with scope:
         for tabelle in ("foundry_player", "foundry_character", "foundry_message"):
-            connection.execute(f"DELETE FROM {tabelle}")
-        connection.execute(
-            "INSERT INTO foundry_snapshot (id, fetched_at, system) VALUES (1, ?, ?) "
-            "ON CONFLICT (id) DO UPDATE SET fetched_at = excluded.fetched_at, "
+            scope.execute(f"DELETE FROM {tabelle} WHERE runde_id = ?", (runde_id,))
+        scope.execute(
+            "INSERT INTO foundry_snapshot (runde_id, fetched_at, system) VALUES (?, ?, ?) "
+            "ON CONFLICT (runde_id) DO UPDATE SET fetched_at = excluded.fetched_at, "
             "system = excluded.system",
-            (snapshot.fetched_at, snapshot.system),
+            (runde_id, snapshot.fetched_at, snapshot.system),
         )
-        connection.executemany(
-            "INSERT INTO foundry_player (id, name, role, is_gm) VALUES (?, ?, ?, ?)",
-            [(s.id, s.name, s.role, int(s.is_gm)) for s in snapshot.players],
+        scope.executemany(
+            "INSERT INTO foundry_player (runde_id, id, name, role, is_gm) VALUES (?, ?, ?, ?, ?)",
+            [(runde_id, s.id, s.name, s.role, int(s.is_gm)) for s in snapshot.players],
         )
-        connection.executemany(
-            "INSERT INTO foundry_character (id, name, type, owner_ids, limited) "
-            "VALUES (?, ?, ?, ?, ?)",
+        scope.executemany(
+            "INSERT INTO foundry_character (runde_id, id, name, type, owner_ids, limited) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
             [
-                (f.id, f.name, f.type, json.dumps(list(f.owner_ids)), int(f.limited))
+                (runde_id, f.id, f.name, f.type, json.dumps(list(f.owner_ids)), int(f.limited))
                 for f in snapshot.characters
             ],
         )
-        connection.executemany(
-            "INSERT INTO foundry_message (id, timestamp, speaker_actor, speaker_alias, content, "
-            "roll_title, roll_total, roll_formula, roll_kind, roll_critical, roll_modifier_total, "
-            "roll_dice) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        scope.executemany(
+            "INSERT INTO foundry_message (runde_id, id, timestamp, speaker_actor, speaker_alias, "
+            "content, roll_title, roll_total, roll_formula, roll_kind, roll_critical, "
+            "roll_modifier_total, roll_dice) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             [
-                (n.id, n.timestamp, n.speaker_actor, n.speaker_alias, n.content, *_roll_row(n.roll))
+                (
+                    runde_id,
+                    n.id,
+                    n.timestamp,
+                    n.speaker_actor,
+                    n.speaker_alias,
+                    n.content,
+                    *_roll_row(n.roll),
+                )
                 for n in snapshot.messages
             ],
         )
-        connection.execute(
-            "DELETE FROM meta WHERE key IN (?, ?)",
-            (LAST_ERROR, LAST_ERROR_AT),
+        scope.execute(
+            "DELETE FROM runde_meta WHERE runde_id = ? AND key IN (?, ?)",
+            (runde_id, LAST_ERROR, LAST_ERROR_AT),
         )
 
 
-def load(connection: sqlite3.Connection) -> WorldSnapshot | None:
-    kopf = connection.execute(
-        "SELECT fetched_at, system FROM foundry_snapshot WHERE id = 1"
+def load(scope: db.Scope) -> WorldSnapshot | None:
+    runde_id = scope.runde_id
+    kopf = scope.execute(
+        "SELECT fetched_at, system FROM foundry_snapshot WHERE runde_id = ?", (runde_id,)
     ).fetchone()
     if kopf is None:
         return None
-    players = connection.execute("SELECT * FROM foundry_player ORDER BY name").fetchall()
-    characters = connection.execute("SELECT * FROM foundry_character ORDER BY name").fetchall()
-    messages = connection.execute("SELECT * FROM foundry_message ORDER BY timestamp, id").fetchall()
+    players = scope.execute(
+        "SELECT * FROM foundry_player WHERE runde_id = ? ORDER BY name", (runde_id,)
+    ).fetchall()
+    characters = scope.execute(
+        "SELECT * FROM foundry_character WHERE runde_id = ? ORDER BY name", (runde_id,)
+    ).fetchall()
+    messages = scope.execute(
+        "SELECT * FROM foundry_message WHERE runde_id = ? ORDER BY timestamp, id", (runde_id,)
+    ).fetchall()
     return WorldSnapshot(
         system=kopf["system"],
         fetched_at=kopf["fetched_at"],
@@ -133,18 +150,19 @@ def load(connection: sqlite3.Connection) -> WorldSnapshot | None:
     )
 
 
-def record_failure(connection: sqlite3.Connection, reason: str, at: str) -> None:
-    with connection:
-        connection.executemany(
-            "INSERT INTO meta (key, value) VALUES (?, ?) "
-            "ON CONFLICT (key) DO UPDATE SET value = excluded.value",
-            ((LAST_ERROR, reason), (LAST_ERROR_AT, at)),
+def record_failure(scope: db.Scope, reason: str, at: str) -> None:
+    with scope:
+        scope.executemany(
+            "INSERT INTO runde_meta (runde_id, key, value) VALUES (?, ?, ?) "
+            "ON CONFLICT (runde_id, key) DO UPDATE SET value = excluded.value",
+            ((scope.runde_id, LAST_ERROR, reason), (scope.runde_id, LAST_ERROR_AT, at)),
         )
 
 
-def last_failure(connection: sqlite3.Connection) -> tuple[str | None, str | None]:
-    rows = connection.execute(
-        "SELECT key, value FROM meta WHERE key IN (?, ?)", (LAST_ERROR, LAST_ERROR_AT)
+def last_failure(scope: db.Scope) -> tuple[str | None, str | None]:
+    rows = scope.execute(
+        "SELECT key, value FROM runde_meta WHERE runde_id = ? AND key IN (?, ?)",
+        (scope.runde_id, LAST_ERROR, LAST_ERROR_AT),
     ).fetchall()
     werte = {r["key"]: r["value"] for r in rows}
     return werte.get(LAST_ERROR), werte.get(LAST_ERROR_AT)

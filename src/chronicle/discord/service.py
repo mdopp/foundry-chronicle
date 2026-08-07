@@ -24,6 +24,7 @@ from pathlib import Path
 from chronicle import db, notes, recordings, settings
 from chronicle.config import Config
 from chronicle.discord.client import Attachment, DiscordClient, Message
+from chronicle.runde import Runde
 
 logger = logging.getLogger(__name__)
 
@@ -52,67 +53,75 @@ def _now() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds")
 
 
-def _stand(database_path: Path, message_id: str) -> str | None:
-    connection = db.connect(database_path)
+def _stand(runde: Runde, message_id: str) -> str | None:
+    scope = db.scoped(runde)
     try:
-        zeile = connection.execute(
-            "SELECT status FROM discord_intake WHERE message_id = ?", (message_id,)
+        zeile = scope.execute(
+            "SELECT status FROM discord_intake WHERE runde_id = ? AND message_id = ?",
+            (scope.runde_id, message_id),
         ).fetchone()
     finally:
-        connection.close()
+        scope.close()
     return None if zeile is None else str(zeile["status"])
 
 
-def _merken(database_path: Path, message_id: str, status: str) -> None:
-    connection = db.connect(database_path)
+def _merken(runde: Runde, message_id: str, status: str) -> None:
+    scope = db.scoped(runde)
     try:
-        with connection:
-            connection.execute(
-                "INSERT INTO discord_intake (message_id, status, handled_at) VALUES (?, ?, ?) "
-                "ON CONFLICT (message_id) DO UPDATE SET status = excluded.status, "
+        with scope:
+            scope.execute(
+                "INSERT INTO discord_intake (runde_id, message_id, status, handled_at) "
+                "VALUES (?, ?, ?, ?) "
+                "ON CONFLICT (runde_id, message_id) DO UPDATE SET status = excluded.status, "
                 "handled_at = excluded.handled_at",
-                (message_id, status, _now()),
+                (scope.runde_id, message_id, status, _now()),
             )
     finally:
-        connection.close()
+        scope.close()
 
 
-def cursor(database_path: Path) -> str | None:
-    connection = db.connect(database_path)
+def cursor(runde: Runde) -> str | None:
+    scope = db.scoped(runde)
     try:
-        zeile = connection.execute("SELECT value FROM meta WHERE key = ?", (CURSOR,)).fetchone()
+        zeile = scope.execute(
+            "SELECT value FROM runde_meta WHERE runde_id = ? AND key = ?",
+            (scope.runde_id, CURSOR),
+        ).fetchone()
     finally:
-        connection.close()
+        scope.close()
     return None if zeile is None else str(zeile["value"])
 
 
-def _cursor_setzen(database_path: Path, message_id: str) -> None:
-    connection = db.connect(database_path)
+def _cursor_setzen(runde: Runde, message_id: str) -> None:
+    scope = db.scoped(runde)
     try:
-        with connection:
-            connection.execute(
-                "INSERT INTO meta (key, value) VALUES (?, ?) "
-                "ON CONFLICT (key) DO UPDATE SET value = excluded.value",
-                (CURSOR, message_id),
+        with scope:
+            scope.execute(
+                "INSERT INTO runde_meta (runde_id, key, value) VALUES (?, ?, ?) "
+                "ON CONFLICT (runde_id, key) DO UPDATE SET value = excluded.value",
+                (scope.runde_id, CURSOR, message_id),
             )
     finally:
-        connection.close()
+        scope.close()
 
 
 def _ist_audio(anhang: Attachment) -> bool:
     return Path(anhang.filename).suffix.lower() in recordings.SUFFIXES
 
 
-def _spur(config: Config, bot: DiscordClient, sitzung_id: int, anhang: Attachment) -> str:
+def _spur(
+    config: Config, runde: Runde, bot: DiscordClient, sitzung_id: int, anhang: Attachment
+) -> str:
     config.recordings_dir.mkdir(parents=True, exist_ok=True)
     ziel = recordings.target_path(config.recordings_dir, sitzung_id, anhang.filename)
     bot.download(anhang, ziel)
-    recordings.enqueue(config.database_path, sitzung_id, ziel.name)
+    recordings.enqueue(runde, sitzung_id, ziel.name)
     return ziel.name
 
 
 def _eine_nachricht(
     config: Config,
+    runde: Runde,
     bot: DiscordClient,
     kanal: str,
     nachricht: Message,
@@ -146,7 +155,7 @@ def _eine_nachricht(
             bot.reply(kanal, nachricht.id, grenze)
         return grenze, UEBERSPRUNGEN
 
-    sitzung = notes.latest_session(config.database_path)
+    sitzung = notes.latest_session(runde)
     if sitzung is None:
         if erstmals:
             bot.react(kanal, nachricht.id, WARNUNG)
@@ -154,13 +163,13 @@ def _eine_nachricht(
         return OHNE_SITZUNG, WARTET
 
     meldungen = [
-        f"Diktat »{_spur(config, bot, sitzung.id, anhang)}« → Sitzung {sitzung.id}, "
+        f"Diktat »{_spur(config, runde, bot, sitzung.id, anhang)}« → Sitzung {sitzung.id}, "
         "wartet auf den Stapel."
         for anhang in spuren
     ]
     if text:
         szene = sitzung.scenes[-1]
-        notes.add_note(config.database_path, szene.id, text)
+        notes.add_note(runde, szene.id, text)
         meldungen.append(f"Notiz → Sitzung {sitzung.id}, Szene {szene.position}.")
 
     bot.react(kanal, nachricht.id, HAKEN)
@@ -172,10 +181,10 @@ def _eine_nachricht(
     return " ".join(meldungen), ABGELEGT
 
 
-def run(config: Config, *, client: DiscordClient | None = None) -> tuple[str, ...]:
+def run(config: Config, runde: Runde, *, client: DiscordClient | None = None) -> tuple[str, ...]:
     """Holt, was seit dem letzten Lauf im Kanal liegt, und legt es ab."""
     db.init(config.database_path)
-    zugang = settings.effective(config)
+    zugang = settings.effective(config, runde)
     if not zugang.discord_configured:
         return (NICHT_EINGERICHTET,)
 
@@ -184,7 +193,7 @@ def run(config: Config, *, client: DiscordClient | None = None) -> tuple[str, ..
     if kanal is None:
         return (KEIN_KANAL,)
 
-    abgeholt = cursor(config.database_path)
+    abgeholt = cursor(runde)
     nachrichten = bot.messages(kanal, after=abgeholt)
     logger.info("Discord: %s Nachrichten in #%s seit %s", len(nachrichten), KANAL, abgeholt)
 
@@ -192,10 +201,12 @@ def run(config: Config, *, client: DiscordClient | None = None) -> tuple[str, ..
     zeiger = abgeholt
     haelt = False
     for nachricht in nachrichten:
-        stand = _stand(config.database_path, nachricht.id)
+        stand = _stand(runde, nachricht.id)
         if stand not in (ABGELEGT, UEBERSPRUNGEN):
-            meldung, stand = _eine_nachricht(config, bot, kanal, nachricht, erstmals=stand is None)
-            _merken(config.database_path, nachricht.id, stand)
+            meldung, stand = _eine_nachricht(
+                config, runde, bot, kanal, nachricht, erstmals=stand is None
+            )
+            _merken(runde, nachricht.id, stand)
             if meldung:
                 meldungen.append(meldung)
         haelt = haelt or stand == WARTET
@@ -203,5 +214,5 @@ def run(config: Config, *, client: DiscordClient | None = None) -> tuple[str, ..
             zeiger = nachricht.id
 
     if zeiger is not None and zeiger != abgeholt:
-        _cursor_setzen(config.database_path, zeiger)
+        _cursor_setzen(runde, zeiger)
     return tuple(meldungen)

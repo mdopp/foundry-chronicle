@@ -37,6 +37,7 @@ from chronicle.compose.service import compose_session, recap_session
 from chronicle.config import Config
 from chronicle.discord.rueckblick import deliver
 from chronicle.foundry.service import sync
+from chronicle.runde import Runde
 from chronicle.transcribe.service import run_queue
 
 logger = logging.getLogger(__name__)
@@ -55,6 +56,8 @@ UNTERBROCHEN = (
 )
 
 OHNE_SITZUNG = "Diese Sitzung gibt es nicht mehr."
+
+BELEGT = "Eine andere Runde ist gerade dran — der Lauf beginnt, sobald sie durch ist."
 
 NICHT_DURCHGEKOMMEN = "Der Lauf ist nicht durchgekommen: {grund}"
 
@@ -78,6 +81,7 @@ class JobError(RuntimeError):
 @dataclass(frozen=True)
 class Job:
     id: int
+    runde_id: int
     kind: str
     session_id: int | None
     state: str
@@ -106,6 +110,7 @@ def _now() -> str:
 def _job(row: sqlite3.Row) -> Job:
     return Job(
         id=row["id"],
+        runde_id=row["runde_id"],
         kind=row["kind"],
         session_id=row["session_id"],
         state=row["state"],
@@ -116,77 +121,98 @@ def _job(row: sqlite3.Row) -> Job:
     )
 
 
-def _aufraeumen(connection: sqlite3.Connection) -> None:
-    with _schloss:
-        offen = connection.execute("SELECT id FROM job WHERE state = ?", (LAEUFT,)).fetchall()
-        verwaist = [int(zeile["id"]) for zeile in offen if int(zeile["id"]) not in _laufend]
-        if not verwaist:
-            return
-        zeitpunkt = _now()
-        with connection:
-            connection.executemany(
-                "UPDATE job SET state = ?, error = ?, finished_at = ? WHERE id = ?",
-                [(GESCHEITERT, UNTERBROCHEN, zeitpunkt, job_id) for job_id in verwaist],
-            )
-
-
-def latest(database_path: Path, kind: str, session_id: int | None = None) -> Job | None:
-    """Der jüngste Lauf dieser Art — die Wiederanbindung nach jedem Seitenaufruf."""
+# Bewusst über alle Runden: dass ein Lauf abgestürzt ist, weiß dieser Prozess an seiner
+# Merkliste und nicht an einer Runde. Eine stehengebliebene ``laeuft``-Zeile einer fremden
+# Runde blockierte sonst die Maschine für alle.
+def _aufraeumen(database_path: Path) -> None:
     connection = db.connect(database_path)
     try:
-        _aufraeumen(connection)
-        if session_id is None:
-            row = connection.execute(
-                "SELECT * FROM job WHERE kind = ? ORDER BY id DESC LIMIT 1", (kind,)
-            ).fetchone()
-        else:
-            row = connection.execute(
-                "SELECT * FROM job WHERE kind = ? AND session_id = ? ORDER BY id DESC LIMIT 1",
-                (kind, session_id),
-            ).fetchone()
+        with _schloss:
+            offen = connection.execute("SELECT id FROM job WHERE state = ?", (LAEUFT,)).fetchall()
+            verwaist = [int(zeile["id"]) for zeile in offen if int(zeile["id"]) not in _laufend]
+            if not verwaist:
+                return
+            zeitpunkt = _now()
+            with connection:
+                connection.executemany(
+                    "UPDATE job SET state = ?, error = ?, finished_at = ? WHERE id = ?",
+                    [(GESCHEITERT, UNTERBROCHEN, zeitpunkt, job_id) for job_id in verwaist],
+                )
     finally:
         connection.close()
+
+
+def latest(runde: Runde, kind: str, session_id: int | None = None) -> Job | None:
+    """Der jüngste Lauf dieser Art in dieser Runde — die Wiederanbindung nach jedem Aufruf."""
+    scope = db.scoped(runde)
+    try:
+        _aufraeumen(runde.database_path)
+        if session_id is None:
+            row = scope.execute(
+                "SELECT * FROM job WHERE runde_id = ? AND kind = ? ORDER BY id DESC LIMIT 1",
+                (scope.runde_id, kind),
+            ).fetchone()
+        else:
+            row = scope.execute(
+                "SELECT * FROM job WHERE runde_id = ? AND kind = ? AND session_id = ? "
+                "ORDER BY id DESC LIMIT 1",
+                (scope.runde_id, kind, session_id),
+            ).fetchone()
+    finally:
+        scope.close()
     return None if row is None else _job(row)
 
 
-def running(database_path: Path, kind: str | None = None) -> bool:
-    """Läuft einer — ohne ``kind`` einer beliebiger Art."""
-    connection = db.connect(database_path)
+def running(runde: Runde, kind: str | None = None) -> bool:
+    """Läuft in dieser Runde einer — ohne ``kind`` einer beliebiger Art."""
+    scope = db.scoped(runde)
     try:
-        _aufraeumen(connection)
+        _aufraeumen(runde.database_path)
         if kind is None:
-            offen = connection.execute("SELECT 1 FROM job WHERE state = ?", (LAEUFT,)).fetchone()
+            offen = scope.execute(
+                "SELECT 1 FROM job WHERE runde_id = ? AND state = ?", (scope.runde_id, LAEUFT)
+            ).fetchone()
         else:
-            offen = connection.execute(
-                "SELECT 1 FROM job WHERE kind = ? AND state = ?", (kind, LAEUFT)
+            offen = scope.execute(
+                "SELECT 1 FROM job WHERE runde_id = ? AND kind = ? AND state = ?",
+                (scope.runde_id, kind, LAEUFT),
             ).fetchone()
     finally:
-        connection.close()
+        scope.close()
     return offen is not None
 
 
 def start(
     config: Config,
+    runde: Runde,
     kind: str,
     runner: Callable[[], str],
     *,
     session_id: int | None = None,
-) -> Job:
-    """Stößt einen Lauf an und kehrt sofort zurück; läuft schon einer, kommt der zurück."""
+) -> Job | None:
+    """Stößt einen Lauf an und kehrt sofort zurück.
+
+    Läuft in dieser Runde schon einer derselben Art, kommt der zurück — ein zweiter Klick
+    ist keine zweite Chronik. Läuft irgendwo sonst einer, beginnt hier keiner: es gibt eine
+    CPU und ein Ollama, und zwei Läufe nebeneinander machen beide langsam. Der Aufrufer
+    bekommt dann ``None`` und sagt es ehrlich statt eine Warteschlange zu erfinden.
+    """
+    _aufraeumen(config.database_path)
     connection = db.connect(config.database_path)
     try:
-        _aufraeumen(connection)
         with _schloss:
             offen = connection.execute(
-                "SELECT * FROM job WHERE kind = ? AND state = ?", (kind, LAEUFT)
+                "SELECT * FROM job WHERE state = ? ORDER BY id LIMIT 1", (LAEUFT,)
             ).fetchone()
             if offen is not None:
-                return _job(offen)
+                gleicher = offen["runde_id"] == runde.id and offen["kind"] == kind
+                return _job(offen) if gleicher else None
             zeitpunkt = _now()
             with connection:
                 zeiger = connection.execute(
-                    "INSERT INTO job (kind, session_id, state, started_at) VALUES (?, ?, ?, ?)",
-                    (kind, session_id, LAEUFT, zeitpunkt),
+                    "INSERT INTO job (runde_id, kind, session_id, state, started_at) "
+                    "VALUES (?, ?, ?, ?, ?)",
+                    (runde.id, kind, session_id, LAEUFT, zeitpunkt),
                 )
             job_id = int(zeiger.lastrowid)
             _laufend.add(job_id)
@@ -194,7 +220,14 @@ def start(
         connection.close()
 
     threading.Thread(target=_ausfuehren, args=(config, job_id, runner), daemon=True).start()
-    return Job(id=job_id, kind=kind, session_id=session_id, state=LAEUFT, started_at=zeitpunkt)
+    return Job(
+        id=job_id,
+        runde_id=runde.id,
+        kind=kind,
+        session_id=session_id,
+        state=LAEUFT,
+        started_at=zeitpunkt,
+    )
 
 
 def _abschliessen(
@@ -239,23 +272,23 @@ def _ausfuehren(config: Config, job_id: int, runner: Callable[[], str]) -> None:
         _abschliessen(config.database_path, job_id, FERTIG, result=meldung)
 
 
-def abgleich(config: Config) -> str:
-    zustand = sync(config)
+def abgleich(config: Config, runde: Runde) -> str:
+    zustand = sync(config, runde)
     if zustand.stale:
         raise JobError(zustand.message)
     return zustand.message
 
 
-def chronik(config: Config, session_id: int) -> str:
+def chronik(config: Config, runde: Runde, session_id: int) -> str:
     """Erst die wartenden Aufnahmen verschriften, dann komponieren — ein Lauf."""
-    wartend = len(recordings.pending(config.database_path))
-    run_queue(config)
-    ergebnis = compose_session(config, session_id)
+    wartend = len(recordings.pending(runde))
+    run_queue(config, runde)
+    ergebnis = compose_session(config, runde, session_id)
     if ergebnis is None:
         raise JobError(OHNE_SITZUNG)
-    recap_session(config, session_id)
-    deliver(config, session_id)
-    vorschlaege = register.suggest(config, session_id)
+    recap_session(config, runde, session_id)
+    deliver(config, runde, session_id)
+    vorschlaege = register.suggest(config, runde, session_id)
     vorlauf = "" if not wartend else VERSCHRIFTET.format(anzahl=wartend, mehr=mehrzahl(wartend))
     stand = STEHT if ergebnis.reason is None else STEHT_OHNE_MODELL
     # Der Hinweis auf offene Vorschläge steht bewusst im Ergebnis des Laufs: wird das

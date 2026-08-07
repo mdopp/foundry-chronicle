@@ -19,6 +19,7 @@ import logging
 import sys
 
 from chronicle import register
+from chronicle import runde as runden
 from chronicle.compose.service import compose_session, recap_session
 from chronicle.config import Config
 from chronicle.discord.rueckblick import deliver
@@ -32,15 +33,17 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     sitzung = int(args[0])
     config = Config.from_env()
-    chronik = compose_session(config, sitzung)
+    # Der Stapelaufruf kennt noch keine Runde; er nimmt die erste, wie die Oberfläche.
+    runde = runden.erste(config.database_path)
+    chronik = compose_session(config, runde, sitzung)
     if chronik is None:
         print(f"Sitzung {sitzung} gibt es nicht.")
         return 2
-    rueckblick = recap_session(config, sitzung)
+    rueckblick = recap_session(config, runde, sitzung)
     print(chronik.message)
     print(rueckblick.message)
-    print(deliver(config, sitzung))
-    print(register.suggest(config, sitzung).message)
+    print(deliver(config, runde, sitzung))
+    print(register.suggest(config, runde, sitzung).message)
     return 1 if chronik.reason or rueckblick.reason else 0
 
 

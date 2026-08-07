@@ -20,6 +20,7 @@ Repo.
 from __future__ import annotations
 
 import pytest
+from conftest import runde
 from mocks import foundry_mock, ollama_mock
 
 from chronicle import db, foundry, notes, protocol
@@ -80,15 +81,16 @@ def sende(client, pfad: str, **felder: str):
 
 def verknuepfe(config: Config, paare: list[tuple[int, str]]) -> None:
     """Nachricht an Szene hängen — dafür gibt es noch keine Ansicht, nur die Tabelle."""
-    connection = db.connect(config.database_path)
+    scope = db.scoped(runde(config))
     try:
-        with connection:
-            connection.executemany(
-                "INSERT INTO scene_foundry_message (scene_id, message_id) VALUES (?, ?)",
-                paare,
+        with scope:
+            scope.executemany(
+                "INSERT INTO scene_foundry_message (runde_id, scene_id, message_id) "
+                "VALUES (?, ?, ?)",
+                [(scope.runde_id, *paar) for paar in paare],
             )
     finally:
-        connection.close()
+        scope.close()
 
 
 def station_1_aufsetzen(tmp_path):
@@ -156,7 +158,7 @@ def station_2_konfigurieren(client, mock_foundry, mock_ollama):
 
 def station_3_erster_abgleich(config, client):
     """Der Handschlag über eine echte Verbindung — und die Filterung vor dem Speicher."""
-    stand = foundry.sync(config)
+    stand = foundry.sync(config, runde(config))
     assert not stand.stale, stand.message
     welt = stand.snapshot
     assert welt.system == "daggerheart"
@@ -192,7 +194,7 @@ def station_4_erste_sitzung(client, config):
     for titel in (ZWEITE_SZENE, DRITTE_SZENE):
         assert sende(client, f"/sitzungen/{sitzung_id}/szenen", title=titel).status_code == 302
 
-    szenen = notes.session(config.database_path, sitzung_id).scenes
+    szenen = notes.session(runde(config), sitzung_id).scenes
     assert [szene.title for szene in szenen] == [None, ZWEITE_SZENE, DRITTE_SZENE]
 
     for szene, notiz in zip(szenen, NOTIZEN, strict=True):
@@ -204,7 +206,7 @@ def station_4_erste_sitzung(client, config):
 
 def station_5_erste_zusammenfassung(config, sitzung_id, mock_ollama):
     """Komposition gegen das Mock-Modell — und die Zahlenschranke gegen dessen Erfindung."""
-    chronik = compose_session(config, sitzung_id)
+    chronik = compose_session(config, runde(config), sitzung_id)
     assert chronik.reason is None
     assert chronik.model_name == ollama_mock.MODELL
     assert (chronik.scene_count, chronik.fact_count, chronik.prose_count) == (3, 3, 2)
@@ -217,9 +219,9 @@ def station_5_erste_zusammenfassung(config, sitzung_id, mock_ollama):
 
     for titel in (NOTIZEN_TITEL, BELEG_TITEL, VERBINDUNG_TITEL):
         assert titel in chronik.text
-    assert protocol.stored(config.database_path, sitzung_id).text == chronik.text
+    assert protocol.stored(runde(config), sitzung_id).text == chronik.text
 
-    rueckblick = recap_session(config, sitzung_id)
+    rueckblick = recap_session(config, runde(config), sitzung_id)
     assert rueckblick.reason is None
     assert rueckblick.thread_count == 2
     assert FAEDEN_TITEL in rueckblick.text

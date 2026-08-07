@@ -15,9 +15,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from pathlib import Path
 
 from chronicle import db
+from chronicle.runde import Runde
 
 ANSAGE = "ansage"
 NACHZUEGLER = "nachzuegler"
@@ -47,7 +47,7 @@ def _now() -> str:
 
 
 def record(
-    database_path: Path,
+    runde: Runde,
     *,
     session_id: int | None,
     kind: str,
@@ -57,40 +57,52 @@ def record(
     text: str,
     members: tuple[Member, ...],
 ) -> int:
-    connection = db.connect(database_path)
+    scope = db.scoped(runde)
     try:
-        with connection:
-            cursor = connection.execute(
-                "INSERT INTO consent_event (session_id, kind, announced_at, guild_id, "
-                "channel_id, channel_name, text) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (session_id, kind, _now(), guild_id, channel_id, channel_name, text),
+        with scope:
+            cursor = scope.execute(
+                "INSERT INTO consent_event (runde_id, session_id, kind, announced_at, guild_id, "
+                "channel_id, channel_name, text) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    scope.runde_id,
+                    session_id,
+                    kind,
+                    _now(),
+                    guild_id,
+                    channel_id,
+                    channel_name,
+                    text,
+                ),
             )
             kennung = int(cursor.lastrowid)
-            connection.executemany(
-                "INSERT INTO consent_member (event_id, user_id, name) VALUES (?, ?, ?) "
+            scope.executemany(
+                "INSERT INTO consent_member (runde_id, event_id, user_id, name) "
+                "VALUES (?, ?, ?, ?) "
                 "ON CONFLICT (event_id, user_id) DO UPDATE SET name = excluded.name",
-                [(kennung, mitglied.id, mitglied.name) for mitglied in members],
+                [(scope.runde_id, kennung, mitglied.id, mitglied.name) for mitglied in members],
             )
     finally:
-        connection.close()
+        scope.close()
     return kennung
 
 
-def for_session(database_path: Path, session_id: int) -> tuple[Event, ...]:
-    connection = db.connect(database_path)
+def for_session(runde: Runde, session_id: int) -> tuple[Event, ...]:
+    scope = db.scoped(runde)
     try:
-        zeilen = connection.execute(
-            "SELECT * FROM consent_event WHERE session_id = ? ORDER BY id", (session_id,)
+        zeilen = scope.execute(
+            "SELECT * FROM consent_event WHERE runde_id = ? AND session_id = ? ORDER BY id",
+            (scope.runde_id, session_id),
         ).fetchall()
-        return tuple(_mit_anwesenden(connection, zeile) for zeile in zeilen)
+        return tuple(_mit_anwesenden(scope, zeile) for zeile in zeilen)
     finally:
-        connection.close()
+        scope.close()
 
 
-def _mit_anwesenden(connection, zeile) -> Event:
-    anwesend = connection.execute(
-        "SELECT user_id, name FROM consent_member WHERE event_id = ? ORDER BY user_id",
-        (zeile["id"],),
+def _mit_anwesenden(scope: db.Scope, zeile) -> Event:
+    anwesend = scope.execute(
+        "SELECT user_id, name FROM consent_member WHERE runde_id = ? AND event_id = ? "
+        "ORDER BY user_id",
+        (scope.runde_id, zeile["id"]),
     ).fetchall()
     return Event(
         id=zeile["id"],

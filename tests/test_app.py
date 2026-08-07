@@ -1,8 +1,8 @@
 import pytest
-from conftest import GM_FIGUR, UNSER_KONTO, laufender_job, warte_bis
+from conftest import GM_FIGUR, UNSER_KONTO, laufender_job, runde, warte_bis
 
 import chronicle.__main__ as entry
-from chronicle import db, jobs, notes, protocol, recordings, register, settings
+from chronicle import db, instanz, jobs, notes, protocol, recordings, register, settings
 from chronicle.app import create_app
 from chronicle.compose import client as sprachmodell
 from chronicle.compose.client import ModelUnreachable
@@ -115,7 +115,7 @@ def test_ohne_abgleich_steht_da_warum_nichts_zu_sehen_ist(tmp_path):
 
 
 def test_zeigt_den_umfang_des_letzten_abgleichs(config, welt):
-    service.sync(config, client=Abgleich(welt))
+    service.sync(config, runde(config), client=Abgleich(welt))
     html = seite(config).get_data(as_text=True)
     assert "Stand vom" in html
     assert "daggerheart" in html
@@ -123,8 +123,8 @@ def test_zeigt_den_umfang_des_letzten_abgleichs(config, welt):
 
 
 def test_bei_ausgefallenem_foundry_erklaert_die_seite_den_alten_stand(config, welt):
-    service.sync(config, client=Abgleich(welt))
-    service.sync(config, client=Abgleich(fehler=FoundryUnreachable("keine Antwort")))
+    service.sync(config, runde(config), client=Abgleich(welt))
+    service.sync(config, runde(config), client=Abgleich(fehler=FoundryUnreachable("keine Antwort")))
     html = seite(config).get_data(as_text=True)
     assert "nicht erreichbar" in html
     assert "Angezeigt wird der Stand" in html
@@ -186,18 +186,16 @@ class Chronist:
 def eine_sitzung(tmp_path, *, chronik=False, rueckblick=False):
     config = Config(data_dir=tmp_path)
     db.init(config.database_path)
-    sitzung_id = notes.create_session(
-        config.database_path, played_on="2026-08-05", title="Der Keller"
-    )
-    szene = notes.session(config.database_path, sitzung_id).scenes[0]
-    notes.add_note(config.database_path, szene.id, "Wir brechen bei Sonnenaufgang auf.")
+    sitzung_id = notes.create_session(runde(config), played_on="2026-08-05", title="Der Keller")
+    szene = notes.session(runde(config), sitzung_id).scenes[0]
+    notes.add_note(runde(config), szene.id, "Wir brechen bei Sonnenaufgang auf.")
     if chronik or rueckblick:
-        compose_session(config, sitzung_id, model=Chronist())
+        compose_session(config, runde(config), sitzung_id, model=Chronist())
     if rueckblick:
-        recap_session(config, sitzung_id, model=Chronist())
+        recap_session(config, runde(config), sitzung_id, model=Chronist())
     # Wer schon mitschreibt, hat die Einrichtung hinter sich oder beiseitegelegt —
     # sonst führte jede dieser Seiten in den Wizard statt zur Sitzung.
-    settings.finish_onboarding(config.database_path)
+    instanz.finish_onboarding(config.database_path)
     return config, sitzung_id
 
 
@@ -352,7 +350,7 @@ def test_gespeichertes_schlaegt_die_umgebung(tmp_path):
     )
     client = create_app(config).test_client()
     client.post("/einstellungen", data={"foundry_url": "https://frontend.example"})
-    assert settings.effective(config).foundry_url == "https://frontend.example"
+    assert settings.effective(config, runde(config)).foundry_url == "https://frontend.example"
     for pfad in ("/status", "/einstellungen"):
         html = client.get(pfad, follow_redirects=True).get_data(as_text=True)
         assert "https://frontend.example" in html
@@ -364,7 +362,7 @@ def test_ein_leeres_passwortfeld_behaelt_das_passwort(tmp_path):
     client = create_app(config).test_client()
     client.post("/einstellungen", data={"foundry_password": PASSWORT})
     client.post("/einstellungen", data={"foundry_user": "chronist", "foundry_password": ""})
-    aktuell = settings.effective(config)
+    aktuell = settings.effective(config, runde(config))
     assert aktuell.foundry_password == PASSWORT
     assert aktuell.foundry_user == "chronist"
 
@@ -394,7 +392,7 @@ def test_ein_leeres_bot_token_feld_behaelt_den_token(tmp_path):
     client = create_app(config).test_client()
     client.post("/einstellungen", data={"discord_bot_token": BOT_TOKEN})
     client.post("/einstellungen", data={"foundry_user": "chronist", "discord_bot_token": ""})
-    aktuell = settings.effective(config)
+    aktuell = settings.effective(config, runde(config))
     assert aktuell.discord_bot_token == BOT_TOKEN
     assert aktuell.foundry_user == "chronist"
 
@@ -406,7 +404,7 @@ def test_ein_gespeicherter_bot_token_richtet_discord_ohne_umgebung_ein(tmp_path)
 
     client.post("/einstellungen", data={"discord_bot_token": BOT_TOKEN})
 
-    assert settings.effective(config).discord_configured
+    assert settings.effective(config, runde(config)).discord_configured
     html = zustand(client).get_data(as_text=True)
     assert "Bot-Token gesetzt" in html
     assert f"<dd>{settings.FRONTEND}</dd>" in html
@@ -430,7 +428,7 @@ def test_die_einstellungen_stehen_hinter_demselben_tuersteher(tmp_path):
         == 403
     )
     assert client.post("/einstellungen", data={"discord_bot_token": BOT_TOKEN}).status_code == 403
-    assert settings.stored(Config(data_dir=tmp_path).database_path) == {}
+    assert settings.stored(runde(Config(data_dir=tmp_path))) == {}
 
 
 def test_erreichbares_ollama_bietet_die_modelle_zur_auswahl(tmp_path, monkeypatch):
@@ -531,7 +529,7 @@ def test_der_zustellkanal_wird_im_formular_gepflegt(tmp_path):
     assert 'name="discord_recap_channel"' in client.get("/einstellungen").get_data(as_text=True)
     client.post("/einstellungen", data={"discord_recap_channel": "chronik"})
 
-    assert settings.effective(config).discord_recap_channel == "chronik"
+    assert settings.effective(config, runde(config)).discord_recap_channel == "chronik"
     for pfad in ("/einstellungen", "/status"):
         assert "chronik" in client.get(pfad, follow_redirects=True).get_data(as_text=True)
 
@@ -560,24 +558,24 @@ def test_einstellungen_und_wizard_erklaeren_es_selbst_und_tragen_kein_band(tmp_p
 
 
 def test_mit_foundry_und_ohne_panne_bleibt_die_arbeitsseite_ohne_band(config, welt):
-    service.sync(config, client=Abgleich(welt))
+    service.sync(config, runde(config), client=Abgleich(welt))
     html = gelesen(config, "/")
     assert UNKONFIGURIERT not in html
     assert VERALTET not in html
 
 
 def test_ein_gescheiterter_abgleich_steht_auf_der_arbeitsseite(config, welt):
-    service.sync(config, client=Abgleich(welt))
-    service.sync(config, client=Abgleich(fehler=FoundryUnreachable("keine Antwort")))
+    service.sync(config, runde(config), client=Abgleich(welt))
+    service.sync(config, runde(config), client=Abgleich(fehler=FoundryUnreachable("keine Antwort")))
     html = gelesen(config, "/")
     assert VERALTET in html
     assert '<a href="/einstellungen#zustand">' in html
 
 
 def test_ein_geglueckter_abgleich_nimmt_das_band_wieder_weg(config, welt):
-    service.sync(config, client=Abgleich(fehler=FoundryUnreachable("keine Antwort")))
+    service.sync(config, runde(config), client=Abgleich(fehler=FoundryUnreachable("keine Antwort")))
     assert VERALTET in gelesen(config, "/")
-    service.sync(config, client=Abgleich(welt))
+    service.sync(config, runde(config), client=Abgleich(welt))
     assert VERALTET not in gelesen(config, "/")
 
 
@@ -603,7 +601,7 @@ def test_eine_eigene_ollama_adresse_bekommt_das_feld(tmp_path):
 
 def test_der_diktier_knopf_haengt_verborgen_an_jedem_notizfeld(tmp_path):
     config, sitzung_id = eine_sitzung(tmp_path)
-    szene = notes.session(config.database_path, sitzung_id).scenes[0]
+    szene = notes.session(runde(config), sitzung_id).scenes[0]
     html = gelesen(config, f"/sitzungen/{sitzung_id}")
     assert f'data-diktat="notiz-{szene.id}"' in html
     assert 'aria-pressed="false" hidden>Diktieren</button>' in html
@@ -637,7 +635,7 @@ def test_mit_foundry_gibt_es_keinen_wizard(tmp_path):
 def test_eine_sitzung_ersetzt_die_einrichtung_nicht(tmp_path):
     config = Config(data_dir=tmp_path)
     db.init(config.database_path)
-    notes.create_session(config.database_path, played_on="2026-08-05", title="Der Keller")
+    notes.create_session(runde(config), played_on="2026-08-05", title="Der Keller")
     antwort = create_app(config).test_client().get("/")
     assert antwort.status_code == 302
     assert antwort.headers["Location"] == "/einrichtung"
@@ -677,10 +675,10 @@ def test_der_wizard_speichert_ueber_denselben_weg_wie_die_einstellungen(tmp_path
         },
     )
     assert antwort.headers["Location"] == "/einrichtung/discord"
-    aktuell = settings.effective(config)
+    aktuell = settings.effective(config, runde(config))
     assert aktuell.foundry_url == "https://foundry.example"
     assert aktuell.foundry_password == PASSWORT
-    assert settings.sources(config)["foundry_url"] == settings.FRONTEND
+    assert settings.sources(config, runde(config))["foundry_url"] == settings.FRONTEND
 
 
 def test_ein_schritt_nimmt_den_anderen_schritten_ihre_werte_nicht_weg(tmp_path):
@@ -688,7 +686,7 @@ def test_ein_schritt_nimmt_den_anderen_schritten_ihre_werte_nicht_weg(tmp_path):
     client = create_app(config).test_client()
     client.post("/einrichtung/foundry", data={"foundry_user": "chronist"})
     client.post("/einrichtung/discord", data={"discord_recap_channel": "chronik"})
-    aktuell = settings.effective(config)
+    aktuell = settings.effective(config, runde(config))
     assert aktuell.foundry_user == "chronist"
     assert aktuell.discord_recap_channel == "chronik"
 
@@ -701,7 +699,7 @@ def test_ueberspringen_schreibt_nichts_und_geht_weiter(tmp_path):
         data={"discord_bot_token": BOT_TOKEN, "tat": "ueberspringen"},
     )
     assert antwort.headers["Location"] == "/einrichtung/ollama"
-    assert settings.effective(config).discord_bot_token is None
+    assert settings.effective(config, runde(config)).discord_bot_token is None
 
 
 def test_der_letzte_schritt_setzt_das_flag_und_fuehrt_zur_sitzungsseite(tmp_path):
@@ -709,14 +707,14 @@ def test_der_letzte_schritt_setzt_das_flag_und_fuehrt_zur_sitzungsseite(tmp_path
     client = create_app(config).test_client()
     antwort = client.post("/einrichtung/ollama", data={"ollama_model": "chronist-modell"})
     assert antwort.headers["Location"] == "/"
-    assert settings.onboarding_done(config.database_path)
+    assert instanz.onboarding_done(config.database_path)
 
 
 def test_auch_wer_den_letzten_schritt_ueberspringt_ist_fertig(tmp_path):
     config = Config(data_dir=tmp_path)
     client = create_app(config).test_client()
     client.post("/einrichtung/ollama", data={"tat": "ueberspringen"})
-    assert settings.onboarding_done(config.database_path)
+    assert instanz.onboarding_done(config.database_path)
 
 
 def test_nach_der_einrichtung_kommt_der_wizard_nie_wieder(tmp_path):
@@ -749,8 +747,8 @@ def test_spaeter_legt_die_einrichtung_beiseite_ohne_etwas_zu_speichern(tmp_path)
         data={"foundry_user": "chronist", "foundry_password": PASSWORT, "tat": "spaeter"},
     )
     assert antwort.headers["Location"] == "/"
-    assert settings.stored(config.database_path) == {}
-    assert settings.onboarding_done(config.database_path)
+    assert settings.stored(runde(config)) == {}
+    assert instanz.onboarding_done(config.database_path)
     html = client.get("/").get_data(as_text=True)
     assert UNKONFIGURIERT in html
     assert '<a href="/einstellungen">Zugang eintragen</a>' in html
@@ -758,7 +756,7 @@ def test_spaeter_legt_die_einrichtung_beiseite_ohne_etwas_zu_speichern(tmp_path)
 
 def test_nach_der_einrichtung_fuehrt_das_band_in_die_einstellungen(tmp_path):
     config, _ = eine_sitzung(tmp_path)
-    settings.finish_onboarding(config.database_path)
+    instanz.finish_onboarding(config.database_path)
     html = gelesen(config, "/")
     assert UNKONFIGURIERT in html
     assert '<a href="/einstellungen">Zugang eintragen</a>' in html
@@ -771,7 +769,7 @@ def test_der_wizard_steht_hinter_demselben_tuersteher(tmp_path):
     assert (
         client.post("/einrichtung/foundry", data={"foundry_password": PASSWORT}).status_code == 403
     )
-    assert settings.stored(Config(data_dir=tmp_path).database_path) == {}
+    assert settings.stored(runde(Config(data_dir=tmp_path))) == {}
 
 
 def test_die_fachlichen_reiter_stehen_neben_einem_zahnrad(tmp_path):
@@ -814,7 +812,7 @@ def test_die_einstellungen_sind_nach_nutzerfragen_geschnitten(tmp_path):
 
 
 def test_die_foundry_karte_traegt_zugang_zustand_und_den_abgleich(config, welt):
-    service.sync(config, client=Abgleich(welt))
+    service.sync(config, runde(config), client=Abgleich(welt))
     html = gelesen(config, "/einstellungen")
     karte = html.split('id="zustand"')[1].split("</section>")[0]
     assert 'name="foundry_url"' in karte
@@ -856,14 +854,14 @@ def test_der_knopf_stoesst_den_lauf_an_und_fuehrt_zur_chronik(tmp_path):
 
     assert antwort.status_code == 302
     assert antwort.headers["Location"] == f"/sitzungen/{sitzung_id}/protokoll"
-    assert warte_bis(lambda: protocol.stored(config.database_path, sitzung_id) is not None)
+    assert warte_bis(lambda: protocol.stored(runde(config), sitzung_id) is not None)
 
 
 def test_nach_dem_lauf_sagt_die_seite_was_dabei_herauskam(tmp_path):
     config, sitzung_id = eine_sitzung(tmp_path)
     client = create_app(config).test_client()
     client.post(f"/sitzungen/{sitzung_id}/chronik")
-    assert warte_bis(lambda: jobs.latest(config.database_path, jobs.CHRONIK, sitzung_id).fertig)
+    assert warte_bis(lambda: jobs.latest(runde(config), jobs.CHRONIK, sitzung_id).fertig)
 
     html = client.get(f"/sitzungen/{sitzung_id}").get_data(as_text=True)
     assert "stehen bereit" in html
@@ -882,7 +880,7 @@ def test_waehrend_der_lauf_laeuft_ist_der_knopf_aus(tmp_path):
 
 def test_eine_zweite_chronik_wartet_bis_die_erste_durch_ist(tmp_path):
     config, sitzung_id = eine_sitzung(tmp_path)
-    zweite = notes.create_session(config.database_path, played_on="2026-08-06", title="Der Hafen")
+    zweite = notes.create_session(runde(config), played_on="2026-08-06", title="Der Hafen")
     laufender_job(config.database_path, jobs.CHRONIK, sitzung_id)
 
     html = gelesen(config, f"/sitzungen/{zweite}")
@@ -892,13 +890,14 @@ def test_eine_zweite_chronik_wartet_bis_die_erste_durch_ist(tmp_path):
 def test_ein_unterbrochener_lauf_steht_als_solcher_auf_der_seite(tmp_path):
     config, sitzung_id = eine_sitzung(tmp_path)
     # Ohne Faden-Vermerk: genau das, was ein Neustart mitten im Lauf hinterlässt.
-    verbindung = db.connect(config.database_path)
-    with verbindung:
-        verbindung.execute(
-            "INSERT INTO job (kind, session_id, state, started_at) VALUES (?, ?, ?, ?)",
-            (jobs.CHRONIK, sitzung_id, jobs.LAEUFT, "2026-08-06T10:00:00+00:00"),
+    scope = db.scoped(runde(config))
+    with scope:
+        scope.execute(
+            "INSERT INTO job (runde_id, kind, session_id, state, started_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (scope.runde_id, jobs.CHRONIK, sitzung_id, jobs.LAEUFT, "2026-08-06T10:00:00+00:00"),
         )
-    verbindung.close()
+    scope.close()
 
     html = gelesen(config, f"/sitzungen/{sitzung_id}")
     assert "wurde unterbrochen" in html
@@ -915,7 +914,7 @@ def test_der_chronik_knopf_steht_hinter_demselben_tuersteher(tmp_path):
 
 
 def test_ein_gescheiterter_abgleich_bietet_das_erneute_holen_an(config, welt):
-    service.sync(config, client=Abgleich(fehler=FoundryUnreachable("keine Antwort")))
+    service.sync(config, runde(config), client=Abgleich(fehler=FoundryUnreachable("keine Antwort")))
     html = gelesen(config, "/")
     assert 'action="/abgleich"' in html
     assert ">Jetzt abgleichen</button>" in html
@@ -931,18 +930,18 @@ def test_der_abgleich_kehrt_auf_die_seite_zurueck_von_der_er_kam(config, welt):
     client = create_app(config).test_client()
     antwort = client.post("/abgleich", data={"zurueck": f"/sitzungen/{1}"})
     assert antwort.headers["Location"] == "/sitzungen/1"
-    assert warte_bis(lambda: not jobs.running(config.database_path, jobs.ABGLEICH))
+    assert warte_bis(lambda: not jobs.running(runde(config), jobs.ABGLEICH))
 
 
 def test_der_abgleich_folgt_keiner_adresse_nach_draussen(config):
     client = create_app(config).test_client()
     antwort = client.post("/abgleich", data={"zurueck": "//woanders.example/"})
     assert antwort.headers["Location"] == "/einstellungen#zustand"
-    assert warte_bis(lambda: not jobs.running(config.database_path, jobs.ABGLEICH))
+    assert warte_bis(lambda: not jobs.running(runde(config), jobs.ABGLEICH))
 
 
 def test_waehrend_des_abgleichs_sagt_das_band_was_laeuft(config, welt):
-    service.sync(config, client=Abgleich(welt))
+    service.sync(config, runde(config), client=Abgleich(welt))
     laufender_job(config.database_path, jobs.ABGLEICH)
 
     html = gelesen(config, "/")
@@ -975,7 +974,7 @@ def systemsprache(html):
 
 def test_keine_systemsprache_auf_einer_gerenderten_seite(tmp_path):
     config, sitzung_id = eine_sitzung(tmp_path, rueckblick=True)
-    hochgeladen = recordings.enqueue(config.database_path, sitzung_id, "diktat.m4a")
+    hochgeladen = recordings.enqueue(runde(config), sitzung_id, "diktat.m4a")
     assert hochgeladen.status == recordings.WARTET
     app = create_app(config)
     client = app.test_client()
@@ -998,7 +997,7 @@ def test_auch_die_abweisung_spricht_nutzersprache(tmp_path):
 
 def test_ein_abgleich_ohne_zugang_erklaert_das_ohne_variablennamen(tmp_path):
     config = Config(data_dir=tmp_path)
-    zustand = service.sync(config)
+    zustand = service.sync(config, runde(config))
     assert zustand.stale
 
     html = seite(config).get_data(as_text=True)
@@ -1009,8 +1008,8 @@ def test_ein_abgleich_ohne_zugang_erklaert_das_ohne_variablennamen(tmp_path):
 def test_auch_das_abgelegte_protokoll_spricht_nutzersprache(tmp_path):
     """Der Text in der SQLite wird Wochen später gelesen — er ist selbst Oberfläche."""
     config, sitzung_id = eine_sitzung(tmp_path)
-    chronik = compose_session(config, sitzung_id)
-    rueckblick = recap_session(config, sitzung_id)
+    chronik = compose_session(config, runde(config), sitzung_id)
+    rueckblick = recap_session(config, runde(config), sitzung_id)
 
     for abgelegt in (chronik.text, rueckblick.text, chronik.message, rueckblick.message):
         assert systemsprache(abgelegt) == [], abgelegt
@@ -1035,15 +1034,15 @@ def mit_gruppe(tmp_path, *, eingerichtet=True):
     config = Config(data_dir=tmp_path)
     db.init(config.database_path)
     if eingerichtet:
-        settings.finish_onboarding(config.database_path)
-    settings.save_admin_group(config.database_path, GRUPPE)
+        instanz.finish_onboarding(config.database_path)
+    instanz.save_admin_group(config.database_path, GRUPPE)
     return config, create_app(config).test_client()
 
 
 def test_ohne_gesetzte_gruppe_darf_jeder_alles(tmp_path):
     config = Config(data_dir=tmp_path)
     db.init(config.database_path)
-    settings.finish_onboarding(config.database_path)
+    instanz.finish_onboarding(config.database_path)
     client = create_app(config).test_client()
     for pfad in VERWALTUNGSSEITEN:
         assert client.get(pfad, headers=MITSPIEL).status_code == 200, pfad
@@ -1065,7 +1064,7 @@ def test_auch_die_speicherwege_stehen_hinter_der_rolle(tmp_path):
 
 def test_die_ausloese_knoepfe_gehoeren_der_verwaltung(tmp_path):
     config, sitzung_id = eine_sitzung(tmp_path)
-    settings.save_admin_group(config.database_path, GRUPPE)
+    instanz.save_admin_group(config.database_path, GRUPPE)
     client = create_app(config).test_client()
     assert client.post("/abgleich", headers=MITSPIEL).status_code == 403
     assert client.post(f"/sitzungen/{sitzung_id}/chronik", headers=MITSPIEL).status_code == 403
@@ -1073,7 +1072,7 @@ def test_die_ausloese_knoepfe_gehoeren_der_verwaltung(tmp_path):
 
 def test_zum_mitspielen_braucht_niemand_die_rolle(tmp_path):
     config, sitzung_id = eine_sitzung(tmp_path)
-    settings.save_admin_group(config.database_path, GRUPPE)
+    instanz.save_admin_group(config.database_path, GRUPPE)
     client = create_app(config).test_client()
     for pfad in (
         "/",
@@ -1090,7 +1089,7 @@ def test_zum_mitspielen_braucht_niemand_die_rolle(tmp_path):
 
 def test_ohne_rolle_haengt_kein_zahnrad_in_der_navigation(tmp_path):
     config, _ = eine_sitzung(tmp_path)
-    settings.save_admin_group(config.database_path, GRUPPE)
+    instanz.save_admin_group(config.database_path, GRUPPE)
     client = create_app(config).test_client()
     assert 'class="zahnrad"' not in client.get("/", headers=MITSPIEL).get_data(as_text=True)
     assert 'class="zahnrad"' in client.get("/", headers=VERWALTUNG).get_data(as_text=True)
@@ -1098,7 +1097,7 @@ def test_ohne_rolle_haengt_kein_zahnrad_in_der_navigation(tmp_path):
 
 def test_ohne_rolle_steht_auch_kein_ausloese_knopf_auf_der_seite(tmp_path):
     config, sitzung_id = eine_sitzung(tmp_path)
-    settings.save_admin_group(config.database_path, GRUPPE)
+    instanz.save_admin_group(config.database_path, GRUPPE)
     client = create_app(config).test_client()
     html = client.get(f"/sitzungen/{sitzung_id}/protokoll", headers=MITSPIEL).get_data(as_text=True)
     assert f'action="/sitzungen/{sitzung_id}/chronik"' not in html
@@ -1142,9 +1141,9 @@ def test_wer_sich_selbst_aussperren_wuerde_wird_gewarnt(tmp_path):
     )
     assert antwort.status_code == 200
     assert "stehst du selbst nicht" in antwort.get_data(as_text=True)
-    assert settings.admin_group(config.database_path) == ""
+    assert instanz.admin_group(config.database_path) == ""
     # Was daneben im Formular stand, ist trotzdem gespeichert.
-    assert settings.stored(config.database_path)["foundry_user"] == "chronist"
+    assert settings.stored(runde(config))["foundry_user"] == "chronist"
 
 
 def test_die_warnung_laesst_sich_bewusst_uebergehen(tmp_path):
@@ -1156,7 +1155,7 @@ def test_die_warnung_laesst_sich_bewusst_uebergehen(tmp_path):
         headers=MITSPIEL,
     )
     assert antwort.status_code == 302
-    assert settings.admin_group(config.database_path) == GRUPPE
+    assert instanz.admin_group(config.database_path) == GRUPPE
 
 
 def test_wer_die_gruppe_selbst_traegt_speichert_ohne_warnung(tmp_path):
@@ -1164,20 +1163,20 @@ def test_wer_die_gruppe_selbst_traegt_speichert_ohne_warnung(tmp_path):
     client = create_app(config).test_client()
     antwort = client.post("/einstellungen", data={"admin_group": GRUPPE}, headers=VERWALTUNG)
     assert antwort.status_code == 302
-    assert settings.admin_group(config.database_path) == GRUPPE
+    assert instanz.admin_group(config.database_path) == GRUPPE
 
 
 def test_die_gruppe_zurueckzunehmen_warnt_nicht(tmp_path):
     config, client = mit_gruppe(tmp_path)
     antwort = client.post("/einstellungen", data={"admin_group": "  "}, headers=VERWALTUNG)
     assert antwort.status_code == 302
-    assert settings.admin_group(config.database_path) == ""
+    assert instanz.admin_group(config.database_path) == ""
 
 
 def test_ein_formular_ohne_das_feld_nimmt_die_rolle_nicht_still_zurueck(tmp_path):
     config, client = mit_gruppe(tmp_path)
     client.post("/einstellungen", data={"foundry_user": "chronist"}, headers=VERWALTUNG)
-    assert settings.admin_group(config.database_path) == GRUPPE
+    assert instanz.admin_group(config.database_path) == GRUPPE
 
 
 # --- Register: browsen darf jeder, bestätigen die Verwaltung --------------------------
@@ -1187,10 +1186,11 @@ def ein_vorschlag(tmp_path):
     config, sitzung_id = eine_sitzung(tmp_path, chronik=True)
     register.suggest(
         config,
+        runde(config),
         sitzung_id,
         model=Registerfuehrer("figur | Die Wirtin | Schenkt im Krummen Ast aus."),
     )
-    return config, register.pending(config.database_path)[0]
+    return config, register.pending(runde(config))[0]
 
 
 class Registerfuehrer:
@@ -1205,7 +1205,7 @@ class Registerfuehrer:
 
 def test_das_register_steht_jedem_offen(tmp_path):
     config, _ = eine_sitzung(tmp_path)
-    settings.save_admin_group(config.database_path, GRUPPE)
+    instanz.save_admin_group(config.database_path, GRUPPE)
     client = create_app(config).test_client()
     assert client.get("/register", headers=MITSPIEL).status_code == 200
     assert "Register" in client.get("/", headers=MITSPIEL).get_data(as_text=True)
@@ -1213,7 +1213,7 @@ def test_das_register_steht_jedem_offen(tmp_path):
 
 def test_das_bestaetigen_gehoert_der_verwaltung(tmp_path):
     config, _ = ein_vorschlag(tmp_path)
-    settings.save_admin_group(config.database_path, GRUPPE)
+    instanz.save_admin_group(config.database_path, GRUPPE)
     client = create_app(config).test_client()
     assert client.get("/register/vorschlaege", headers=MITSPIEL).status_code == 403
     assert client.post("/register/vorschlaege", data={}, headers=MITSPIEL).status_code == 403
@@ -1250,19 +1250,19 @@ def test_ohne_wahl_bleibt_der_vorschlag_stehen(tmp_path):
     config, eintrag = ein_vorschlag(tmp_path)
     client = create_app(config).test_client()
     client.post("/register/vorschlaege", data={f"{register.FELD}{eintrag.id}": ""})
-    assert len(register.pending(config.database_path)) == 1
+    assert len(register.pending(runde(config))) == 1
 
 
 def test_eine_id_die_nicht_in_der_liste_stand_wird_nicht_entschieden(tmp_path):
     config, eintrag = ein_vorschlag(tmp_path)
     client = create_app(config).test_client()
     client.post("/register/vorschlaege", data={f"{register.FELD}{eintrag.id + 99}": register.JA})
-    assert len(register.pending(config.database_path)) == 1
+    assert len(register.pending(runde(config))) == 1
 
 
 def test_ein_registertreffer_fuehrt_ins_register(tmp_path):
     config, eintrag = ein_vorschlag(tmp_path)
-    register.decide(config.database_path, {eintrag.id: register.Entscheidung(ja=True)})
+    register.decide(runde(config), {eintrag.id: register.Entscheidung(ja=True)})
     html = gelesen(config, "/suche?q=Wirtin")
     assert "Registereintrag" in html
     assert f'href="/register#eintrag-{eintrag.id}"' in html

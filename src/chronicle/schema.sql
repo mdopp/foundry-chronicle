@@ -5,31 +5,62 @@ CREATE TABLE IF NOT EXISTS meta (
     value TEXT NOT NULL
 );
 
+-- Die Runde ist der Mandant: eine Instanz trägt mehrere. Der Schlüssel nach außen ist die
+-- Discord-Gilde, der Schlüssel nach innen bleibt die ``id`` — eine Gilde kann später
+-- wegfallen oder wechseln, die Chronik dahinter nicht. ``guild_id`` bleibt leer, bis eine
+-- Gilde die Runde für sich beansprucht; die Bestände der Entwicklungs-Instanz wandern in
+-- eine solche noch unbeanspruchte Runde.
+CREATE TABLE IF NOT EXISTS runde (
+    id         INTEGER PRIMARY KEY,
+    name       TEXT NOT NULL,
+    guild_id   TEXT UNIQUE,
+    created_at TEXT NOT NULL
+);
+
+-- Merkzettel je Runde: der Zeiger auf die zuletzt abgeholte Diktat-Nachricht, der Grund
+-- des letzten gescheiterten Foundry-Abgleichs. Kein Einstellungswert — nichts davon wird
+-- gepflegt, alles davon wird fortgeschrieben. ``meta`` steht daneben und gehört der
+-- Instanz.
+CREATE TABLE IF NOT EXISTS runde_meta (
+    runde_id INTEGER NOT NULL REFERENCES runde (id) ON DELETE CASCADE,
+    key      TEXT NOT NULL,
+    value    TEXT NOT NULL,
+    PRIMARY KEY (runde_id, key)
+);
+
 -- Der Foundry-Zwischenspeicher: bereits gefiltert und auf die benötigten Felder
--- zusammengestrichen. Der Rohdump wird nie abgelegt.
+-- zusammengestrichen. Der Rohdump wird nie abgelegt. Ein Stand je Runde — die ``runde_id``
+-- ist hier zugleich der Primärschlüssel.
 CREATE TABLE IF NOT EXISTS foundry_snapshot (
-    id         INTEGER PRIMARY KEY CHECK (id = 1),
+    runde_id   INTEGER PRIMARY KEY REFERENCES runde (id) ON DELETE CASCADE,
     fetched_at TEXT NOT NULL,
     system     TEXT NOT NULL
 );
 
+-- Die Foundry-Ids stammen aus fremden Welten und sind nur dort eindeutig. Der
+-- Primärschlüssel führt deshalb die Runde mit: zwei Runden dürfen dieselbe Id tragen.
 CREATE TABLE IF NOT EXISTS foundry_player (
-    id    TEXT PRIMARY KEY,
-    name  TEXT NOT NULL,
-    role  INTEGER NOT NULL,
-    is_gm INTEGER NOT NULL
+    runde_id INTEGER NOT NULL REFERENCES runde (id) ON DELETE CASCADE,
+    id       TEXT NOT NULL,
+    name     TEXT NOT NULL,
+    role     INTEGER NOT NULL,
+    is_gm    INTEGER NOT NULL,
+    PRIMARY KEY (runde_id, id)
 );
 
 CREATE TABLE IF NOT EXISTS foundry_character (
-    id        TEXT PRIMARY KEY,
+    runde_id  INTEGER NOT NULL REFERENCES runde (id) ON DELETE CASCADE,
+    id        TEXT NOT NULL,
     name      TEXT NOT NULL,
     type      TEXT,
     owner_ids TEXT NOT NULL,
-    limited   INTEGER NOT NULL
+    limited   INTEGER NOT NULL,
+    PRIMARY KEY (runde_id, id)
 );
 
 CREATE TABLE IF NOT EXISTS foundry_message (
-    id                  TEXT PRIMARY KEY,
+    runde_id            INTEGER NOT NULL REFERENCES runde (id) ON DELETE CASCADE,
+    id                  TEXT NOT NULL,
     timestamp           INTEGER NOT NULL,
     speaker_actor       TEXT,
     speaker_alias       TEXT,
@@ -40,36 +71,54 @@ CREATE TABLE IF NOT EXISTS foundry_message (
     roll_kind           TEXT,
     roll_critical       INTEGER,
     roll_modifier_total INTEGER,
-    roll_dice           TEXT
+    roll_dice           TEXT,
+    PRIMARY KEY (runde_id, id)
 );
 
-CREATE INDEX IF NOT EXISTS foundry_message_zeit ON foundry_message (timestamp);
+CREATE INDEX IF NOT EXISTS foundry_message_zeit ON foundry_message (runde_id, timestamp);
 
+-- ``UNIQUE (id, runde_id)`` sieht überflüssig aus, ist aber der Anker: die Kindtabellen
+-- verweisen auf **beides**, und damit kann keine Zeile an einer Sitzung einer fremden
+-- Runde hängen. Ein falsch zusammengesetztes INSERT scheitert an der Datenbank statt an
+-- der Aufmerksamkeit dessen, der es schrieb.
 CREATE TABLE IF NOT EXISTS session (
     id         INTEGER PRIMARY KEY,
+    runde_id   INTEGER NOT NULL REFERENCES runde (id) ON DELETE CASCADE,
     played_on  TEXT NOT NULL,
     title      TEXT,
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    UNIQUE (id, runde_id)
 );
+
+CREATE INDEX IF NOT EXISTS session_runde ON session (runde_id, played_on, id);
 
 -- Die Reihenfolge der Szenen ist im Präsenzfall die einzige Zeitachse: Foundry wird
 -- erst am Ende befüllt, dessen Zeitstempel clustern also alle auf die letzte halbe
 -- Stunde.
+--
+-- ``runde_id`` steht hier, obwohl sie sich über ``session_id`` herleiten ließe. Genau das
+-- ist der Punkt: eine Abfrage, die eine Szene anfasst, soll die Runde nennen müssen statt
+-- über einen Verbund darauf zu hoffen.
 CREATE TABLE IF NOT EXISTS scene (
     id         INTEGER PRIMARY KEY,
-    session_id INTEGER NOT NULL REFERENCES session (id) ON DELETE CASCADE,
+    runde_id   INTEGER NOT NULL REFERENCES runde (id) ON DELETE CASCADE,
+    session_id INTEGER NOT NULL,
     position   INTEGER NOT NULL,
     title      TEXT,
     created_at TEXT NOT NULL,
-    UNIQUE (session_id, position)
+    UNIQUE (session_id, position),
+    UNIQUE (id, runde_id),
+    FOREIGN KEY (session_id, runde_id) REFERENCES session (id, runde_id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS note (
     id         INTEGER PRIMARY KEY,
-    scene_id   INTEGER NOT NULL REFERENCES scene (id) ON DELETE CASCADE,
+    runde_id   INTEGER NOT NULL REFERENCES runde (id) ON DELETE CASCADE,
+    scene_id   INTEGER NOT NULL,
     text       TEXT NOT NULL,
     created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY (scene_id, runde_id) REFERENCES scene (id, runde_id) ON DELETE CASCADE
 );
 
 CREATE INDEX IF NOT EXISTS note_szene ON note (scene_id);
@@ -78,9 +127,11 @@ CREATE INDEX IF NOT EXISTS note_szene ON note (scene_id);
 -- gehört. Bewusst ohne Fremdschlüssel: ein Abgleich ersetzt den Zwischenspeicher am
 -- Stück, die Foundry-Id bleibt dabei stehen — die Zuordnung darf das überleben.
 CREATE TABLE IF NOT EXISTS scene_foundry_message (
-    scene_id   INTEGER NOT NULL REFERENCES scene (id) ON DELETE CASCADE,
+    runde_id   INTEGER NOT NULL REFERENCES runde (id) ON DELETE CASCADE,
+    scene_id   INTEGER NOT NULL,
     message_id TEXT NOT NULL,
-    PRIMARY KEY (scene_id, message_id)
+    PRIMARY KEY (scene_id, message_id),
+    FOREIGN KEY (scene_id, runde_id) REFERENCES scene (id, runde_id) ON DELETE CASCADE
 );
 
 -- ``delivered_at`` gilt nur dem Rückblick: wann er in den Gruppenkanal gestellt wurde. Es
@@ -92,12 +143,14 @@ CREATE TABLE IF NOT EXISTS scene_foundry_message (
 -- zweite Sitzung. Die jeweils gültige Fassung steht in der Chronik-Ansicht.
 CREATE TABLE IF NOT EXISTS protocol (
     id           INTEGER PRIMARY KEY,
-    session_id   INTEGER NOT NULL REFERENCES session (id) ON DELETE CASCADE,
+    runde_id     INTEGER NOT NULL REFERENCES runde (id) ON DELETE CASCADE,
+    session_id   INTEGER NOT NULL,
     kind         TEXT NOT NULL CHECK (kind IN ('chronik', 'rueckblick')),
     text         TEXT NOT NULL,
     created_at   TEXT NOT NULL,
     delivered_at TEXT,
-    UNIQUE (session_id, kind)
+    UNIQUE (session_id, kind),
+    FOREIGN KEY (session_id, runde_id) REFERENCES session (id, runde_id) ON DELETE CASCADE
 );
 
 -- Eine Spur, ein Transkript: ``source`` sagt, welche Spur es war — der Dateiname der
@@ -105,10 +158,13 @@ CREATE TABLE IF NOT EXISTS protocol (
 -- einzelne Spur nicht; die Zuordnung zu Personen kommt mit dem Bot.
 CREATE TABLE IF NOT EXISTS transcript (
     id         INTEGER PRIMARY KEY,
-    session_id INTEGER NOT NULL REFERENCES session (id) ON DELETE CASCADE,
+    runde_id   INTEGER NOT NULL REFERENCES runde (id) ON DELETE CASCADE,
+    session_id INTEGER NOT NULL,
     source     TEXT NOT NULL,
     created_at TEXT NOT NULL,
-    UNIQUE (session_id, source)
+    UNIQUE (session_id, source),
+    UNIQUE (id, runde_id),
+    FOREIGN KEY (session_id, runde_id) REFERENCES session (id, runde_id) ON DELETE CASCADE
 );
 
 -- Die Warteschlange der Stufe: eine Zeile je Spur, die transkribiert werden will. Sie
@@ -121,9 +177,13 @@ CREATE TABLE IF NOT EXISTS transcript (
 -- Geschichte. Ein eigenes Feld statt eines weiteren ``status``, damit der Ausgang des
 -- Laufs daneben stehen bleibt. Kommentare gehören außerhalb der Klammer — SQLite liest
 -- den Tabellentext bei ``ALTER TABLE DROP COLUMN`` neu ein und stolpert sonst darüber.
+--
+-- ``filename`` ist über alle Runden hinweg eindeutig: das Aufnahmeverzeichnis ist eines,
+-- zwei gleichnamige Spuren wären dieselbe Datei.
 CREATE TABLE IF NOT EXISTS recording (
     id          INTEGER PRIMARY KEY,
-    session_id  INTEGER NOT NULL REFERENCES session (id) ON DELETE CASCADE,
+    runde_id    INTEGER NOT NULL REFERENCES runde (id) ON DELETE CASCADE,
+    session_id  INTEGER NOT NULL,
     filename    TEXT NOT NULL UNIQUE,
     source      TEXT NOT NULL,
     uploaded_at TEXT NOT NULL,
@@ -132,7 +192,8 @@ CREATE TABLE IF NOT EXISTS recording (
     detail      TEXT,
     updated_at  TEXT NOT NULL,
     deleted_at  TEXT,
-    discord_user_id TEXT
+    discord_user_id TEXT,
+    FOREIGN KEY (session_id, runde_id) REFERENCES session (id, runde_id) ON DELETE CASCADE
 );
 
 CREATE INDEX IF NOT EXISTS recording_sitzung ON recording (session_id);
@@ -146,48 +207,63 @@ CREATE INDEX IF NOT EXISTS recording_sitzung ON recording (session_id);
 -- Ein Neustart mitten im Lauf lässt ``laeuft`` stehen; ``chronicle.jobs`` schreibt die
 -- Zeile beim nächsten Blick auf ``gescheitert`` um, damit nichts für immer zu laufen
 -- scheint.
+--
+-- Der Lauf gehört einer Runde, die Maschine allen: ``chronicle.jobs`` lässt über alle
+-- Runden hinweg nur einen gleichzeitig laufen — eine CPU, ein Ollama.
 CREATE TABLE IF NOT EXISTS job (
     id          INTEGER PRIMARY KEY,
+    runde_id    INTEGER NOT NULL REFERENCES runde (id) ON DELETE CASCADE,
     kind        TEXT NOT NULL CHECK (kind IN ('abgleich', 'chronik', 'nachtlauf')),
-    session_id  INTEGER REFERENCES session (id) ON DELETE CASCADE,
+    session_id  INTEGER,
     state       TEXT NOT NULL CHECK (state IN ('laeuft', 'fertig', 'gescheitert')),
     started_at  TEXT NOT NULL,
     finished_at TEXT,
     result      TEXT,
-    error       TEXT
+    error       TEXT,
+    FOREIGN KEY (session_id, runde_id) REFERENCES session (id, runde_id) ON DELETE CASCADE
 );
 
-CREATE INDEX IF NOT EXISTS job_art ON job (kind, session_id, id);
+CREATE INDEX IF NOT EXISTS job_art ON job (runde_id, kind, session_id, id);
 
 -- Zeitstempel in Millisekunden ab Spurbeginn: die Zusammenführung legt später mehrere
 -- Spuren auf eine Zeitachse, und Fließkomma-Sekunden wären dabei die falsche Einheit.
 CREATE TABLE IF NOT EXISTS transcript_segment (
     id            INTEGER PRIMARY KEY,
-    transcript_id INTEGER NOT NULL REFERENCES transcript (id) ON DELETE CASCADE,
+    runde_id      INTEGER NOT NULL REFERENCES runde (id) ON DELETE CASCADE,
+    transcript_id INTEGER NOT NULL,
     start_ms      INTEGER NOT NULL,
     end_ms        INTEGER NOT NULL,
-    text          TEXT NOT NULL
+    text          TEXT NOT NULL,
+    FOREIGN KEY (transcript_id, runde_id)
+        REFERENCES transcript (id, runde_id) ON DELETE CASCADE
 );
 
 CREATE INDEX IF NOT EXISTS transcript_segment_zeit
     ON transcript_segment (transcript_id, start_ms);
 
--- Die Werte aus der Oberfläche. Was hier steht, schlägt die Umgebung; die bleibt die
--- Vorgabe beim ersten Start. Foundry-Passwort und Discord-Bot-Token liegen damit im
--- Klartext in dieser Datei und gehen mit ins Backup — bewusste Abwägung, siehe CLAUDE.md.
+-- Die Werte, die eine Runde pflegt. Was hier steht, schlägt die Umgebung; die bleibt die
+-- Vorgabe beim ersten Start. Das Foundry-Passwort liegt damit im Klartext in dieser Datei
+-- und geht mit ins Backup — bewusste Abwägung, siehe CLAUDE.md.
+--
+-- Was der **Instanz** gehört und keiner Runde — voran der Discord-Bot-Token, denn das ist
+-- unser Token und nicht das einer Gruppe — steht in ``meta``, siehe ``chronicle.instanz``.
 CREATE TABLE IF NOT EXISTS settings (
-    key   TEXT PRIMARY KEY,
-    value TEXT NOT NULL
+    runde_id INTEGER NOT NULL REFERENCES runde (id) ON DELETE CASCADE,
+    key      TEXT NOT NULL,
+    value    TEXT NOT NULL,
+    PRIMARY KEY (runde_id, key)
 );
 
 -- Was aus dem Diktat-Kanal schon abgeholt wurde. Der Zeiger auf die zuletzt geholte
--- Nachricht steht in ``meta``; er spart das erneute Holen. Diese Tabelle ist die
+-- Nachricht steht in ``runde_meta``; er spart das erneute Holen. Diese Tabelle ist die
 -- Garantie: geht der Zeiger verloren, wird trotzdem nichts ein zweites Mal abgelegt.
 CREATE TABLE IF NOT EXISTS discord_intake (
-    message_id TEXT PRIMARY KEY,
+    runde_id   INTEGER NOT NULL REFERENCES runde (id) ON DELETE CASCADE,
+    message_id TEXT NOT NULL,
     status     TEXT NOT NULL
                CHECK (status IN ('abgelegt', 'wartet', 'uebersprungen')),
-    handled_at TEXT NOT NULL
+    handled_at TEXT NOT NULL,
+    PRIMARY KEY (runde_id, message_id)
 );
 
 -- Das Einwilligungsprotokoll des Aufnahme-Bots. Das Aufzeichnen des nichtöffentlich
@@ -197,13 +273,17 @@ CREATE TABLE IF NOT EXISTS discord_intake (
 -- umschreibt, ist keiner. Die Zeile überlebt deshalb auch das Löschen ihrer Sitzung.
 CREATE TABLE IF NOT EXISTS consent_event (
     id           INTEGER PRIMARY KEY,
+    runde_id     INTEGER NOT NULL REFERENCES runde (id) ON DELETE CASCADE,
+    -- Einspaltig und nicht zusammengesetzt wie sonst: ``SET NULL`` löschte sonst auch die
+    -- ``runde_id``, und die darf hier nie leer sein. Der Nachweis überlebt seine Sitzung.
     session_id   INTEGER REFERENCES session (id) ON DELETE SET NULL,
     kind         TEXT NOT NULL CHECK (kind IN ('ansage', 'nachzuegler')),
     announced_at TEXT NOT NULL,
     guild_id     TEXT NOT NULL,
     channel_id   TEXT NOT NULL,
     channel_name TEXT NOT NULL,
-    text         TEXT NOT NULL
+    text         TEXT NOT NULL,
+    UNIQUE (id, runde_id)
 );
 
 CREATE INDEX IF NOT EXISTS consent_event_sitzung ON consent_event (session_id);
@@ -211,10 +291,12 @@ CREATE INDEX IF NOT EXISTS consent_event_sitzung ON consent_event (session_id);
 -- Wer im Sprachkanal war, als die Ansage zu Ende gespielt hatte. Der Anzeigename steht
 -- dabei: eine Discord-Id allein ist Wochen später niemand mehr.
 CREATE TABLE IF NOT EXISTS consent_member (
-    event_id INTEGER NOT NULL REFERENCES consent_event (id) ON DELETE CASCADE,
+    runde_id INTEGER NOT NULL REFERENCES runde (id) ON DELETE CASCADE,
+    event_id INTEGER NOT NULL,
     user_id  TEXT NOT NULL,
     name     TEXT NOT NULL,
-    PRIMARY KEY (event_id, user_id)
+    PRIMARY KEY (event_id, user_id),
+    FOREIGN KEY (event_id, runde_id) REFERENCES consent_event (id, runde_id) ON DELETE CASCADE
 );
 
 -- Die Personen-Zuordnung Discord ↔ Foundry. Hier steht ausschließlich **Bestätigtes**:
@@ -226,10 +308,14 @@ CREATE TABLE IF NOT EXISTS consent_member (
 -- Die Anzeigenamen stehen nicht hier — sie liegen im Einwilligungsprotokoll und im
 -- Foundry-Zwischenspeicher. Dieselbe personenbezogene Angabe ein drittes Mal zu führen
 -- wäre keine Erleichterung.
+--
+-- Derselbe Mensch kann in zwei Runden mitspielen: der Schlüssel führt die Runde mit.
 CREATE TABLE IF NOT EXISTS person_mapping (
-    discord_user_id TEXT PRIMARY KEY,
+    runde_id        INTEGER NOT NULL REFERENCES runde (id) ON DELETE CASCADE,
+    discord_user_id TEXT NOT NULL,
     foundry_user_id TEXT NOT NULL,
-    confirmed_at    TEXT NOT NULL
+    confirmed_at    TEXT NOT NULL,
+    PRIMARY KEY (runde_id, discord_user_id)
 );
 
 -- Das kampagnenweite Register: Figuren, Orte, Handlungsfäden. Ein **Index**, kein Wiki —
@@ -242,6 +328,7 @@ CREATE TABLE IF NOT EXISTS person_mapping (
 -- im Suchindex. Ein unbestätigtes Register verfälschte das Nacherzählen.
 CREATE TABLE IF NOT EXISTS register_entry (
     id               INTEGER PRIMARY KEY,
+    runde_id         INTEGER NOT NULL REFERENCES runde (id) ON DELETE CASCADE,
     kind             TEXT NOT NULL CHECK (kind IN ('figur', 'ort', 'faden')),
     name             TEXT NOT NULL,
     description      TEXT NOT NULL,
@@ -249,114 +336,21 @@ CREATE TABLE IF NOT EXISTS register_entry (
     state            TEXT NOT NULL CHECK (state IN ('vorschlag', 'bestaetigt')),
     suggested_at     TEXT NOT NULL,
     confirmed_at     TEXT,
-    UNIQUE (kind, name)
+    UNIQUE (runde_id, kind, name),
+    UNIQUE (id, runde_id)
 );
 
 -- Wo ein Eintrag vorkommt. ``scene_id`` bleibt leer, wenn der Name in keiner Szene wörtlich
 -- steht — bei einem Handlungsfaden ist das der Normalfall, denn der ist gedeutet und nicht
 -- zitiert. Ein Eintrag je Sitzung und Szene wird beim Lauf ersetzt, nicht ergänzt.
 CREATE TABLE IF NOT EXISTS register_mention (
-    entry_id   INTEGER NOT NULL REFERENCES register_entry (id) ON DELETE CASCADE,
-    session_id INTEGER NOT NULL REFERENCES session (id) ON DELETE CASCADE,
-    scene_id   INTEGER REFERENCES scene (id) ON DELETE CASCADE
+    runde_id   INTEGER NOT NULL REFERENCES runde (id) ON DELETE CASCADE,
+    entry_id   INTEGER NOT NULL,
+    session_id INTEGER NOT NULL,
+    scene_id   INTEGER,
+    FOREIGN KEY (entry_id, runde_id) REFERENCES register_entry (id, runde_id) ON DELETE CASCADE,
+    FOREIGN KEY (session_id, runde_id) REFERENCES session (id, runde_id) ON DELETE CASCADE,
+    FOREIGN KEY (scene_id, runde_id) REFERENCES scene (id, runde_id) ON DELETE CASCADE
 );
 
 CREATE INDEX IF NOT EXISTS register_mention_eintrag ON register_mention (entry_id, session_id);
-
--- Der Suchindex. FTS5 steckt in SQLite, also keine neue Abhängigkeit. Eine Zeile je
--- auffindbarem Stück; ``kind`` unterscheidet sie, damit ein Transkript später eine
--- weitere Art bekommt und keine weitere Tabelle.
-CREATE VIRTUAL TABLE IF NOT EXISTS search_index USING fts5 (
-    text,
-    kind       UNINDEXED,
-    ref_id     UNINDEXED,
-    session_id UNINDEXED,
-    scene_id   UNINDEXED
-);
-
-CREATE TRIGGER IF NOT EXISTS note_search_insert AFTER INSERT ON note BEGIN
-    INSERT INTO search_index (text, kind, ref_id, session_id, scene_id)
-    VALUES (new.text, 'notiz', new.id,
-            (SELECT session_id FROM scene WHERE id = new.scene_id), new.scene_id);
-END;
-
-CREATE TRIGGER IF NOT EXISTS note_search_delete AFTER DELETE ON note BEGIN
-    DELETE FROM search_index WHERE kind = 'notiz' AND ref_id = old.id;
-END;
-
-CREATE TRIGGER IF NOT EXISTS protocol_search_insert AFTER INSERT ON protocol BEGIN
-    INSERT INTO search_index (text, kind, ref_id, session_id, scene_id)
-    VALUES (new.text, new.kind, new.id, new.session_id, NULL);
-END;
-
--- Ein zweiter Lauf von ``chronicle.compose`` ersetzt den Text der Zeile; ohne diesen
--- Trigger stünde die verworfene Fassung weiter im Index.
-CREATE TRIGGER IF NOT EXISTS protocol_search_update AFTER UPDATE ON protocol BEGIN
-    UPDATE search_index SET text = new.text WHERE kind = old.kind AND ref_id = old.id;
-END;
-
-CREATE TRIGGER IF NOT EXISTS protocol_search_delete AFTER DELETE ON protocol BEGIN
-    DELETE FROM search_index WHERE kind = old.kind AND ref_id = old.id;
-END;
-
--- Gesucht wird im Segment, gefunden wird das Transkript: ``ref_id`` zeigt deshalb auf
--- das Transkript und nicht auf die einzelne Zeile. Segmente werden nur im Ganzen
--- ersetzt, also darf der Löschtrigger über den Text gehen — zwei gleichlautende Zeilen
--- verschwinden ohnehin zusammen.
-CREATE TRIGGER IF NOT EXISTS transcript_search_insert
-AFTER INSERT ON transcript_segment BEGIN
-    INSERT INTO search_index (text, kind, ref_id, session_id, scene_id)
-    VALUES (new.text, 'transkript', new.transcript_id,
-            (SELECT session_id FROM transcript WHERE id = new.transcript_id), NULL);
-END;
-
-CREATE TRIGGER IF NOT EXISTS transcript_search_delete
-AFTER DELETE ON transcript_segment BEGIN
-    DELETE FROM search_index
-    WHERE kind = 'transkript' AND ref_id = old.transcript_id AND text = old.text;
-END;
-
--- Nur Bestätigtes steht im Index: ein Vorschlag als Suchtreffer läse sich wie eine Tatsache.
--- Die Sitzung ist die erste, in der der Eintrag vorkommt — die Suche verlangt eine, die
--- vollständige Liste steht im Register.
-CREATE TRIGGER IF NOT EXISTS register_search_insert AFTER INSERT ON register_entry
-WHEN new.state = 'bestaetigt' BEGIN
-    INSERT INTO search_index (text, kind, ref_id, session_id, scene_id)
-    SELECT new.name || ' — ' || new.description, 'register', new.id,
-           (SELECT MIN(session_id) FROM register_mention WHERE entry_id = new.id), NULL;
-END;
-
-CREATE TRIGGER IF NOT EXISTS register_search_update AFTER UPDATE ON register_entry BEGIN
-    DELETE FROM search_index WHERE kind = 'register' AND ref_id = old.id;
-    INSERT INTO search_index (text, kind, ref_id, session_id, scene_id)
-    SELECT new.name || ' — ' || new.description, 'register', new.id,
-           (SELECT MIN(session_id) FROM register_mention WHERE entry_id = new.id), NULL
-    WHERE new.state = 'bestaetigt';
-END;
-
-CREATE TRIGGER IF NOT EXISTS register_search_delete AFTER DELETE ON register_entry BEGIN
-    DELETE FROM search_index WHERE kind = 'register' AND ref_id = old.id;
-END;
-
--- Der Index ist abgeleitet: die Trigger halten ihn im Betrieb aktuell, dieser Neuaufbau
--- holt beim Start, was vor ihnen entstanden ist — eine Datenbank aus Schema 4.
-DELETE FROM search_index;
-
-INSERT INTO search_index (text, kind, ref_id, session_id, scene_id)
-SELECT n.text, 'notiz', n.id, c.session_id, n.scene_id
-FROM note n JOIN scene c ON c.id = n.scene_id;
-
-INSERT INTO search_index (text, kind, ref_id, session_id, scene_id)
-SELECT p.text, p.kind, p.id, p.session_id, NULL FROM protocol p;
-
-INSERT INTO search_index (text, kind, ref_id, session_id, scene_id)
-SELECT s.text, 'transkript', s.transcript_id, t.session_id, NULL
-FROM transcript_segment s JOIN transcript t ON t.id = s.transcript_id;
-
-INSERT INTO search_index (text, kind, ref_id, session_id, scene_id)
-SELECT e.name || ' — ' || e.description, 'register', e.id,
-       (SELECT MIN(session_id) FROM register_mention WHERE entry_id = e.id), NULL
-FROM register_entry e WHERE e.state = 'bestaetigt';
-
-INSERT INTO meta (key, value) VALUES ('schema_version', '14')
-ON CONFLICT (key) DO UPDATE SET value = excluded.value;
