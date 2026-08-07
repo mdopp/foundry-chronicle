@@ -244,7 +244,10 @@ def test_in_der_naechsten_nacht_laeuft_es_wieder(stelle, monkeypatch):
     erster = nightly.tick(stelle, jetzt=uhr(4))
     assert warte_bis(lambda: jobs.latest(runde(stelle), jobs.NACHTLAUF).fertig)
 
-    zweiter = nightly.tick(stelle, jetzt=uhr(4, tag=7))
+    # Die nächste Nacht **nach** dem eben gelaufenen Lauf: der trägt den echten Zeitpunkt,
+    # ein fest eingetragenes Datum wäre irgendwann seine eigene Vergangenheit.
+    morgen = datetime.now().astimezone() + timedelta(days=1)
+    zweiter = nightly.tick(stelle, jetzt=morgen.replace(hour=4, minute=0, second=0, microsecond=0))
     assert zweiter is not None
     assert zweiter.id != erster.id
 
