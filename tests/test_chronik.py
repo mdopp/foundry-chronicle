@@ -24,7 +24,7 @@ from test_bot import TOKEN, FakeBot, FakeIntents, FakePCMAudio, FakeSenke
 import chronicle.bot.__main__ as bot_eintritt
 from chronicle import db, jobs, notes, recordings, zugang
 from chronicle import runde as runden
-from chronicle.bot import ansage, chronik, gateway, recorder
+from chronicle.bot import ansage, chronik, erinnern, gateway, recorder
 from chronicle.config import Config
 from chronicle.discord import ausgabe, rueckblick
 
@@ -630,12 +630,22 @@ def test_ein_stolpernder_abschluss_antwortet_trotzdem(stelle, bot, monkeypatch):
 def test_keine_systemsprache_in_dem_was_der_bot_sagt():
     """Derselbe Sweep wie über die Seiten — eine Antwort ist genauso Oberfläche.
 
-    Mit im Sweep: was der Bot *ausgibt*. Der Rückblick im Gruppenkanal und die
-    Begleitzeile der Chronik-Datei werden von denselben Leuten gelesen wie eine Antwort
-    auf einen Befehl.
+    Mit im Sweep: was der Bot *ausgibt*. Der Rückblick im Gruppenkanal, die Begleitzeile
+    der Chronik-Datei und jeder Satz der Erinnern-Befehle werden von denselben Leuten
+    gelesen wie eine Antwort auf einen Befehl.
     """
     verraten = {}
-    for modul in (ansage, bot_eintritt, chronik, gateway, jobs, recorder, ausgabe, rueckblick):
+    for modul in (
+        ansage,
+        bot_eintritt,
+        chronik,
+        erinnern,
+        gateway,
+        jobs,
+        recorder,
+        ausgabe,
+        rueckblick,
+    ):
         for name, wert in vars(modul).items():
             if name.isupper() and isinstance(wert, str) and systemsprache(wert):
                 verraten[f"{modul.__name__}.{name}"] = systemsprache(wert)

@@ -106,7 +106,7 @@ EINTRAEGE = (
 )
 
 ERWAEHNUNGEN = (
-    "SELECT m.entry_id, m.session_id, m.scene_id, s.played_on, s.title, c.position "
+    "SELECT m.entry_id, m.session_id, m.scene_id, s.played_on, s.title, s.thread_id, c.position "
     "FROM register_mention m JOIN session s ON s.id = m.session_id "
     "LEFT JOIN scene c ON c.id = m.scene_id "
     "WHERE m.runde_id = ? ORDER BY s.played_on, s.id, c.position"
@@ -120,6 +120,8 @@ class Mention:
     title: str | None = None
     scene_id: int | None = None
     scene_position: int | None = None
+    # Der Thread der Sitzung, in der der Name fiel — der Weg dorthin zurück.
+    thread_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -156,6 +158,7 @@ class Entscheidung:
     ja: bool
     name: str = ""
     description: str = ""
+    kind: str = ""
 
 
 @dataclass(frozen=True)
@@ -328,6 +331,7 @@ def _erwaehnungen(scope: db.Scope) -> dict[int, list[Mention]]:
                 title=zeile["title"],
                 scene_id=zeile["scene_id"],
                 scene_position=zeile["position"],
+                thread_id=zeile["thread_id"],
             )
         )
     return je_eintrag
@@ -379,6 +383,9 @@ def decide(runde: Runde, auswahl: Mapping[int, Entscheidung]) -> None:
     Nur Zeilen, die noch Vorschlag sind: ein bestätigter Eintrag wird hier nicht erneut
     entschieden. ``UPDATE OR IGNORE`` lässt eine Zeile stehen, deren richtiggestellter
     Name schon vergeben ist — sie bleibt Vorschlag, statt das Formular scheitern zu lassen.
+
+    Die Art gehört zur Entscheidung: was als Figur vorgeschlagen war und ein Ort ist, wird
+    als Ort bestätigt, ohne Umweg über ein Nein und einen zweiten Vorschlag.
     """
     zeitpunkt = _now()
     scope = db.scoped(runde)
@@ -395,10 +402,12 @@ def decide(runde: Runde, auswahl: Mapping[int, Entscheidung]) -> None:
                     "UPDATE OR IGNORE register_entry SET "
                     "name = COALESCE(NULLIF(?, ''), name), "
                     "description = COALESCE(NULLIF(?, ''), description), "
+                    "kind = COALESCE(NULLIF(?, ''), kind), "
                     "state = ?, confirmed_at = ? WHERE runde_id = ? AND id = ? AND state = ?",
                     (
                         entscheidung.name.strip(),
                         entscheidung.description.strip(),
+                        entscheidung.kind.strip(),
                         BESTAETIGT,
                         zeitpunkt,
                         scope.runde_id,

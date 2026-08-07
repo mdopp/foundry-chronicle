@@ -50,8 +50,11 @@ SUCHE = (
     "SELECT search_index.kind AS kind, search_index.ref_id AS ref_id, "
     "search_index.session_id AS session_id, search_index.scene_id AS scene_id, "
     "session.played_on AS played_on, session.title AS title, "
+    "session.thread_id AS thread_id, note.discord_message_id AS message_id, "
     f"snippet(search_index, 0, '{AUF}', '{ZU}', ' … ', 12) AS ausschnitt "
     "FROM search_index JOIN session ON session.id = search_index.session_id "
+    f"LEFT JOIN note ON search_index.kind = '{NOTIZ}' AND note.id = search_index.ref_id "
+    "AND note.runde_id = search_index.runde_id "
     "WHERE search_index MATCH ? AND search_index.runde_id = ? ORDER BY rank LIMIT ?"
 )
 
@@ -65,6 +68,13 @@ class Hit:
     played_on: str
     title: str | None
     snippet: Markup
+    # Der Ausschnitt vor dem Maskieren: dieselbe Stelle, aber noch ohne Auszeichnung. Wer
+    # nicht nach HTML ausgibt, setzt seine eigene um die Marken herum.
+    raw: str = ""
+    # Woran ein Treffer hängt: der Thread der Sitzung, bei einer Notiz zusätzlich die
+    # Nachricht, aus der sie entstand. Beides darf fehlen — es gab Sitzungen vor Discord.
+    thread_id: str | None = None
+    message_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -106,6 +116,9 @@ def _groups(rows: list[sqlite3.Row]) -> tuple[Group, ...]:
                 played_on=zeile["played_on"],
                 title=zeile["title"],
                 snippet=_snippet(zeile["ausschnitt"]),
+                raw=zeile["ausschnitt"],
+                thread_id=zeile["thread_id"],
+                message_id=zeile["message_id"],
             )
         )
     return tuple(

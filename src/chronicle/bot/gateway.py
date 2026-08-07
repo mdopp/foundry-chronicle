@@ -26,7 +26,7 @@ from datetime import UTC
 from pathlib import Path
 
 from chronicle import consent, recordings
-from chronicle.bot import BotFehler, ansage, chronik, recorder
+from chronicle.bot import BotFehler, ansage, chronik, erinnern, recorder
 from chronicle.bot.recorder import Aufnahme, Kanal
 from chronicle.config import Config
 
@@ -34,7 +34,17 @@ logger = logging.getLogger(__name__)
 
 GRUPPE = "aufnahme"
 GRUPPE_CHRONIK = "chronik"
+GRUPPE_REGISTER = "register"
 BEFEHL_SZENE = "szene"
+BEFEHL_SUCHE = "suche"
+BEFEHL_WER = "wer"
+BEFEHL_ZUORDNUNG = "zuordnung"
+
+# Die Kennungen, mit denen ein Knopf oder ein Menü zurückkommt. Sie stehen nur in der
+# Nachricht, aus der sie stammen — entschieden wird trotzdem gegen den Stand von jetzt.
+KENNUNG_SCHILD = "eintrag"
+KENNUNG_ENTSCHEIDUNG = "entscheidung"
+KENNUNG_ZUORDNUNG = "zuordnung"
 
 NICHT_INSTALLIERT = (
     "py-cord ist nicht installiert — im Image ist es dabei, "
@@ -74,6 +84,11 @@ HILFE = (
     "nächtlichen Lauf und werden zu Text.\n"
     "• `/chronik fertig` — Sitzung abschließen: Zahlen holen, verschriften, Chronik "
     "schreiben.\n"
+    "• `/suche <Wort>` — ich sehe in Notizen, Diktaten, Chroniken und im Register nach; "
+    "jeder Treffer führt dorthin zurück, wo er steht.\n"
+    "• `/wer <Name>` — was im Register über einen Namen steht.\n"
+    "• `/register offen` — Vorschläge fürs Register bestätigen oder verwerfen.\n"
+    "• `/zuordnung` — festhalten, wer von euch welchen Foundry-Spieler spielt.\n"
     "• `/aufnahme hilfe` — dieser Text.\n"
     "Wer nicht aufgezeichnet werden möchte, verlässt den Sprachkanal — außerhalb nehme "
     "ich nichts auf. Wer später dazukommt, hört die Ansage noch einmal. "
@@ -328,6 +343,124 @@ def _passwortfrage(config: Config, runde, session_id: int):
     return Passwortfrage()
 
 
+def _embed(gebaut: dict | None):
+    return None if gebaut is None else _discord().Embed.from_dict(gebaut)
+
+
+async def _antworten(ctx, antwort: erinnern.Antwort, view=None) -> None:
+    """Antworten sieht nur, wer gefragt hat: eine Suche ist die Frage eines Einzelnen."""
+    weiteres = {}
+    if antwort.embed is not None:
+        weiteres["embed"] = _embed(antwort.embed)
+    if view is not None:
+        weiteres["view"] = view
+    await ctx.respond(antwort.text or None, ephemeral=True, **weiteres)
+
+
+async def _ersetzen(interaction, antwort: erinnern.Antwort, view) -> None:
+    """Der Knopf ändert die Nachricht, in der er steckt — die Antwort steht mit darin.
+
+    Nicht zusätzlich: eine zweite Nachricht je Klick wäre nach fünf Entscheidungen ein
+    Stapel, und die Liste daneben zeigte weiter, was es nicht mehr gibt.
+    """
+    await interaction.response.edit_message(
+        content=antwort.text or None, embed=_embed(antwort.embed), view=view
+    )
+
+
+def _geklickt(arbeit):
+    """Auch ein Knopf antwortet immer — sonst bleibt »denkt nach …« stehen."""
+
+    async def gefasst(interaction) -> None:
+        try:
+            await arbeit(interaction)
+        except Exception as fehler:  # noqa: BLE001
+            logger.exception("Klick in einer Ansicht gescheitert")
+            grund = UNERWARTET.format(typ=type(fehler).__name__)
+            await interaction.response.send_message(GESCHEITERT.format(grund=grund), ephemeral=True)
+
+    return gefasst
+
+
+def _registeransicht(runde, stand: erinnern.Offen):
+    """Je Vorschlag eine Reihe: sein Name, die drei Arten, ein Nein."""
+    if not stand.eintraege:
+        return None
+    discord = _discord()
+
+    def schild(eintrag, zeile: int):
+        return discord.ui.Button(
+            label=erinnern.gekuerzt(eintrag.name, erinnern.KNOPF_GRENZE),
+            row=zeile,
+            disabled=True,
+            custom_id=f"{KENNUNG_SCHILD}:{eintrag.id}",
+        )
+
+    def knopf(eintrag, art: str, schrift: str, zeile: int):
+        gebaut = discord.ui.Button(
+            label=schrift,
+            row=zeile,
+            custom_id=f"{KENNUNG_ENTSCHEIDUNG}:{eintrag.id}:{art or 'nein'}",
+        )
+
+        @_geklickt
+        async def entschieden(interaction) -> None:
+            satz = erinnern.entscheiden(runde, eintrag.id, art)
+            naechste = erinnern.offen(runde, meldung=satz)
+            await _ersetzen(interaction, naechste.antwort, _registeransicht(runde, naechste))
+
+        gebaut.callback = entschieden
+        return gebaut
+
+    class Registeransicht(discord.ui.View):
+        def __init__(self) -> None:
+            super().__init__(timeout=erinnern.FRIST)
+            for zeile, eintrag in enumerate(stand.eintraege):
+                self.add_item(schild(eintrag, zeile))
+                for art, schrift in erinnern.ENTSCHEIDUNGEN:
+                    self.add_item(knopf(eintrag, art, schrift, zeile))
+
+    return Registeransicht()
+
+
+def _zuordnungsansicht(runde, stand: erinnern.Zuordnung):
+    """Je aufgenommener Person ein Menü mit den Foundry-Spielern dieser Runde."""
+    if not stand.personen:
+        return None
+    discord = _discord()
+
+    def menue(person, zeile: int):
+        gebaut = discord.ui.Select(
+            placeholder=erinnern.gekuerzt(
+                erinnern.ZUORDNUNG_WAEHLEN.format(name=person.discord_name),
+                erinnern.PLATZHALTER_GRENZE,
+            ),
+            row=zeile,
+            custom_id=f"{KENNUNG_ZUORDNUNG}:{person.discord_user_id}",
+            options=[
+                discord.SelectOption(label=schrift, value=wert, default=vorgewaehlt)
+                for schrift, wert, vorgewaehlt in erinnern.wahlmoeglichkeiten(person, stand.spieler)
+            ],
+        )
+
+        @_geklickt
+        async def gewaehlt(interaction) -> None:
+            satz = erinnern.zuordnen(runde, person.discord_user_id, gebaut.values[0])
+            naechste = erinnern.zuordnung(runde, meldung=satz)
+            await _ersetzen(interaction, naechste.antwort, _zuordnungsansicht(runde, naechste))
+
+        gebaut.callback = gewaehlt
+        return gebaut
+
+    class Zuordnungsansicht(discord.ui.View):
+        def __init__(self) -> None:
+            super().__init__(timeout=erinnern.FRIST)
+            for zeile, person in enumerate(stand.personen):
+                self.add_item(menue(person, zeile))
+
+    return Zuordnungsansicht()
+
+
 def baue(config: Config):
     """Der Bot mit seinen Befehlen und dem Thread, der die Sitzung ist — ohne Verbindung."""
     discord = _discord()
@@ -343,6 +476,7 @@ def baue(config: Config):
     lauf = _Lauf()
     gruppe = bot.create_group(GRUPPE, "Die Sitzung mitschneiden")
     chronikgruppe = bot.create_group(GRUPPE_CHRONIK, "Die Sitzung schreiben")
+    registergruppe = bot.create_group(GRUPPE_REGISTER, "Das Register führen")
 
     @gruppe.command(name="start", description="Beitreten, ansagen, je Sprecher mitschneiden")
     @antwortet
@@ -399,6 +533,36 @@ def baue(config: Config):
         runde = chronik.runde_verlangen(config, ctx.guild_id)
         sitzung = chronik.sitzung_verlangen(runde, str(ctx.channel_id))
         await ctx.send_modal(_passwortfrage(config, runde, sitzung))
+
+    @bot.slash_command(name=BEFEHL_SUCHE, description="In allem nachsehen, was geschrieben wurde")
+    @antwortet
+    async def suche(ctx, begriff: str = "") -> None:
+        runde = chronik.runde_verlangen(config, ctx.guild_id)
+        await _antworten(ctx, erinnern.suche(runde, begriff))
+
+    @bot.slash_command(name=BEFEHL_WER, description="Was im Register über einen Namen steht")
+    @antwortet
+    async def wer(ctx, name: str = "") -> None:
+        runde = chronik.runde_verlangen(config, ctx.guild_id)
+        await _antworten(ctx, erinnern.wer(runde, name))
+
+    @registergruppe.command(
+        name="offen", description="Vorschläge fürs Register bestätigen oder verwerfen"
+    )
+    @antwortet
+    async def register_offen(ctx) -> None:
+        runde = chronik.runde_verlangen(config, ctx.guild_id)
+        stand = erinnern.offen(runde)
+        await _antworten(ctx, stand.antwort, _registeransicht(runde, stand))
+
+    @bot.slash_command(
+        name=BEFEHL_ZUORDNUNG, description="Festhalten, wer welchen Foundry-Spieler spielt"
+    )
+    @antwortet
+    async def zuordnung(ctx) -> None:
+        runde = chronik.runde_verlangen(config, ctx.guild_id)
+        stand = erinnern.zuordnung(runde)
+        await _antworten(ctx, stand.antwort, _zuordnungsansicht(runde, stand))
 
     @bot.slash_command(name=BEFEHL_SZENE, description="Die Trennlinie zur nächsten Szene ziehen")
     @antwortet
