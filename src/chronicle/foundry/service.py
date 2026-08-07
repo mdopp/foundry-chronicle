@@ -18,7 +18,7 @@ from chronicle import db, settings, zugang
 from chronicle.config import Config
 from chronicle.foundry import store
 from chronicle.foundry.client import FoundryClient, FoundryError
-from chronicle.foundry.model import SyncState, World, WorldSnapshot
+from chronicle.foundry.model import NICHT_MEHR_VORHANDEN, SyncState, World, WorldSnapshot
 from chronicle.foundry.world import identity, project
 from chronicle.runde import Runde
 
@@ -44,10 +44,14 @@ def _open(config: Config, runde: Runde) -> db.Scope:
 
 
 def _umfang(snapshot: WorldSnapshot) -> str:
-    return (
+    verschwunden = sum(1 for n in snapshot.messages if n.vanished_at)
+    umfang = (
         f"{len(snapshot.players)} Spieler, {len(snapshot.characters)} Charaktere, "
         f"{len(snapshot.messages)} Chat-Nachrichten"
     )
+    if verschwunden:
+        umfang += f", davon {verschwunden} {NICHT_MEHR_VORHANDEN}"
+    return umfang
 
 
 def _state(snapshot: WorldSnapshot | None, reason: str | None, at: str | None) -> SyncState:
@@ -149,9 +153,12 @@ def sync(
             logger.warning("Foundry zeigt eine andere Welt: %s", gefunden.id)
             store.record_failure(scope, grund, zeitpunkt)
             return _state(store.load(scope), grund, zeitpunkt)
-        snapshot = project(raw, user_id, fetched_at=zeitpunkt)
-        store.save(scope, snapshot)
+        store.save(scope, project(raw, user_id, fetched_at=zeitpunkt))
         store.bind_world(scope, gefunden)
+        # Gemeldet wird der Bestand, nicht die Lieferung: die Nachrichten sind ein Archiv,
+        # und ein Abgleich, der »3 Chat-Nachrichten« meldet, während 200 gespeichert sind,
+        # zählte das Falsche.
+        snapshot = store.load(scope)
         logger.info("Foundry-Abgleich fertig: %s", _umfang(snapshot))
         return _state(snapshot, None, None)
     finally:

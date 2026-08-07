@@ -28,9 +28,10 @@ CREATE TABLE IF NOT EXISTS runde_meta (
     PRIMARY KEY (runde_id, key)
 );
 
--- Der Foundry-Zwischenspeicher: bereits gefiltert und auf die benötigten Felder
--- zusammengestrichen. Der Rohdump wird nie abgelegt. Ein Stand je Runde — die ``runde_id``
--- ist hier zugleich der Primärschlüssel.
+-- Der Kopf des Foundry-Abgleichs: wann zuletzt geholt wurde und welches Regelwerk läuft.
+-- Der Rohdump wird nie abgelegt, alles hier ist bereits gefiltert und auf die benötigten
+-- Felder zusammengestrichen. Ein Kopf je Runde — die ``runde_id`` ist hier zugleich der
+-- Primärschlüssel.
 CREATE TABLE IF NOT EXISTS foundry_snapshot (
     runde_id   INTEGER PRIMARY KEY REFERENCES runde (id) ON DELETE CASCADE,
     fetched_at TEXT NOT NULL,
@@ -39,6 +40,9 @@ CREATE TABLE IF NOT EXISTS foundry_snapshot (
 
 -- Die Foundry-Ids stammen aus fremden Welten und sind nur dort eindeutig. Der
 -- Primärschlüssel führt deshalb die Runde mit: zwei Runden dürfen dieselbe Id tragen.
+--
+-- Konten und Figuren sind **Spiegel**: der aktuelle Stand steht in Foundry, ein Abgleich
+-- ersetzt sie am Stück. Die Chat-Nachrichten weiter unten sind es nicht.
 CREATE TABLE IF NOT EXISTS foundry_player (
     runde_id INTEGER NOT NULL REFERENCES runde (id) ON DELETE CASCADE,
     id       TEXT NOT NULL,
@@ -58,6 +62,14 @@ CREATE TABLE IF NOT EXISTS foundry_character (
     PRIMARY KEY (runde_id, id)
 );
 
+-- Chat-Nachrichten sind **Ereignisse, keine Zustände**: ein Abgleich fügt hinzu und behält,
+-- er ersetzt nicht. Das Chat-Log in Foundry zu leeren ist übliche Praxis der Spielleitung —
+-- ein Spiegel verlöre damit genau die Würfe, die eine Szene belegen und aus denen später
+-- neu komponiert wird.
+--
+-- ``vanished_at`` ist der Herkunftsvermerk: der Zeitpunkt des ersten Abgleichs, der diese
+-- Nachricht in Foundry nicht mehr fand. Leer heißt vorhanden. Er wird gezeigt, wo die
+-- Nachricht benutzt wird — eine stille Karteileiche wäre die falsche Sorte Gedächtnis.
 CREATE TABLE IF NOT EXISTS foundry_message (
     runde_id            INTEGER NOT NULL REFERENCES runde (id) ON DELETE CASCADE,
     id                  TEXT NOT NULL,
@@ -72,6 +84,7 @@ CREATE TABLE IF NOT EXISTS foundry_message (
     roll_critical       INTEGER,
     roll_modifier_total INTEGER,
     roll_dice           TEXT,
+    vanished_at         TEXT,
     PRIMARY KEY (runde_id, id)
 );
 
@@ -132,8 +145,8 @@ CREATE TABLE IF NOT EXISTS note (
 CREATE INDEX IF NOT EXISTS note_szene ON note (scene_id);
 
 -- Der Foundry-Fakt selbst liegt in foundry_message; hier steht nur, zu welcher Szene er
--- gehört. Bewusst ohne Fremdschlüssel: ein Abgleich ersetzt den Zwischenspeicher am
--- Stück, die Foundry-Id bleibt dabei stehen — die Zuordnung darf das überleben.
+-- gehört. Bewusst ohne Fremdschlüssel: die Zuordnung ist die Entscheidung eines Menschen
+-- und überlebt jeden Abgleich — auch den, der die Nachricht in Foundry nicht mehr findet.
 CREATE TABLE IF NOT EXISTS scene_foundry_message (
     runde_id   INTEGER NOT NULL REFERENCES runde (id) ON DELETE CASCADE,
     scene_id   INTEGER NOT NULL,
