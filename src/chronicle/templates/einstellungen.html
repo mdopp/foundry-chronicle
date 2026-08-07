@@ -137,8 +137,21 @@
       <label for="nightly_time">Uhrzeit</label>
       <input id="nightly_time" name="nightly_time" type="time" value="{{ nightly_time }}"
              required>
-      <p class="gedaempft">Nach der Uhr des Servers. War er zu dieser Zeit aus, wird nichts
-        nachgeholt — dann kommt der Lauf in der nächsten Nacht.</p>
+      <p class="gedaempft">Ortszeit in der Zeitzone unten, nicht nach der Uhr des Servers —
+        die läuft in UTC. War der Server zu dieser Zeit aus, wird nichts nachgeholt; dann
+        kommt der Lauf in der nächsten Nacht.</p>
+    </div>
+
+    <div class="feld">
+      <label for="nightly_zone">Zeitzone dieser Runde</label>
+      <select id="nightly_zone" name="nightly_zone">
+        {% for name in zonen %}
+        <option value="{{ name }}"{% if name == nightly_zone %} selected{% endif %}>{{ name }}</option>
+        {% endfor %}
+      </select>
+      <p class="gedaempft">Die Uhr, nach der eure Runde lebt. Sommer- und Winterzeit rechnet
+        die Chronik selbst um. Eine andere Runde auf derselben Instanz darf hier etwas
+        anderes stehen haben.</p>
     </div>
 
     {% if nachtlauf and nachtlauf.laeuft %}
@@ -150,7 +163,8 @@
       <p class="steht">Zuletzt gelaufen am {{ nachtlauf.zeitpunkt }} — was dabei
         herauskam, steht oben bei der jeweiligen Frage.</p>
     {% else %}
-      <p>Noch keine Nacht gelaufen. Der erste Lauf kommt um {{ nightly_time }}.</p>
+      <p>Noch keine Nacht gelaufen. Der erste Lauf kommt um {{ nightly_time }} Ortszeit in
+        {{ nightly_zone }}.</p>
     {% endif %}
   </section>
 

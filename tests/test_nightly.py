@@ -1,8 +1,9 @@
 """Der nächtliche Lauf: zur angesetzten Zeit, in einer Reihenfolge, ohne Doppelstart."""
 
 import json
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import pytest
 from conftest import laufender_job, runde, warte_bis
@@ -21,8 +22,13 @@ def stelle(tmp_path):
     return config
 
 
+BERLIN = ZoneInfo(settings.DEFAULT_NIGHTLY_ZONE)
+
+
 def uhr(stunde, minute=0, tag=6):
-    return datetime(2026, 8, tag, stunde, minute).astimezone()
+    """Die Uhr der Runde, nicht die der Maschine — sonst prüften diese Tests auf einem
+    UTC-Läufer etwas anderes als auf einem deutschen Schreibtisch."""
+    return datetime(2026, 8, tag, stunde, minute, tzinfo=BERLIN)
 
 
 def mit_notiz(config, played_on="2026-08-05"):
@@ -246,7 +252,7 @@ def test_in_der_naechsten_nacht_laeuft_es_wieder(stelle, monkeypatch):
 
     # Die nächste Nacht **nach** dem eben gelaufenen Lauf: der trägt den echten Zeitpunkt,
     # ein fest eingetragenes Datum wäre irgendwann seine eigene Vergangenheit.
-    morgen = datetime.now().astimezone() + timedelta(days=1)
+    morgen = datetime.now(BERLIN) + timedelta(days=1)
     zweiter = nightly.tick(stelle, jetzt=morgen.replace(hour=4, minute=0, second=0, microsecond=0))
     assert zweiter is not None
     assert zweiter.id != erster.id
@@ -282,11 +288,84 @@ def test_der_faden_dreht_sich_weiter_auch_wenn_ein_blick_scheitert(stelle, monke
     assert len(runden) == 3
 
 
+# --- Welche Uhr gemeint ist -----------------------------------------------------------
+
+
+def test_die_uhrzeit_meint_die_zone_der_runde_und_nicht_die_des_prozesses(stelle, monkeypatch):
+    """Der Container läuft auf der Box in UTC — 04:00 Berlin ist dort 02:00."""
+    monkeypatch.setattr(nightly, "lauf", lambda config, eine: "durch")
+
+    assert nightly.tick(stelle, jetzt=datetime(2026, 8, 6, 2, 0, tzinfo=UTC)) is not None
+
+
+def test_um_vier_uhr_utc_ist_die_sommernacht_laengst_vorbei(stelle, monkeypatch):
+    """Genau der gemeldete Fehler: 04:00 UTC sind 06:00 in Berlin, zwei Stunden zu spät."""
+    monkeypatch.setattr(nightly, "lauf", lambda config, eine: "durch")
+
+    assert nightly.tick(stelle, jetzt=datetime(2026, 8, 6, 4, 0, tzinfo=UTC)) is None
+
+
+def test_ueber_die_sommerzeitgrenze_bleibt_04_00_dieselbe_wanduhrzeit():
+    """Im Sommer sind 04:00 Berlin 02:00 UTC, im Winter 03:00 — die Einstellung bleibt."""
+    assert nightly.faellig(datetime(2026, 8, 6, 2, tzinfo=UTC), "04:00", None, "Europe/Berlin")
+    assert nightly.faellig(datetime(2026, 1, 6, 3, tzinfo=UTC), "04:00", None, "Europe/Berlin")
+
+    assert not nightly.faellig(datetime(2026, 8, 6, 4, tzinfo=UTC), "04:00", None, "Europe/Berlin")
+    assert not nightly.faellig(datetime(2026, 1, 6, 2, tzinfo=UTC), "04:00", None, "Europe/Berlin")
+
+
+def test_zwei_runden_duerfen_in_verschiedenen_zonen_liegen(stelle, monkeypatch):
+    """Der Grund gegen ein festes TZ im Pod: eine Instanz trägt beide."""
+    monkeypatch.setattr(nightly, "lauf", lambda config, eine: "durch")
+    settings.save_nightly_zone(runde(stelle), "Pacific/Auckland")
+
+    assert nightly.tick(stelle, jetzt=datetime(2026, 8, 6, 2, 0, tzinfo=UTC)) is None
+    assert nightly.tick(stelle, jetzt=datetime(2026, 8, 5, 16, 0, tzinfo=UTC)) is not None
+
+
+def test_der_letzte_lauf_steht_in_der_zone_der_runde(stelle):
+    abgelegter_lauf(stelle, [], started="2026-08-06T02:00:00+00:00")
+
+    assert nightly.letzter(runde(stelle)).zeitpunkt == "06.08.2026 um 04:00"
+
+
 # --- Die Uhrzeit als Einstellung -----------------------------------------------------
 
 
 def test_ohne_eintrag_gilt_die_vorgabe(stelle):
     assert settings.nightly_time(runde(stelle)) == settings.DEFAULT_NIGHTLY_TIME
+
+
+def test_ohne_eintrag_gilt_die_vorgegebene_zone(stelle):
+    assert settings.nightly_zone(runde(stelle)) == settings.DEFAULT_NIGHTLY_ZONE
+
+
+def test_eine_zone_wird_gespeichert(stelle):
+    assert settings.save_nightly_zone(runde(stelle), "Pacific/Auckland")
+    assert settings.nightly_zone(runde(stelle)) == "Pacific/Auckland"
+
+
+@pytest.mark.parametrize(
+    "unsinn", ["", "  ", "Europe/Wolkenkuckucksheim", "MEZ", "../../etc/passwd"]
+)
+def test_was_keine_zone_ist_laesst_die_bisherige_stehen(stelle, unsinn):
+    settings.save_nightly_zone(runde(stelle), "Pacific/Auckland")
+
+    assert not settings.save_nightly_zone(runde(stelle), unsinn)
+    assert settings.nightly_zone(runde(stelle)) == "Pacific/Auckland"
+
+
+def test_die_zone_kommt_aus_dem_formular(stelle):
+    client = create_app(stelle).test_client()
+    client.post("/einstellungen", data={"nightly_zone": "Pacific/Auckland"})
+    assert settings.nightly_zone(runde(stelle)) == "Pacific/Auckland"
+
+
+def test_die_seite_nennt_die_zone_zu_der_uhrzeit(stelle):
+    html = create_app(stelle).test_client().get("/einstellungen").get_data(as_text=True)
+
+    assert 'name="nightly_zone"' in html
+    assert f'<option value="{settings.DEFAULT_NIGHTLY_ZONE}" selected>' in html
 
 
 def test_eine_uhrzeit_wird_gespeichert(stelle):

@@ -13,6 +13,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from chronicle import settings
+
 WURZEL = Path(__file__).resolve().parents[1]
 
 SKRIPT = WURZEL / "scripts" / "verify_e2e.py"
@@ -75,6 +77,11 @@ def test_das_skript_kommt_mit_der_standardbibliothek_aus():
         elif isinstance(knoten, ast.ImportFrom) and knoten.level == 0 and knoten.module:
             module.add(knoten.module.split(".")[0])
     assert module <= set(sys.stdlib_module_names)
+
+
+def test_der_durchstich_prueft_die_vorgabezone_der_einstellungen():
+    """Zwei Orte, eine Zone: das Skript darf ``chronicle`` nicht importieren."""
+    assert verify.STANDARDZONE == settings.DEFAULT_NIGHTLY_ZONE
 
 
 def test_das_image_bringt_das_skript_mit():

@@ -35,9 +35,14 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
+import zoneinfo
 from pathlib import Path
 
 BENUTZER = "durchstich"
+
+# Muss zu ``settings.DEFAULT_NIGHTLY_ZONE`` passen; hier von Hand, weil dieses Skript nur
+# auf der Standardbibliothek steht.
+STANDARDZONE = "Europe/Berlin"
 
 STARTFRIST = 60.0
 
@@ -198,6 +203,13 @@ def durchlauf(basis: str, umgeb: dict[str, str], lauf: Lauf) -> None:
     status, _, _ = abruf(basis + "/", benutzer=None)
     pruefe(status == 403, f"Haustür: ohne Remote-User kam HTTP {status} statt 403")
     lauf.ok("Ohne Remote-User: 403")
+
+    # Fehlt die Zonendatenbank im Image, liefe der Nachtlauf nie — und zwar still, weil
+    # der Faden den Fehlschlag nur wegloggt. Hier fällt es auf, bevor eine Nacht ausbleibt.
+    zonen = len(zoneinfo.available_timezones())
+    pruefe(zonen > 100, f"Zonendatenbank: nur {zonen} Zonen im Image")
+    zoneinfo.ZoneInfo(STANDARDZONE)
+    lauf.ok(f"Zonendatenbank im Image: {zonen} Zonen, {STANDARDZONE} auflösbar")
 
 
 def beenden(prozess: subprocess.Popen) -> None:

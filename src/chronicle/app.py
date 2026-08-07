@@ -435,6 +435,8 @@ def create_app(config: Config | None = None, *, zeitplan: bool = False) -> Flask
             abgleich=foundry.current(basis, runde),
             remote_user=request.headers.get(REMOTE_USER_HEADER),
             nightly_time=settings.nightly_time(runde),
+            nightly_zone=settings.nightly_zone(runde),
+            zonen=settings.ZONEN,
             nachtlauf=nightly.letzter(runde),
             admin_group=instanz.admin_group(basis.database_path)
             if sperr_gruppe is None
@@ -451,6 +453,7 @@ def create_app(config: Config | None = None, *, zeitplan: bool = False) -> Flask
     def einstellungen_speichern() -> Response | str:
         uebernehmen(settings.KEYS)
         settings.save_nightly_time(runde, request.form.get(settings.NIGHTLY_KEY, ""))
+        settings.save_nightly_zone(runde, request.form.get(settings.NIGHTLY_ZONE_KEY, ""))
         # Ein gar nicht abgesendetes Feld heißt »unverändert«: ein Formular ohne dieses
         # Feld darf die Verwaltungsrolle nicht still zurücknehmen.
         gruppe = request.form.get(instanz.ADMIN_GROUP_KEY)
