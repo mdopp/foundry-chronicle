@@ -431,6 +431,10 @@ class FakeGruppe:
         return nimm
 
 
+class FakeRechteFehlen(Exception):
+    """Steht für ``discord.errors.PrivilegedIntentsRequired`` — Discord schließt mit 4014."""
+
+
 class FakeBot:
     erzeugt: list[FakeBot] = []
 
@@ -551,6 +555,9 @@ def pycord(monkeypatch):
     werkzeug = types.ModuleType("discord.utils")
     werkzeug.get_missing_voice_dependencies = lambda: ()
     modul.utils = werkzeug
+    fehler = types.ModuleType("discord.errors")
+    fehler.PrivilegedIntentsRequired = FakeRechteFehlen
+    modul.errors = fehler
     monkeypatch.setitem(sys.modules, "discord", modul)
     monkeypatch.setattr(FakeBot, "erzeugt", [])
     return modul
@@ -584,6 +591,24 @@ def test_ohne_sprach_abhaengigkeiten_startet_der_bot_gar_nicht(konfiguration, py
 
     assert "davey" in str(fehler.value)
     assert FakeBot.erzeugt == []
+
+
+def test_die_fehlende_inhalts_freigabe_wird_gesagt_statt_geworfen(
+    konfiguration, pycord, monkeypatch
+):
+    # Auf der Box lief der Bot deswegen eine Nacht lang in die Neustartschleife — sichtbar
+    # war nur ein Stapelauszug. Wer hier steht, soll den Schalter finden, nicht die Zeile.
+    def verweigert(self, token):
+        raise FakeRechteFehlen("Shard ID None is requesting privileged intents")
+
+    monkeypatch.setattr(FakeBot, "run", verweigert, raising=False)
+
+    with pytest.raises(BotFehler) as fehler:
+        gateway.run(konfiguration)
+
+    assert "Message Content Intent" in str(fehler.value)
+    # Der Stapelauszug bleibt als Ursache erhalten, er steht nur nicht mehr im Vordergrund.
+    assert isinstance(fehler.value.__cause__, FakeRechteFehlen)
 
 
 def test_der_bot_bringt_beide_befehle_mit_und_bekommt_den_token(konfiguration, pycord):
