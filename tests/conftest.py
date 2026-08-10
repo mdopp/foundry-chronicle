@@ -4,6 +4,7 @@ Nichts hier stammt aus einem echten Weltabzug: der enthält die Klarnamen aller
 Beteiligten und gehört deshalb nie ins Repo.
 """
 
+import threading
 import time
 
 import pytest
@@ -175,6 +176,20 @@ def warte_bis(bedingung):
     return False
 
 
+def warte_auf_laeufe():
+    """Bis kein angestoßener Lauf mehr nebenher zu Ende geht.
+
+    Ein Faden setzt seinen Auftrag erst am Ende auf fertig und streicht ihn aus
+    ``jobs._laufend``. Wer daneben eine Vorbedingung stellt — eine Zeile auf ``laeuft``
+    setzen, eine Kennung eintragen —, bekommt sie ihm sonst wieder abgeräumt: der Auftrag
+    steht auf fertig, obwohl der Test ihn laufen sieht, und die Merkliste ist über alle
+    Datenbanken hinweg dieselbe.
+    """
+    for faden in threading.enumerate():
+        if faden.name.startswith(jobs.FADEN):
+            faden.join(GRENZE)
+
+
 def laufender_job(database_path, kind, session_id=None):
     """Eine Zeile samt Faden-Vermerk — so sieht ein wirklich laufender Job aus."""
     from chronicle import db
@@ -200,6 +215,7 @@ def ohne_alte_laeufe():
     jobs._laufend.clear()
     _gemerkt.clear()
     yield
+    warte_auf_laeufe()
     jobs._laufend.clear()
     _gemerkt.clear()
 
