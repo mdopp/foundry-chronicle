@@ -22,7 +22,7 @@ from conftest import runde as erste_runde
 
 import chronicle.bot.__main__ as entry
 from chronicle import consent, db, notes, recordings, settings
-from chronicle.bot import BotFehler, ansage, gateway, recorder
+from chronicle.bot import BotFehler, BotHaelt, ansage, gateway, recorder
 from chronicle.bot.ansage import AnsageFehlt
 from chronicle.bot.recorder import Aufnahme, Kanal, NichtAngesagt
 from chronicle.config import Config
@@ -435,6 +435,10 @@ class FakeRechteFehlen(Exception):
     """Steht für ``discord.errors.PrivilegedIntentsRequired`` — Discord schließt mit 4014."""
 
 
+class FakeTokenAbgelehnt(Exception):
+    """Steht für ``discord.errors.LoginFailure`` — der Token taugt nicht (mehr)."""
+
+
 class FakeBot:
     erzeugt: list[FakeBot] = []
 
@@ -557,6 +561,7 @@ def pycord(monkeypatch):
     modul.utils = werkzeug
     fehler = types.ModuleType("discord.errors")
     fehler.PrivilegedIntentsRequired = FakeRechteFehlen
+    fehler.LoginFailure = FakeTokenAbgelehnt
     modul.errors = fehler
     monkeypatch.setitem(sys.modules, "discord", modul)
     monkeypatch.setattr(FakeBot, "erzeugt", [])
@@ -603,12 +608,55 @@ def test_die_fehlende_inhalts_freigabe_wird_gesagt_statt_geworfen(
 
     monkeypatch.setattr(FakeBot, "run", verweigert, raising=False)
 
-    with pytest.raises(BotFehler) as fehler:
+    with pytest.raises(BotHaelt) as fehler:
         gateway.run(konfiguration)
 
     assert "Message Content Intent" in str(fehler.value)
     # Der Stapelauszug bleibt als Ursache erhalten, er steht nur nicht mehr im Vordergrund.
     assert isinstance(fehler.value.__cause__, FakeRechteFehlen)
+
+
+def test_ein_abgelehnter_token_wird_nicht_wieder_versucht(konfiguration, pycord, monkeypatch):
+    def verweigert(self, token):
+        raise FakeTokenAbgelehnt("Improper token has been passed.")
+
+    monkeypatch.setattr(FakeBot, "run", verweigert, raising=False)
+
+    with pytest.raises(BotHaelt) as fehler:
+        gateway.run(konfiguration)
+
+    assert "Reset Token" in str(fehler.value)
+
+
+def test_was_kein_neustart_heilt_endet_mit_null(konfiguration, monkeypatch, capsys):
+    """Der Kern des Vorfalls vom 2026-08-10: 0 heißt »liegen lassen«, nicht »noch mal«.
+
+    Mit einem Fehlschlag-Code hätte ``Restart=on-failure`` den Bot in dieselbe Wand
+    geschickt — tausendfach in Minuten, bis Discord den Token zurücksetzte.
+    """
+    monkeypatch.setattr(entry.Config, "from_env", classmethod(lambda cls: konfiguration))
+
+    def haelt():
+        def run(_zugang):
+            raise BotHaelt(gateway.RECHTE_FEHLEN)
+
+        return run
+
+    assert entry.main([], gateway=haelt) == 0
+    assert "Message Content Intent" in capsys.readouterr().out
+
+
+def test_eine_echte_stoerung_darf_weiter_scheitern(konfiguration, monkeypatch, capsys):
+    """Was ein Neustart heilen kann, endet weiterhin mit 2 — sonst bliebe echtes Pech liegen."""
+    monkeypatch.setattr(entry.Config, "from_env", classmethod(lambda cls: konfiguration))
+
+    def stoert():
+        def run(_zugang):
+            raise BotFehler("Netz weg")
+
+        return run
+
+    assert entry.main([], gateway=stoert) == 2
 
 
 def test_der_bot_bringt_beide_befehle_mit_und_bekommt_den_token(konfiguration, pycord):

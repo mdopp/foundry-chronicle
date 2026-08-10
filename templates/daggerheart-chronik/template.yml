@@ -23,6 +23,14 @@ spec:
   # hostNetwork, damit der Dienst Foundry und ein Ollama auf der Box über 127.0.0.1
   # erreicht und NPM ihn ohne veröffentlichten hostPort findet.
   hostNetwork: true
+  # **OnFailure statt der Vorgabe Always.** Podman startet einen Container sonst auch
+  # dann neu, wenn er sich mit 0 beendet hat — und genau das ist der Bot, wenn ihm eine
+  # Freigabe im Discord-Portal fehlt oder sein Token abgelehnt wird. Beides heilt kein
+  # Neustart; wiederholt wird daraus in Minuten ein tausendfacher Anmeldeversuch. Am
+  # 2026-08-10 hat Discord deswegen den Token zurückgesetzt. Der Bot endet in diesen
+  # Fällen bewusst mit 0 (``chronicle.bot.BotHaelt``) — diese Zeile ist die andere
+  # Hälfte der Abmachung: 0 heißt liegen lassen.
+  restartPolicy: OnFailure
   containers:
   - name: chronik
     image: ghcr.io/mdopp/foundry-chronicle:{{CHRONICLE_IMAGE_TAG}}
