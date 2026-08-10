@@ -18,9 +18,13 @@ Diese Regeln gelten für jede Sitzung, Mensch oder Agent.
 - **Discord ist die Oberfläche** (#62, seit 2026-08-06). Gespielt wird dort, also wird
   dort auch bedient: Erfassen, Auslösen, Einrichten und Bestätigen laufen über Befehle,
   Modals und Knöpfe; Ausgaben kommen als Embed (kurz) oder als Markdown-Datei (lang).
-  Die Weboberfläche wird abgeschaltet — es bleibt `/healthz`. Wer eine neue Fähigkeit
-  baut, baut sie **in Discord**, nicht in einer Seite. Bis #69 besteht die Oberfläche
-  daneben weiter; das ist Übergang, kein zweiter Weg.
+  Die Weboberfläche wird abgeschaltet — **bis auf eine kleine Betreiber-Seite**
+  (Operator-Entscheidung 2026-08-10, #69). Was die spielende Gruppe betrifft, gehört
+  nach Discord; was der **Betreiber** einstellt, kann dort nicht hin, weil es keiner
+  Gilde gehört: Bot-Token, Ollama-Adresse und -Modell (#87), und wer verwalten darf
+  (#90). Alles andere fällt. Wer eine neue Fähigkeit baut, baut sie **in Discord**,
+  nicht in einer Seite — die Betreiber-Seite ist kein Ort für Spielinhalte. Bis #69
+  besteht die alte Oberfläche daneben weiter; das ist Übergang, kein zweiter Weg.
 - **Eine Instanz trägt mehrere Runden** (#62/#63). Eine Runde ist eine Discord-Gilde
   mit eigenem Foundry-Zugang. Das löst »eine Instanz pro Gruppe« aus Epic #1 ab.
 
@@ -174,10 +178,13 @@ Assists (`get_assist`) lesen. Dieser Abschnitt ist der Extrakt, nicht der Ersatz
 - **SQLite läuft im WAL-Modus** — Plattform-Lektion gegen „database is locked".
 - **CI gatet den Image-Publish auf grüne Tests** (`needs: test`); eine CI, die nur
   baut, ist non-compliant. Kommt mit #12, ebenso pinned Tags statt `:latest`.
-- **UI folgt dem ServiceBay-Design-Standard** (`get_assist service-ui-design-standard`) —
-  solange es eine UI gibt. Mit #62/#69 hat der Dienst keine user-facing Seiten mehr;
-  damit wird auch **ADR 0001 (Authelia-SSO) gegenstandslos**: ohne Oberfläche gibt es
-  nichts zu schützen, Identität und Rechte liefert Discord.
+- **UI folgt dem ServiceBay-Design-Standard** (`get_assist service-ui-design-standard`).
+  Mit #62/#69 bleibt davon nur die **Betreiber-Seite** — für die gilt er weiter.
+  **ADR 0001 (Authelia-SSO) bleibt damit in Kraft**: auf dieser Seite liegt der
+  Bot-Token, also gibt es sehr wohl etwas zu schützen. Für die *spielenden* Rechte
+  gilt die Ablösung trotzdem — die liefert Discord über seine Kanal- und Rollenrechte.
+  (Die frühere Fassung sagte, ADR 0001 werde gegenstandslos; das galt für eine
+  Instanz ganz ohne Seite und ist mit der Entscheidung vom 2026-08-10 überholt.)
 - **Läufe über ~10 s sind server-eigene, beobachtbare Jobs** — abbrechbar, neustartfest,
   Wiederanbindung über Job-Id (`get_assist long-running-process`).
 - **Erklärte Abweichung, auslaufend:** Flask + Jinja statt des empfohlenen FastAPI.
