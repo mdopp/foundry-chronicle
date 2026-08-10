@@ -16,7 +16,7 @@ from collections.abc import Callable
 
 from chronicle import db, settings
 from chronicle import runde as runden
-from chronicle.bot import BotFehler
+from chronicle.bot import BotFehler, BotHaelt
 from chronicle.config import Config
 
 KEIN_TOKEN = (
@@ -41,6 +41,12 @@ def main(argv: list[str] | None = None, *, gateway: Callable[[], Callable] = _ga
         return 0
     try:
         gateway()(zugang)
+    except BotHaelt as fehler:
+        # Kein Absturz, sondern eine Entscheidung: hier hilft nur ein Mensch, und ein
+        # Neustart wäre bloß der nächste Anmeldeversuch. Mit 0 lässt der Dienst uns
+        # liegen — siehe BotHaelt.
+        print(str(fehler))
+        return 0
     except BotFehler as fehler:
         print(str(fehler))
         return 2

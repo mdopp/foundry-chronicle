@@ -26,7 +26,7 @@ from datetime import UTC
 from pathlib import Path
 
 from chronicle import consent, recordings
-from chronicle.bot import BotFehler, ansage, chronik, erinnern, recorder
+from chronicle.bot import BotFehler, BotHaelt, ansage, chronik, erinnern, recorder
 from chronicle.bot.recorder import Aufnahme, Kanal
 from chronicle.config import Config
 from chronicle.runde import Runde
@@ -58,15 +58,26 @@ SPRACHE_FEHLT = (
     "pip install '.[discord]'"
 )
 
-# Discord weist die Anmeldung mit 4014 ab, py-cord meldet PrivilegedIntentsRequired. Der
-# Bot bleibt trotzdem beim Fehlschlag stehen und läuft in den Neustart: sobald der Schalter
-# gesetzt ist, kommt er von allein wieder hoch. Was fehlte, ist ein Satz statt eines
-# Stapelauszugs — daran lag es zuletzt eine Nacht lang.
+# Discord weist die Anmeldung mit 4014 ab, py-cord meldet PrivilegedIntentsRequired.
+# Danach **hört der Bot auf**: der Schalter liegt im Developer-Portal, kein Neustart
+# bringt ihn um. Wer es trotzdem wieder versucht, verbindet sich in Minuten tausendfach —
+# und Discord setzt den Token zurück. Genau so ist es am 2026-08-10 passiert.
 RECHTE_FEHLEN = (
     "Discord verweigert die Anmeldung: dem Bot fehlt die Freigabe für den Nachrichten-Inhalt. "
     "Ohne sie kommt jede Notiz aus dem Thread leer an, deshalb fordert der Bot sie an. "
     "Einschalten unter https://discord.com/developers/applications → die Anwendung → Bot → "
-    "Privileged Gateway Intents → Message Content Intent. Danach startet der Bot von selbst neu."
+    "Privileged Gateway Intents → Message Content Intent. "
+    "Ich versuche es bis dahin nicht wieder — bitte danach den Dienst neu starten."
+)
+
+# Dasselbe von der anderen Seite: ein Token, den Discord ablehnt, wird durch Wiederholen
+# nicht richtiger. Ein Anmeldeversuch im Sekundentakt ist der Weg, auf dem der nächste
+# Token auch noch zurückgesetzt wird.
+TOKEN_ABGELEHNT = (
+    "Discord lehnt den Bot-Token ab. Er ist abgelaufen, zurückgesetzt oder falsch "
+    "abgetippt — ein neuer steht unter https://discord.com/developers/applications → "
+    "die Anwendung → Bot → Reset Token. "
+    "Ich versuche es bis dahin nicht wieder — bitte danach den Dienst neu starten."
 )
 
 NICHT_IM_KANAL = "Du bist in keinem Sprachkanal — geh hinein und ruf mich noch einmal."
@@ -668,4 +679,6 @@ def run(config: Config) -> None:
     try:
         baue(config).run(config.discord_bot_token)
     except discord.errors.PrivilegedIntentsRequired as fehler:
-        raise BotFehler(RECHTE_FEHLEN) from fehler
+        raise BotHaelt(RECHTE_FEHLEN) from fehler
+    except discord.errors.LoginFailure as fehler:
+        raise BotHaelt(TOKEN_ABGELEHNT) from fehler
