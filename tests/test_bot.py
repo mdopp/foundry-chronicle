@@ -521,7 +521,9 @@ class FakeVoiceClient:
         self.getrennt = True
 
 
-class FakeSprachkanal:
+class FakeSprachkanalOhneChat:
+    """Ein Sprachkanal ohne eigenen Chat — Discord kennt solche noch."""
+
     def __init__(self, gilde, *mitglieder):
         self.guild = gilde
         self.id = 77
@@ -534,9 +536,29 @@ class FakeSprachkanal:
         return self.verbindung
 
 
+class FakeSprachkanal(FakeSprachkanalOhneChat):
+    def __init__(self, gilde, *mitglieder):
+        super().__init__(gilde, *mitglieder)
+        self.geschrieben = []
+
+    async def send(self, text):
+        # Mitgeschrieben wird auch, wie weit die Ansage war: die Reihenfolge ist der Punkt.
+        gespielt = len(self.verbindung.gespielt) if self.verbindung else 0
+        self.geschrieben.append((text, gespielt))
+
+
+class FakeTextkanal:
+    def __init__(self):
+        self.geschrieben = []
+
+    async def send(self, text):
+        self.geschrieben.append(text)
+
+
 class FakeCtx:
-    def __init__(self, autor):
+    def __init__(self, autor, kanal=None):
         self.author = autor
+        self.channel = kanal if kanal is not None else FakeTextkanal()
         self.antworten = []
         self.aufgeschoben = False
 
@@ -682,6 +704,45 @@ def test_start_tritt_bei_sagt_an_und_schneidet_dann_mit(
     assert ctx.antworten == [recorder.GESTARTET]
     (eintrag,) = consent.for_session(erste_runde(konfiguration), sitzung_id)
     assert {wer.name for wer in eintrag.members} == {MIRA.name, BROK.name}
+
+
+def test_die_vorstellung_steht_im_kanal_bevor_die_ansage_laeuft(
+    konfiguration, sitzung_id, ohne_espeak, runde
+):
+    # Der Ausweg muss lesbar sein, bevor gesprochen — und erst recht, bevor mitgeschnitten
+    # wird. Die Null ist der Beleg: beim Schreiben lief noch keine Ansage.
+    bot = gateway.baue(konfiguration)
+
+    asyncio.run(befehl(bot, "start")(FakeCtx(runde.mira)))
+
+    assert runde.kanal.geschrieben == [(gateway.VORSTELLUNG, 0)]
+    assert len(runde.kanal.verbindung.gespielt) == 1
+
+
+def test_die_vorstellung_sagt_frist_und_befehle_aus_einer_quelle():
+    assert f"{recordings.RETENTION_TAGE} Tagen" in gateway.VORSTELLUNG
+    # Ein Text, zwei Anlässe: die Liste steht nicht zweimal da.
+    assert gateway.BEFEHLE in gateway.VORSTELLUNG
+    assert gateway.BEFEHLE in gateway.HILFE
+    for satzteil in ("hörbare Ansage", "verlässt jetzt", "nichts auf"):
+        assert satzteil in gateway.VORSTELLUNG
+    # Discord nimmt keine längere Nachricht an — und eine, die nicht ankommt, verhindert
+    # die Aufnahme, statt sie nur zu begleiten.
+    assert len(gateway.VORSTELLUNG) <= 2000
+
+
+def test_ohne_kanal_chat_geht_die_vorstellung_dorthin_wo_der_befehl_kam(
+    konfiguration, sitzung_id, ohne_espeak, runde
+):
+    kanal = FakeSprachkanalOhneChat(runde.gilde, runde.mira, runde.brok)
+    runde.mira.voice = types.SimpleNamespace(channel=kanal)
+    bot = gateway.baue(konfiguration)
+    ctx = FakeCtx(runde.mira)
+
+    asyncio.run(befehl(bot, "start")(ctx))
+
+    assert ctx.channel.geschrieben == [gateway.VORSTELLUNG]
+    assert kanal.verbindung.schneidet
 
 
 def test_start_ohne_sprachkanal_verbindet_nicht(konfiguration, sitzung_id, ohne_espeak, runde):

@@ -275,7 +275,11 @@ wer den Befehl gegeben hat.
 ### Die Ansage ist der Kern, nicht die Verpackung
 
 Das Aufzeichnen des nichtöffentlich gesprochenen Wortes ohne Einwilligung ist strafbar
-(**§201 StGB**). Der Bot spielt deshalb zuerst eine hörbare deutsche Ansage — wer
+(**§201 StGB**). Beim Betreten des Kanals stellt sich der Bot **zuerst schriftlich** vor —
+wer er ist, dass gleich eine hörbare Ansage kommt und erst danach mitgeschnitten wird, wie
+lange die Spuren bleiben und wie man ihn bedient; hat der Sprachkanal keinen eigenen Chat,
+geht die Vorstellung dorthin, wo der Befehl kam. Der Beleg ist sie nicht — sie gibt nur
+Zeit zu lesen, bevor gesprochen wird. Der Bot spielt danach die hörbare deutsche Ansage — wer
 aufnimmt, wofür, und dass Verlassen des Kanals heißt: keine Aufnahme. **Der Mitschnitt
 beginnt erst, wenn die Ansage zu Ende gespielt ist**; wer davor zu schreiben versucht,
 bekommt einen Fehler und keine Datei. Wer *nach* dem Start dazukommt, hört dieselbe Ansage
