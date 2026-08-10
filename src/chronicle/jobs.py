@@ -51,6 +51,10 @@ LAEUFT = "laeuft"
 FERTIG = "fertig"
 GESCHEITERT = "gescheitert"
 
+# Am Namen ist der Faden eines Laufs erkennbar — im Log wie in einem Test, der abwarten
+# muss, bis kein Lauf mehr nebenher zu Ende geht.
+FADEN = "chronicle-lauf-"
+
 UNTERBROCHEN = (
     "Der Lauf wurde unterbrochen, weil der Dienst zwischendurch neu gestartet ist. "
     "Einfach noch einmal anstoßen."
@@ -220,7 +224,12 @@ def start(
     finally:
         connection.close()
 
-    threading.Thread(target=_ausfuehren, args=(config, job_id, runner), daemon=True).start()
+    threading.Thread(
+        target=_ausfuehren,
+        args=(config, job_id, runner),
+        name=f"{FADEN}{job_id}",
+        daemon=True,
+    ).start()
     return Job(
         id=job_id,
         runde_id=runde.id,

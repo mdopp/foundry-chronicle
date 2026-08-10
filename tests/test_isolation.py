@@ -25,6 +25,7 @@ import inspect
 import sqlite3
 
 import pytest
+from conftest import warte_auf_laeufe
 
 from chronicle import (
     consent,
@@ -559,6 +560,7 @@ def test_auftraege_serialisieren_ueber_alle_runden(zwei_runden, monkeypatch):
     haltet = []
     laeuft = jobs.start(config, a, jobs.ABGLEICH, lambda: haltet.append(1) or "fertig")
     assert laeuft is not None
+    warte_auf_laeufe()
     scope = db.scoped(a)
     try:
         with scope:
