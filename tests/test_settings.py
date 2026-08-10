@@ -102,6 +102,12 @@ def test_die_gespeicherten_werte_stehen_fest():
     assert settings.SECRET_KEYS == ("discord_bot_token",)
 
 
+def test_der_runde_bleibt_ihr_spiel_der_instanz_ihre_infrastruktur():
+    """#87: Ollama steht neben dem Bot-Token, nicht neben der Foundry-Adresse."""
+    assert settings.INSTANZ_KEYS == ("discord_bot_token", "ollama_url", "ollama_model")
+    assert settings.RUNDEN_KEYS == ("foundry_url", "foundry_user", "discord_recap_channel")
+
+
 def test_der_zustellkanal_kommt_aus_der_oberflaeche_und_ist_kein_geheimnis(config):
     settings.save(runde(config), {"discord_recap_channel": "chronik"})
     assert settings.effective(config, runde(config)).discord_recap_channel == "chronik"

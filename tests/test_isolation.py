@@ -207,7 +207,9 @@ def fuellen(config: Config, runde, marke: str) -> dict[str, int]:
         members=(consent.Member(id="d-1", name=f"Mensch {marke}"),),
     )
     people.confirm(runde, {"d-1": "u-1"})
-    settings.save(runde, {"foundry_url": f"https://{marke}.example", "ollama_model": marke})
+    # Ollama trägt hier bewusst keine Marke: es gehört seit #87 der Instanz und ist damit
+    # kein Kanarienvogel für ein Leck zwischen Runden, sondern ein geteilter Wert.
+    settings.save(runde, {"foundry_url": f"https://{marke}.example"})
     zugang.merken(runde, f"passwort-{marke}")
     return {
         "sitzung": sitzung,
@@ -523,11 +525,27 @@ def test_knopf_und_menue_wirken_nur_in_der_eigenen_runde(zwei_runden):
 
 def test_einstellungen_gehoeren_der_runde(zwei_runden):
     config, a, b, _ids = zwei_runden
-    assert settings.effective(config, a).ollama_model == MARKE[1]
-    assert settings.effective(config, b).ollama_model == MARKE[2]
-    settings.save(a, {"ollama_model": ""})
-    assert settings.effective(config, a).ollama_model is None
-    assert settings.effective(config, b).ollama_model == MARKE[2]
+    assert settings.effective(config, a).foundry_url == f"https://{MARKE[1]}.example"
+    assert settings.effective(config, b).foundry_url == f"https://{MARKE[2]}.example"
+    settings.save(a, {"foundry_url": ""})
+    assert settings.effective(config, a).foundry_url is None
+    assert settings.effective(config, b).foundry_url == f"https://{MARKE[2]}.example"
+
+
+def test_ollama_gehoert_der_instanz_und_nicht_der_runde(zwei_runden):
+    """Wohin gesprochenes Wort fließt, entscheidet nicht eine fremde Gruppe (#87)."""
+    config, a, b, _ids = zwei_runden
+    settings.save(a, {"ollama_model": "gemma4:e4b"})
+    settings.save(b, {"ollama_model": "gemma4:12b", "ollama_url": "http://box.example:11434"})
+    assert settings.effective(config, a).ollama_model == "gemma4:12b"
+    assert settings.effective(config, a).ollama_url == "http://box.example:11434"
+    connection = db.connect(config.database_path)
+    try:
+        gepflegt = {zeile["key"] for zeile in connection.execute("SELECT key FROM settings")}
+    finally:
+        connection.close()
+    assert "ollama_model" not in gepflegt
+    assert "ollama_url" not in gepflegt
 
 
 def test_bot_token_gehoert_der_instanz_und_nicht_der_runde(zwei_runden):
@@ -535,7 +553,7 @@ def test_bot_token_gehoert_der_instanz_und_nicht_der_runde(zwei_runden):
     config, a, b, _ids = zwei_runden
     settings.save(a, {"discord_bot_token": "platzhalter-token"})
     assert settings.effective(config, b).discord_bot_token == "platzhalter-token"
-    assert instanz.stored(config.database_path) == {"discord_bot_token": "platzhalter-token"}
+    assert instanz.stored(config.database_path)["discord_bot_token"] == "platzhalter-token"
     connection = db.connect(config.database_path)
     try:
         gepflegt = {zeile["key"] for zeile in connection.execute("SELECT key FROM settings")}

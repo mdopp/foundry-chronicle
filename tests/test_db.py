@@ -74,6 +74,9 @@ def alte_datenbank(tmp_path):
         INSERT INTO settings (key, value) VALUES ('foundry_url', 'https://foundry.example');
         INSERT INTO settings (key, value) VALUES ('discord_bot_token', 'platzhalter');
         INSERT INTO settings (key, value) VALUES ('admin_group', 'chronisten');
+        INSERT INTO settings (key, value)
+        VALUES ('ollama_url', 'http://alt.example:11434');
+        INSERT INTO settings (key, value) VALUES ('ollama_model', 'gemma4:12b');
         INSERT INTO meta (key, value) VALUES ('discord_cursor', '4711');
         """
     )
@@ -144,9 +147,13 @@ def test_wanderung_bringt_die_bestaende_in_die_erste_runde(alte_datenbank):
 def test_wanderung_sortiert_die_schluesselraeume(alte_datenbank):
     db.init(alte_datenbank)
     runde = runden.erste(alte_datenbank)
-    # Der Runde gehört die Foundry-Adresse, der Instanz der Bot-Token und die Rolle.
+    # Der Runde gehört die Foundry-Adresse, der Instanz Bot-Token, Ollama und die Rolle.
     assert settings.stored(runde)["foundry_url"] == "https://foundry.example"
-    assert instanz.stored(alte_datenbank) == {"discord_bot_token": "platzhalter"}
+    assert instanz.stored(alte_datenbank) == {
+        "discord_bot_token": "platzhalter",
+        "ollama_url": "http://alt.example:11434",
+        "ollama_model": "gemma4:12b",
+    }
     assert instanz.admin_group(alte_datenbank) == "chronisten"
     connection = db.connect(alte_datenbank)
     try:
