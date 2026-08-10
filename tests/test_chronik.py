@@ -19,7 +19,20 @@ from pathlib import Path
 import pytest
 from conftest import GRENZE, systemsprache
 from conftest import runde as erste_runde
-from test_bot import TOKEN, FakeBot, FakeIntents, FakePCMAudio, FakeSenke
+from test_bot import (
+    TOKEN,
+    FakeBot,
+    FakeGilde,
+    FakeIntents,
+    FakeMitglied,
+    FakePCMAudio,
+    FakeSenke,
+    FakeSprachkanal,
+    sprachdaten,
+    spricht,
+    stille,
+)
+from test_bot import FakeCtx as FakeSprechCtx
 
 import chronicle.bot.__main__ as bot_eintritt
 from chronicle import db, jobs, notes, recordings, zugang
@@ -184,6 +197,15 @@ def stelle(tmp_path):
 
 
 @pytest.fixture
+def ohne_espeak(monkeypatch):
+    """Der echte Weg durch ``datei``, nur mit einer Attrappe statt des Systempakets."""
+    echt = ansage.datei
+    monkeypatch.setattr(
+        ansage, "datei", lambda ordner, **rest: echt(ordner, sprecher=spricht, **rest)
+    )
+
+
+@pytest.fixture
 def bot(stelle, pycord):
     config, _unsere = stelle
     return gateway.baue(config)
@@ -198,6 +220,16 @@ def sitzung_starten(bot, ctx=None, titel=""):
     asyncio.run(chronikbefehl(bot, "start")(ctx, titel))
     thread = ctx.channel.threads[-1] if ctx.channel.threads else None
     return ctx, thread
+
+
+def mitschnitt_starten(bot, gilde=GILDE):
+    """``/aufnahme start`` in einem Sprachkanal dieser Gilde, mit einer Spur darin."""
+    wer = FakeMitglied(4001, "Mira")
+    kanal = FakeSprachkanal(FakeGilde(gilde), wer)
+    wer.voice = types.SimpleNamespace(channel=kanal)
+    asyncio.run(bot.gruppen[gateway.GRUPPE].befehle["start"](FakeSprechCtx(wer)))
+    kanal.verbindung.senke.write(sprachdaten(stille(480)), wer)
+    return types.SimpleNamespace(kanal=kanal, wer=wer)
 
 
 def notizen(runde, sitzung_id):
@@ -596,6 +628,46 @@ def test_ein_zweites_fertig_stoesst_keinen_zweiten_lauf_an(stelle, bot, monkeypa
 
     assert meldung == chronik.LAEUFT_SCHON
     assert interaktion.response.gesendet == []
+
+
+def test_fertig_beendet_die_laufende_aufnahme_und_reiht_die_spuren_ein(
+    stelle, bot, monkeypatch, ohne_espeak
+):
+    _config, unsere = stelle
+    _ctx, thread = sitzung_starten(bot)
+    mitschnitt = mitschnitt_starten(bot)
+    monkeypatch.setattr(jobs, "abschluss", lambda config, eine, sid: STEHT)
+
+    _ctx2, interaktion = abschluss_fahren(bot, unsere, thread)
+
+    assert mitschnitt.kanal.verbindung.getrennt
+    assert not mitschnitt.kanal.verbindung.schneidet
+    assert [spur.filename.split("-")[-1] for spur in recordings.pending(unsere)] == ["Mira.wav"]
+    (antwort,) = interaktion.response.gesendet
+    assert "wartet auf den Stapel" in antwort and chronik.FERTIG in antwort
+    sitzung_id = notes.session_of_thread(unsere, str(thread.id))
+    assert jobs.latest(unsere, jobs.CHRONIK, sitzung_id).result == STEHT
+
+    danach = FakeSprechCtx(mitschnitt.wer)
+    asyncio.run(bot.gruppen[gateway.GRUPPE].befehle["stop"](danach))
+    assert danach.antworten == [gateway.LAEUFT_NICHT]
+
+
+def test_ein_abschluss_reisst_den_mitschnitt_einer_fremden_runde_nicht_ab(
+    stelle, bot, monkeypatch, ohne_espeak
+):
+    config, unsere = stelle
+    fremde = runden.anlegen(config.database_path, "Die Andere", guild_id=FREMDE_GILDE)
+    notes.create_session(fremde, played_on="2026-08-07")
+    mitschnitt = mitschnitt_starten(bot, gilde=FREMDE_GILDE)
+    _ctx, thread = sitzung_starten(bot)
+    monkeypatch.setattr(jobs, "abschluss", lambda config, eine, sid: STEHT)
+
+    _ctx2, interaktion = abschluss_fahren(bot, unsere, thread)
+
+    assert not mitschnitt.kanal.verbindung.getrennt
+    assert recordings.pending(fremde) == ()
+    assert interaktion.response.gesendet == [chronik.FERTIG]
 
 
 def test_fertig_ausserhalb_eines_sitzungs_threads_sagt_es(stelle, bot):
