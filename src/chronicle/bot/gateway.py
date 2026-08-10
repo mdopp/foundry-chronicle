@@ -47,6 +47,17 @@ SPRACHE_FEHLT = (
     "pip install '.[discord]'"
 )
 
+# Discord weist die Anmeldung mit 4014 ab, py-cord meldet PrivilegedIntentsRequired. Der
+# Bot bleibt trotzdem beim Fehlschlag stehen und läuft in den Neustart: sobald der Schalter
+# gesetzt ist, kommt er von allein wieder hoch. Was fehlte, ist ein Satz statt eines
+# Stapelauszugs — daran lag es zuletzt eine Nacht lang.
+RECHTE_FEHLEN = (
+    "Discord verweigert die Anmeldung: dem Bot fehlt die Freigabe für den Nachrichten-Inhalt. "
+    "Ohne sie kommt jede Notiz aus dem Thread leer an, deshalb fordert der Bot sie an. "
+    "Einschalten unter https://discord.com/developers/applications → die Anwendung → Bot → "
+    "Privileged Gateway Intents → Message Content Intent. Danach startet der Bot von selbst neu."
+)
+
 NICHT_IM_KANAL = "Du bist in keinem Sprachkanal — geh hinein und ruf mich noch einmal."
 LAEUFT_SCHON = "Ich schneide schon mit."
 LAEUFT_NICHT = "Es läuft gerade keine Aufnahme."
@@ -471,4 +482,8 @@ def baue(config: Config):
 
 def run(config: Config) -> None:
     logger.info("Aufnahme-Bot: verbinde mit dem Discord-Gateway")
-    baue(config).run(config.discord_bot_token)
+    discord = _discord()
+    try:
+        baue(config).run(config.discord_bot_token)
+    except discord.errors.PrivilegedIntentsRequired as fehler:
+        raise BotFehler(RECHTE_FEHLEN) from fehler
