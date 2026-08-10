@@ -63,7 +63,15 @@ GESCOPTE_TABELLEN = frozenset(
 
 # Diese Werte lagen vor dem Runden-Modell in ``settings`` und gehören der Instanz, nicht
 # einer Gruppe — voran der Bot-Token: das ist **unser** Token. Sie wandern nach ``meta``.
-INSTANZ_SCHLUESSEL = ("discord_bot_token", "admin_group", "onboarding_done")
+# Gelesen wird dabei die *erste* Runde, und genau dort liegen die Bestände: die
+# Weboberfläche konnte nie eine andere bearbeiten.
+INSTANZ_SCHLUESSEL = (
+    "discord_bot_token",
+    "admin_group",
+    "onboarding_done",
+    "ollama_url",
+    "ollama_model",
+)
 
 # Umgekehrt: diese lagen in ``meta`` und gehören einer Runde. Sie wandern nach
 # ``runde_meta``.

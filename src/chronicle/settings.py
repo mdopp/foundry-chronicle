@@ -4,10 +4,11 @@ Die Umgebung ist die Vorgabe beim ersten Start und bleibt der Deploy-Weg; **ein 
 Wert gewinnt.** Damit das keine zwei Wahrheiten werden, liest kein Aufrufer diese Werte
 mehr selbst aus der Umgebung — er nimmt ``effective``.
 
-**Gepflegt wird je Runde.** Foundry-Adresse, Konto, Zustellkanal und Modell gehören der
-Gruppe, die spielt. Genau einer nicht: der **Discord-Bot-Token** ist unser Token und
-gehört der Instanz — er steht in ``chronicle.instanz`` und wird hier nur noch eingeblendet,
-damit ``effective`` eine vollständige ``Config`` liefert.
+**Gepflegt wird je Runde.** Foundry-Adresse, Konto und Zustellkanal gehören der Gruppe,
+die spielt — was ihr Spiel betrifft. Der Instanz gehört ihre eigene Infrastruktur: der
+**Discord-Bot-Token** (unser Token) und **Ollama** (#87 — wohin gesprochenes Wort fließt,
+entscheidet nicht eine fremde Gruppe). Beides steht in ``chronicle.instanz`` und wird hier
+nur noch eingeblendet, damit ``effective`` eine vollständige ``Config`` liefert.
 
 **Das Foundry-Passwort gibt es hier nicht mehr** (#64). Es ist der Schlüssel zu einem
 fremden Server, und eine Instanz, die mehrere Runden trägt, hält kein fremdes Geheimnis
@@ -40,7 +41,7 @@ KEYS = (
 
 SECRET_KEYS = ("discord_bot_token",)
 
-# Der eine Wert aus KEYS, der nicht der Runde gehört. Er wird nach ``chronicle.instanz``
+# Die Werte aus KEYS, die nicht der Runde gehören. Sie werden nach ``chronicle.instanz``
 # durchgereicht, statt in der Einstellungstabelle einer Runde zu liegen.
 INSTANZ_KEYS = instanz.KEYS
 

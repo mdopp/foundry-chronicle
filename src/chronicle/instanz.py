@@ -1,18 +1,23 @@
 """Was der Instanz gehört und keiner Runde.
 
-Fast alles in diesem System gehört einer Runde. Diese drei Werte nicht:
+Fast alles in diesem System gehört einer Runde. Diese Werte nicht:
 
 - **Der Discord-Bot-Token.** Das ist *unser* Token, mit dem *unser* Bot in fremde Gilden
   eingeladen wird — kein Geheimnis einer Gruppe. Er käme sonst pro Runde erneut zur
   Pflege, und eine Gruppe könnte den Bot der übrigen abmelden.
+- **Ollama-Adresse und Modell** (#87). Wäre die Adresse runden-eigen, bestimmte eine
+  fremde Gruppe, an welchen Rechner die Stimmen ihrer Mitspielenden gehen — das ist keine
+  Einstellung, das ist eine Weitergabe. Und das Modell muss ohnehin auf der Box liegen;
+  ein Name, den das Ollama dort nicht kennt, ist keine Wahl, sondern ein Lauf, der
+  scheitert.
 - **Die Verwaltungsgruppe.** Sie stammt aus der Benutzerverwaltung der Box und gilt für
   die Weboberfläche dieser Instanz.
 - **Der abgeschlossene Erststart.** Er gilt der Oberfläche, nicht dem Spiel.
 
-Die beiden letzten verschwinden mit der Oberfläche (#69); der Token bleibt.
+Die beiden letzten verschwinden mit der Oberfläche (#69); Token und Ollama bleiben.
 
 Abgelegt wird in ``meta`` — der Schlüsselraum ohne Runde. ``settings`` daneben ist die
-Tabelle **einer** Runde, und dass diese drei Werte dort nicht liegen, ist keine
+Tabelle **einer** Runde, und dass diese Werte dort nicht liegen, ist keine
 Kleinigkeit: eine Gruppe soll den Token weder lesen noch überschreiben können.
 """
 
@@ -24,7 +29,7 @@ from pathlib import Path
 from chronicle import db
 
 # Die Konfigurationswerte, die der Instanz gehören — dieselben Namen wie in ``Config``.
-KEYS = ("discord_bot_token",)
+KEYS = ("discord_bot_token", "ollama_url", "ollama_model")
 
 ONBOARDING_KEY = "onboarding_done"
 ADMIN_GROUP_KEY = "admin_group"
