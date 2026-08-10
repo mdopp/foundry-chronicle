@@ -29,6 +29,7 @@ from chronicle import consent, recordings
 from chronicle.bot import BotFehler, ansage, chronik, erinnern, recorder
 from chronicle.bot.recorder import Aufnahme, Kanal
 from chronicle.config import Config
+from chronicle.runde import Runde
 
 logger = logging.getLogger(__name__)
 
@@ -93,7 +94,8 @@ HILFE = (
     "und schneide **erst danach** mit, je Sprecherin und Sprecher eine eigene Spur.\n"
     "• `/aufnahme stop` — ich höre auf und gehe wieder; die Spuren wandern in den "
     "nächtlichen Lauf und werden zu Text.\n"
-    "• `/chronik fertig` — Sitzung abschließen: Zahlen holen, verschriften, Chronik "
+    "• `/chronik fertig` — Sitzung abschließen: läuft noch eine Aufnahme, beende ich sie "
+    "zuerst und reihe die Spuren ein; danach Zahlen holen, verschriften, Chronik "
     "schreiben.\n"
     "• `/suche <Wort>` — ich sehe in Notizen, Diktaten, Chroniken und im Register nach; "
     "jeder Treffer führt dorthin zurück, wo er steht.\n"
@@ -267,6 +269,22 @@ class _Lauf:
         self.frist = None
 
 
+async def _mitschnitt_beenden(lauf: _Lauf, runde: Runde | None = None) -> tuple[str, ...]:
+    """Mitschnitt beenden, Spuren einreihen, den Lauf leeren — leer, wenn nichts läuft.
+
+    Mit ``runde`` nur, wenn die laufende Aufnahme dieser Runde gehört: ein Abschluss in
+    der einen Gilde darf den Mitschnitt einer anderen nicht abreißen.
+    """
+    if lauf.aufnahme is None:
+        return ()
+    if runde is not None and lauf.aufnahme.runde.id != runde.id:
+        return ()
+    meldungen = await recorder.stoppen(lauf.stimme, lauf.aufnahme)
+    lauf.stimme = None
+    lauf.aufnahme = None
+    return tuple(meldungen)
+
+
 def _zeitpunkt(nachricht) -> str:
     """Der Zeitpunkt der Nachricht in der Form, in der die Szenen ihre Trennlinien tragen.
 
@@ -318,7 +336,7 @@ def _melder(ziel) -> Callable[[str], None]:
     return melden
 
 
-def _passwortfrage(config: Config, runde, session_id: int):
+def _passwortfrage(config: Config, runde, session_id: int, lauf: _Lauf):
     """Das Passwort wird erfragt, verbraucht und vergessen — es steht in keinem Feld.
 
     Deshalb ein Modal und kein Befehls-Argument: ein Argument stünde als Klartext in der
@@ -336,7 +354,9 @@ def _passwortfrage(config: Config, runde, session_id: int):
             )
 
         async def callback(self, interaction) -> None:
+            meldungen: tuple[str, ...] = ()
             try:
+                meldungen = await _mitschnitt_beenden(lauf, runde)
                 meldung = chronik.abschluss_starten(
                     config,
                     runde,
@@ -349,7 +369,7 @@ def _passwortfrage(config: Config, runde, session_id: int):
             except Exception as fehler:  # noqa: BLE001
                 logger.exception("Abschluss der Sitzung gescheitert")
                 meldung = GESCHEITERT.format(grund=UNERWARTET.format(typ=type(fehler).__name__))
-            await interaction.response.send_message(meldung, ephemeral=True)
+            await interaction.response.send_message(" ".join((*meldungen, meldung)), ephemeral=True)
 
     return Passwortfrage()
 
@@ -516,9 +536,7 @@ def baue(config: Config):
             await ctx.respond(LAEUFT_NICHT, ephemeral=True)
             return
         await ctx.defer(ephemeral=True)
-        meldungen = await recorder.stoppen(lauf.stimme, lauf.aufnahme)
-        lauf.stimme = None
-        lauf.aufnahme = None
+        meldungen = await _mitschnitt_beenden(lauf)
         await ctx.respond(" ".join(meldungen), ephemeral=True)
 
     @gruppe.command(name="hilfe", description="Was der Bot tut und wie man ihn bedient")
@@ -543,7 +561,7 @@ def baue(config: Config):
     async def chronik_fertig(ctx) -> None:
         runde = chronik.runde_verlangen(config, ctx.guild_id)
         sitzung = chronik.sitzung_verlangen(runde, str(ctx.channel_id))
-        await ctx.send_modal(_passwortfrage(config, runde, sitzung))
+        await ctx.send_modal(_passwortfrage(config, runde, sitzung, lauf))
 
     @bot.slash_command(name=BEFEHL_SUCHE, description="In allem nachsehen, was geschrieben wurde")
     @antwortet
