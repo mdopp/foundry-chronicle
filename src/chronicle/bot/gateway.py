@@ -85,10 +85,10 @@ GESCHEITERT = (
 
 UNERWARTET = "unerwarteter Fehler im Bot ({typ})."
 
-HILFE = (
-    "**So schneide ich eine Sitzung mit**\n"
+BEFEHLE = (
     "• `/chronik start` — ich lege die Sitzung an und öffne den Thread dazu; ab dort wird "
     "jede Nachricht eine Notiz.\n"
+    "• `/szene <Name>` — die Trennlinie zur nächsten Szene.\n"
     "• `/aufnahme start` — ich komme in deinen Sprachkanal, spiele eine hörbare Ansage "
     "und schneide **erst danach** mit, je Sprecherin und Sprecher eine eigene Spur.\n"
     "• `/aufnahme stop` — ich höre auf und gehe wieder; die Spuren wandern in den "
@@ -100,11 +100,35 @@ HILFE = (
     "• `/wer <Name>` — was im Register über einen Namen steht.\n"
     "• `/register offen` — Vorschläge fürs Register bestätigen oder verwerfen.\n"
     "• `/zuordnung` — festhalten, wer von euch welchen Foundry-Spieler spielt.\n"
-    "• `/aufnahme hilfe` — dieser Text.\n"
+    "• `/aufnahme hilfe` — alles noch einmal in Ruhe.\n"
+)
+
+HILFE = (
+    "**So schneide ich eine Sitzung mit**\n"
+    f"{BEFEHLE}"
     "Wer nicht aufgezeichnet werden möchte, verlässt den Sprachkanal — außerhalb nehme "
     "ich nichts auf. Wer später dazukommt, hört die Ansage noch einmal. "
     f"Die Aufnahmen werden nach {recordings.RETENTION_TAGE} Tagen gelöscht.\n"
     "Meine Antworten sieht nur, wer den Befehl gegeben hat."
+)
+
+# Diese Nachricht steht im Kanal, **bevor** die Ansage läuft: wer nicht aufgezeichnet
+# werden will, soll den Ausweg lesen können, solange noch nichts mitgeschnitten wird.
+# Frist und Befehlsliste stehen deshalb nicht als zweite Kopie hier, sondern kommen aus
+# derselben Quelle wie `/aufnahme hilfe` und die Ansage — eine Kopie driftet, und eine
+# Zusage, die vom Verhalten abweicht, ist schlimmer als keine.
+VORSTELLUNG = (
+    "**Ich bin die Chronik dieser Runde.**\n"
+    "Aus dem, was ihr sprecht, was ihr schreibt und was in eurem Foundry gewürfelt wird, "
+    "mache ich nach dem Abend ein lesbares Sitzungsprotokoll — Zahlen kommen dabei "
+    "ausschließlich aus dem Foundry-Log, erfinden kann ich sie nicht.\n"
+    "**Gleich kommt eine hörbare Ansage. Erst danach schneide ich mit**, je Sprecherin "
+    "und Sprecher eine eigene Spur. Wer nicht aufgezeichnet werden möchte, verlässt jetzt "
+    "den Sprachkanal — außerhalb nehme ich nichts auf. "
+    f"Die Tonspuren werden nach {recordings.RETENTION_TAGE} Tagen gelöscht.\n"
+    "**So bedient ihr mich:**\n"
+    f"{BEFEHLE}"
+    "Meine Antworten sieht immer nur, wer den Befehl gegeben hat."
 )
 
 RAHMEN = ansage.KANAELE * ansage.BREITE
@@ -308,6 +332,15 @@ async def _thread_anlegen(ctx, name: str):
         raise chronik.ChronikFehler(chronik.KEIN_THREAD) from fehler
 
 
+def _vorstellungsziel(ctx, kanal):
+    """Der Chat des Sprachkanals — und wo der keiner ist, der Ort, an dem der Befehl kam.
+
+    Die Vorstellung darf nicht verschwinden, nur weil ein älterer oder ein Bühnenkanal
+    keinen eigenen Chat hat: dann läse niemand den Ausweg vor der Ansage.
+    """
+    return kanal if callable(getattr(kanal, "send", None)) else ctx.channel
+
+
 def _melder(ziel) -> Callable[[str], None]:
     """Der Lauf trägt sich in einem eigenen Faden zu; melden darf nur die Ereignisschleife."""
     schleife = asyncio.get_running_loop()
@@ -502,6 +535,7 @@ def baue(config: Config):
         await ctx.defer(ephemeral=True)
         stimme = Sprachverbindung(await kanal.connect())
         try:
+            await _vorstellungsziel(ctx, kanal).send(VORSTELLUNG)
             lauf.aufnahme = await recorder.starten(config, stimme)
         except BaseException:
             await stimme.trennen()
