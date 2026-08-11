@@ -12,7 +12,9 @@ sind je Spur ein knappes Gigabyte, und in kleine Schnipsel geschnitten verlöre 
 Erkennung genau den Kontext, von dem sie lebt.
 
 Die fertige Spur reiht sich in dieselbe Warteschlange ein wie ein Diktat-Upload — einen
-zweiten Verarbeitungsweg gibt es nicht. Gelöscht wird eine Aufnahme nur auf ausdrückliches
+zweiten Verarbeitungsweg gibt es nicht. Der Empfangstest ist davon keine Ausnahme: er
+schneidet mit wie jeder andere Lauf, Ansage und Protokoll eingeschlossen, und **wirft**
+danach weg, statt einzureihen. Gelöscht wird eine Aufnahme nur auf ausdrückliches
 Verlangen (``python -m chronicle.transcribe --loeschen``).
 
 Diese Datei kennt Discord nicht. Sie spricht mit einer ``Stimme``; wer die ist, entscheidet
@@ -21,8 +23,10 @@ Diese Datei kennt Discord nicht. Sie spricht mit einer ``Stimme``; wer die ist, 
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import wave
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
@@ -87,11 +91,98 @@ RUNDE_FORT_REST = (
 )
 
 
+# Wie lange der Empfangstest lauscht. Zehn Sekunden, aus drei Gründen: es reicht für zwei
+# gesprochene Sätze, also dafür, dass »null Pakete« wirklich »null Pakete« heißt und nicht
+# bloß eine Sprechpause; py-cord ordnet die SSRC eines Sprechers erst mit dem ersten
+# Sprech-Ereignis einem Konto zu, und das braucht nach dem ersten Wort einen Moment; und es
+# bleibt an der Grenze, ab der ein Lauf ein eigener, beobachtbarer Job sein müsste — der
+# Aufrufer wartet in Discords »denkt nach …« und bekommt danach seine Antwort.
+PROBE_DAUER = 10
+
+PROBE_KOPF = "**Empfangstest in #{kanal} — {dauer} Sekunden gelauscht**"
+PROBE_ZAHLEN = "Pakete: {pakete} · Dekodierfehler: {dekodierfehler} · Spuren: {spuren}"
+PROBE_SPUR = "• {name}: {bytes} Bytes"
+
+PROBE_TRAEGT = (
+    "**Der Empfang trägt.** Der Ton kommt an, lässt sich dekodieren und landet je Sprecher "
+    "in einer eigenen Spur — `/aufnahme start` schneidet hier wirklich mit."
+)
+
+# Der Fall, für den es diesen Befehl gibt: py-cords Dekoder gibt auf, der Empfänger stirbt
+# in seinem eigenen Faden und beendet den Mitschnitt von selbst. In Discord sieht das aus
+# wie eine laufende Aufnahme — bis Stunden später die Chronik fehlt.
+PROBE_DEKODIERT_NICHT = (
+    "**Es kommt nichts Lesbares an.** Grund: der Ton ließ sich nicht dekodieren ({grund}). "
+    "So kommt Ende-zu-Ende-verschlüsselter Ton an. Eine Aufnahme liefe jetzt zwar an und "
+    "sähe von außen richtig aus, hätte aber keine einzige Spur."
+)
+
+PROBE_ABGEBROCHEN = (
+    "**Es kommt nichts Lesbares an.** Der Empfang ist abgebrochen ({grund}); was danach "
+    "gesprochen wurde, stünde in keiner Spur. Die Einzelheiten stehen im Log des Bots."
+)
+
+PROBE_STILL = (
+    "**Es kam kein einziges Paket an.** Entweder hat in den {dauer} Sekunden niemand "
+    "gesprochen — dann noch einmal, und dabei reden —, oder Discord schickt keinen Ton "
+    "hierher."
+)
+
+PROBE_AUFGERAEUMT = (
+    "Die Probespuren sind gelöscht, eingereiht wurde nichts, und in die Chronik geht davon "
+    "nichts. Protokolliert ist allein die Ansage — dass hier {dauer} Sekunden aufgezeichnet "
+    "wurde, bleibt nachweisbar."
+)
+
+PROBE_AUFGERAEUMT_REST = (
+    "Eingereiht wurde nichts, und in die Chronik geht davon nichts. Diese Probespuren "
+    "ließen sich aber nicht löschen: {spuren}. Sie liegen noch im Aufnahmeordner und "
+    "gehören dort nicht hin — der Grund steht im Log des Bots."
+)
+
+
 @dataclass(frozen=True)
 class Kanal:
     guild_id: str
     id: str
     name: str
+
+
+@dataclass(frozen=True)
+class Stoerung:
+    """Was den Mitschnitt abgebrochen hat, in Worten — den Fehler selbst kennt nur Discord.
+
+    ``dekodierfehler`` unterscheidet den einen Fall, der einen Namen und eine Erklärung
+    verdient: der Ton kam an, war aber nicht zu dekodieren.
+    """
+
+    text: str
+    dekodierfehler: bool = False
+
+
+Melder = Callable[[Stoerung], None]
+
+
+@dataclass(frozen=True)
+class Spurbericht:
+    name: str
+    bytes: int
+    geloescht: bool
+
+
+@dataclass(frozen=True)
+class Probe:
+    """Was in der Probezeit wirklich ankam — Zahlen, keine Vermutung."""
+
+    kanal: str
+    dauer: int
+    pakete: int
+    stoerungen: tuple[Stoerung, ...]
+    spuren: tuple[Spurbericht, ...]
+
+    @property
+    def dekodierfehler(self) -> int:
+        return sum(1 for stoerung in self.stoerungen if stoerung.dekodierfehler)
 
 
 class AufnahmeFehler(BotFehler):
@@ -113,7 +204,7 @@ class Stimme(Protocol):
 
     async def ansagen(self, datei: Path) -> None: ...
 
-    def mitschneiden(self, aufnahme: Aufnahme) -> None: ...
+    def mitschneiden(self, aufnahme: Aufnahme, melden: Melder | None = None) -> None: ...
 
     def mitschnitt_beenden(self) -> None: ...
 
@@ -127,8 +218,11 @@ class _Spur:
     mitten in der Sitzung, liegt trotzdem eine abspielbare Spur da statt eines Rumpfes.
     """
 
-    def __init__(self, pfad: Path) -> None:
+    def __init__(self, pfad: Path, sprecher: str) -> None:
         self.pfad = pfad
+        # Der Anzeigename, nicht der Dateiname: der Empfangstest sagt dem Aufrufer, von wem
+        # etwas ankam, und ``sitzung3-20260811T2030-Mira`` beantwortet das schlechter.
+        self.sprecher = sprecher
         self.bytes = 0
         self._datei = wave.open(str(pfad), "wb")
         self._datei.setnchannels(ansage.KANAELE)
@@ -172,6 +266,10 @@ class Aufnahme:
         self._config = config
         self._spuren: dict[str, _Spur] = {}
         self._angesagt = False
+        # Nur gezählt, nicht gedeutet: wie oft überhaupt etwas zu schreiben ankam. Das ist
+        # die Frage, die der Empfangstest beantwortet — und die einzige, die man von außen
+        # nicht sehen kann.
+        self.pakete = 0
 
     @property
     def laeuft(self) -> bool:
@@ -215,10 +313,11 @@ class Aufnahme:
             ziel = recordings.target_path(
                 self._config.recordings_dir, self.session_id, _spurname(sprecher)
             )
-            spur = _Spur(ziel)
+            spur = _Spur(ziel, sprecher.name)
             self._spuren[sprecher.id] = spur
             logger.info("Spur für %s: %s", sprecher.name, ziel.name)
         spur.schreiben(pcm)
+        self.pakete += 1
 
     def beenden(self) -> tuple[str, ...]:
         """Schließt die Spuren und reiht sie ein; leere Spuren bleiben nicht liegen.
@@ -304,14 +403,46 @@ class Aufnahme:
         self._angesagt = False
         return tuple(meldungen) or (NICHTS_GESPROCHEN,)
 
+    def verwerfen(self) -> tuple[Spurbericht, ...]:
+        """Schließt die Spuren, sagt was ankam — und löscht sie. Eingereiht wird nichts.
 
-async def starten(config: Config, stimme: Stimme, runde: Runde) -> Aufnahme:
+        Der Ausgang des Empfangstests, und der einzige Weg hier heraus, der **nicht** in
+        die Warteschlange führt: was in der Probezeit ankam, war nie für die Chronik
+        gedacht. Es sind trotzdem Stimmen echter Menschen, also verschwinden sie sofort und
+        nicht erst mit der Frist — auch die leeren, auch die, deren Schließen scheiterte.
+
+        Wie beim Beenden steht jede Spur für sich, und was liegen bleibt, wird gesagt: eine
+        Probespur ohne Zeile in der Warteschlange ist für jeden Aufräumweg unsichtbar.
+        """
+        berichte = []
+        for spur in self._spuren.values():
+            try:
+                spur.schliessen()
+            except Exception:
+                # Ohne den Dateinamen: er trägt den Anzeigenamen des Sprechers. Gelöscht
+                # wird die Spur trotzdem — ``close`` gibt die Datei im ``finally`` frei.
+                logger.exception("Eine Probespur ließ sich nicht abschließen")
+            berichte.append(
+                Spurbericht(name=spur.sprecher, bytes=spur.bytes, geloescht=_loeschen(spur))
+            )
+        logger.info("Empfangstest beendet: %s Spuren verworfen", len(berichte))
+        self._spuren.clear()
+        self._angesagt = False
+        return tuple(berichte)
+
+
+async def starten(
+    config: Config, stimme: Stimme, runde: Runde, *, melden: Melder | None = None
+) -> Aufnahme:
     """Ansage spielen, Einwilligung protokollieren, dann erst mitschneiden.
 
     Die Runde kommt vom Befehl und gehört der Gilde, in der er gegeben wurde; hier wird
     nur noch nachgesehen, ob sie auch die des Sprachkanals ist. Einen Rückfall auf »die
     erste Runde« gibt es nicht mehr: er ließe Ansage, Einwilligungsprotokoll samt
     Anzeigenamen, Tonspuren und Transkripte in einer fremden Kampagne landen.
+
+    ``melden`` bekommt, was den Mitschnitt später abbricht. Es kommt aus einem fremden
+    Faden — wer nichts damit anfangen will, lässt es weg und erfährt vom Abbruch nichts.
 
     Zwischen Ansage und Eintrag wird nachgesehen, ob der Bot noch dort sitzt, wo er
     angefangen hat — dieselbe Bedingung wie beim Nachzügler, und hier trägt sie alles:
@@ -331,7 +462,7 @@ async def starten(config: Config, stimme: Stimme, runde: Runde) -> Aufnahme:
     if not stimme.im_kanal():
         raise AufnahmeFehler(VERSCHOBEN_BEIM_START)
     aufnahme.ansage_protokollieren(stimme.mitglieder())
-    stimme.mitschneiden(aufnahme)
+    stimme.mitschneiden(aufnahme, melden)
     return aufnahme
 
 
@@ -360,3 +491,70 @@ async def stoppen(stimme: Stimme, aufnahme: Aufnahme) -> tuple[str, ...]:
     stimme.mitschnitt_beenden()
     await stimme.trennen()
     return aufnahme.beenden()
+
+
+async def pruefen(config: Config, stimme: Stimme, runde: Runde) -> Probe:
+    """Kurz lauschen und sagen, was wirklich ankam — ohne eine Zeile für die Chronik.
+
+    Denselben Weg wie ``starten``, und keinen leiseren: erst die hörbare Ansage, dann das
+    Einwilligungsprotokoll, dann der Mitschnitt. Ein Testmodus, der still mitschnitte, wäre
+    eine Straftat (§201 StGB) — dass die Spuren zehn Sekunden später gelöscht werden, ändert
+    daran nichts, denn aufgezeichnet wurde trotzdem.
+
+    Aufgeräumt wird auch der gescheiterte Lauf: getrennt und verworfen wird im ``finally``,
+    weil sonst genau dann Spuren liegenblieben, wenn niemand hinsieht.
+    """
+    stoerungen: list[Stoerung] = []
+    aufnahme = await starten(config, stimme, runde, melden=stoerungen.append)
+    logger.info("Empfangstest in #%s: %s Sekunden", stimme.kanal.name, PROBE_DAUER)
+    try:
+        await asyncio.sleep(PROBE_DAUER)
+    finally:
+        try:
+            stimme.mitschnitt_beenden()
+            await stimme.trennen()
+        finally:
+            spuren = aufnahme.verwerfen()
+    return Probe(
+        kanal=stimme.kanal.name,
+        dauer=PROBE_DAUER,
+        pakete=aufnahme.pakete,
+        stoerungen=tuple(stoerungen),
+        spuren=spuren,
+    )
+
+
+def _urteil(probe: Probe) -> str:
+    dekodier = [stoerung.text for stoerung in probe.stoerungen if stoerung.dekodierfehler]
+    if dekodier:
+        return PROBE_DEKODIERT_NICHT.format(grund="; ".join(dekodier))
+    if probe.stoerungen:
+        return PROBE_ABGEBROCHEN.format(
+            grund="; ".join(stoerung.text for stoerung in probe.stoerungen)
+        )
+    if not probe.pakete:
+        return PROBE_STILL.format(dauer=probe.dauer)
+    return PROBE_TRAEGT
+
+
+def bericht(probe: Probe) -> str:
+    """Die Zahlen, das Urteil und der Verbleib der Spuren — in dieser Reihenfolge.
+
+    Die Zahlen stehen vor dem Urteil, damit nachprüfbar bleibt, worauf es sich stützt.
+    """
+    zeilen = [
+        PROBE_KOPF.format(kanal=probe.kanal, dauer=probe.dauer),
+        PROBE_ZAHLEN.format(
+            pakete=probe.pakete,
+            dekodierfehler=probe.dekodierfehler,
+            spuren=len(probe.spuren),
+        ),
+    ]
+    zeilen.extend(PROBE_SPUR.format(name=spur.name, bytes=spur.bytes) for spur in probe.spuren)
+    zeilen.append(_urteil(probe))
+    geblieben = [spur.name for spur in probe.spuren if not spur.geloescht]
+    if geblieben:
+        zeilen.append(PROBE_AUFGERAEUMT_REST.format(spuren=", ".join(geblieben)))
+    else:
+        zeilen.append(PROBE_AUFGERAEUMT.format(dauer=probe.dauer))
+    return "\n".join(zeilen)

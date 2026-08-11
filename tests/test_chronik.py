@@ -1548,7 +1548,10 @@ def test_die_hilfe_nennt_auch_den_weg_in_die_sitzung(stelle, bot):
 
     asyncio.run(bot.gruppen[gateway.GRUPPE].befehle["hilfe"](ctx))
 
-    (antwort,) = ctx.antworten
+    # Geteilt seit `/aufnahme test`: Discords 2000 Zeichen sind erreicht, und was zählt,
+    # ist die Hilfe als Ganzes — angehängt ergeben die Stücke wieder genau sie.
+    antwort = "".join(ctx.antworten)
+    assert antwort == gateway.HILFE
     assert "/chronik start" in antwort and "/chronik fertig" in antwort
 
 

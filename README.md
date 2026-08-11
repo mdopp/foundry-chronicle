@@ -371,6 +371,13 @@ Kanal-Konfiguration braucht es deshalb nicht —, **`/aufnahme stop`** beendet d
 und reiht die Spuren in dieselbe Warteschlange ein wie ein Diktat, **`/aufnahme hilfe`**
 sagt in drei Zeilen, was der Bot tut. Die Befehle registriert der Bot beim Start selbst.
 
+**`/aufnahme test`** beantwortet die eine Frage, die von außen nicht zu sehen ist: kommt
+hier überhaupt lesbarer Ton an? Der Bot folgt in den Sprachkanal, lauscht zehn Sekunden
+und berichtet nur dem Aufrufer, was wirklich ankam — Pakete, Dekodierfehler, je Sprecher
+eine Spur mit ihren Bytes — und was das heißt. Es ist ein Mitschnitt wie jeder andere:
+die hörbare Ansage läuft, die Einwilligung wird protokolliert, und danach werden die
+Probespuren gelöscht statt eingereiht. Eine laufende Aufnahme rührt er nicht an.
+
 **Jeder Befehl antwortet, auch der gescheiterte.** Ein Befehl ohne Antwort lässt Discord
 ewig „denkt nach …" anzeigen — mitten in der Runde weiß dann niemand, ob aufgenommen wird
 oder nicht; das ist der schlechteste aller Ausgänge und war der erste Live-Fund (#57).

@@ -11,11 +11,13 @@ geschrieben**, und **was angesagt wurde, steht im Wortlaut im Protokoll.**
 from __future__ import annotations
 
 import asyncio
+import functools
 import inspect
 import io
 import logging
 import sqlite3
 import sys
+import threading
 import tomllib
 import types
 import wave
@@ -155,6 +157,7 @@ class FakeStimme:
         self.ablauf: list[str] = []
         self.angesagt: list[Path] = []
         self.aufnahme = None
+        self.melden = None
         # Wie py-cord: der Bot sitzt da, wo er hingehört, bis ihn jemand zieht.
         self.verschoben = False
 
@@ -168,9 +171,10 @@ class FakeStimme:
         self.ablauf.append("ansage")
         self.angesagt.append(datei)
 
-    def mitschneiden(self, aufnahme):
+    def mitschneiden(self, aufnahme, melden=None):
         self.ablauf.append("mitschnitt")
         self.aufnahme = aufnahme
+        self.melden = melden
 
     def mitschnitt_beenden(self):
         self.ablauf.append("mitschnitt-ende")
@@ -974,6 +978,10 @@ class FakeTokenAbgelehnt(Exception):
     """Steht für ``discord.errors.LoginFailure`` — der Token taugt nicht (mehr)."""
 
 
+class FakeOpusError(Exception):
+    """``discord.opus.OpusError`` — bei DAVE-Ton mit »corrupted stream«."""
+
+
 class FakeNichtGefunden(Exception):
     """Steht für ``discord.NotFound`` — 404, den Kanal gibt es nicht mehr."""
 
@@ -1069,9 +1077,15 @@ class FakeVoiceClient:
         self.guild = kanal.guild
         self.gespielt = []
         self.senke = None
+        self.rueckruf = None
         self.schneidet = False
         self.getrennt = False
         self.trennen_stolpert = False
+        # Was ankommt, sobald der Mitschnitt läuft: ``(pcm, sprecher)`` je Paket. In echt
+        # füttert py-cords Empfangs-Router die Senke aus seinem eigenen Faden.
+        self.ankommend = []
+        # Woran der Empfänger stirbt, wenn er stirbt — py-cord legt das in ``reader.error``.
+        self.fehler = None
 
     def play(self, quelle, *, after):
         self.gespielt.append(quelle)
@@ -1079,7 +1093,12 @@ class FakeVoiceClient:
 
     def start_recording(self, senke, rueckruf):
         self.senke = senke
+        self.rueckruf = rueckruf
         self.schneidet = True
+        for pcm, sprecher in self.ankommend:
+            senke.write(sprachdaten(pcm), sprecher)
+        if self.fehler is not None:
+            self.paketrouter_stirbt(self.fehler)
 
     def is_recording(self):
         return self.schneidet
@@ -1090,6 +1109,20 @@ class FakeVoiceClient:
             raise RuntimeError("You are not recording")
         self.schneidet = False
         self.senke.cleanup()
+        # Und so kommt der Fehler heraus: ``AudioReader._stop`` reicht ``reader.error`` an
+        # den Rückruf — im Normalfall ist das ``None``.
+        if self.rueckruf is not None:
+            self.rueckruf(self.fehler)
+
+    def paketrouter_stirbt(self, fehler):
+        """Wie py-cord: der Router legt den Fehler ab und beendet den Mitschnitt selbst.
+
+        ``PacketRouter.run`` fängt, was beim Dekodieren fliegt, schreibt es nach
+        ``reader.error`` und ruft im ``finally`` ``client.stop_recording()`` — alles in
+        seinem eigenen Faden, ohne dass der laufende Befehl etwas davon sieht.
+        """
+        self.fehler = fehler
+        self.stop_recording()
 
     async def disconnect(self):
         # Das echte Trennen geht ans Netz und damit an die Schleife ab — genau hier war
@@ -1109,9 +1142,15 @@ class FakeSprachkanalOhneChat:
         self.name = "Runde"
         self.members = list(mitglieder)
         self.verbindung = None
+        # Was der Kanal an Ton hergibt, sobald jemand mitschneidet — und woran der
+        # Empfänger dabei stirbt. Beides wird an die Verbindung durchgereicht.
+        self.ankommend = []
+        self.fehler = None
 
     async def connect(self):
         self.verbindung = FakeVoiceClient(self)
+        self.verbindung.ankommend = self.ankommend
+        self.verbindung.fehler = self.fehler
         if self.guild.me is not None:
             # Beitreten ist auch ein Zustandswechsel: Discord führt den Bot ab jetzt hier.
             self.guild.me.voice.channel = self
@@ -1164,6 +1203,7 @@ class FakeCtx:
         self.channel = kanal if kanal is not None else FakeTextkanal()
         self.guild_id = guild_id
         self.antworten = []
+        self.ephemer = []
         self.aufgeschoben = False
 
     async def defer(self, **rest):
@@ -1171,6 +1211,7 @@ class FakeCtx:
 
     async def respond(self, text, **rest):
         self.antworten.append(text)
+        self.ephemer.append(bool(rest.get("ephemeral")))
 
 
 class FakeOption:
@@ -1214,7 +1255,13 @@ def pycord(monkeypatch):
     fehler.NotFound = FakeNichtGefunden
     modul.errors = fehler
     modul.NotFound = FakeNichtGefunden
+    # ``discord.opus`` haelt den Fehler, an dem der Dekoder scheitert — daran unterscheidet
+    # der Bot »kommt nichts Lesbares an« von »irgendein Abbruch«.
+    opus = types.ModuleType("discord.opus")
+    opus.OpusError = FakeOpusError
+    modul.opus = opus
     monkeypatch.setitem(sys.modules, "discord", modul)
+    monkeypatch.setitem(sys.modules, "discord.opus", opus)
     monkeypatch.setattr(FakeBot, "erzeugt", [])
     return modul
 
@@ -1316,7 +1363,7 @@ def test_der_bot_bringt_beide_befehle_mit_und_bekommt_den_token(konfiguration, p
     gateway.run(konfiguration)
 
     (bot,) = FakeBot.erzeugt
-    assert set(bot.gruppen[gateway.GRUPPE].befehle) == {"start", "stop", "hilfe"}
+    assert set(bot.gruppen[gateway.GRUPPE].befehle) == {"start", "stop", "test", "hilfe"}
     assert bot.intents.guilds and bot.intents.voice_states
     assert bot.token == TOKEN
 
@@ -1509,6 +1556,289 @@ def test_stop_ohne_aufnahme_sagt_es(konfiguration, sitzung_id, ohne_espeak, rund
     asyncio.run(befehl(bot, "stop")(ctx))
 
     assert ctx.antworten == [gateway.LAEUFT_NICHT]
+
+
+# -- Der Empfangstest -------------------------------------------------------------------
+#
+# Die Frage, die er beantwortet: kommt hier überhaupt lesbarer Ton an? Sie war bis dahin
+# nur im Container-Log zu beantworten — für die Gruppe sah ein kaputter Mitschnitt aus wie
+# ein guter, und dass nichts geschrieben wurde, fiel Stunden später auf.
+
+
+PAKET = stille(480)
+
+
+@pytest.fixture
+def kurze_probe(monkeypatch):
+    """In echt zehn Sekunden; hier wird einmal an die Schleife abgegeben und das war es."""
+    monkeypatch.setattr(recorder, "PROBE_DAUER", 0)
+
+
+def probespuren(konfiguration) -> list[Path]:
+    """Was von der Probe auf der Platte liegt — die Ansage heißt anders und zählt nicht."""
+    return list(konfiguration.recordings_dir.glob("sitzung*"))
+
+
+def test_der_empfangstest_nennt_pakete_fehler_und_spuren(
+    konfiguration, sitzung_id, ohne_espeak, runde, kurze_probe
+):
+    runde.kanal.ankommend = [(PAKET, runde.mira), (PAKET, runde.mira), (PAKET, runde.brok)]
+    bot = gateway.baue(konfiguration)
+    ctx = FakeCtx(runde.mira)
+
+    asyncio.run(befehl(bot, "test")(ctx))
+
+    (antwort,) = ctx.antworten
+    assert "Pakete: 3" in antwort
+    assert "Dekodierfehler: 0" in antwort
+    assert "Spuren: 2" in antwort
+    assert f"• {MIRA.name}: {2 * len(PAKET)} Bytes" in antwort
+    assert f"• {BROK.name}: {len(PAKET)} Bytes" in antwort
+    assert recorder.PROBE_TRAEGT in antwort
+    # Der Bericht nennt Anzeigenamen — er geht ephemer an den, der ihn ausgelöst hat.
+    assert ctx.ephemer == [True]
+    assert runde.kanal.verbindung.getrennt
+
+
+def test_ein_dekodierfehler_wird_als_solcher_erkannt_und_benannt(
+    konfiguration, sitzung_id, ohne_espeak, runde, kurze_probe
+):
+    """Der Fall, für den es den Befehl gibt — und der einzige, den man nicht sehen kann.
+
+    Der Fehler entsteht in py-cords Paket-Router, in einem eigenen Faden; der Befehl selbst
+    läuft ungestört weiter. Ohne den Rückruf stünde hier »kein einziges Paket« — richtig
+    gezählt, aber ohne den Grund, den man kennt.
+    """
+    runde.kanal.fehler = FakeOpusError("corrupted stream")
+    bot = gateway.baue(konfiguration)
+    ctx = FakeCtx(runde.mira)
+
+    asyncio.run(befehl(bot, "test")(ctx))
+
+    (antwort,) = ctx.antworten
+    assert "Dekodierfehler: 1" in antwort
+    assert "corrupted stream" in antwort
+    assert "FakeOpusError" in antwort
+    assert "Es kommt nichts Lesbares an" in antwort
+    assert recorder.PROBE_TRAEGT not in antwort
+
+
+def test_ein_abbruch_ohne_dekodierfehler_wird_nicht_zu_einem_gemacht(
+    konfiguration, sitzung_id, ohne_espeak, runde, kurze_probe
+):
+    """Die Gegenprobe zum Test darüber: nicht jeder Abbruch ist ein Dekodierfehler."""
+    runde.kanal.fehler = RuntimeError("die Verbindung ist weg")
+    bot = gateway.baue(konfiguration)
+    ctx = FakeCtx(runde.mira)
+
+    asyncio.run(befehl(bot, "test")(ctx))
+
+    (antwort,) = ctx.antworten
+    assert "Dekodierfehler: 0" in antwort
+    assert "Der Empfang ist abgebrochen" in antwort
+    assert "die Verbindung ist weg" in antwort
+    assert recorder.PROBE_TRAEGT not in antwort
+
+
+def test_ohne_ein_einziges_paket_faellt_das_urteil_nicht_gruen_aus(
+    konfiguration, sitzung_id, ohne_espeak, runde, kurze_probe
+):
+    bot = gateway.baue(konfiguration)
+    ctx = FakeCtx(runde.mira)
+
+    asyncio.run(befehl(bot, "test")(ctx))
+
+    (antwort,) = ctx.antworten
+    assert "Pakete: 0" in antwort
+    assert "Spuren: 0" in antwort
+    assert "kein einziges Paket" in antwort
+    assert recorder.PROBE_TRAEGT not in antwort
+
+
+def test_die_probespuren_sind_danach_von_der_platte_weg(
+    konfiguration, sitzung_id, ohne_espeak, runde, kurze_probe
+):
+    """Es sind Stimmen echter Menschen — sie verschwinden sofort, nicht erst mit der Frist."""
+    runde.kanal.ankommend = [(PAKET, runde.mira), (PAKET, runde.brok)]
+    bot = gateway.baue(konfiguration)
+    ctx = FakeCtx(runde.mira)
+
+    asyncio.run(befehl(bot, "test")(ctx))
+
+    assert probespuren(konfiguration) == []
+    assert recorder.PROBE_AUFGERAEUMT.format(dauer=recorder.PROBE_DAUER) in ctx.antworten[0]
+
+
+def test_der_empfangstest_reiht_nichts_ein(
+    konfiguration, sitzung_id, ohne_espeak, runde, kurze_probe
+):
+    """Keine Zeile in der Warteschlange: was hier ankam, wird nie verschriftet."""
+    runde.kanal.ankommend = [(PAKET, runde.mira)]
+    bot = gateway.baue(konfiguration)
+
+    asyncio.run(befehl(bot, "test")(FakeCtx(runde.mira)))
+
+    unsere = unsere_runde(konfiguration)
+    assert list(recordings.pending(unsere)) == []
+    assert list(recordings.for_session(unsere, sitzung_id)) == []
+
+
+def test_auch_die_gescheiterte_probe_laesst_keine_spur_liegen(
+    konfiguration, sitzung_id, ohne_espeak, runde, kurze_probe, monkeypatch
+):
+    """Gerade dann nicht: wer hinsieht, sieht die Fehlermeldung — nicht den Aufnahmeordner."""
+    runde.kanal.ankommend = [(PAKET, runde.mira)]
+
+    async def stolpert(self):
+        raise RuntimeError("Discord hat aufgelegt")
+
+    monkeypatch.setattr(gateway.Sprachverbindung, "trennen", stolpert)
+    bot = gateway.baue(konfiguration)
+    ctx = FakeCtx(runde.mira)
+
+    asyncio.run(befehl(bot, "test")(ctx))
+
+    assert ctx.antworten[0].startswith("Das hat nicht geklappt:")
+    assert probespuren(konfiguration) == []
+    assert list(recordings.pending(unsere_runde(konfiguration))) == []
+
+
+def test_der_empfangstest_sagt_hoerbar_an_und_protokolliert_die_einwilligung(
+    konfiguration, sitzung_id, ohne_espeak, runde, kurze_probe
+):
+    """Zehn Sekunden sind eine Aufnahme. Ein Testmodus, der leise mitschnitte, wäre strafbar."""
+    bot = gateway.baue(konfiguration)
+
+    asyncio.run(befehl(bot, "test")(FakeCtx(runde.mira)))
+
+    assert len(runde.kanal.verbindung.gespielt) == 1
+    (eintrag,) = consent.for_session(unsere_runde(konfiguration), sitzung_id)
+    assert eintrag.kind == consent.ANSAGE
+    assert eintrag.text == ansage.PROTOKOLL
+    assert {wer.name for wer in eintrag.members} == {MIRA.name, BROK.name}
+    # Und der Ausweg stand im Kanal, bevor die Ansage lief: die Null ist der Beleg.
+    gesagt = [text for text, _ in runde.kanal.geschrieben]
+    assert "".join(gesagt) == gateway.PROBE_VORSTELLUNG
+    assert gateway.AUSWEG in gesagt[0]
+    assert [gespielt for _, gespielt in runde.kanal.geschrieben] == [0] * len(gesagt)
+
+
+def test_der_empfangstest_ruehrt_eine_laufende_aufnahme_nicht_an(
+    konfiguration, sitzung_id, ohne_espeak, runde, kurze_probe
+):
+    """Er würde ihr die Sprachverbindung wegziehen — also wird es gesagt und nichts getan."""
+    bot = gateway.baue(konfiguration)
+    asyncio.run(befehl(bot, "start")(FakeCtx(runde.mira)))
+    verbindung = runde.kanal.verbindung
+    verbindung.senke.write(sprachdaten(PAKET), runde.mira)
+    ctx = FakeCtx(runde.brok)
+
+    asyncio.run(befehl(bot, "test")(ctx))
+
+    assert ctx.antworten == [gateway.PROBE_NICHT_STOEREN]
+    assert verbindung.schneidet and not verbindung.getrennt
+    assert len(verbindung.gespielt) == 1
+
+    # Und die Spur der echten Aufnahme ist unversehrt — sie geht ihren Weg zu Ende.
+    asyncio.run(befehl(bot, "stop")(FakeCtx(runde.mira)))
+    (spur,) = recordings.pending(unsere_runde(konfiguration))
+    assert spur.filename.endswith(f"{MIRA.name}.wav")
+
+
+def test_waehrend_der_probe_beginnt_kein_mitschnitt(konfiguration, sitzung_id, ohne_espeak, runde):
+    """Die Gegenrichtung: der Test hält die Verbindung und trennt sie gleich wieder."""
+    bot = gateway.baue(konfiguration)
+    der_lauf(bot).probe = True
+    ctx = FakeCtx(runde.mira)
+
+    asyncio.run(befehl(bot, "start")(ctx))
+
+    assert ctx.antworten == [gateway.PROBE_LAEUFT]
+    assert runde.kanal.verbindung is None
+
+
+def test_eine_unloeschbare_probespur_wird_beim_namen_genannt(
+    konfiguration, sitzung_id, ohne_espeak, caplog, kein_loeschen, monkeypatch
+):
+    """Was liegen bleibt, wird gesagt — auch hier, und ohne Klarnamen im Log.
+
+    Eine Probespur hat keine Zeile in der Warteschlange; für ``sweep`` ist sie unsichtbar.
+    Sie stillschweigend liegen zu lassen wäre die schlechteste aller Zusagen. Geschlossen
+    wird sie trotzdem zuerst — und auch ein gescheitertes ``close`` hält das Löschen der
+    übrigen nicht auf.
+    """
+    monkeypatch.setattr(recorder._Spur, "schliessen", stolpert_beim_schliessen(1))
+    stimme = FakeStimme(MIRA, BROK)
+    aufnahme = asyncio.run(recorder.starten(konfiguration, stimme, unsere_runde(konfiguration)))
+    aufnahme.schreiben(MIRA, stille(480))
+    kein_loeschen()
+    caplog.clear()
+
+    spuren = aufnahme.verwerfen()
+
+    text = recorder.bericht(
+        recorder.Probe(kanal=KANAL.name, dauer=1, pakete=1, stoerungen=(), spuren=spuren)
+    )
+    assert [spur.geloescht for spur in spuren] == [False]
+    assert MIRA.name in text
+    assert "ließen sich aber nicht löschen" in text
+    assert recorder.PROBE_AUFGERAEUMT.format(dauer=1) not in text
+    assert MIRA.name not in caplog.text
+
+
+def test_ein_zweiter_empfangstest_laeuft_nicht_daneben(
+    konfiguration, sitzung_id, ohne_espeak, runde
+):
+    bot = gateway.baue(konfiguration)
+    der_lauf(bot).probe = True
+    ctx = FakeCtx(runde.mira)
+
+    asyncio.run(befehl(bot, "test")(ctx))
+
+    assert ctx.antworten == [gateway.PROBE_LAEUFT]
+    assert runde.kanal.verbindung is None
+
+
+def test_der_empfangstest_ohne_sprachkanal_verbindet_nicht(
+    konfiguration, sitzung_id, ohne_espeak, runde
+):
+    bot = gateway.baue(konfiguration)
+    ctx = FakeCtx(FakeMitglied(4100, "Ohne Kanal"))
+
+    asyncio.run(befehl(bot, "test")(ctx))
+
+    assert ctx.antworten == [gateway.NICHT_IM_KANAL]
+    assert runde.kanal.verbindung is None
+
+
+def test_der_empfangstest_ohne_sitzung_trennt_wieder(
+    konfiguration, ohne_espeak, runde, kurze_probe
+):
+    """Der Abbruch **vor** dem Mitschnitt: den räumt ``pruefen`` nicht mehr ab."""
+    unsere_runde(konfiguration)
+    bot = gateway.baue(konfiguration)
+    ctx = FakeCtx(runde.mira)
+
+    asyncio.run(befehl(bot, "test")(ctx))
+
+    assert recorder.OHNE_SITZUNG in ctx.antworten[0]
+    assert runde.kanal.verbindung.getrennt
+    assert der_lauf(bot).probe is False
+
+
+def test_die_ruhende_runde_wird_auch_nicht_geprueft(
+    konfiguration, sitzung_id, ohne_espeak, runde, kurze_probe
+):
+    """Dieselbe Schranke wie vor ``/aufnahme start`` — hier wird aufgezeichnet."""
+    lebenszyklus.sperren(konfiguration.database_path, KANAL.guild_id)
+    bot = gateway.baue(konfiguration)
+    ctx = FakeCtx(runde.mira)
+
+    asyncio.run(befehl(bot, "test")(ctx))
+
+    assert "Diese Runde ruht" in ctx.antworten[0]
+    assert runde.kanal.verbindung is None
+    assert consent.for_session(unsere_runde(konfiguration), sitzung_id) == ()
 
 
 def test_wer_spaeter_dazukommt_hoert_die_ansage_noch_einmal(
@@ -1808,7 +2138,11 @@ def test_der_satz_ans_alleinsein_zeigt_den_widerspruch_und_traegt_keinen_namen()
     assert hinweis in gateway.HILFE
     assert hinweis not in gateway.BEFEHLE
     assert hinweis not in gateway.VORSTELLUNG
-    assert len(gateway.HILFE) <= grenzen.NACHRICHT
+    # Und die Hilfe steht seit `/aufnahme test` ebenfalls darüber — aus demselben Grund und
+    # mit derselben Folge: geteilt statt abgewiesen, der Ausweg im ersten Stück.
+    hilfe = grenzen.teile(gateway.HILFE)
+    assert gateway.AUSWEG in hilfe[0]
+    assert "".join(hilfe) == gateway.HILFE
     # Die Vorstellung steht **über** der Grenze, seit die Befehlsliste um `/chronik abgleich`
     # gewachsen ist — und das ist kein Fehlschlag, sondern der Fall, den #109 gebaut hat:
     # ``_zustellen`` teilt, statt abweisen zu lassen, und der Kommentar an ``AUSWEG`` sagt
@@ -2875,10 +3209,14 @@ def test_die_hilfe_erklaert_die_bedienung(konfiguration, runde):
 
     asyncio.run(befehl(bot, "hilfe")(ctx))
 
-    # Gegenprobe zum Test darunter: die heutige Hilfe ist **eine** Antwort.
-    (antwort,) = ctx.antworten
-    for satzteil in ("/aufnahme start", "/aufnahme stop", "Ansage", "verlässt"):
-        assert satzteil in antwort
+    # Angehängt ergeben die Stücke wieder genau die Hilfe — sie braucht seit
+    # `/aufnahme test` zwei Nachrichten, und keins der Stücke darf dabei wegfallen.
+    ganz = "".join(ctx.antworten)
+    assert ganz == gateway.HILFE
+    for satzteil in ("/aufnahme start", "/aufnahme stop", "/aufnahme test", "Ansage", "verlässt"):
+        assert satzteil in ganz
+    # Der Ausweg kommt zuerst — er trägt rechtlich und darf nicht in Stück zwei rutschen.
+    assert gateway.AUSWEG in ctx.antworten[0]
 
 
 def test_eine_zu_lange_hilfe_wird_nachgereicht_statt_abgewiesen(konfiguration, runde, monkeypatch):
@@ -3137,3 +3475,97 @@ def test_die_senke_haengt_an_ihrem_sprachclient(konfiguration, sitzung_id, ohne_
     assert verbindung.senke.client is verbindung, (
         "die Senke kennt ihren Sprachclient nicht — py-cord stirbt damit beim ersten Paket"
     )
+
+
+class SpielzeugSprachclient:
+    """So viel ``VoiceClient``, wie py-cords ``AudioReader`` zum Bauen und Beenden braucht."""
+
+    mode = "xsalsa20_poly1305"
+    secret_key = bytes(32)
+
+    def __init__(self):
+        self._connection = types.SimpleNamespace(
+            add_socket_listener=lambda rueckruf: None,
+            remove_socket_listener=lambda rueckruf: None,
+        )
+        self.reader = None
+
+    def stop_recording(self):
+        # Genau dieser Aufruf steht im ``finally`` von ``PacketRouter.run``.
+        self.reader.stop()
+
+
+class WartetEinmal:
+    """py-cords ``MultiDataEvent``, so weit der Router ihn braucht: ein Weckruf, ein Decoder."""
+
+    def __init__(self, decoder):
+        self.items = [decoder]
+
+    def wait(self):
+        return None
+
+    def notify(self):
+        return None
+
+    def clear(self):
+        self.items = []
+
+
+class StirbtBeimDekodieren:
+    """Was ``PacketDecoder.pop_data`` tut, wenn der Ton verschluesselt ankommt."""
+
+    def __init__(self, fehler):
+        self.fehler = fehler
+
+    def pop_data(self, **rest):
+        raise self.fehler
+
+
+def test_pycord_traegt_den_dekodierfehler_aus_seinem_eigenen_faden_heraus(
+    konfiguration, sitzung_id
+):
+    """Der Weg, auf dem der Fehler ueberhaupt zu sehen ist — gegen die echte Bibliothek.
+
+    ``PacketRouter`` ist ein eigener Thread. Stirbt er am Dekodieren, faengt ``run`` den
+    Fehler, legt ihn in ``reader.error`` und ruft ``client.stop_recording()``; erst
+    ``AudioReader._stop`` reicht ihn als ``after(self.error)`` heraus. Im Befehl, der den
+    Mitschnitt gestartet hat, kommt nichts an — genau deshalb sah `/aufnahme start` gruen
+    aus, waehrend keine einzige Zeile geschrieben wurde.
+
+    Der Fehlercode -4 heisst bei libopus »corrupted stream«; hier steht der Text daneben,
+    weil libopus in der Testumgebung nicht geladen ist.
+    """
+    from discord.opus import OpusError
+    from discord.voice.receive.reader import AudioReader
+
+    gemeldet = []
+    faden = []
+    _, senke = echte_senke(konfiguration, sitzung_id)
+    client = SpielzeugSprachclient()
+
+    def melden(stoerung):
+        faden.append(threading.current_thread())
+        gemeldet.append(stoerung)
+
+    client.reader = reader = AudioReader(
+        senke,
+        client,
+        after=functools.partial(gateway._abgeschlossen, melden=melden),
+        start=False,
+    )
+    reader.active = True
+    reader.packet_router.waiter = WartetEinmal(
+        StirbtBeimDekodieren(OpusError(-4, "corrupted stream"))
+    )
+
+    reader.packet_router.start()
+    reader.packet_router.join(timeout=5)
+
+    assert not reader.packet_router.is_alive()
+    assert isinstance(reader.error, OpusError)
+    (stoerung,) = gemeldet
+    assert stoerung.dekodierfehler, "ein Dekodierfehler muss als solcher erkannt werden"
+    assert "corrupted stream" in stoerung.text
+    # Und er kam von woanders her: deshalb sieht ihn der Befehl nicht.
+    assert faden == [reader.packet_router]
+    assert faden[0] is not threading.current_thread()
