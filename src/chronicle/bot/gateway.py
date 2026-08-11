@@ -1466,6 +1466,19 @@ def _zuordnungsansicht(config: Config, runde, stand: erinnern.Zuordnung):
     return Zuordnungsansicht()
 
 
+def _feld(discord, beschreibung: str):
+    """Ein freiwilliges Textfeld eines Slash-Befehls — als Vorgabewert, nicht als Annotation.
+
+    Diese Datei hat ``from __future__ import annotations``, und damit ist jede Annotation
+    zur Laufzeit eine **Zeichenkette**. py-cord liest den Typ eines Feldes aus der
+    Annotation und bekäme dann ``"str"`` statt ``str``; beim ersten Aufruf stirbt es an
+    ``issubclass() arg 1 must be a class``, und Discord zeigt »Die Anwendung reagiert
+    nicht«. Steht im Vorgabewert ein fertiges ``Option``, nimmt py-cord dessen Typ und
+    sieht die Annotation gar nicht erst an.
+    """
+    return discord.Option(str, description=beschreibung, default="", required=False)
+
+
 def baue(config: Config):
     """Der Bot mit seinen Befehlen und dem Thread, der die Sitzung ist — ohne Verbindung."""
     discord = _discord()
@@ -1526,7 +1539,10 @@ def baue(config: Config):
 
     @chronikgruppe.command(name="start", description="Sitzung anlegen und den Thread öffnen")
     @antwortet
-    async def chronik_start(ctx, titel: str = "") -> None:
+    async def chronik_start(
+        ctx,
+        titel=_feld(discord, "Titel der Sitzung"),  # noqa: B008
+    ) -> None:
         runde = chronik.runde_verlangen(config, ctx.guild_id)
         if not chronik.foundry_im_spiel(config, runde):
             # Ohne Server gäbe es nichts, wo das Passwort vorgezeigt würde — es läge nur
@@ -1608,7 +1624,11 @@ def baue(config: Config):
         name="nacherzaehlung", description="Einen Sitzungsbereich als Prosa nacherzählen"
     )
     @antwortet
-    async def chronik_nacherzaehlung(ctx, von: str = "", bis: str = "") -> None:
+    async def chronik_nacherzaehlung(
+        ctx,
+        von=_feld(discord, "Ab welcher Sitzung, als Datum"),  # noqa: B008
+        bis=_feld(discord, "Bis zu welcher Sitzung, als Datum"),  # noqa: B008
+    ) -> None:
         runde = chronik.runde_verlangen(config, ctx.guild_id)
         # Der Melder wird **hier** gebaut, in der Ereignisschleife: der Lauf trägt sich in
         # einem eigenen Faden zu und hätte dort keine, an die er sich hängen könnte.
@@ -1661,13 +1681,19 @@ def baue(config: Config):
 
     @bot.slash_command(name=BEFEHL_SUCHE, description="In allem nachsehen, was geschrieben wurde")
     @antwortet
-    async def suche(ctx, begriff: str = "") -> None:
+    async def suche(
+        ctx,
+        begriff=_feld(discord, "Wonach ich suchen soll"),  # noqa: B008
+    ) -> None:
         runde = chronik.runde_verlangen(config, ctx.guild_id)
         await _antworten(ctx, erinnern.suche(runde, begriff))
 
     @bot.slash_command(name=BEFEHL_WER, description="Was im Register über einen Namen steht")
     @antwortet
-    async def wer(ctx, name: str = "") -> None:
+    async def wer(
+        ctx,
+        name=_feld(discord, "Der Name, zu dem ich nachsehe"),  # noqa: B008
+    ) -> None:
         runde = chronik.runde_verlangen(config, ctx.guild_id)
         await _antworten(ctx, erinnern.wer(runde, name))
 
@@ -1691,7 +1717,10 @@ def baue(config: Config):
 
     @bot.slash_command(name=BEFEHL_SZENE, description="Die Trennlinie zur nächsten Szene ziehen")
     @antwortet
-    async def szene(ctx, name: str = "") -> None:
+    async def szene(
+        ctx,
+        name=_feld(discord, "Name der neuen Szene"),  # noqa: B008
+    ) -> None:
         runde = chronik.runde_verlangen(config, ctx.guild_id)
         sitzung = chronik.sitzung_verlangen(runde, str(ctx.channel_id))
         # Sichtbar für alle: die Trennlinie gehört in den Thread, nicht nur zu dem, der

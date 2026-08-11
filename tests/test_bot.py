@@ -1017,9 +1017,31 @@ class FakeCtx:
         self.antworten.append(text)
 
 
+class FakeOption:
+    """Das Feld eines Slash-Befehls, so weit die Doppel es brauchen.
+
+    Es hält seinen ``input_type`` wie das echte, damit ein Test nachsehen kann, ob dort
+    wirklich eine Klasse steht — eine Zeichenkette wäre der Fehler, an dem py-cord beim
+    ersten Aufruf stirbt.
+    """
+
+    def __init__(self, input_type, description="", default=None, required=True, **rest):
+        self.input_type = input_type
+        self.description = description
+        self.default = default
+        self.required = required
+
+    def __eq__(self, other):
+        return isinstance(other, FakeOption) and self.default == other.default
+
+    def __repr__(self) -> str:
+        return f"FakeOption({self.input_type!r}, default={self.default!r})"
+
+
 @pytest.fixture
 def pycord(monkeypatch):
     modul = types.ModuleType("discord")
+    modul.Option = FakeOption
     modul.Intents = FakeIntents
     modul.Bot = FakeBot
     modul.Permissions = FakePermissions
@@ -2816,3 +2838,47 @@ def test_ein_sprecher_ohne_konto_bekommt_eine_ehrlich_benannte_spur(konfiguratio
 
     (spur,) = recordings.pending(unsere_runde(konfiguration))
     assert spur.filename.endswith(f"{gateway.UNBEKANNT}.wav")
+
+
+def test_jedes_feld_der_slash_befehle_traegt_eine_klasse_und_keine_zeichenkette(tmp_path):
+    """Gegen das **echte** py-cord, nicht gegen ein Doppel — hier lag die Lücke.
+
+    ``gateway.py`` hat ``from __future__ import annotations``; damit ist jede Annotation
+    zur Laufzeit eine Zeichenkette. py-cord liest den Typ eines Feldes daraus, legt
+    ``Option("str")`` an und stirbt beim **ersten Aufruf** an ``issubclass() arg 1 must be
+    a class``. Discord zeigt dann »Die Anwendung reagiert nicht«.
+
+    Kein Doppel konnte das sehen: die Tests rufen die Befehlsfunktionen direkt auf und
+    überspringen py-cords Options-Maschinerie ganz. Am 2026-08-11 fiel es deshalb erst in
+    der ersten echten Sitzung auf.
+    """
+    pytest.importorskip("discord")
+    config = Config(data_dir=tmp_path, recordings_dir=tmp_path / "aufnahmen")
+
+    # py-cord greift beim Bauen nach der Ereignisschleife; in der vollen Suite hat ein
+    # vorheriger Lauf sie geschlossen.
+    schleife = asyncio.new_event_loop()
+    asyncio.set_event_loop(schleife)
+    try:
+        bot = gateway.baue(config)
+    finally:
+        asyncio.set_event_loop(None)
+        schleife.close()
+
+    def felder(befehl):
+        for feld in getattr(befehl, "options", ()):
+            yield befehl.qualified_name, feld
+        for unter in getattr(befehl, "subcommands", ()):
+            yield from felder(unter)
+
+    geprueft = []
+    for befehl in bot.pending_application_commands:
+        for name, feld in felder(befehl):
+            geprueft.append(f"{name}.{feld.name}")
+            assert isinstance(feld._raw_type, (type, tuple)), (
+                f"{name}.{feld.name}: {feld._raw_type!r} ist keine Klasse — "
+                "py-cord stirbt damit beim ersten Aufruf"
+            )
+            assert not isinstance(feld._raw_type, str)
+
+    assert geprueft, "kein einziges Feld gefunden — die Prüfung liefe ins Leere"
