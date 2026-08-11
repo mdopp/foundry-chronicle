@@ -20,6 +20,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import functools
+import importlib
 import logging
 import wave
 from collections.abc import Callable
@@ -97,6 +98,18 @@ TOKEN_ABGELEHNT = (
 NICHT_IM_KANAL = "Du bist in keinem Sprachkanal — geh hinein und ruf mich noch einmal."
 LAEUFT_SCHON = "Ich schneide schon mit."
 LAEUFT_NICHT = "Es läuft gerade keine Aufnahme."
+
+# Der Test schneidet mit, verwirft und trennt: liefe er in einen laufenden Mitschnitt
+# hinein, nähme er ihm die Verbindung weg. Also wird gesagt, dass nichts geschieht — und
+# es geschieht auch nichts.
+PROBE_NICHT_STOEREN = (
+    "Ich schneide gerade mit — für einen Empfangstest fasse ich das nicht an; er würde die "
+    "laufende Aufnahme abreißen. Der Mitschnitt läuft weiter. Nach `/aufnahme stop` gerne."
+)
+
+PROBE_LAEUFT = (
+    "Ich prüfe gerade schon den Empfang, das dauert nur ein paar Sekunden — danach noch einmal."
+)
 
 # Wie lange der Sprachkanal leer sein darf, bevor der Mitschnitt von selbst endet.
 # Anderthalb Minuten, weil ein Wiederverbinden nach Netzwechsel oder Absturz des Clients
@@ -186,6 +199,9 @@ BEFEHLE = (
     "und schneide **erst danach** mit, je Stimme eine eigene Spur.\n"
     "• `/aufnahme stop` — ich höre auf und gehe wieder; die Spuren werden nachts zu Text. "
     "Bin ich allein im Kanal, höre ich von selbst auf und sage es im Thread.\n"
+    f"• `/aufnahme test` — {recorder.PROBE_DAUER} Sekunden lauschen und dir allein sagen, ob "
+    "der Ton hier wirklich ankommt. Angesagt wird auch dafür, und alles Mitgeschnittene "
+    "wird sofort gelöscht.\n"
     "• `/chronik fertig` — Sitzung abschließen: eine laufende Aufnahme beende ich zuerst; "
     "danach Zahlen holen, verschriften, Chronik schreiben. Nach dem Passwort frage ich "
     "nur, wenn **du** beim Start keines gabst.\n"
@@ -247,6 +263,17 @@ VORSTELLUNG = (
     "**So bedient ihr mich:**\n"
     f"{BEFEHLE}"
     "Meine Antworten sieht immer nur, wer den Befehl gegeben hat."
+)
+
+# Steht im Kanal, **bevor** die Ansage läuft — wie die Vorstellung vor einer Aufnahme, und
+# aus demselben Grund: hier wird zehn Sekunden lang wirklich aufgezeichnet. Dass alles
+# gleich danach gelöscht wird, macht die Ansage nicht entbehrlich, sondern nur kurz.
+PROBE_VORSTELLUNG = (
+    "**Empfangstest.** Ich prüfe, ob euer Ton bei mir überhaupt lesbar ankommt — das ist "
+    "von außen sonst nicht zu sehen. Gleich kommt die hörbare Ansage, danach höre ich "
+    f"{recorder.PROBE_DAUER} Sekunden zu und **lösche alles wieder**: nichts davon wird "
+    "verschriftet, nichts geht in die Chronik. Sprecht in der Zeit einfach ein paar Sätze. "
+    f"{AUSWEG}"
 )
 
 RAHMEN = ansage.KANAELE * ansage.BREITE
@@ -363,9 +390,9 @@ class Sprachverbindung:
         )
         await fertig.wait()
 
-    def mitschneiden(self, aufnahme: Aufnahme) -> None:
+    def mitschneiden(self, aufnahme: Aufnahme, melden: recorder.Melder | None = None) -> None:
         senke = _senke(self, aufnahme)
-        self._vc.start_recording(senke, _abgeschlossen)
+        self._vc.start_recording(senke, functools.partial(_abgeschlossen, melden=melden))
         # ``Sink.client`` liest ``self.vc``, und ``opus.py`` prüft es mit einem ``assert``,
         # sobald das erste Paket kommt. Die veröffentlichte 2.8.1 setzt es im Empfangspfad
         # **nie** — ``sink._client = self.client`` steht in ``voice/receive/reader.py``
@@ -388,8 +415,40 @@ class Sprachverbindung:
         await self._vc.disconnect()
 
 
-async def _abgeschlossen(senke, *args) -> None:
-    """py-cord verlangt einen Rückruf; die Spuren schließt ``Aufnahme.beenden``."""
+def _dekodierfehler(fehler: BaseException) -> bool:
+    """Ob py-cords Opus-Dekoder aufgegeben hat — bei verschlüsseltem Ton »corrupted stream«.
+
+    Die Klasse wird ausdrücklich importiert und nicht als Attribut von ``discord`` erfragt —
+    dieselbe Lehre wie beim DAVE-Riegel: ein Attribut, das es je nach Ladereihenfolge nicht
+    gibt, ließe die Unterscheidung still ins Leere laufen, und jeder Dekodierfehler ginge
+    als »irgendein Abbruch« durch.
+    """
+    return isinstance(fehler, importlib.import_module("discord.opus").OpusError)
+
+
+def _abgeschlossen(fehler: BaseException | None = None, *, melden: recorder.Melder | None) -> None:
+    """py-cords Rückruf am Ende des Mitschnitts — und der einzige Ort, an dem sein Fehler steht.
+
+    Stirbt der Paket-Router an einem Dekodierfehler, geschieht das in **seinem eigenen
+    Faden**: ``PacketRouter.run`` fängt ihn, legt ihn in ``reader.error`` und ruft von dort
+    ``stop_recording``; erst ``AudioReader._stop`` reicht ihn als ``after(self.error)``
+    hier herein. Im Befehl, der den Mitschnitt gestartet hat, kommt er nie an — dort ist
+    alles grün, während schon nichts mehr geschrieben wird.
+
+    Der Rückruf ist deshalb auch nicht ``async``: py-cord ruft ihn geradeheraus auf und
+    wartet auf nichts. Eine Nebenläufigkeit, die niemand abwartet, verschluckte ihn.
+
+    Die Spuren schließt ``Aufnahme.beenden``; hier wird nur gemeldet.
+    """
+    if fehler is None or melden is None:
+        return
+    logger.warning("Der Empfang ist abgebrochen: %s: %s", type(fehler).__name__, fehler)
+    melden(
+        recorder.Stoerung(
+            text=f"{type(fehler).__name__}: {fehler}",
+            dekodierfehler=_dekodierfehler(fehler),
+        )
+    )
 
 
 def _mitglied(quelle) -> consent.Member:
@@ -479,6 +538,10 @@ class _Lauf:
     def __init__(self) -> None:
         self.stimme: Sprachverbindung | None = None
         self.aufnahme: Aufnahme | None = None
+        # Der Empfangstest steht bewusst **neben** der Aufnahme und nicht in ihr: er hält
+        # seine Verbindung selbst und räumt sie selbst ab. Läge er in ``aufnahme``, reihte
+        # ``/aufnahme stop`` seine Probespuren ein — genau das, was nie geschehen darf.
+        self.probe = False
         self.frist = None
         self.abschied = None
         self.leer = None
@@ -1514,6 +1577,11 @@ def baue(config: Config):
         if lauf.aufnahme is not None:
             await _zustellen(ctx.respond, LAEUFT_SCHON, ephemeral=True)
             return
+        # Der Test hält gerade dieselbe Sprachverbindung und trennt sie gleich wieder — ein
+        # Mitschnitt, der jetzt begänne, verlöre sie mitten im Satz.
+        if lauf.probe:
+            await _zustellen(ctx.respond, PROBE_LAEUFT, ephemeral=True)
+            return
         # Dieselbe Schranke wie vor ``/chronik start``, und vor dem Beitreten: eine Gilde
         # ohne eigene Runde nimmt nicht auf, eine ruhende erst recht nicht.
         runde = chronik.runde_verlangen(config, ctx.guild_id)
@@ -1543,6 +1611,39 @@ def baue(config: Config):
         # Leer heißt: in der Zwischenzeit war ein anderer schneller — der leere Kanal etwa.
         # Das ist kein Fehlschlag, und so ausgesprochen zu werden verdient er auch nicht.
         await _zustellen(ctx.respond, " ".join(meldungen) or LAEUFT_NICHT, ephemeral=True)
+
+    @gruppe.command(name="test", description="Kurz lauschen und sagen, ob der Ton wirklich ankommt")
+    @antwortet
+    async def empfangstest(ctx) -> None:
+        """Die Frage »hört der Bot überhaupt?« — beantwortet in Discord statt im Log."""
+        if lauf.aufnahme is not None:
+            await _zustellen(ctx.respond, PROBE_NICHT_STOEREN, ephemeral=True)
+            return
+        if lauf.probe:
+            await _zustellen(ctx.respond, PROBE_LAEUFT, ephemeral=True)
+            return
+        # Dieselbe Schranke wie vor ``/aufnahme start``: eine Gilde ohne eigene Runde prüft
+        # hier nichts, eine ruhende erst recht nicht — es wird aufgezeichnet.
+        runde = chronik.runde_verlangen(config, ctx.guild_id)
+        kanal = getattr(getattr(ctx.author, "voice", None), "channel", None)
+        if kanal is None:
+            await _zustellen(ctx.respond, NICHT_IM_KANAL, ephemeral=True)
+            return
+        await ctx.defer(ephemeral=True)
+        lauf.probe = True
+        try:
+            stimme = Sprachverbindung(await kanal.connect())
+            try:
+                await _zustellen(_vorstellungsziel(ctx, kanal).send, PROBE_VORSTELLUNG)
+                ergebnis = await recorder.pruefen(config, stimme, runde)
+            except BaseException:
+                # ``pruefen`` trennt selbst, sobald es mitschneidet; das hier fängt den
+                # Abbruch davor — ohne es säße der Bot nach einer fehlenden Sitzung im Kanal.
+                await stimme.trennen()
+                raise
+        finally:
+            lauf.probe = False
+        await _zustellen(ctx.respond, recorder.bericht(ergebnis), ephemeral=True)
 
     @gruppe.command(name="hilfe", description="Was der Bot tut und wie man ihn bedient")
     @antwortet

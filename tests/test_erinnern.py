@@ -325,7 +325,9 @@ def test_die_hilfe_nennt_die_wege_zum_erinnern(bot):
 
     asyncio.run(bot.gruppen[gateway.GRUPPE].befehle["hilfe"](ctx))
 
-    (antwort,) = ctx.antworten
+    # Geteilt seit `/aufnahme test` — gelesen wird die Hilfe als Ganzes.
+    antwort = "".join(ctx.antworten)
+    assert antwort == gateway.HILFE
     for satzteil in ("/suche", "/wer", "/register offen", "/zuordnung"):
         assert satzteil in antwort
 
