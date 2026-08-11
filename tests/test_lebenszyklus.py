@@ -307,6 +307,135 @@ def frist_setzen(config, runde, wann: str) -> None:
         connection.close()
 
 
+# -- Eine Runde aus der Zeit vor den Gilden -----------------------------------------------
+
+
+@pytest.fixture
+def stiller_bot(bot, monkeypatch):
+    """Der Bot mit stillgelegten Dauerläufen — hier geht es um das, was ``on_ready`` sonst tut."""
+
+    async def nichts(config, **rest):
+        return None
+
+    monkeypatch.setattr(recordings, "taeglich", nichts)
+    monkeypatch.setattr(lebenszyklus, "taeglich", nichts)
+    return bot
+
+
+def anmelden(bot, *gilden):
+    """Der Bot meldet sich an — in genau den Gilden, in denen er steht."""
+    bot.guilds = tuple(gilden)
+
+    async def lauf():
+        await bot.ereignisse["on_ready"]()
+        # Die beiden Dauerläufe werden als Task gestellt; ohne diesen Takt endete die
+        # Schleife mit zwei Tasks, die nie gelaufen sind.
+        await asyncio.sleep(0)
+
+    asyncio.run(lauf())
+
+
+def gilde_von(config, runde_id):
+    return runden.get(config.database_path, runde_id).guild_id
+
+
+def test_die_einzige_runde_ohne_gilde_bekommt_die_einzige_gilde(konfiguration, stiller_bot, caplog):
+    """Der Fall aus #121: sonst legt ``/setup`` eine zweite Runde an, und die alte ist
+    über Discord für immer unerreichbar — samt Sitzungen, Chroniken und Einwilligungen."""
+    verwaist = runden.erste(konfiguration.database_path)
+    fuellen(konfiguration, verwaist, "alpha")
+    kanal = FakeKanal("300", "allgemein")
+
+    with caplog.at_level(logging.INFO):
+        anmelden(stiller_bot, FakeGilde(system=kanal))
+
+    assert gilde_von(konfiguration, verwaist.id) == GILDE
+    # Und damit ist der Weg zurück offen: ``/setup`` findet sie, statt daneben eine zweite
+    # anzulegen.
+    beansprucht = lebenszyklus.beanspruchen(konfiguration, GILDE, GILDENAME)
+    assert beansprucht.neu is False
+    assert beansprucht.runde.id == verwaist.id
+    assert len(runden.alle(konfiguration.database_path)) == 1
+    assert notes.sessions(beansprucht.runde)
+
+    assert verwaist.name in caplog.text and GILDENAME in caplog.text
+    assert kanal.gesendet == [lebenszyklus.UEBERNOMMEN_GESAGT]
+
+
+def test_neben_einer_zweiten_runde_wird_nichts_uebernommen(konfiguration, stiller_bot):
+    """Zwei Runden, eine ohne Gilde: welche gemeint ist, weiß niemand — also keine."""
+    verwaist = runden.erste(konfiguration.database_path)
+    runden.anlegen(konfiguration.database_path, "Nachbarn", guild_id=NACHBARGILDE)
+    kanal = FakeKanal("300", "allgemein")
+
+    anmelden(stiller_bot, FakeGilde(system=kanal))
+
+    assert gilde_von(konfiguration, verwaist.id) is None
+    assert kanal.gesendet == []
+
+
+def test_eine_runde_mit_gilde_wird_nicht_umgehaengt(konfiguration, stiller_bot):
+    """Die härteste Probe: eine fremde Kampagne an die eigene Gilde zu hängen wäre das Leck."""
+    lebenszyklus.loeschen(konfiguration, runden.erste(konfiguration.database_path))
+    fremde = runden.anlegen(konfiguration.database_path, "Nachbarn", guild_id=NACHBARGILDE)
+    kanal = FakeKanal("300", "allgemein")
+
+    anmelden(stiller_bot, FakeGilde(system=kanal))
+
+    assert gilde_von(konfiguration, fremde.id) == NACHBARGILDE
+    assert kanal.gesendet == []
+
+
+def test_in_zwei_gilden_wird_nichts_uebernommen(konfiguration, stiller_bot):
+    """Die erstbeste zu nehmen hieße, fremde Klarnamen an eine beliebige Gruppe zu geben."""
+    verwaist = runden.erste(konfiguration.database_path)
+    hier = FakeKanal("300", "allgemein")
+    dort = FakeKanal("400", "allgemein")
+
+    anmelden(
+        stiller_bot,
+        FakeGilde(system=hier),
+        FakeGilde(kennung=NACHBARGILDE, name="Nachbarn", system=dort),
+    )
+
+    assert gilde_von(konfiguration, verwaist.id) is None
+    assert hier.gesendet == [] and dort.gesendet == []
+
+
+def test_ohne_jede_runde_meldet_sich_der_bot_trotzdem_an(konfiguration, stiller_bot):
+    lebenszyklus.loeschen(konfiguration, runden.erste(konfiguration.database_path))
+    kanal = FakeKanal("300", "allgemein")
+
+    anmelden(stiller_bot, FakeGilde(system=kanal))
+
+    assert runden.alle(konfiguration.database_path) == ()
+    assert kanal.gesendet == []
+
+
+def test_das_zweite_anmelden_uebernimmt_nicht_noch_einmal(konfiguration, stiller_bot):
+    """``on_ready`` kommt nach jeder Wiederverbindung noch einmal — und findet nichts mehr."""
+    verwaist = runden.erste(konfiguration.database_path)
+    kanal = FakeKanal("300", "allgemein")
+    gilde = FakeGilde(system=kanal)
+
+    anmelden(stiller_bot, gilde)
+    anmelden(stiller_bot, gilde)
+
+    assert gilde_von(konfiguration, verwaist.id) == GILDE
+    assert kanal.gesendet == [lebenszyklus.UEBERNOMMEN_GESAGT]
+
+
+def test_ohne_kanal_zum_reden_steht_die_uebernahme_nur_im_log(konfiguration, stiller_bot, caplog):
+    """Ungesagt ist schlecht, aber besser als eine Runde, an die niemand mehr herankommt."""
+    verwaist = runden.erste(konfiguration.database_path)
+
+    with caplog.at_level(logging.INFO):
+        anmelden(stiller_bot, FakeGilde(kanaele=(FakeKanal("300", "regeln", darf=False),)))
+
+    assert gilde_von(konfiguration, verwaist.id) == GILDE
+    assert "Kein Kanal" in caplog.text
+
+
 # -- Einladen ---------------------------------------------------------------------------
 
 

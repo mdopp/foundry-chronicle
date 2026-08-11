@@ -76,6 +76,27 @@ NICHT_GELOESCHT = "Runde »{name}«: seit {tage} Tagen zur Löschung fällig und
 # Was eine ruhende Runde einem Lauf antwortet, der trotzdem an sie herantritt.
 RUHT = "Diese Runde ruht — es wird nichts mehr geholt und nichts mehr abgelegt."
 
+# Die Übernahme im Log des Betreibers: der Name der Runde und der der Gilde, sonst nichts.
+# Wer in dieser Gilde sitzt, geht keine Logzeile etwas an.
+UEBERNOMMEN = (
+    "Runde »{name}«: der Gilde »{gilde}« zugeordnet. Sie war die einzige Runde dieser "
+    "Instanz und hatte keine Gilde, und der Bot steht in genau dieser einen."
+)
+
+# Und dieselbe Tatsache an die Gruppe, die es angeht. Eine Übernahme, die nur im Log
+# steht, ist eine stille — und still gehen hier Sitzungen, Chroniken und
+# Einwilligungsprotokolle an einen Discord-Server über.
+UEBERNOMMEN_GESAGT = (
+    "**Auf dieser Instanz lag eine Runde ohne Server — ich habe sie diesem hier "
+    "zugeordnet.**\n"
+    "Sie stammt aus der Zeit, in der der Bot noch keine Server auseinanderhielt. Weil sie "
+    "die einzige Runde dieser Instanz ist und ich in genau einem Server stehe, gibt es "
+    "nur eine mögliche Antwort; gäbe es eine zweite, hätte ich nichts getan. Was in ihr "
+    "steht, gehört ab jetzt hierher: Sitzungen, Notizen, Protokolle, das aus Foundry "
+    "Geholte und die Einwilligungen. `/suche`, `/wer` und `/chronik` kommen daran heran.\n"
+    "War das nicht eure Runde, sagt es dem Betreiber dieser Box, bevor ihr weiterspielt."
+)
+
 
 def _now() -> datetime:
     return datetime.now(UTC)
@@ -163,6 +184,55 @@ def beanspruchen(config: Config, guild_id: str, name: str) -> Beansprucht:
         frisch = runden.anlegen(config.database_path, name, guild_id=str(guild_id))
         return Beansprucht(runde=frisch, neu=True, ruhte=False)
     return Beansprucht(runde=vorhanden, neu=False, ruhte=vorhanden.gesperrt)
+
+
+@dataclass(frozen=True)
+class Gilde:
+    """Ein Discord-Server, so weit er hier bekannt sein muss: Kennung und Name."""
+
+    id: str
+    name: str
+
+
+@runden.instanzweit
+def verwaiste_uebernehmen(config: Config, gilden: tuple[Gilde, ...]) -> Runde | None:
+    """Die eine Runde ohne Gilde bekommt die eine Gilde des Bots — sonst geschieht nichts.
+
+    Eine Runde aus der Zeit vor #62 trägt kein ``guild_id``. ``beanspruchen`` sucht über
+    die Gilde, findet sie nie und legt daneben eine zweite an; Sitzungen, Chroniken und
+    Einwilligungsprotokolle bleiben unerreichbar liegen, und über Discord kommt kein
+    Befehl je wieder an sie heran.
+
+    Zurückgeholt wird sie nur in dem einen Fall, in dem die Zuordnung keine Wahl ist:
+    **genau eine** Runde in der Instanz, **ohne** Gilde, und der Bot in **genau einer**
+    Gilde. Jede Lockerung hieße, fremde Klarnamen, Einwilligungen und Foundry-Daten an die
+    erstbeste Gruppe zu geben, die den Bot einlädt — die Trennung zwischen Runden ist die
+    wichtigste Sicherheitseigenschaft dieses Systems (#62/#63).
+
+    Der zweite Anlauf tut nichts mehr: ``on_ready`` kommt bei jeder Wiederverbindung noch
+    einmal vorbei und findet dann eine Runde mit Gilde vor.
+    """
+    if len(gilden) != 1:
+        return None
+    bestand = runden.alle(config.database_path)
+    if len(bestand) != 1 or bestand[0].guild_id is not None:
+        return None
+    verwaist, gilde = bestand[0], gilden[0]
+    _gilde_schreiben(config.database_path, verwaist.id, gilde.id)
+    uebernommen = runden.get(config.database_path, verwaist.id)
+    logger.info("%s", UEBERNOMMEN.format(name=uebernommen.name, gilde=gilde.name))
+    return uebernommen
+
+
+def _gilde_schreiben(database_path: Path, runde_id: int, guild_id: str) -> None:
+    connection = db.connect(database_path)
+    try:
+        with connection:
+            connection.execute(
+                "UPDATE runde SET guild_id = ? WHERE id = ?", (str(guild_id), runde_id)
+            )
+    finally:
+        connection.close()
 
 
 @runden.instanzweit
