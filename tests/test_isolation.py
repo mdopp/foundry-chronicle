@@ -294,6 +294,7 @@ ABFRAGEN = {
     "zugang.passwort": lambda c, r, i: zugang.passwort(r),
     "zugang.ist_gemerkt": lambda c, r, i: zugang.ist_gemerkt(r),
     "zugang.gemerkt_von": lambda c, r, i: zugang.gemerkt_von(r),
+    "zugang.passwort_von": lambda c, r, i: zugang.passwort_von(r, f"wer-{MARKE[1]}"),
     "store.load": lambda c, r, i: _mit_scope(r, foundry_store.load),
     "store.world": lambda c, r, i: _mit_scope(r, foundry_store.world),
     "store.last_failure": lambda c, r, i: _mit_scope(r, foundry_store.last_failure),

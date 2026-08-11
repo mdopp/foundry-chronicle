@@ -310,14 +310,18 @@ def chronik(config: Config, runde: Runde, session_id: int) -> str:
     return vorlauf + stand + nachsatz + (f" {ausgabe}" if ausgabe else "")
 
 
-def abschluss(config: Config, runde: Runde, session_id: int) -> str:
+def abschluss(config: Config, runde: Runde, session_id: int, *, passwort: str | None = None) -> str:
     """Zahlen holen, verschriften, schreiben — der eine Lauf am Ende einer Sitzung.
 
     Ein misslungener Abgleich bricht ihn nicht ab: Notizen und Aufnahmen ergeben auch ohne
     die Zahlen aus Foundry eine Chronik, und der Grund steht dann vorne in der Meldung.
     Andersherum verlöre man das Geschriebene, weil der Server aus war.
+
+    ``passwort`` reicht der Auslöser durch, damit dieser Faden nicht selbst im Merkzettel
+    nachsieht: dort kann inzwischen die Eingabe eines anderen liegen. ``None`` heißt
+    »keines mitgebracht« — dann liest der Abgleich den Merkzettel wie eh und je.
     """
-    zustand = sync(config, runde)
+    zustand = sync(config, runde, passwort=passwort)
     vorlauf = "" if not zustand.stale else f"{zustand.message} "
     return vorlauf + chronik(config, runde, session_id)
 
