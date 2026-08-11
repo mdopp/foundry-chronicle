@@ -26,7 +26,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import wave
-from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
@@ -100,7 +99,7 @@ RUNDE_FORT_REST = (
 PROBE_DAUER = 10
 
 PROBE_KOPF = "**Empfangstest in #{kanal} — {dauer} Sekunden gelauscht**"
-PROBE_ZAHLEN = "Pakete: {pakete} · Dekodierfehler: {dekodierfehler} · Spuren: {spuren}"
+PROBE_ZAHLEN = "Pakete: {pakete} · Spuren: {spuren}"
 PROBE_SPUR = "• {name}: {bytes} Bytes"
 
 PROBE_TRAEGT = (
@@ -108,18 +107,26 @@ PROBE_TRAEGT = (
     "in einer eigenen Spur — `/aufnahme start` schneidet hier wirklich mit."
 )
 
-# Der Fall, für den es diesen Befehl gibt: py-cords Dekoder gibt auf, der Empfänger stirbt
-# in seinem eigenen Faden und beendet den Mitschnitt von selbst. In Discord sieht das aus
-# wie eine laufende Aufnahme — bis Stunden später die Chronik fehlt.
-PROBE_DEKODIERT_NICHT = (
-    "**Es kommt nichts Lesbares an.** Grund: der Ton ließ sich nicht dekodieren ({grund}). "
-    "So kommt Ende-zu-Ende-verschlüsselter Ton an. Eine Aufnahme liefe jetzt zwar an und "
-    "sähe von außen richtig aus, hätte aber keine einzige Spur."
+# Der Fall, für den es diesen Befehl gibt: der Empfänger hört in seinem eigenen Faden auf
+# und beendet den Mitschnitt von selbst. In Discord sieht das aus wie eine laufende
+# Aufnahme — bis Stunden später die Chronik fehlt. Warum er aufhörte, sagt py-cord uns
+# nicht mehr: seit dem festgenagelten Stand bekommt der Abschluss-Rückruf den Fehler nicht
+# mehr gereicht, und ohne Zusatzargumente ruft py-cord ihn gar nicht erst auf. Was hier
+# steht, ist deshalb das, was wir wirklich wissen — dass aufgehört wurde, nicht warum.
+PROBE_ABGEBROCHEN = (
+    "**Es kommt nichts Lesbares an.** Der Mitschnitt hat von selbst aufgehört, bevor die "
+    "{dauer} Sekunden um waren; was danach gesprochen wurde, stünde in keiner Spur. Den "
+    "Grund nennt py-cord uns nicht — er steht im Log des Bots."
 )
 
-PROBE_ABGEBROCHEN = (
-    "**Es kommt nichts Lesbares an.** Der Empfang ist abgebrochen ({grund}); was danach "
-    "gesprochen wurde, stünde in keiner Spur. Die Einzelheiten stehen im Log des Bots."
+# Keine Null an dieser Stelle: auf dem festgenagelten Stand fängt py-cord einen
+# Dekodierfehler an Ort und Stelle ab und füllt die Lücke mit Paketverlust-Verschleierung.
+# Gezählt wird dabei nichts, was hier ankäme — eine »0« hieße also nicht »nichts verloren«,
+# sondern nur »wir sehen es nicht«.
+PROBE_RAHMENVERLUST = (
+    "Verlorene Rahmen zählt dieser Test nicht mit: py-cord fängt einen Dekodierfehler an "
+    "Ort und Stelle ab und füllt die Lücke — ein Schlüsselwechsel kostet dann Millisekunden "
+    "statt der ganzen Aufnahme. Sichtbar wird das allein als Warnung im Log des Bots."
 )
 
 PROBE_STILL = (
@@ -149,21 +156,6 @@ class Kanal:
 
 
 @dataclass(frozen=True)
-class Stoerung:
-    """Was den Mitschnitt abgebrochen hat, in Worten — den Fehler selbst kennt nur Discord.
-
-    ``dekodierfehler`` unterscheidet den einen Fall, der einen Namen und eine Erklärung
-    verdient: der Ton kam an, war aber nicht zu dekodieren.
-    """
-
-    text: str
-    dekodierfehler: bool = False
-
-
-Melder = Callable[[Stoerung], None]
-
-
-@dataclass(frozen=True)
 class Spurbericht:
     name: str
     bytes: int
@@ -177,12 +169,8 @@ class Probe:
     kanal: str
     dauer: int
     pakete: int
-    stoerungen: tuple[Stoerung, ...]
+    abgebrochen: bool
     spuren: tuple[Spurbericht, ...]
-
-    @property
-    def dekodierfehler(self) -> int:
-        return sum(1 for stoerung in self.stoerungen if stoerung.dekodierfehler)
 
 
 class AufnahmeFehler(BotFehler):
@@ -204,9 +192,9 @@ class Stimme(Protocol):
 
     async def ansagen(self, datei: Path) -> None: ...
 
-    def mitschneiden(self, aufnahme: Aufnahme, melden: Melder | None = None) -> None: ...
+    def mitschneiden(self, aufnahme: Aufnahme) -> None: ...
 
-    def mitschnitt_beenden(self) -> None: ...
+    def mitschnitt_beenden(self) -> bool: ...
 
     async def trennen(self) -> None: ...
 
@@ -431,18 +419,13 @@ class Aufnahme:
         return tuple(berichte)
 
 
-async def starten(
-    config: Config, stimme: Stimme, runde: Runde, *, melden: Melder | None = None
-) -> Aufnahme:
+async def starten(config: Config, stimme: Stimme, runde: Runde) -> Aufnahme:
     """Ansage spielen, Einwilligung protokollieren, dann erst mitschneiden.
 
     Die Runde kommt vom Befehl und gehört der Gilde, in der er gegeben wurde; hier wird
     nur noch nachgesehen, ob sie auch die des Sprachkanals ist. Einen Rückfall auf »die
     erste Runde« gibt es nicht mehr: er ließe Ansage, Einwilligungsprotokoll samt
     Anzeigenamen, Tonspuren und Transkripte in einer fremden Kampagne landen.
-
-    ``melden`` bekommt, was den Mitschnitt später abbricht. Es kommt aus einem fremden
-    Faden — wer nichts damit anfangen will, lässt es weg und erfährt vom Abbruch nichts.
 
     Zwischen Ansage und Eintrag wird nachgesehen, ob der Bot noch dort sitzt, wo er
     angefangen hat — dieselbe Bedingung wie beim Nachzügler, und hier trägt sie alles:
@@ -462,7 +445,7 @@ async def starten(
     if not stimme.im_kanal():
         raise AufnahmeFehler(VERSCHOBEN_BEIM_START)
     aufnahme.ansage_protokollieren(stimme.mitglieder())
-    stimme.mitschneiden(aufnahme, melden)
+    stimme.mitschneiden(aufnahme)
     return aufnahme
 
 
@@ -503,15 +486,18 @@ async def pruefen(config: Config, stimme: Stimme, runde: Runde) -> Probe:
 
     Aufgeräumt wird auch der gescheiterte Lauf: getrennt und verworfen wird im ``finally``,
     weil sonst genau dann Spuren liegenblieben, wenn niemand hinsieht.
+
+    Ob der Empfang durchgehalten hat, sagt ``mitschnitt_beenden``: lief er nicht mehr, hat
+    py-cord ihn selbst beendet. Das ist das einzige Signal, das der festgenagelte Stand
+    dafür noch hergibt — und es kommt vor dem Trennen, weil das Trennen ihn ohnehin beendet.
     """
-    stoerungen: list[Stoerung] = []
-    aufnahme = await starten(config, stimme, runde, melden=stoerungen.append)
+    aufnahme = await starten(config, stimme, runde)
     logger.info("Empfangstest in #%s: %s Sekunden", stimme.kanal.name, PROBE_DAUER)
     try:
         await asyncio.sleep(PROBE_DAUER)
     finally:
         try:
-            stimme.mitschnitt_beenden()
+            lief_noch = stimme.mitschnitt_beenden()
             await stimme.trennen()
         finally:
             spuren = aufnahme.verwerfen()
@@ -519,19 +505,17 @@ async def pruefen(config: Config, stimme: Stimme, runde: Runde) -> Probe:
         kanal=stimme.kanal.name,
         dauer=PROBE_DAUER,
         pakete=aufnahme.pakete,
-        stoerungen=tuple(stoerungen),
+        abgebrochen=not lief_noch,
         spuren=spuren,
     )
 
 
 def _urteil(probe: Probe) -> str:
-    dekodier = [stoerung.text for stoerung in probe.stoerungen if stoerung.dekodierfehler]
-    if dekodier:
-        return PROBE_DEKODIERT_NICHT.format(grund="; ".join(dekodier))
-    if probe.stoerungen:
-        return PROBE_ABGEBROCHEN.format(
-            grund="; ".join(stoerung.text for stoerung in probe.stoerungen)
-        )
+    # Der Abbruch steht vor der Paketzahl: hört der Empfang nach der Hälfte auf, sind die
+    # Zahlen davor sämtlich in Ordnung — und ein »trägt« daneben wäre die eine Auskunft,
+    # die dieser Befehl niemals geben darf.
+    if probe.abgebrochen:
+        return PROBE_ABGEBROCHEN.format(dauer=probe.dauer)
     if not probe.pakete:
         return PROBE_STILL.format(dauer=probe.dauer)
     return PROBE_TRAEGT
@@ -544,14 +528,11 @@ def bericht(probe: Probe) -> str:
     """
     zeilen = [
         PROBE_KOPF.format(kanal=probe.kanal, dauer=probe.dauer),
-        PROBE_ZAHLEN.format(
-            pakete=probe.pakete,
-            dekodierfehler=probe.dekodierfehler,
-            spuren=len(probe.spuren),
-        ),
+        PROBE_ZAHLEN.format(pakete=probe.pakete, spuren=len(probe.spuren)),
     ]
     zeilen.extend(PROBE_SPUR.format(name=spur.name, bytes=spur.bytes) for spur in probe.spuren)
     zeilen.append(_urteil(probe))
+    zeilen.append(PROBE_RAHMENVERLUST)
     geblieben = [spur.name for spur in probe.spuren if not spur.geloescht]
     if geblieben:
         zeilen.append(PROBE_AUFGERAEUMT_REST.format(spuren=", ".join(geblieben)))
