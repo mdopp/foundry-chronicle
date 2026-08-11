@@ -119,6 +119,17 @@ LEER_BEENDET = (
     "dann noch einmal."
 )
 
+# Nicht angehalten, sondern gesagt: der Betreiber hat entschieden, dass niemand ungefragt
+# seine Spur verliert. Der Satz nennt keinen Namen und keine Kennung — er steht im Thread
+# der Sitzung, und wer gemeint ist, weiß es, weil er als Einziger im Sprachkanal sitzt.
+ALLEIN = (
+    "Im Sprachkanal ist außer mir nur noch **eine** Person — und ich schneide weiter mit. "
+    "Ich sage es, weil die Ansage einer Gruppe galt, die gerade nicht mehr da ist: wer so "
+    "nicht aufgezeichnet werden möchte, gibt `/aufnahme stop` oder verlässt den Kanal. "
+    "Kommen die anderen zurück, läuft dieselbe Aufnahme weiter — wer hereinkommt, hört die "
+    "Ansage noch einmal."
+)
+
 LEER_GESCHEITERT = (
     "Im Sprachkanal war niemand mehr, aber das Beenden ist schiefgegangen — die Aufnahme "
     "gilt weiter als laufend, und ich bin womöglich noch im Kanal. Von selbst sehe ich "
@@ -206,6 +217,11 @@ AUSWEG = (
 HILFE = (
     "**So schneide ich eine Sitzung mit**\n"
     f"{AUSWEG} Wer später dazukommt, hört die Ansage noch einmal. "
+    # Nicht in BEFEHLE und damit nicht in der Vorstellung: dort steht der Ausweg vorn,
+    # und dieser Fall tritt erst mitten in der Sitzung ein. Gesagt wird er ohnehin,
+    # wenn er eintritt.
+    "Bleibt eine Person allein im Sprachkanal zurück, schneide ich weiter mit und sage "
+    "ihr das im Thread; `/aufnahme stop` beendet es. "
     f"Die Aufnahmen werden nach {recordings.RETENTION_TAGE} Tagen gelöscht.\n"
     f"{BEFEHLE}"
     "Meine Antworten sieht nur, wer den Befehl gegeben hat."
@@ -450,6 +466,12 @@ class _Lauf:
         self.frist = None
         self.abschied = None
         self.leer = None
+        # Die Aufnahme und die Personen, denen für sie schon gesagt wurde, dass sie allein
+        # zurückbleiben. Beides zusammen: an der Person allein hinge der Vermerk über die
+        # nächste Aufnahme hinaus und verschluckte deren Satz — dieselbe Falle, in die der
+        # Wächter des leeren Kanals getappt ist. An der Aufnahme allein erführe die
+        # **zweite** Zurückgebliebene nichts, weil für die erste schon vermerkt wäre.
+        self.allein: tuple[Aufnahme, set[str]] | None = None
 
 
 async def _mitschnitt_beenden(lauf: _Lauf, runde: Runde | None = None) -> tuple[str, ...]:
@@ -549,24 +571,66 @@ async def _abriss_melden(hinaus, jedes: dict, zugestellt: int, ganz: int) -> Non
         )
 
 
-async def _in_den_thread(bot, aufnahme: Aufnahme, text: str) -> None:
+async def _in_den_thread(bot, aufnahme: Aufnahme, text: str) -> bool:
     """Ein Satz in den Thread der Sitzung — dort liest die Runde ohnehin mit.
 
     Nicht ``_sagen``: das antwortet einem, der gerade etwas angeklickt hat. Hier gibt es
     niemanden, der wartet — der Beobachter meldet sich von selbst, an die Runde.
+
+    Zurück kommt, ob es einen Weg dorthin gab. Wo der Satz nur begleitet, ist das
+    gleichgültig; wo er die Bedingung des Weitermachens ist, hängt daran die Entscheidung.
     """
     # Die Aufnahme hält ihre Runde seit Stunden. Ist sie inzwischen gelöscht und ihre
     # Kennung neu vergeben, führte die Frage nach dem Thread in eine fremde Kampagne.
     gemeint = lebenszyklus.dieselbe(aufnahme.runde)
     if gemeint is None:
-        return
+        return False
     thread_id = chronik.thread_der_sitzung(gemeint, aufnahme.session_id)
     if thread_id is None:
         logger.info("Sitzung %s hat keinen Thread — es bleibt ungesagt.", aufnahme.session_id)
-        return
+        return False
     kennung = int(thread_id)
     thread = bot.get_channel(kennung) or await bot.fetch_channel(kennung)
     await _zustellen(thread.send, text)
+    return True
+
+
+async def _allein_melden(bot, lauf: _Lauf, zurueck: consent.Member) -> None:
+    """Der Zurückgebliebenen sagen, dass sie es ist — und sonst den Mitschnitt beenden.
+
+    Der Vermerk wird **nach** dem Sagen gesetzt: davor verbrennte ein einziges zuckendes
+    ``thread.send`` den Satz endgültig, denn nachgeholt wird er nirgends. Bleibt er aus,
+    kommt der nächste Zustandswechsel noch einmal hier vorbei.
+
+    Und erreicht er niemanden, weil die Sitzung keinen Thread hat oder die Runde fort ist,
+    endet der Mitschnitt. Zugesagt war, dass sie es **erfährt** und widersprechen kann,
+    nicht dass wir es versuchen; still weiterzuschneiden wäre genau der Zustand, gegen den
+    die Zusage steht. Gesagt werden kann das Ende dann ebenso wenig — der Bot verlässt den
+    Sprachkanal, und das sieht sie.
+    """
+    aufnahme = lauf.aufnahme
+    vermerkt = lauf.allein[1] if lauf.allein is not None and lauf.allein[0] is aufnahme else set()
+    if zurueck.id in vermerkt:
+        return
+    try:
+        angekommen = await _in_den_thread(bot, aufnahme, ALLEIN)
+    except Exception:  # noqa: BLE001
+        logger.exception("Der Satz ans Alleinsein kam nicht durch — beim nächsten Wechsel neu")
+        return
+    if angekommen:
+        vermerkt.add(zurueck.id)
+        lauf.allein = (aufnahme, vermerkt)
+        return
+    logger.warning(
+        "Sitzung %s hat keinen Thread — allein wird deshalb nicht weitergeschnitten.",
+        aufnahme.session_id,
+    )
+    try:
+        meldungen = await _mitschnitt_beenden(lauf)
+    except Exception:  # noqa: BLE001
+        logger.exception("Der Mitschnitt ohne Thread ließ sich nicht beenden")
+        return
+    logger.info("Mitschnitt ohne Thread beendet: %s", " ".join(meldungen))
 
 
 async def _beenden_und_sagen(
@@ -1606,12 +1670,16 @@ def baue(config: Config):
                 aufnahme,
                 consent.Member(id=str(member.id), name=member.display_name),
             )
-        elif gegangen and not gekommen and not _menschen(lauf):
-            # Immer neu stellen, nicht nur wenn keiner läuft: sonst zählt die Frist ab dem
-            # ersten Gehen, und wer bei T=89 zurückkommt und bei T=89,5 wieder geht, hat
-            # eine halbe Sekunde Karenz statt der zugesagten neunzig Sekunden.
-            _leerlauf_absagen(lauf)
-            lauf.leer = asyncio.create_task(_abschied_bei_leere(bot, lauf, aufnahme))
+        elif gegangen and not gekommen:
+            verblieben = _menschen(lauf)
+            if not verblieben:
+                # Immer neu stellen, nicht nur wenn keiner läuft: sonst zählt die Frist ab
+                # dem ersten Gehen, und wer bei T=89 zurückkommt und bei T=89,5 wieder
+                # geht, hat eine halbe Sekunde Karenz statt der zugesagten neunzig.
+                _leerlauf_absagen(lauf)
+                lauf.leer = asyncio.create_task(_abschied_bei_leere(bot, lauf, aufnahme))
+            elif len(verblieben) == 1:
+                await _allein_melden(bot, lauf, verblieben[0])
 
     return bot
 
