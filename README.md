@@ -57,11 +57,11 @@ zweite Weg. Die Stapel-Einstiege unten bleiben — sie sind der Weg für Cron un
 übrige Oberfläche abräumt** (Owner-Entscheidung 2026-08-11, [#89](../../issues/89)): dort
 stehen der Discord-Bot-Token, Ollama-Adresse und -Modell sowie die Verwaltungsgruppe — die
 gehören der Instanz und keiner Gilde, haben also in Discord keinen Ort. Alles Runden-eigene
-— Foundry-Adresse und -Benutzer, Zustellkanal, Uhrzeit des nächtlichen Laufs — ist von
-dieser Seite verschwunden und wird in Discord mit `/setup` gepflegt; auch den
-Foundry-Abgleich stößt niemand mehr hier an, sondern `/chronik fertig` in Discord oder der
-nächtliche Lauf. Weil auf der Seite ein Geheimnis liegt, bleibt ADR 0001 (Authelia-SSO)
-für sie in Kraft.
+— Foundry-Adresse und -Benutzer, Zustellkanal, Uhrzeit des nächtlichen Laufs samt ihrer
+Zeitzone und die Quelle der Spieldaten — ist von dieser Seite verschwunden und wird in
+Discord mit `/setup` gepflegt; auch den Foundry-Abgleich stößt niemand mehr hier an,
+sondern `/chronik abgleich` oder `/chronik fertig` in Discord oder der nächtliche Lauf.
+Weil auf der Seite ein Geheimnis liegt, bleibt ADR 0001 (Authelia-SSO) für sie in Kraft.
 
 Die Werte liegen in der SQLite. Die Umgebung — `FOUNDRY_URL`, `FOUNDRY_USER`,
 `DISCORD_BOT_TOKEN`, `OLLAMA_URL`, `OLLAMA_MODEL` — bleibt als Vorgabe beim ersten Start
@@ -76,9 +76,11 @@ wie eine Antwort vom Server: Berechtigungsfilter, System-Adapter, Zwischenspeich
 Netz, kein Passwort, kein zweiter Prozess; damit lässt sich die Instanz auch dann prüfen,
 wenn der Foundry-Server aus ist. Solange sie aktiv ist, sagt das Band auf jeder Seite:
 *Testwelt aktiv — das sind keine echten Kampagnendaten.* Umschalten ersetzt den
-Zwischenspeicher im Ganzen; es gehört der Runde (`settings.save_foundry_quelle`) und hat
-seit #89 keinen Schalter mehr auf der Betreiber-Seite — der Weg dorthin kommt mit #69 in
-Discord.
+Zwischenspeicher im Ganzen; es gehört der Runde (`settings.save_foundry_quelle`) und steht
+seit [#110](../../issues/110) als Menü unter `/setup` in Discord — nicht als Feld im
+Fenster, denn ein getippter Quellenname ginge beim Vertippen still ins Leere, und die
+falsche Stellung füllt eine Chronik mit erfundenen Zahlen. Der Weg zurück steht daneben:
+die Ansicht bleibt nach der Wahl stehen.
 
 **Sie ist erzeugt, nicht abgegriffen.** `src/chronicle/foundry/testwelt.json` fällt
 Zeichen für Zeichen aus [`scripts/erzeuge_testwelt.py`](scripts/erzeuge_testwelt.py), und
@@ -127,11 +129,11 @@ python -m chronicle.transcribe 1 mira.ogg --loeschen   # Aufnahme danach entfern
 Von selbst läuft das alles im **nächtlichen Lauf**: abholen, verschriften, abgleichen,
 komponieren — zu einer Uhrzeit, die jede Runde für sich einstellt (`/setup` in Discord,
 Vorgabe 04:00). Sie gilt in einer **runden-eigenen Zeitzone**; der Container selbst bleibt
-auf UTC, weil eine Instanz mehrere Runden trägt. **Einstellen lässt sich die Zone gerade
-nirgends** — seit #89 hat sie kein Feld mehr und in Discord noch keins, es gilt also für
-jede Runde `Europe/Berlin`; festgehalten ist die Lücke in
-[#110](../../issues/110). Die Stapel-Einstiege oben sind der Weg für Cron, Betrieb und
-Ungeduld.
+auf UTC, weil eine Instanz mehrere Runden trägt. **Eingestellt wird die Zone im Feld neben
+der Uhrzeit** (`/setup`, Vorgabe `Europe/Berlin`); ein Name, den die Zonendatenbank nicht
+kennt, wird abgewiesen statt still übernommen — sonst stünde er in der Einstellung und der
+Lauf ginge weiter nach der Vorgabe. Die Stapel-Einstiege oben sind der Weg für Cron,
+Betrieb und Ungeduld.
 
 Ohne Argumente wird abgearbeitet, was über die Oberfläche hochgeladen wurde und noch
 wartet: auf der Sitzungsseite lädt ein **Diktat** — eine Sprachnotiz aus der
@@ -187,11 +189,14 @@ ersten Nachricht und nicht im Kleingedruckten: eine Gruppe entscheidet sonst üb
 Sitzungsprotokolle, ohne zu wissen, worüber sie entscheidet. Angelegt wird beim Betreten
 noch nichts.
 
-**`/setup` richtet ein.** Ein Fenster für die Foundry-Adresse und den Benutzer, dazu die
-Wahl des Kanals, in den die fertige Chronik geht, und wahlweise die Uhrzeit des
-nächtlichen Laufs. Das Ollama-Modell steht nicht darin: es gehört der Instanz und nicht
-der Runde (#87). Der Aufruf beansprucht die Runde für diesen Server oder legt sie an;
-ein leeres Feld lässt den bisherigen Wert stehen. **Nach dem Passwort fragt das Fenster
+**`/setup` richtet ein.** Ein Fenster mit vier Feldern — Foundry-Adresse, Benutzer, und
+wahlweise Uhrzeit und Zeitzone des nächtlichen Laufs —, darunter zwei Menüs: der Kanal, in
+den die fertige Chronik geht, und die Quelle der Spieldaten. Discord nimmt fünf Felder je
+Fenster; die Zone gehört zur Uhrzeit und steht deshalb dort, die Quelle ist ein Schalter
+mit zwei Stellungen und deshalb ein Menü. Das Ollama-Modell steht nicht darin: es gehört
+der Instanz und nicht der Runde (#87). Der Aufruf beansprucht die Runde für diesen Server
+oder legt sie an; ein leeres Feld lässt den bisherigen Wert stehen, ein unlesbarer Wert
+wird abgewiesen und gesagt. **Nach dem Passwort fragt das Fenster
 nicht** — es kommt beim Sitzungsstart, wird einmal benutzt und vergessen (siehe
 *Zugangsdaten*). Aufrufen darf ihn, **wer den Server verwaltet**: hier steht, welchem
 Foundry-Server der Bot später das Passwort der Spielleitung vorzeigt.
@@ -252,6 +257,11 @@ Teilnehmerliste, Zeitachse, und die Runde tippt ohnehin dort. Darin gilt:
   nicht stillschweigend deinem Abschluss untergeschoben. Verwendet und vergessen wird es
   so oder so (siehe *Zugangsdaten*). Ein Befehls-Argument gibt es dafür nicht — es stünde
   als Klartext im Kanalverlauf.
+- **`/chronik abgleich`** holt nur die Zahlen, ohne Sitzung und ohne Thread: der Griff für
+  den Abend, an dem Foundry aus war und der Stand nachgezogen werden soll, statt bis zum
+  nächtlichen Lauf zu warten ([#116](../../issues/116)). Dasselbe Fenster fürs Passwort,
+  derselbe server-eigene Lauf, dieselbe Meldung im Kanal — ein dritter Auslöser, kein
+  dritter Weg. Eine ruhende Runde bekommt auch hier nichts.
 
 **Nachträgliches Erfassen geht.** Eine Nachricht Tage später im Thread gehört weiter zu
 dieser Sitzung, und in welche **Szene** sie fällt, entscheidet ihr eigener Zeitpunkt: die

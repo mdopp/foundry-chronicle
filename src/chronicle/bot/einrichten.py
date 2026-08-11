@@ -19,7 +19,7 @@ Drei Sätze tragen diese Datei:
   beiden tun es: die Adresse entscheidet, wohin das Foundry-Passwort der Spielleitung
   geht, und das Löschen nimmt der Runde alles.
 
-Diese Datei kennt Discord nicht. Sie bekommt eine Gilde-Kennung und vier Texte und gibt
+Diese Datei kennt Discord nicht. Sie bekommt eine Gilde-Kennung und ein paar Texte und gibt
 Sätze zurück; wer daraus Fenster, Menüs und Knöpfe baut, entscheidet ``gateway.py``.
 """
 
@@ -95,6 +95,11 @@ SETUP_TITEL = "Runde einrichten"
 FELD_ADRESSE = "Adresse eures Foundry"
 FELD_BENUTZER = "Foundry-Konto, mit dessen Augen ich sehe"
 FELD_UHRZEIT = "Uhrzeit des nächtlichen Laufs"
+# Die Zone steht neben der Uhrzeit und nicht woanders: sie sagt nichts für sich, sondern
+# nur, welche Uhr das Feld darüber meint. Wer 04:00 einträgt, entscheidet in demselben
+# Atemzug, wessen vier Uhr gemeint ist — getrennte Bedienstellen hießen, dass beides
+# auseinanderlaufen kann, ohne dass es jemand merkt.
+FELD_ZONE = "Zeitzone, in der diese Uhrzeit gilt"
 
 HINWEIS_ADRESSE = "z. B. https://foundry.example"
 # Discord lässt 45 Zeichen für die Beschriftung und 100 für den Hinweis; der ganze Satz
@@ -103,6 +108,7 @@ HINWEIS_BENUTZER = (
     "am besten ein Spielerkonto — sonst sehe ich auch, was ihr noch nicht gespielt habt"
 )
 HINWEIS_UHRZEIT = "leer lassen für 04:00"
+HINWEIS_ZONE = "z. B. Europe/Berlin — leer lassen für Europe/Berlin"
 
 # Die Wahl, die niemand trifft und die trotzdem alles prägt (#78): der Zugang trägt die
 # Rechte genau eines Kontos, und was es nicht sieht, kommt in keine Chronik.
@@ -137,6 +143,27 @@ KANAL_GESETZT = "Die Chronik kommt künftig nach {kanal}."
 KANAL_KEINER = "Kein Kanal — dann lege ich die Chronik im Thread der Sitzung ab."
 KANAL_OHNE = "keiner — im Thread der Sitzung ablegen"
 
+# -- Woher die Zahlen kommen ------------------------------------------------------------
+
+# Kein Feld im Fenster, sondern ein Menü — und das aus einem inhaltlichen Grund, nicht aus
+# Platzmangel: ein getipptes »testwelt« wäre die eine Eingabe, deren Vertipper still
+# durchgeht (``save_foundry_quelle`` lässt einen unbekannten Wert stehen) und deren
+# richtige Schreibweise eine Chronik voller erfundener Zahlen bedeutet. Ein Menü kennt nur
+# zwei Antworten, zeigt die geltende an und schreibt die Folge an die Wahl.
+QUELLE_FRAGE = "Und woher nehme ich die Zahlen?"
+QUELLE_WAEHLEN = "Quelle der Spieldaten"
+QUELLE_SERVER = "Euer Foundry-Server"
+QUELLE_TESTWELT = "Eingebaute Testwelt — erfundene Zahlen"
+QUELLE_GESETZT_SERVER = (
+    "Die Zahlen kommen künftig aus eurem Foundry. Der nächste Abgleich ersetzt damit, was "
+    "aus der Testwelt hier liegt."
+)
+QUELLE_GESETZT_TESTWELT = (
+    "Ich nehme künftig die eingebaute Testwelt. **Was dann in euren Chroniken steht, ist "
+    "erfunden** — kein Wurf daraus hat je an eurem Tisch stattgefunden, und der Abgleich "
+    "redet mit keinem Server mehr. Zurück geht es hier genauso."
+)
+
 # Der Wert, mit dem ein Auswahlmenü »keiner« sagt — leer darf eine Option nicht sein.
 OHNE_KANAL = "-"
 
@@ -156,6 +183,15 @@ FEHLT = "Es fehlt noch: {was}. Ruf `/setup` noch einmal auf, wenn du es nachtrag
 STEHT_BEREIT = "Weiter geht es mit `/chronik start` — das legt die erste Sitzung an."
 
 UHRZEIT_UNLESBAR = "Mit »{wert}« kann ich nichts anfangen — ich bleibe bei {uhrzeit} Uhr."
+
+# Eine unbekannte Zone wird **abgewiesen**, nicht stillschweigend übernommen: gespeichert
+# würde sie sonst, gelesen aber nicht — ``settings.nightly_zone`` fällt auf die Vorgabe
+# zurück, und der nächtliche Lauf liefe fortan zu einer anderen Stunde als der, die in der
+# Einstellung steht. Ein Tippfehler verschöbe damit stumm die ganze Nacht.
+ZONE_UNBEKANNT = (
+    "»{wert}« kenne ich als Zeitzone nicht — ich bleibe bei {zone}. Gemeint ist ein Name "
+    "aus der Zonendatenbank, z. B. Europe/Berlin oder America/New_York."
+)
 
 # Discord nimmt in einem Feld des Fensters bis zu 4000 Zeichen an, lässt in der Antwort
 # darauf aber nur 2000 zu. Eine zurückgespiegelte Eingabe wird deshalb gekürzt, bevor sie
@@ -244,6 +280,14 @@ def _uhrzeit(runde: Runde, wert: str) -> str:
     )
 
 
+def _zone(runde: Runde, wert: str) -> str:
+    if not wert.strip():
+        return ""
+    if settings.save_nightly_zone(runde, wert):
+        return ""
+    return ZONE_UNBEKANNT.format(wert=zurueckgespiegelt(wert), zone=settings.nightly_zone(runde))
+
+
 def _offen(config: Config, runde: Runde) -> str:
     fehlend = settings.effective(config, runde).missing_foundry_fields
     return FEHLT.format(was=" und ".join(fehlend)) if fehlend else STEHT_BEREIT
@@ -257,6 +301,7 @@ def einrichten(
     adresse: str = "",
     benutzer: str = "",
     uhrzeit: str = "",
+    zone: str = "",
 ) -> Eingerichtet:
     """Beansprucht die Runde dieser Gilde — oder legt sie an — und übernimmt die Werte.
 
@@ -285,9 +330,7 @@ def einrichten(
     # bloß die Uhrzeit richtet, hat über das Konto gerade nichts entschieden.
     if beansprucht.neu or werte["foundry_user"]:
         saetze.append(AUGEN)
-    stolperte = _uhrzeit(runde, uhrzeit)
-    if stolperte:
-        saetze.append(stolperte)
+    saetze.extend(satz for satz in (_uhrzeit(runde, uhrzeit), _zone(runde, zone)) if satz)
     saetze.append(_offen(config, runde))
     return Eingerichtet(
         runde=runde, neu=beansprucht.neu, meldung=" ".join(saetze), ruhte=beansprucht.ruhte
@@ -312,6 +355,23 @@ def kanal_setzen(runde: Runde, kanal_id: str) -> str:
         return KANAL_KEINER
     settings.save(runde, {"discord_recap_channel": kanal_id})
     return KANAL_GESETZT.format(kanal=f"<#{kanal_id}>")
+
+
+def quellenwahl(runde: Runde) -> tuple[tuple[str, str, bool], ...]:
+    """Beschriftung, Wert und ob vorgewählt — zwei Zeilen, die geltende steht angehakt da."""
+    gewaehlt = settings.foundry_quelle(runde)
+    return (
+        (QUELLE_SERVER, settings.SERVER, gewaehlt == settings.SERVER),
+        (QUELLE_TESTWELT, settings.TESTWELT, gewaehlt == settings.TESTWELT),
+    )
+
+
+def quelle_setzen(runde: Runde, wert: str) -> str:
+    """Echter Server oder Testwelt — die Folge steht in der Antwort, nicht im Kleingedruckten."""
+    settings.save_foundry_quelle(runde, wert)
+    if settings.foundry_quelle(runde) == settings.TESTWELT:
+        return QUELLE_GESETZT_TESTWELT
+    return QUELLE_GESETZT_SERVER
 
 
 def begruessung(config: Config, guild_id: str) -> Begruessung:

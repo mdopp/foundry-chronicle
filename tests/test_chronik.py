@@ -11,6 +11,7 @@ Threads, Nachrichten und das Passwort-Fenster braucht.
 from __future__ import annotations
 
 import asyncio
+import threading
 import time
 import types
 from datetime import UTC, datetime, timedelta
@@ -41,6 +42,8 @@ from chronicle import runde as runden
 from chronicle.bot import ansage, chronik, einrichten, erinnern, gateway, recorder
 from chronicle.config import Config
 from chronicle.discord import ausgabe, rueckblick
+from chronicle.foundry import service as foundry_service
+from chronicle.foundry.client import FoundryUnreachable
 
 GILDE = "1101"
 FREMDE_GILDE = "9909"
@@ -303,6 +306,7 @@ def test_der_bot_bringt_die_chronik_befehle_mit(bot):
     assert set(bot.gruppen[gateway.GRUPPE_CHRONIK].befehle) == {
         "start",
         "fertig",
+        "abgleich",
         "nacherzaehlung",
         "loeschen",
     }
@@ -1170,6 +1174,191 @@ def test_ein_stolpernder_abschluss_antwortet_trotzdem(stelle, bot, monkeypatch):
     (antwort,) = interaktion.followup.gesendet
     assert antwort.startswith("Das hat nicht geklappt:")
     assert "RuntimeError" in antwort
+
+
+# -- Der freistehende Abgleich -----------------------------------------------------------
+
+# Was die Attrappe des Laufs meldet — ein echtes Foundry steht hier nicht dahinter.
+ABGEGLICHEN = "Stand vom 2026-05-01T20:00:00+00:00 — 3 Spieler, 2 Charaktere, 8 Chat-Nachrichten."
+
+
+class Ausfall:
+    """Ein Foundry, das nicht antwortet — der Fall, für den es #116 überhaupt gibt."""
+
+    def fetch_world(self):
+        raise FoundryUnreachable("keine Antwort")
+
+
+def abgleich_fahren(bot, unsere, *, kanal=None, passwort=PASSWORT):
+    """``/chronik abgleich`` samt Fenster und dem Warten auf den Lauf, den es anstößt."""
+    ctx = FakeCtx(kanal=kanal if kanal is not None else FakeThread(910, "Runde"))
+    interaktion = FakeInteraction(ctx.channel)
+
+    async def ablauf():
+        await chronikbefehl(bot, "abgleich")(ctx)
+        for fenster in ctx.modale:
+            fenster.children[0].value = passwort
+            await fenster.callback(interaktion)
+        ende = time.monotonic() + GRENZE
+        while time.monotonic() < ende and jobs.running(unsere, jobs.ABGLEICH):
+            await asyncio.sleep(0.01)
+        # Der Lauf meldet sich aus seinem eigenen Faden; die Schleife muss ihn abholen.
+        await asyncio.sleep(0.05)
+
+    asyncio.run(ablauf())
+    return ctx, interaktion
+
+
+def test_abgleich_fragt_das_passwort_im_fenster_und_stoesst_den_lauf_an(stelle, bot, monkeypatch):
+    """Der Griff, der bisher fehlte: Zahlen nachziehen, ohne eine Sitzung zu führen (#116).
+
+    Der Befehl wartet nicht auf den Abgleich — er stößt einen Lauf des Servers an und
+    antwortet sofort; die Meldung kommt später in den Kanal, aus dem gefragt wurde.
+    """
+    _config, unsere = stelle
+    gesehen = []
+    monkeypatch.setattr(
+        jobs,
+        "abgleich",
+        lambda config, eine, *, passwort=None: gesehen.append(passwort) or ABGEGLICHEN,
+    )
+
+    ctx, interaktion = abgleich_fahren(bot, unsere)
+
+    assert ctx.modale[0].title == chronik.ABGLEICH_TITEL
+    assert gesehen == [PASSWORT]
+    assert interaktion.followup.gesendet == [chronik.ABGLEICH]
+    assert ctx.channel.gesendet == [ABGEGLICHEN]
+    assert jobs.latest(unsere, jobs.ABGLEICH).result == ABGEGLICHEN
+    # Gezeigt wird *ob*, nie *was* — auch nicht in dem, was die ganze Runde liest.
+    assert PASSWORT not in " ".join(interaktion.antworten + ctx.channel.gesendet)
+
+
+def test_der_befehl_wartet_nicht_auf_den_abgleich(stelle, bot, monkeypatch):
+    """Ein Foundry, das schleppt, darf den Befehl nicht in Discords Zeitfenster halten.
+
+    Das Tor steht noch zu, wenn die Antwort schon draußen ist — anders gäbe es keine
+    Meldung »ich melde mich hier«, sondern ein »denkt nach …«, das in einen Abbruch läuft.
+    """
+    _config, unsere = stelle
+    tor = threading.Event()
+    monkeypatch.setattr(
+        jobs,
+        "abgleich",
+        lambda config, eine, *, passwort=None: tor.wait(GRENZE) and ABGEGLICHEN,
+    )
+    ctx = FakeCtx(kanal=FakeThread(910, "Runde"))
+    interaktion = FakeInteraction(ctx.channel)
+
+    unterwegs = []
+
+    async def ablauf():
+        await chronikbefehl(bot, "abgleich")(ctx)
+        ctx.modale[0].children[0].value = PASSWORT
+        await ctx.modale[0].callback(interaktion)
+        # Die Antwort ist draußen, der Lauf hängt noch am Tor — genau das ist die Zusage.
+        unterwegs.append((list(interaktion.followup.gesendet), jobs.running(unsere, jobs.ABGLEICH)))
+        tor.set()
+        ende = time.monotonic() + GRENZE
+        while time.monotonic() < ende and jobs.running(unsere, jobs.ABGLEICH):
+            await asyncio.sleep(0.01)
+        await asyncio.sleep(0.05)
+
+    asyncio.run(ablauf())
+
+    assert unterwegs == [([chronik.ABGLEICH], True)]
+    assert ctx.channel.gesendet == [ABGEGLICHEN]
+
+
+def test_der_abgleich_verbraucht_das_passwort_auch_wenn_er_scheitert(stelle, bot, monkeypatch):
+    """Die Zusage aus #64, an der neuen Stelle: ein Fehlschlag lässt keines liegen."""
+    _config, unsere = stelle
+    monkeypatch.setattr(
+        jobs,
+        "sync",
+        lambda config, eine, passwort=None: foundry_service.sync(
+            config, eine, passwort=passwort, client=Ausfall()
+        ),
+    )
+
+    _ctx, interaktion = abgleich_fahren(bot, unsere)
+
+    assert interaktion.followup.gesendet == [chronik.ABGLEICH]
+    assert not zugang.ist_gemerkt(unsere)
+    assert jobs.latest(unsere, jobs.ABGLEICH).gescheitert
+
+
+def test_wer_beim_start_hinterlegt_hat_wird_vor_dem_abgleich_nicht_gefragt(
+    stelle, bot, monkeypatch
+):
+    _config, unsere = stelle
+    sitzung_starten(bot, passwort=PASSWORT)
+    gesehen = []
+    monkeypatch.setattr(
+        jobs,
+        "abgleich",
+        lambda config, eine, *, passwort=None: gesehen.append(passwort) or ABGEGLICHEN,
+    )
+
+    ctx, _interaktion = abgleich_fahren(bot, unsere)
+
+    assert ctx.modale == []
+    assert gesehen == [PASSWORT]
+    assert ctx.antworten == [chronik.ABGLEICH]
+
+
+def test_auf_der_testwelt_verbraucht_der_abgleich_das_liegende_passwort_ohne_zu_fragen(stelle, bot):
+    """Kein Server, kein Fenster — und trotzdem wird nichts liegen gelassen."""
+    _config, unsere = stelle
+    sitzung_starten(bot, passwort=PASSWORT)
+    settings.save_foundry_quelle(unsere, settings.TESTWELT)
+
+    ctx, _interaktion = abgleich_fahren(bot, unsere)
+
+    assert ctx.modale == []
+    assert ctx.antworten == [chronik.ABGLEICH]
+    assert not zugang.ist_gemerkt(unsere)
+    assert jobs.latest(unsere, jobs.ABGLEICH).fertig
+
+
+def test_die_ruhende_runde_gleicht_nichts_mehr_ab(stelle, bot):
+    """Dieselbe Sperre wie vor jeder anderen Stufe — und noch vor dem Passwortfenster."""
+    config, unsere = stelle
+    lebenszyklus.sperren(config.database_path, GILDE)
+
+    ctx, _interaktion = abgleich_fahren(bot, unsere)
+
+    (antwort,) = ctx.antworten
+    assert "Diese Runde ruht" in antwort
+    assert ctx.modale == []
+    assert jobs.latest(unsere, jobs.ABGLEICH) is None
+
+
+def test_ein_zweiter_abgleich_stoesst_keinen_zweiten_lauf_an(stelle, bot, monkeypatch):
+    config, unsere = stelle
+    monkeypatch.setattr(jobs, "running", lambda eine, kind=None: True)
+
+    meldung = chronik.abgleich_starten(config, unsere, PASSWORT, melden=lambda text: None)
+
+    assert meldung == chronik.ABGLEICH_LAEUFT_SCHON
+
+
+def test_ein_altes_abgleichfenster_zeigt_das_passwort_keiner_fremden_runde(stelle, bot):
+    """Wie am Abschluss: die Adresse, an die es ginge, steht in *ihrer* Runde."""
+    config, unsere = stelle
+    ctx = FakeCtx()
+    asyncio.run(chronikbefehl(bot, "abgleich")(ctx))
+
+    lebenszyklus.loeschen(config, unsere)
+    frisch = runden.anlegen(config.database_path, "Nachbarn", guild_id=GILDE)
+    assert frisch.id == unsere.id
+    interaktion = FakeInteraction(ctx.channel)
+    ctx.modale[0].children[0].value = PASSWORT
+    asyncio.run(ctx.modale[0].callback(interaktion))
+
+    assert interaktion.followup.gesendet == [chronik.VERALTET]
+    assert not zugang.ist_gemerkt(frisch)
+    assert jobs.latest(frisch, jobs.ABGLEICH) is None
 
 
 # -- Nacherzählen über Sitzungsgrenzen ---------------------------------------------------

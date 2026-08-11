@@ -285,8 +285,14 @@ def _ausfuehren(config: Config, job_id: int, runner: Callable[[], str]) -> None:
         _abschliessen(config.database_path, job_id, FERTIG, result=meldung)
 
 
-def abgleich(config: Config, runde: Runde) -> str:
-    zustand = sync(config, runde)
+def abgleich(config: Config, runde: Runde, *, passwort: str | None = None) -> str:
+    """``passwort`` reicht der Auslöser durch — wie beim Abschluss, aus demselben Grund.
+
+    Dieser Faden sieht nicht selbst im Merkzettel nach: dort kann inzwischen die Eingabe
+    eines anderen liegen. ``None`` heißt »keines mitgebracht«, dann liest ``sync`` den
+    Merkzettel wie eh und je.
+    """
+    zustand = sync(config, runde, passwort=passwort)
     if zustand.stale:
         raise JobError(zustand.message)
     return zustand.message

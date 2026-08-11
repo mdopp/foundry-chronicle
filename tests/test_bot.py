@@ -1163,12 +1163,17 @@ def test_die_vorstellung_steht_im_kanal_bevor_die_ansage_laeuft(
     konfiguration, sitzung_id, ohne_espeak, runde
 ):
     # Der Ausweg muss lesbar sein, bevor gesprochen — und erst recht, bevor mitgeschnitten
-    # wird. Die Null ist der Beleg: beim Schreiben lief noch keine Ansage.
+    # wird. Die Null ist der Beleg: beim Schreiben lief noch keine Ansage. Sie gilt für
+    # **jedes** Stück: die Vorstellung ist mit der Befehlsliste über Discords Grenze
+    # gewachsen und geht seit #109 geteilt hinaus, statt abgewiesen zu werden.
     bot = gateway.baue(konfiguration)
 
     asyncio.run(befehl(bot, "start")(FakeCtx(runde.mira)))
 
-    assert runde.kanal.geschrieben == [(gateway.VORSTELLUNG, 0)]
+    gesagt = [text for text, _ in runde.kanal.geschrieben]
+    assert "".join(gesagt) == gateway.VORSTELLUNG
+    assert gateway.AUSWEG in gesagt[0]
+    assert [gespielt for _, gespielt in runde.kanal.geschrieben] == [0] * len(gesagt)
     assert len(runde.kanal.verbindung.gespielt) == 1
 
 
@@ -1207,7 +1212,11 @@ def test_der_ausweg_steht_in_der_ersten_nachricht(welcher):
 def test_eine_uebergrosse_vorstellung_kommt_vollstaendig_an(
     konfiguration, sitzung_id, ohne_espeak, runde, monkeypatch
 ):
-    """Gegenprobe zum Test darüber: die heutige Vorstellung bleibt **eine** Nachricht."""
+    """Und auch weit über der Grenze bleibt es dabei: nichts fällt weg, nichts rutscht vor.
+
+    Die heutige Vorstellung braucht zwei Nachrichten; hier sind es vier. Der Unterschied
+    darf keiner sein — sonst hinge die Zusage an der jeweiligen Länge der Befehlsliste.
+    """
     lang = gateway.VORSTELLUNG.replace(gateway.BEFEHLE, gateway.BEFEHLE * 4)
     monkeypatch.setattr(gateway, "VORSTELLUNG", lang)
     bot = gateway.baue(konfiguration)
@@ -1233,7 +1242,7 @@ def test_ohne_kanal_chat_geht_die_vorstellung_dorthin_wo_der_befehl_kam(
 
     asyncio.run(befehl(bot, "start")(ctx))
 
-    assert ctx.channel.geschrieben == [gateway.VORSTELLUNG]
+    assert "".join(ctx.channel.geschrieben) == gateway.VORSTELLUNG
     assert kanal.verbindung.schneidet
 
 
@@ -1614,16 +1623,26 @@ def test_der_satz_ans_alleinsein_zeigt_den_widerspruch_und_traegt_keinen_namen()
     """Ein Satz ohne Feld kann keinen Namen und keine Kennung tragen — auch nicht später."""
     assert "`/aufnahme stop`" in gateway.ALLEIN
     assert "{" not in gateway.ALLEIN
-    # Und die Hilfe sagt es vorab — die Vorstellung nicht, sie steht schon an Discords
-    # Grenze, und eine Vorstellung, die nicht ankommt, verhindert die Aufnahme. Geprüft
-    # wird der Satz und nicht »allein im Sprachkanal«: das steht auch im Punkt zu
-    # ``/aufnahme stop`` und meint dort die Gegenlage, den leeren Kanal.
+    # Und die Hilfe sagt es vorab — die Vorstellung nicht, denn sie ist ohnehin der längste
+    # Text des Bots. Geprüft wird der Satz und nicht »allein im Sprachkanal«: das steht auch
+    # im Punkt zu ``/aufnahme stop`` und meint dort die Gegenlage, den leeren Kanal.
     hinweis = "Bleibt eine Person allein im Sprachkanal zurück, schneide ich weiter mit"
     assert hinweis in gateway.HILFE
     assert hinweis not in gateway.BEFEHLE
     assert hinweis not in gateway.VORSTELLUNG
-    assert len(gateway.HILFE) <= 2000
-    assert len(gateway.VORSTELLUNG) <= 2000
+    assert len(gateway.HILFE) <= grenzen.NACHRICHT
+    # Die Vorstellung steht **über** der Grenze, seit die Befehlsliste um `/chronik abgleich`
+    # gewachsen ist — und das ist kein Fehlschlag, sondern der Fall, den #109 gebaut hat:
+    # ``_zustellen`` teilt, statt abweisen zu lassen, und der Kommentar an ``AUSWEG`` sagt
+    # den Tag vorher an (»schiebt alles hinter sich irgendwann in eine zweite Nachricht«).
+    # Vorher stand hier ``<= 2000``; das ließ 15 Zeichen Luft und damit keinen einzigen
+    # weiteren Befehl zu, und die Begründung — »eine Vorstellung, die nicht ankommt« —
+    # trifft seit #109 nicht mehr zu. An ihre Stelle tritt, was die Zusage wirklich trägt:
+    # der Ausweg steht im **ersten** Stück, und angehängt ergeben die Stücke wieder genau
+    # den Text. Beides prüfen die Tests zur Vorstellung, hier steht die Kurzfassung.
+    stuecke = grenzen.teile(gateway.VORSTELLUNG)
+    assert gateway.AUSWEG in stuecke[0]
+    assert "".join(stuecke) == gateway.VORSTELLUNG
 
 
 def test_bleibt_eine_person_allein_wird_es_ihr_gesagt_und_weiter_geschnitten(

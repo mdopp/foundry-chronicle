@@ -32,6 +32,7 @@ from chronicle import (
     consent,
     db,
     lebenszyklus,
+    nightly,
     notes,
     people,
     recordings,
@@ -282,12 +283,18 @@ def einrichtungsfenster(bot, ctx):
     return ctx.modale[-1]
 
 
-def ausfuellen(fenster, adresse="", benutzer="", uhrzeit="", *, kanal=None):
-    for feld, wert in zip(fenster.children, (adresse, benutzer, uhrzeit), strict=True):
+def ausfuellen(fenster, adresse="", benutzer="", uhrzeit="", zone="", *, kanal=None):
+    for feld, wert in zip(fenster.children, (adresse, benutzer, uhrzeit, zone), strict=True):
         feld.value = wert
     interaktion = FakeInteraction(kanal=kanal)
     asyncio.run(fenster.callback(interaktion))
     return interaktion
+
+
+def menues(interaktion):
+    """Die beiden Menüs unter der Antwort von ``/setup`` — Zustellkanal und Quelle."""
+    kanal, quelle = interaktion.response.gesendet[0]["view"].items
+    return kanal, quelle
 
 
 def loeschbefehl(bot, ctx):
@@ -524,16 +531,18 @@ def test_das_einrichtungsfenster_fragt_nicht_nach_dem_passwort(bot):
 
     beschriftet = " ".join(f"{feld.label} {feld.placeholder}" for feld in fenster.children)
     assert "asswort" not in beschriftet
-    # Adresse, Benutzer, Uhrzeit — das Modell gehört der Instanz und steht nicht hier.
-    assert len(fenster.children) == 3
+    # Adresse, Benutzer, Uhrzeit, Zone — das Modell gehört der Instanz und steht nicht hier,
+    # die Quelle der Zahlen kommt als Menü darunter. Discord nimmt fünf Felder je Fenster.
+    assert len(fenster.children) == 4
     assert "odell" not in beschriftet
+    assert "uelle" not in beschriftet and "estwelt" not in beschriftet
 
 
 def test_das_benutzerfeld_sagt_mit_wessen_augen_ich_sehe(bot):
     """Wer das Konto einträgt, entscheidet über die Sicht — das steht am Feld (#78)."""
     fenster = einrichtungsfenster(bot, FakeCtx(gilde=FakeGilde()))
 
-    _, benutzerfeld, _ = fenster.children
+    _, benutzerfeld, _, _ = fenster.children
     assert "Augen" in benutzerfeld.label
     assert "Spielerkonto" in benutzerfeld.placeholder
 
@@ -546,9 +555,34 @@ def test_die_beschriftungen_bleiben_in_discords_grenzen():
         (einrichten.FELD_ADRESSE, einrichten.HINWEIS_ADRESSE),
         (einrichten.FELD_BENUTZER, einrichten.HINWEIS_BENUTZER),
         (einrichten.FELD_UHRZEIT, einrichten.HINWEIS_UHRZEIT),
+        (einrichten.FELD_ZONE, einrichten.HINWEIS_ZONE),
     )
     for beschriftung, hinweis in felder:
         echtes_discord.ui.InputText(label=beschriftung, placeholder=hinweis, required=False)
+
+
+def test_das_fenster_bleibt_unter_discords_fuenf_feldern():
+    """Die harte Grenze, an der jedes weitere Feld scheitert — py-cord wirft dafür.
+
+    ``_ModalWeights`` führt fünf Reihen; ein sechstes ``InputText`` findet keine mehr. Das
+    ist der Rahmen, in dem die Zone noch Platz hat (vier von fünf) und in dem die Quelle
+    der Spieldaten nicht mehr als weiteres Feld untergebracht werden sollte — das letzte
+    freie ist die Reserve für den nächsten runden-eigenen Wert.
+    """
+    echtes_discord = pytest.importorskip("discord")
+
+    async def bauen(anzahl):
+        return echtes_discord.ui.Modal(
+            *(
+                echtes_discord.ui.InputText(label=f"Feld {nummer}", required=False)
+                for nummer in range(anzahl)
+            ),
+            title=einrichten.SETUP_TITEL,
+        )
+
+    assert len(asyncio.run(bauen(5)).children) == 5
+    with pytest.raises(ValueError, match="open space"):
+        asyncio.run(bauen(6))
 
 
 def test_die_einrichtung_empfiehlt_das_spielerkonto_und_ein_eigenes_konto(bot):
@@ -658,8 +692,7 @@ def test_der_zustellkanal_wird_gewaehlt_und_wirkt_sofort(konfiguration, bot):
     ctx = FakeCtx(gilde=FakeGilde(kanaele=(kanal,)))
     interaktion = ausfuellen(einrichtungsfenster(bot, ctx), benutzer="Chronist")
 
-    ansicht = interaktion.response.gesendet[0]["view"]
-    (menue,) = ansicht.items
+    menue, _quelle = menues(interaktion)
     assert [option.value for option in menue.options] == [einrichten.OHNE_KANAL, "777"]
 
     menue.values = ["777"]
@@ -674,13 +707,135 @@ def test_der_zustellkanal_wird_gewaehlt_und_wirkt_sofort(konfiguration, bot):
 def test_kein_kanal_ist_eine_gueltige_wahl(konfiguration, bot):
     ctx = FakeCtx(gilde=FakeGilde(kanaele=(FakeKanal("777", "chroniken"),)))
     interaktion = ausfuellen(einrichtungsfenster(bot, ctx), benutzer="Chronist")
-    (menue,) = interaktion.response.gesendet[0]["view"].items
+    menue, _quelle = menues(interaktion)
 
     menue.values = [einrichten.OHNE_KANAL]
     asyncio.run(menue.callback(FakeInteraction()))
 
     unsere = runden.fuer_gilde(konfiguration.database_path, GILDE)
     assert settings.effective(konfiguration, unsere).discord_recap_channel is None
+
+
+# -- Die Zone, in der 04:00 auch 04:00 heißt ---------------------------------------------
+
+
+def test_die_zeitzone_steht_im_fenster_neben_der_uhrzeit_und_wirkt(konfiguration, bot):
+    """Bis hierher wirkte sie, ohne dass jemand sie ändern konnte (#110).
+
+    Geprüft wird nicht die gespeicherte Zeichenkette, sondern die Nacht: 04:00 Auckland
+    ist ein anderer Zeitpunkt als 04:00 Berlin, und genau das ist der ganze Sinn des Feldes.
+    """
+    ausfuellen(
+        einrichtungsfenster(bot, FakeCtx(gilde=FakeGilde())),
+        benutzer="Chronist",
+        zone="Pacific/Auckland",
+    )
+    unsere = runden.fuer_gilde(konfiguration.database_path, GILDE)
+
+    assert settings.nightly_zone(unsere) == "Pacific/Auckland"
+    assert not nightly.faellig(
+        datetime(2026, 8, 6, 2, tzinfo=UTC), "04:00", None, settings.nightly_zone(unsere)
+    )
+    assert nightly.faellig(
+        datetime(2026, 8, 5, 16, tzinfo=UTC), "04:00", None, settings.nightly_zone(unsere)
+    )
+
+
+def test_eine_unbekannte_zeitzone_wird_abgewiesen_statt_still_uebernommen(konfiguration, bot):
+    """Gespeichert würde sie sonst und gelesen nicht — der Lauf verschöbe sich stumm.
+
+    ``settings.nightly_zone`` fällt bei einem unbekannten Namen auf die Vorgabe zurück.
+    Wer ihn stillschweigend annähme, ließe eine Runde in dem Glauben, ihr Lauf stehe auf
+    ihrer Uhr, während er weiter nach Berlin ginge.
+    """
+    ausfuellen(einrichtungsfenster(bot, FakeCtx(gilde=FakeGilde())), zone="Pacific/Auckland")
+
+    interaktion = ausfuellen(
+        einrichtungsfenster(bot, FakeCtx(gilde=FakeGilde())), zone="Europe/Wolkenkuckucksheim"
+    )
+
+    unsere = runden.fuer_gilde(konfiguration.database_path, GILDE)
+    assert settings.nightly_zone(unsere) == "Pacific/Auckland"
+    gesagt = interaktion.response.gesendet[0]["text"]
+    assert "Europe/Wolkenkuckucksheim" in gesagt
+    assert "Pacific/Auckland" in gesagt
+
+
+def test_ein_leeres_zonenfeld_laesst_die_zone_stehen(konfiguration, bot):
+    ausfuellen(einrichtungsfenster(bot, FakeCtx(gilde=FakeGilde())), zone="Pacific/Auckland")
+
+    interaktion = ausfuellen(einrichtungsfenster(bot, FakeCtx(gilde=FakeGilde())), uhrzeit="05:00")
+
+    unsere = runden.fuer_gilde(konfiguration.database_path, GILDE)
+    assert settings.nightly_zone(unsere) == "Pacific/Auckland"
+    assert settings.nightly_time(unsere) == "05:00"
+    assert "kenne ich als Zeitzone nicht" not in interaktion.response.gesendet[0]["text"]
+
+
+# -- Woher die Zahlen kommen -------------------------------------------------------------
+
+
+def test_die_quelle_der_spieldaten_wird_im_menue_gewaehlt_und_wirkt(konfiguration, bot):
+    """Der zweite Wert ohne Bedienstelle aus #110 — und der Weg zurück gehört dazu.
+
+    Eine Runde, die auf der Testwelt steht, kam ohne Datenbankzugriff nicht mehr davon los.
+    Deshalb wird hier beides gefahren: hin und wieder her.
+    """
+    interaktion = ausfuellen(einrichtungsfenster(bot, FakeCtx(gilde=FakeGilde())))
+    _kanal, quelle = menues(interaktion)
+    unsere = runden.fuer_gilde(konfiguration.database_path, GILDE)
+
+    assert [option.value for option in quelle.options] == [settings.SERVER, settings.TESTWELT]
+    assert [option.default for option in quelle.options] == [True, False]
+
+    quelle.values = [settings.TESTWELT]
+    hin = FakeInteraction()
+    asyncio.run(quelle.callback(hin))
+
+    assert settings.foundry_quelle(unsere) == settings.TESTWELT
+    assert "erfunden" in hin.response.bearbeitet[0]["content"]
+
+    # Die Ansicht bleibt stehen — sonst wäre die Testwelt eine Einbahnstraße, und genau
+    # das war der gemeldete Zustand.
+    zurueck_menue = hin.response.bearbeitet[0]["view"].items[1]
+    assert [option.default for option in zurueck_menue.options] == [False, True]
+
+    zurueck_menue.values = [settings.SERVER]
+    her = FakeInteraction()
+    asyncio.run(zurueck_menue.callback(her))
+
+    assert settings.foundry_quelle(unsere) == settings.SERVER
+
+
+def test_die_wahl_der_quelle_wirkt_auf_das_passwortfenster(konfiguration, bot):
+    """Sie ist kein Etikett: auf der Testwelt fragt der Bot gar nicht erst nach Foundry."""
+    settings.save(
+        runden.anlegen(konfiguration.database_path, GILDENAME, guild_id=GILDE),
+        {"foundry_url": "https://foundry.example", "foundry_user": "chronist"},
+    )
+    unsere = runden.fuer_gilde(konfiguration.database_path, GILDE)
+    assert chronik.foundry_im_spiel(konfiguration, unsere)
+
+    einrichten.quelle_setzen(unsere, settings.TESTWELT)
+
+    assert not chronik.foundry_im_spiel(konfiguration, unsere)
+
+
+def test_ein_altes_quellenmenue_haengt_nicht_die_fremde_runde_auf_die_testwelt(konfiguration, bot):
+    """Dasselbe wie am Kanalmenü, und teurer: die Nachbarrunde bekäme erfundene Zahlen."""
+    unsere = runden.anlegen(konfiguration.database_path, GILDENAME, guild_id=GILDE)
+    interaktion = ausfuellen(einrichtungsfenster(bot, FakeCtx(gilde=FakeGilde())))
+    _kanal, quelle = menues(interaktion)
+
+    lebenszyklus.loeschen(konfiguration, unsere)
+    nachbar = runden.anlegen(konfiguration.database_path, "Nachbarn", guild_id=NACHBARGILDE)
+    assert nachbar.id == unsere.id
+    quelle.values = [settings.TESTWELT]
+    klick = FakeInteraction()
+    asyncio.run(quelle.callback(klick))
+
+    assert klick.response.bearbeitet[0]["content"] == chronik.VERALTET
+    assert settings.foundry_quelle(nachbar) == settings.SERVER
 
 
 # -- Verabschieden ----------------------------------------------------------------------
@@ -1015,7 +1170,7 @@ def test_ein_altes_kanalmenue_stellt_nicht_in_die_fremde_runde_zu(konfiguration,
         einrichtungsfenster(bot, FakeCtx(gilde=FakeGilde(kanaele=(FakeKanal("777", "hier"),)))),
         benutzer="Chronist",
     )
-    (menue,) = interaktion.response.gesendet[0]["view"].items
+    menue, _quelle = menues(interaktion)
 
     lebenszyklus.loeschen(konfiguration, unsere)
     nachbar = runden.anlegen(konfiguration.database_path, "Nachbarn", guild_id=NACHBARGILDE)
