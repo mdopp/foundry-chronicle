@@ -3,7 +3,13 @@ FROM python:3.12-slim AS bau
 WORKDIR /quelle
 COPY pyproject.toml README.md ./
 COPY src ./src
-RUN pip install --no-cache-dir --prefix=/fertig ".[server,transcribe,discord]"
+# git nur in der Baustufe: py-cord hängt an einem unveröffentlichten Commit (siehe
+# pyproject.toml), und ohne git kann pip die ``git+https``-Zeile nicht auflösen — der Bau
+# bräche mit »Cannot find command 'git'«. Das Laufzeit-Image erbt nur /fertig.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends git \
+    && rm -rf /var/lib/apt/lists/* \
+    && pip install --no-cache-dir --prefix=/fertig ".[server,transcribe,discord]"
 
 FROM python:3.12-slim
 

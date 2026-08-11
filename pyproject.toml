@@ -31,19 +31,37 @@ transcribe = ["faster-whisper>=1.1"]
 # spricht py-cord Discords DAVE-Verschlüsselung nicht, meldet »voice will NOT be
 # supported« und der Bot verbindet sich, ohne je etwas zu hören. ``davey`` steht daneben
 # trotzdem namentlich, damit die Zeile sagt, worauf es ankommt.
-discord = ["py-cord[voice]>=2.8.1", "davey>=0.1.6"]
+#
+# **Festgenagelt auf einen unveröffentlichten Commit — mit Absicht (#60).** Seit dem
+# 2026-03-02 erzwingt Discord DAVE auf allen Sprachkanälen; sich davon abzumelden endet
+# mit ``WebSocket closed with 4017``, Discord lehnt die Sprachverbindung dann ganz ab.
+# In der veröffentlichten 2.8.1 entschlüsselt ``opus.py`` **nach** dem Dekodieren
+# (``dave.decrypt`` auf schon dekodiertem PCM), der Dekoder sieht Rauschen und wirft
+# ``OpusError: corrupted stream``; der Empfang stirbt daran und die Sitzung bekommt
+# keine einzige Spur. Pycord-PR #3159 dreht die Reihenfolge um — entschlüsseln, dann
+# dekodieren — ist aber offen und in keiner Veröffentlichung. Genagelt wird auf den
+# **Commit**, nicht auf ``fix/voice-rec-2``: ein Branch bewegt sich, und ein Bau, der
+# gestern ging und heute nicht mehr, kostet die nächste Runde ihre Aufnahme.
+#
+# Zurück auf eine Veröffentlichung darf, wer Pycord-PR #3159 gemergt **und** in einem
+# py-cord-Release sieht — dann ersetzt dessen Fassung diese Zeile in beiden Extras.
+discord = [
+    "py-cord[voice] @ git+https://github.com/Pycord-Development/pycord@326b72acc8d1d952ac002fe07ca65581cf5952bc",
+    "davey>=0.1.6",
+]
 # py-cord gehört hier dazu, obwohl nur der Bot es braucht: der Regressionstest
 # registriert unsere Senke gegen py-cords **echten** Empfangs-Router. Genau das haben die
 # Attrappen nicht gesehen — zweimal hintereinander fiel erst auf der Box auf, dass wir
 # das Protokoll der Bibliothek verfehlt hatten. Es ist reines Python plus zwei kleine
-# Räder; die CI wird davon nicht schwer.
+# Räder; die CI wird davon nicht schwer. Derselbe festgenagelte Commit wie oben — eine
+# CI, die gegen eine andere Fassung prüft als das Image installiert, prüft die falsche.
 dev = [
     "pytest>=8.0",
     "pytest-cov>=5.0",
     "ruff>=0.6",
     "pre-commit>=3.7",
     "pyyaml>=6.0",
-    "py-cord[voice]>=2.8.1",
+    "py-cord[voice] @ git+https://github.com/Pycord-Development/pycord@326b72acc8d1d952ac002fe07ca65581cf5952bc",
 ]
 
 [build-system]

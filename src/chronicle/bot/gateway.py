@@ -366,13 +366,15 @@ class Sprachverbindung:
     def mitschneiden(self, aufnahme: Aufnahme) -> None:
         senke = _senke(self, aufnahme)
         self._vc.start_recording(senke, _abgeschlossen)
-        # py-cord 2.8.1 hängt die Senke nie an ihren Sprachclient: in
-        # ``voice/receive/reader.py`` steht ``sink._client = self.client`` **auskommentiert**.
-        # ``Sink.client`` liest aber ``self.vc``, und ``opus.py`` prüft es mit einem
-        # ``assert``, sobald das erste Paket kommt. Ohne diese Zeile stirbt der Empfänger
-        # nach wenigen Sekunden mit einem nackten ``AssertionError``, beendet den Mitschnitt
-        # von sich aus — und die Sitzung hat keine einzige Spur. Genau so ist es am
-        # 2026-08-11 in der ersten echten Runde passiert.
+        # ``Sink.client`` liest ``self.vc``, und ``opus.py`` prüft es mit einem ``assert``,
+        # sobald das erste Paket kommt. Die veröffentlichte 2.8.1 setzt es im Empfangspfad
+        # **nie** — ``sink._client = self.client`` steht in ``voice/receive/reader.py``
+        # auskommentiert —, und ohne diese Zeile fiel der Empfänger am 2026-08-11 in der
+        # ersten echten Runde nach 25 Sekunden mit einem nackten ``AssertionError`` um und
+        # beendete den Mitschnitt von sich aus. Der festgenagelte Stand ruft ``sink.init``
+        # in ``AudioReader.__init__`` selbst; die Zeile setzt dann denselben Wert noch
+        # einmal. Sie bleibt, weil ``AudioReader.set_sink`` die Verdrahtung weiterhin
+        # **nicht** vornimmt und der Preis eines vergessenen ``vc`` eine ganze Sitzung ist.
         senke.init(self._vc)
 
     def mitschnitt_beenden(self) -> None:
@@ -412,10 +414,11 @@ def _senke(stimme: Sprachverbindung, aufnahme: Aufnahme):
 
         Die Basisklasse allein genügt py-cord 2.8 nicht mehr: der neue Empfangs-Router
         verlangt ``__sink_listeners__``, ``walk_children``, ``root`` und ``is_opus`` —
-        Teile einer Senken-Schnittstelle, die in 2.8.1 noch **keine** mitgelieferte Senke
-        erfüllt, auch ``WaveSink`` nicht (siehe Test und PR). Wir erfüllen sie hier von
-        Hand: wir hören auf keines der Senken-Ereignisse, also ist die Liste leer, und
-        Kinder-Senken gibt es nicht.
+        Teile einer Senken-Schnittstelle, die in der veröffentlichten 2.8.1 **keine**
+        mitgelieferte Senke erfüllt, auch ``WaveSink`` nicht. Der festgenagelte Stand legt
+        sie inzwischen in die Basisklasse; von Hand steht sie hier trotzdem weiter, weil
+        sie beides bedient und nichts kostet: wir hören auf keines der Senken-Ereignisse,
+        also ist die Liste leer, und Kinder-Senken gibt es nicht.
         """
 
         __sink_listeners__: tuple[tuple[str, str], ...] = ()

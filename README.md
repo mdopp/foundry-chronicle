@@ -449,13 +449,24 @@ beim Start** (`discord.utils.get_missing_voice_dependencies()`) und beendet sich
 verständlichen Satz, statt sich taub anzumelden. Beide Pakete bringen fertige
 manylinux-Räder mit; im Image wird nichts übersetzt.
 
-**Die Senke erfüllt py-cords Empfangs-Protokoll von Hand.** In 2.8.1 verlangt der neue
-Empfangs-Router `__sink_listeners__`, `walk_children`, `root` und `is_opus` — und **keine**
-mitgelieferte Senke bringt das mit, `WaveSink` eingeschlossen; py-cord warnt beim
-Aufnehmen selbst, dass der Empfang wegen Discords DAVE-Umstellung derzeit kaputt ist
-([Pycord #3139](https://github.com/Pycord-Development/pycord/issues/3139)). Geerbt werden
-kann das also nicht, es steht in `gateway.py`. Ein Test registriert unsere Senke gegen den
-**echten** Router — bricht das Protokoll wieder, ist der Test rot statt der Sitzung.
+**py-cord hängt an einem unveröffentlichten Commit** — festgenagelt in `pyproject.toml`,
+mit der Begründung an derselben Zeile (#60). Seit dem 2026-03-02 erzwingt Discord DAVE auf
+allen Sprachkanälen, und die veröffentlichte 2.8.1 entschlüsselt **nach** dem Dekodieren:
+der Dekoder sieht Rauschen, wirft `OpusError: corrupted stream`, der Empfang stirbt und die
+Sitzung bekommt keine einzige Spur. Sich von DAVE abzumelden ist kein Ausweg — Discord
+antwortet mit `WebSocket closed with 4017` und verweigert die Sprachverbindung ganz.
+[Pycord-PR #3159](https://github.com/Pycord-Development/pycord/pull/3159) dreht die
+Reihenfolge um; genagelt wird auf den **Commit**, nicht auf den Branch. Zurück auf eine
+Veröffentlichung geht es, sobald dieser PR gemergt und ausgeliefert ist.
+
+**Die Senke erfüllt py-cords Empfangs-Protokoll von Hand.** Der Empfangs-Router verlangt
+`__sink_listeners__`, `walk_children`, `root` und `is_opus`; in 2.8.1 brachte das **keine**
+mitgelieferte Senke mit, `WaveSink` eingeschlossen
+([Pycord #3139](https://github.com/Pycord-Development/pycord/issues/3139)). Der
+festgenagelte Stand legt es in die Basisklasse — von Hand steht es in `gateway.py`
+trotzdem weiter, weil es beides bedient und nichts kostet. Ein Test registriert unsere
+Senke gegen den **echten** Router — bricht das Protokoll wieder, ist der Test rot statt
+der Sitzung.
 
 ## Betrieb auf ServiceBay
 
