@@ -150,7 +150,7 @@ def test_der_abgleich_meldet_den_umfang(stelle, welt, monkeypatch):
     monkeypatch.setattr(
         jobs,
         "sync",
-        lambda config, eine: foundry.sync(config, eine, client=Abgleich(welt)),
+        lambda config, eine, passwort=None: foundry.sync(config, eine, client=Abgleich(welt)),
     )
     assert "Chat-Nachrichten" in jobs.abgleich(stelle, runde(stelle))
 

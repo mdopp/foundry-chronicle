@@ -124,6 +124,15 @@ ERZAEHLT = (
 
 ERZAEHLT_SCHON = "Ich erzähle schon nach — die Datei kommt hier in den Kanal."
 
+ABGLEICH_TITEL = "Zahlen aus Foundry holen"
+
+ABGLEICH = (
+    "Ich hole die Zahlen aus eurem Foundry. Das dauert einen Moment — ich melde mich hier, "
+    "wenn ich durch bin."
+)
+
+ABGLEICH_LAEUFT_SCHON = "Ich hole schon — ich melde mich hier, wenn ich durch bin."
+
 PASSWORT_TITEL = "Sitzung abschließen"
 PASSWORT_FELD = "Passwort für Foundry"
 PASSWORT_HINWEIS = "Nur für diesen einen Abgleich — es wird nirgends gespeichert."
@@ -439,6 +448,40 @@ def nacherzaehlung_starten(
     if auftrag is None:
         return jobs.BELEGT
     return ERZAEHLT.format(von=erste.played_on, bis=letzte.played_on)
+
+
+def abgleich_starten(
+    config: Config,
+    runde: Runde,
+    passwort: str | None,
+    *,
+    wer: str = "",
+    merken: bool = True,
+    melden: Callable[[str], None],
+) -> str:
+    """Nur die Zahlen holen — der eine Schritt aus dem Abschluss, freistehend.
+
+    Kein zweiter Weg, sondern derselbe: ein Auftrag über ``jobs``, dieselbe Sperre gegen
+    einen zweiten Lauf, dieselbe Meldung im Kanal. Der Unterschied zu ``abschluss_starten``
+    ist, was danach kommt — hier nichts, denn es gibt keine Sitzung, die geschrieben werden
+    will. Nach einem Foundry-Ausfall ist genau das der fehlende Griff (#116): den Stand
+    nachziehen, ohne eine Sitzung zu führen und ohne bis zum nächtlichen Lauf zu warten.
+
+    Das Passwort reist wie beim Abschluss **mit dem Auftrag** und wird vom Abgleich
+    verbraucht — auch vom gescheiterten. ``merken=False`` heißt: es kam gerade aus dem
+    Merkzettel und darf dort keine neue Frist bekommen.
+    """
+    if jobs.running(runde, jobs.ABGLEICH):
+        return ABGLEICH_LAEUFT_SCHON
+    if passwort is not None and merken:
+        zugang.merken(runde, passwort, wer=wer)
+    auftrag = jobs.start(
+        config,
+        runde,
+        jobs.ABGLEICH,
+        _mit_meldung(lambda: jobs.abgleich(config, runde, passwort=passwort), melden),
+    )
+    return ABGLEICH if auftrag is not None else jobs.BELEGT
 
 
 def abschluss_starten(

@@ -702,6 +702,37 @@ def test_die_quelle_der_spieldaten_gehoert_der_runde(zwei_runden):
     assert settings.foundry_quelle(b) == settings.SERVER
 
 
+def test_die_bedienstellen_in_discord_treffen_nur_ihre_eigene_runde(zwei_runden):
+    """Die Wege aus #110 und #116 gehen durch dieselbe Schranke wie alles andere.
+
+    Sie stehen nicht in ``SCHICHT`` — ``chronicle.bot.einrichten`` nimmt eine Gilde-Kennung
+    statt einer Runde und fiele durch ``test_signatur_verlangt_die_runde``. Geprüft werden
+    sie deshalb hier von Hand: eine Zone, eine Quelle und ein angestoßener Abgleich sind
+    drei Griffe, mit denen eine verwechselte Runde einer fremden Gruppe die Nacht
+    verschöbe, ihre Chronik mit erfundenen Zahlen füllte oder ihr Foundry befragte.
+    """
+    config, a, b, _ids = zwei_runden
+    bot_einrichten.einrichten(config, "gilde-b", MARKE[2], zone="Pacific/Auckland")
+    bot_einrichten.quelle_setzen(b, settings.TESTWELT)
+
+    assert settings.nightly_zone(a) == settings.DEFAULT_NIGHTLY_ZONE
+    assert settings.nightly_zone(b) == "Pacific/Auckland"
+    assert settings.foundry_quelle(a) == settings.SERVER
+    assert settings.foundry_quelle(b) == settings.TESTWELT
+    assert [schrift for schrift, _wert, gewaehlt in bot_einrichten.quellenwahl(a) if gewaehlt] == [
+        bot_einrichten.QUELLE_SERVER
+    ]
+
+    # Der Abgleich reicht das Passwort **dieser** Runde weiter und verbraucht es dort —
+    # ginge er an die falsche, zeigte er es dem Foundry-Server einer fremden Gruppe vor.
+    bot_chronik.abgleich_starten(config, b, None, melden=lambda text: None)
+    warte_auf_laeufe()
+    assert not zugang.ist_gemerkt(b)
+    assert zugang.passwort(a) == f"passwort-{MARKE[1]}"
+    assert jobs.latest(a, jobs.ABGLEICH) is None
+    assert jobs.latest(b, jobs.ABGLEICH) is not None
+
+
 def test_bot_token_gehoert_der_instanz_und_nicht_der_runde(zwei_runden):
     """Unser Token, nicht der einer Gruppe: er liegt nicht in der Tabelle einer Runde."""
     config, a, b, _ids = zwei_runden

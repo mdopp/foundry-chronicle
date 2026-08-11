@@ -58,6 +58,7 @@ KENNUNG_SCHILD = "eintrag"
 KENNUNG_ENTSCHEIDUNG = "entscheidung"
 KENNUNG_ZUORDNUNG = "zuordnung"
 KENNUNG_KANAL = "kanal"
+KENNUNG_QUELLE = "quelle"
 KENNUNG_LOESCHEN = "loeschen"
 
 NICHT_INSTALLIERT = (
@@ -188,6 +189,8 @@ BEFEHLE = (
     "• `/chronik fertig` — Sitzung abschließen: eine laufende Aufnahme beende ich zuerst; "
     "danach Zahlen holen, verschriften, Chronik schreiben. Nach dem Passwort frage ich "
     "nur, wenn **du** beim Start keines gabst.\n"
+    "• `/chronik abgleich` — nur die Zahlen holen, ohne Sitzung; das Fenster nimmt das "
+    "Passwort.\n"
     "• `/chronik nacherzaehlung` — mehrere Sitzungen als Prosa; belegt und erzählt bleiben "
     "getrennt.\n"
     "• `/suche <Wort>` — ich sehe in Notizen, Diktaten, Chroniken und Register nach; jeder "
@@ -195,7 +198,8 @@ BEFEHLE = (
     "• `/wer <Name>` — was im Register über einen Namen steht.\n"
     "• `/register offen` — Registervorschläge bestätigen oder verwerfen.\n"
     "• `/zuordnung` — wer von euch welchen Foundry-Spieler spielt.\n"
-    "• `/setup` — Foundry, Zustellkanal und Uhrzeit ändern; nur für die Verwaltung.\n"
+    "• `/setup` — Foundry, Kanal, Uhrzeit, Zone und Quelle ändern; nur für die "
+    "Verwaltung.\n"
     "• `/chronik loeschen` — alles von dieser Runde löschen, nach Rückfrage; nur für die "
     "Administration.\n"
     "• `/aufnahme hilfe` — alles noch einmal in Ruhe.\n"
@@ -992,6 +996,45 @@ def _passwortfrage(config: Config, runde, session_id: int, lauf: _Lauf, hinweis:
     return Passwortfrage()
 
 
+def _abgleichfenster(config: Config, runde, hinweis: str):
+    """Dasselbe wie am Abschluss, nur ohne Sitzung dahinter — und aus demselben Grund.
+
+    Ein Fenster und kein Befehls-Argument: ein Argument stünde als Klartext in der
+    Befehlszeile und damit im Verlauf des Kanals.
+    """
+    discord = _discord()
+
+    class Abgleichfenster(discord.ui.Modal):
+        def __init__(self) -> None:
+            super().__init__(
+                discord.ui.InputText(label=chronik.PASSWORT_FELD, placeholder=hinweis),
+                title=chronik.ABGLEICH_TITEL,
+            )
+
+        @_gefenstert
+        async def callback(self, interaction) -> None:
+            await interaction.response.defer(ephemeral=True)
+            # Wie am Abschlussfenster: ist es nicht mehr dieselbe Runde, ginge das Passwort
+            # dieser Gruppe an das Foundry einer fremden — die Adresse dorthin steht in
+            # *ihrer* Runde.
+            gemeint = _dieselbe(config, interaction, runde)
+            if gemeint is None:
+                await _sagen(interaction, chronik.VERALTET)
+                return
+            await _sagen(
+                interaction,
+                chronik.abgleich_starten(
+                    config,
+                    gemeint,
+                    self.children[0].value,
+                    wer=_wer(interaction),
+                    melden=_melder(interaction.channel),
+                ),
+            )
+
+    return Abgleichfenster()
+
+
 def _rechte(wer):
     """Was Discord diesem Mitglied auf diesem Server erlaubt — im Zwiegespräch nichts."""
     return getattr(wer, "guild_permissions", None)
@@ -1081,42 +1124,62 @@ def _textkanaele(gilde) -> tuple[tuple[str, str], ...]:
     return tuple((str(kanal.id), kanal.name) for kanal in getattr(gilde, "text_channels", ()))
 
 
-def _kanalansicht(config: Config, runde, gilde):
-    """Ein Menü mit den Textkanälen dieser Gilde — die Wahl wirkt sofort.
+def _einrichtungsansicht(config: Config, runde, gilde):
+    """Zwei Menüs unter dem Fenster: wohin die Chronik geht und woher die Zahlen kommen.
 
-    Und sie wirkt gegen den Stand von jetzt: ein Kanal aus dieser Gilde, in die Runde einer
-    fremden geschrieben, schickte deren Chroniken künftig hierher. Anders als ein
-    Löschknopf ist das keine einmalige Fehlhandlung, sondern eine dauerhafte.
+    Beide wirken sofort und beide gegen den Stand von jetzt: ein Kanal aus dieser Gilde, in
+    die Runde einer fremden geschrieben, schickte deren Chroniken künftig hierher, und eine
+    dort gesetzte Testwelt füllte deren Protokolle mit erfundenen Zahlen. Anders als ein
+    Löschknopf ist beides keine einmalige Fehlhandlung, sondern eine dauerhafte.
+
+    Nach einer Wahl bleibt die Ansicht stehen, statt zu verschwinden: es sind zwei
+    Entscheidungen in einer Nachricht, und die erste darf die zweite nicht wegnehmen.
+    Gebaut wird sie dabei neu — gegen ``gemeint``, damit die Häkchen zeigen, was jetzt gilt.
     """
     discord = _discord()
 
-    gebaut = discord.ui.Select(
-        placeholder=einrichten.KANAL_WAEHLEN,
-        custom_id=f"{KENNUNG_KANAL}:{runde.id}",
-        options=[
-            discord.SelectOption(label=schrift, value=wert, default=vorgewaehlt)
-            for schrift, wert, vorgewaehlt in einrichten.kanalwahl(
-                config, runde, _textkanaele(gilde)
-            )
-        ],
+    def menue(kennung: str, platzhalter: str, zeilen, zeile: int):
+        return discord.ui.Select(
+            placeholder=platzhalter,
+            row=zeile,
+            custom_id=f"{kennung}:{runde.id}",
+            options=[
+                discord.SelectOption(label=schrift, value=wert, default=vorgewaehlt)
+                for schrift, wert, vorgewaehlt in zeilen
+            ],
+        )
+
+    kanal = menue(
+        KENNUNG_KANAL,
+        einrichten.KANAL_WAEHLEN,
+        einrichten.kanalwahl(config, runde, _textkanaele(gilde)),
+        0,
     )
+    quelle = menue(KENNUNG_QUELLE, einrichten.QUELLE_WAEHLEN, einrichten.quellenwahl(runde), 1)
 
-    @_geklickt
-    async def gewaehlt(interaction) -> None:
-        gemeint = await _noch_dieselbe(config, interaction, runde)
-        if gemeint is None:
-            return
-        satz = einrichten.kanal_setzen(gemeint, gebaut.values[0])
-        await interaction.response.edit_message(content=satz, view=None)
+    def entschieden(gebaut, setzen):
+        @_geklickt
+        async def gewaehlt(interaction) -> None:
+            gemeint = await _noch_dieselbe(config, interaction, runde)
+            if gemeint is None:
+                return
+            satz = setzen(gemeint, gebaut.values[0])
+            await interaction.response.edit_message(
+                content=satz, view=_einrichtungsansicht(config, gemeint, gilde)
+            )
 
-    gebaut.callback = gewaehlt
+        return gewaehlt
 
-    class Kanalansicht(discord.ui.View):
+    kanal.callback = entschieden(kanal, einrichten.kanal_setzen)
+    quelle.callback = entschieden(quelle, einrichten.quelle_setzen)
+
+    class Einrichtungsansicht(discord.ui.View):
         def __init__(self) -> None:
             super().__init__(timeout=erinnern.FRIST)
-            self.add_item(gebaut)
+            self.add_item(kanal)
+            self.add_item(quelle)
 
-    return Kanalansicht()
+    return Einrichtungsansicht()
 
 
 async def _offenlegen(interaction) -> bool:
@@ -1137,9 +1200,14 @@ async def _offenlegen(interaction) -> bool:
 
 
 def _einrichtungsfenster(config: Config, ctx):
-    """Das Fenster für Adresse, Benutzer und Uhrzeit — nie für das Passwort.
+    """Das Fenster für Adresse, Benutzer, Uhrzeit und Zone — nie für das Passwort.
 
     Das Modell steht hier nicht: es gehört seit #87 der Instanz und nicht der Runde.
+
+    Die Quelle der Zahlen steht ebenfalls nicht hier, obwohl das fünfte Feld frei wäre
+    (py-cord: ``You can only have up to 5 items in a modal``). Sie ist ein Schalter mit
+    zwei Stellungen, kein Wert zum Eintippen — als Menü unter der Antwort kann sie nicht
+    vertippt werden und trägt die Folge im Klartext neben sich.
 
     Das Passwort fehlt hier mit Absicht und nicht aus Vergesslichkeit: es wird beim
     Abschluss der Sitzung erfragt, verbraucht und vergessen. Ein Feld dafür gäbe es nur,
@@ -1168,6 +1236,11 @@ def _einrichtungsfenster(config: Config, ctx):
                     placeholder=einrichten.HINWEIS_UHRZEIT,
                     required=False,
                 ),
+                discord.ui.InputText(
+                    label=einrichten.FELD_ZONE,
+                    placeholder=einrichten.HINWEIS_ZONE,
+                    required=False,
+                ),
                 title=einrichten.SETUP_TITEL,
             )
 
@@ -1178,7 +1251,7 @@ def _einrichtungsfenster(config: Config, ctx):
             # tot, und dann käme auch die Fehlermeldung nicht mehr an: niemand erführe,
             # wie es ausging.
             await interaction.response.defer(ephemeral=True)
-            adresse, benutzer, uhrzeit = (feld.value for feld in self.children)
+            adresse, benutzer, uhrzeit, zone = (feld.value for feld in self.children)
             # Eine abgelaufene Runde wird hier gelöscht, mit Dateien und Zeilen — derselbe
             # Weg wie beim Wiedersehen und am Löschknopf, und deshalb nicht auf der
             # Ereignisschleife: solange sie rechnet, antwortet der Bot niemandem.
@@ -1190,6 +1263,7 @@ def _einrichtungsfenster(config: Config, ctx):
                 adresse=adresse,
                 benutzer=benutzer,
                 uhrzeit=uhrzeit,
+                zone=zone,
             )
             meldung = fertig.meldung
             # Hier geht eine ruhende Runde wieder in Dienst — der eine Weg zurück, auf dem
@@ -1205,8 +1279,8 @@ def _einrichtungsfenster(config: Config, ctx):
             # und eine zweite weist Discord ab.
             await _sagen(
                 interaction,
-                f"{meldung} {einrichten.KANAL_FRAGE}",
-                view=_kanalansicht(config, fertig.runde, gilde),
+                f"{meldung} {einrichten.KANAL_FRAGE} {einrichten.QUELLE_FRAGE}",
+                view=_einrichtungsansicht(config, fertig.runde, gilde),
             )
 
     return Einrichtungsfenster()
@@ -1499,6 +1573,36 @@ def baue(config: Config):
         fremd = chronik.passwort_gehalten(runde)
         hinweis = chronik.FREMDES_HINWEIS if fremd else chronik.PASSWORT_HINWEIS
         await ctx.send_modal(_passwortfrage(config, runde, sitzung, lauf, hinweis))
+
+    @chronikgruppe.command(
+        name="abgleich", description="Die Zahlen aus Foundry holen, ohne eine Sitzung zu führen"
+    )
+    @antwortet
+    async def chronik_abgleich(ctx) -> None:
+        # Dieselbe Schranke wie vor jedem anderen Befehl der Gruppe: eine Gilde ohne Runde
+        # bekommt nichts, eine ruhende erst recht nicht — auch nicht mit einem Passwort,
+        # das noch im Speicher liegt.
+        runde = chronik.runde_verlangen(config, ctx.guild_id)
+        wer = _wer(ctx)
+        # Gelesen wird hier und nicht erst im Auftragsfaden — wie beim Abschluss: dazwischen
+        # liegt ein ``defer``, und in dieser Lücke kann ein zweites Fenster den Merkzettel
+        # überschreiben.
+        geheim = chronik.passwort_fuer(runde, wer)
+        if geheim is not None or not chronik.foundry_im_spiel(config, runde):
+            await ctx.defer(ephemeral=True)
+            await _zustellen(
+                ctx.respond,
+                # ``merken=False``: ``geheim`` kam gerade aus dem Merkzettel und darf dort
+                # keine neue Frist bekommen.
+                chronik.abgleich_starten(
+                    config, runde, geheim, wer=wer, merken=False, melden=_melder(ctx.channel)
+                ),
+                ephemeral=True,
+            )
+            return
+        fremd = chronik.passwort_gehalten(runde)
+        hinweis = chronik.FREMDES_HINWEIS if fremd else chronik.PASSWORT_HINWEIS
+        await ctx.send_modal(_abgleichfenster(config, runde, hinweis))
 
     @chronikgruppe.command(
         name="nacherzaehlung", description="Einen Sitzungsbereich als Prosa nacherzählen"
