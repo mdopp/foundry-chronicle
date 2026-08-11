@@ -291,7 +291,7 @@ def begruessung(config: Config, guild_id: str) -> Begruessung:
     return Begruessung(text=WILLKOMMEN_ZURUECK.format(name=wartet.name), wartet=wartet)
 
 
-def wieder_im_dienst(config: Config, runde: Runde) -> Runde:
+def wieder_im_dienst(config: Config, runde: Runde) -> Runde | None:
     """Zurück in den Dienst — erst jetzt, mit der Offenlegung nachweislich zugestellt."""
     return lebenszyklus.freigeben(config.database_path, runde)
 

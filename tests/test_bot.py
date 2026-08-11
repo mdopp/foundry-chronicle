@@ -374,6 +374,31 @@ def test_stoppen_beendet_den_mitschnitt_trennt_und_reiht_ein(
     assert "wartet auf den Stapel" in meldungen[0]
 
 
+def test_eine_aufnahme_schreibt_nicht_in_die_runde_von_nachher(
+    konfiguration, sitzung_id, ohne_espeak
+):
+    """Eine Aufnahme läuft Stunden und hält ihre Runde. Wird sie in der Zeit gelöscht und
+    ihre Kennung neu vergeben, gingen Einwilligungsprotokoll und Tonspuren dieser Gruppe in
+    die Kampagne einer fremden — deshalb wird vor jedem Schreiben nachgesehen."""
+    unsere = unsere_runde(konfiguration)
+    stimme = FakeStimme()
+    aufnahme = asyncio.run(recorder.starten(konfiguration, stimme, unsere))
+    aufnahme.schreiben(MIRA, stille(480))
+
+    lebenszyklus.loeschen(konfiguration, unsere)
+    frisch = runden.anlegen(konfiguration.database_path, "Fremde", guild_id=KANAL.guild_id)
+    assert frisch.id == unsere.id
+
+    with pytest.raises(recorder.AufnahmeFehler):
+        asyncio.run(recorder.nachzuegler(konfiguration, stimme, aufnahme, SPAET))
+    meldungen = aufnahme.beenden()
+
+    assert meldungen == (recorder.RUNDE_FORT,)
+    assert recordings.pending(frisch) == ()
+    assert consent.for_session(frisch, sitzung_id) == ()
+    assert list(konfiguration.recordings_dir.glob("**/Mira.wav")) == []
+
+
 def test_die_einwilligung_ueberlebt_das_loeschen_ihrer_sitzung(
     konfiguration, sitzung_id, ohne_espeak
 ):

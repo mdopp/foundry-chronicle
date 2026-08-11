@@ -331,6 +331,7 @@ ABFRAGEN = {
     ),
     "lebenszyklus.frist_datum": lambda c, r, i: lebenszyklus.frist_datum(r),
     "lebenszyklus.ruht": lambda c, r, i: lebenszyklus.ruht(r),
+    "lebenszyklus.dieselbe": lambda c, r, i: lebenszyklus.dieselbe(r),
 }
 
 # Schreibende Aufrufe. Sie werden nicht auf eine Antwort geprüft, sondern darauf, dass sie

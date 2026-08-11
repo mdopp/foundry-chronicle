@@ -104,14 +104,29 @@ def _abgelaufen(runde: Runde, jetzt: datetime | None = None) -> bool:
     return runde.delete_after <= _stempel(_now() if jetzt is None else jetzt)
 
 
+def dieselbe(runde: Runde) -> Runde | None:
+    """Die Runde von vorhin, gegen den Stand von jetzt — oder keine.
+
+    Die Kennung allein trägt das nicht: ``runde.id`` ist ein ``INTEGER PRIMARY KEY`` ohne
+    ``AUTOINCREMENT``, SQLite vergibt sie nach einer Löschung wieder, und dann gehört sie
+    einer fremden Gilde. Verglichen wird deshalb ``token``.
+
+    Das Gegenstück zu ``bot.chronik.dieselbe_runde``: dort kommt die Frage von einem Klick
+    und wird über die Gilde aufgelöst, hier von einem Lauf, der seine Runde schon hält.
+    """
+    frisch = runden.get(runde.database_path, runde.id)
+    return frisch if frisch is not None and frisch.token == runde.token else None
+
+
 def ruht(runde: Runde) -> bool:
     """Ob diese Runde schweigt — gegen den Stand von jetzt, nicht gegen den mitgereichten.
 
     Ein Lauf hält seine ``Runde`` stunden- oder tagelang in der Hand; der Rauswurf
     dazwischen steht nur in der Datenbank. Gefragt wird deshalb dort, und eine Runde, die
-    es nicht mehr gibt, schweigt erst recht.
+    es nicht mehr gibt, schweigt erst recht — auch die, an deren Stelle inzwischen eine
+    fremde Gilde sitzt.
     """
-    frisch = runden.get(runde.database_path, runde.id)
+    frisch = dieselbe(runde)
     return frisch is None or frisch.gesperrt
 
 
@@ -193,7 +208,15 @@ def rueckkehr(config: Config, guild_id: str) -> Runde | None:
 
 
 @runden.instanzweit
-def freigeben(database_path: Path, runde: Runde) -> Runde:
+def freigeben(database_path: Path, runde: Runde) -> Runde | None:
+    """Zurück in den Dienst — aber nur die Runde, die zwischendurch dieselbe geblieben ist.
+
+    Zwischen der Offenlegung und dieser Zeile liegt ein ``await``. Ohne den Vergleich
+    entsperrte ein Wiedersehen in Gilde A die frische Runde von Gilde B, die inzwischen
+    dieselbe Kennung bekommen hat — und die hätte die Offenlegung nie gelesen.
+    """
+    if dieselbe(runde) is None:
+        return None
     _schreiben(database_path, runde.id, None, None)
     zurueck = runden.get(database_path, runde.id)
     logger.info("%s", ZURUECK.format(name=zurueck.name))
