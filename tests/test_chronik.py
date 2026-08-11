@@ -1222,3 +1222,28 @@ def test_der_thread_einer_fremden_runde_ist_nicht_erreichbar(stelle, bot):
     fremde = erste_runde(config)
     assert fremde.id != unsere.id
     assert notes.session_of_thread(fremde, str(thread.id)) is None
+
+
+def test_ein_belegter_lauf_schiebt_die_frist_des_gemerkten_passworts_nicht_weiter(
+    stelle, bot, monkeypatch
+):
+    """Der Schnellweg legt nicht neu ab, was er aus dem Merkzettel geholt hat.
+
+    Täte er es, bekäme der Merkzettel bei jedem Versuch eine frische Frist — und weil
+    ``jobs.start`` leer ausgeht, sobald eine andere Runde die Maschine hält, verbrauchte
+    das Passwort dann niemand. Aus den zwölf Stunden aus #64 würde eine Frist, die sich
+    durch bloßes Nachfassen beliebig weit schieben lässt.
+    """
+    _config, unsere = stelle
+    _ctx, thread = sitzung_starten(bot)
+    zugang.merken(unsere, PASSWORT, wer=str(WER))
+    faellig = zugang._gemerkt[unsere.id].ablauf
+
+    # Die Maschine ist von einer anderen Runde belegt: der Auftrag entsteht nicht.
+    monkeypatch.setattr(jobs, "start", lambda *args, **kwargs: None)
+
+    ctx = FakeCtx(kanal=types.SimpleNamespace(id=thread.id))
+    asyncio.run(chronikbefehl(bot, "fertig")(ctx))
+
+    assert ctx.modale == [], "wer selbst hinterlegt hat, wird nicht noch einmal gefragt"
+    assert zugang._gemerkt[unsere.id].ablauf == faellig

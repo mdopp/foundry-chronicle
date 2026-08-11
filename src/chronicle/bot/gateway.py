@@ -666,17 +666,19 @@ async def _abschliessen(
     lauf: _Lauf,
     kanal,
     wer: str = "",
+    merken: bool = True,
 ) -> str:
     """Erst den Mitschnitt beenden, dann den einen Lauf — die Reihenfolge steht fest.
 
     ``passwort`` ist ``None``, wenn beim Start eines gegeben wurde: dann wird nicht noch
-    einmal gefragt und das Gemerkte auch nicht überschrieben.
+    einmal gefragt und das Gemerkte auch nicht überschrieben. ``merken=False`` heißt, dass
+    es schon im Merkzettel liegt und dort nicht mit neuer Frist erneuert werden darf.
     """
     meldungen: tuple[str, ...] = ()
     try:
         meldungen = await _mitschnitt_beenden(lauf, runde)
         meldung = chronik.abschluss_starten(
-            config, runde, session_id, passwort, wer=wer, melden=_melder(kanal)
+            config, runde, session_id, passwort, wer=wer, merken=merken, melden=_melder(kanal)
         )
     except BotFehler as fehler:
         meldung = GESCHEITERT.format(grund=str(fehler))
@@ -875,6 +877,11 @@ def _einrichtungsfenster(config: Config, ctx):
 
         @_gefenstert
         async def callback(self, interaction) -> None:
+            # Dieses Fenster arbeitet am längsten von allen — es kann eine abgelaufene
+            # Runde samt Dateien löschen. Ohne ``defer`` wäre der Token nach drei Sekunden
+            # tot, und dann käme auch die Fehlermeldung nicht mehr an: niemand erführe,
+            # wie es ausging.
+            await interaction.response.defer(ephemeral=True)
             adresse, benutzer, uhrzeit = (feld.value for feld in self.children)
             # Eine abgelaufene Runde wird hier gelöscht, mit Dateien und Zeilen — derselbe
             # Weg wie beim Wiedersehen und am Löschknopf, und deshalb nicht auf der
@@ -898,7 +905,9 @@ def _einrichtungsfenster(config: Config, ctx):
                     einrichten.wieder_im_dienst(config, fertig.runde)
                 else:
                     meldung = f"{meldung} {einrichten.STILL_GEBLIEBEN}"
-            await interaction.response.send_message(
+            # Nachgereicht, nicht erstmalig: der Aufschub oben **war** die erste Antwort,
+            # und eine zweite weist Discord ab.
+            await interaction.followup.send(
                 f"{meldung} {einrichten.KANAL_FRAGE}",
                 view=_kanalansicht(config, fertig.runde, gilde),
                 ephemeral=True,
@@ -1176,7 +1185,12 @@ def baue(config: Config):
         if geheim is not None or not chronik.foundry_im_spiel(config, runde):
             await ctx.defer(ephemeral=True)
             await ctx.respond(
-                await _abschliessen(config, runde, sitzung, geheim, lauf, ctx.channel, wer),
+                # ``merken=False``: ``geheim`` kam gerade aus dem Merkzettel. Es dort
+                # erneut abzulegen stellte die Frist aus #64 zurück — und bei belegter
+                # Maschine verbraucht es niemand, sodass jeder Versuch sie weiterschöbe.
+                await _abschliessen(
+                    config, runde, sitzung, geheim, lauf, ctx.channel, wer, merken=False
+                ),
                 ephemeral=True,
             )
             return
