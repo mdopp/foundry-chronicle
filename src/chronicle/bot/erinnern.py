@@ -218,8 +218,8 @@ def suche(runde: Runde, begriff: str) -> Antwort:
         felder.append(
             {
                 "name": gruppe.label,
-                "value": grenzen.gekappt(
-                    "\n".join(_trefferzeile(runde, hit) for hit in gezeigt),
+                "value": grenzen.zeilenweise(
+                    [_trefferzeile(runde, hit) for hit in gezeigt],
                     grenzen.EMBED_FELD,
                     FELD_GEKUERZT,
                 ),
@@ -239,7 +239,7 @@ def _erwaehnungen(runde: Runde, eintrag: register.Entry) -> str:
         zeilen.append(f"[{name}]({ziel})" if ziel else name)
     if not zeilen:
         return WER_OHNE_ERWAEHNUNG
-    return grenzen.gekappt("\n".join(zeilen), grenzen.EMBED_FELD, FELD_GEKUERZT)
+    return grenzen.zeilenweise(zeilen, grenzen.EMBED_FELD, FELD_GEKUERZT)
 
 
 def wer(runde: Runde, name: str) -> Antwort:

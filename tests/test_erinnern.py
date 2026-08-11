@@ -8,6 +8,7 @@ denselben Knopf bekommt eine ehrliche Auskunft statt eines Fehlers.
 from __future__ import annotations
 
 import asyncio
+import re
 import sys
 import types
 
@@ -413,9 +414,14 @@ def test_ein_langes_embed_wird_gekappt_statt_abgewiesen(stelle, bot):
     erwaehnt = next(
         feld["value"] for feld in embed.gebaut["fields"] if feld["name"] == erinnern.WER_ERWAEHNT
     )
-    assert len(erwaehnt) == grenzen.EMBED_FELD
+    assert len(erwaehnt) <= grenzen.EMBED_FELD
     assert erwaehnt.endswith(erinnern.FELD_GEKUERZT)
     assert len(embed.gebaut["description"]) == grenzen.EMBED_TEXT
+    # Gekappt wird an der Zeilengrenze: ein Schnitt mitten durch `[Titel](url)` ließe die
+    # letzte Zeile als Rohtext samt halber Adresse dastehen.
+    zeilen = erwaehnt.removesuffix(erinnern.FELD_GEKUERZT).split("\n")
+    assert len(zeilen) < 40
+    assert all(re.fullmatch(r"\[[^\]]+\]\(\S+\)", zeile) for zeile in zeilen)
 
 
 def test_wer_zeigt_den_eintrag_mit_art_satz_und_sitzung(stelle, bot):

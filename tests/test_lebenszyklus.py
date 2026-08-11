@@ -43,6 +43,7 @@ from chronicle import runde as runden
 from chronicle.bot import chronik, einrichten, gateway
 from chronicle.compose import service as compose_service
 from chronicle.config import Config
+from chronicle.discord import grenzen
 from chronicle.foundry import service as foundry_service
 from chronicle.transcribe import service as transcribe_service
 
@@ -360,6 +361,24 @@ def test_die_einzige_runde_ohne_gilde_bekommt_die_einzige_gilde(konfiguration, s
 
     assert verwaist.name in caplog.text and GILDENAME in caplog.text
     assert kanal.gesendet == [lebenszyklus.UEBERNOMMEN_GESAGT]
+
+
+def test_der_uebernahmesatz_kommt_auch_gewachsen_an(konfiguration, stiller_bot, monkeypatch):
+    """Er ist eine wachsende Konstante wie die Befehlsliste — also geht auch er geteilt raus.
+
+    Der Satz erklärt einer Gruppe, dass ihre Runde wieder erreichbar ist. Wüchse er über
+    Discords Grenze, käme davon nichts an (#109) und die Gruppe säße vor einer leeren Runde,
+    ohne zu erfahren, warum.
+    """
+    monkeypatch.setattr(lebenszyklus, "UEBERNOMMEN_GESAGT", "Satz zur Übernahme.\n" * 200)
+    fuellen(konfiguration, runden.erste(konfiguration.database_path), "alpha")
+    kanal = FakeKanal("300", "allgemein")
+
+    anmelden(stiller_bot, FakeGilde(system=kanal))
+
+    assert len(kanal.gesendet) > 1
+    assert all(len(gesagt) <= grenzen.NACHRICHT for gesagt in kanal.gesendet)
+    assert "".join(kanal.gesendet) == lebenszyklus.UEBERNOMMEN_GESAGT
 
 
 def test_neben_einer_zweiten_runde_wird_nichts_uebernommen(konfiguration, stiller_bot):

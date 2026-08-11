@@ -158,6 +158,14 @@ GESCHEITERT = (
 
 UNERWARTET = "unerwarteter Fehler im Bot ({typ})."
 
+# Steht schon ein Anfang im Kanal und bricht die Zustellung mittendrin ab, endet er mitten
+# im Satz. Ein zerrissener Text, den niemand als zerrissen erkennt, ist schlimmer als eine
+# fehlende Nachricht — also sagt der Abriss sich selbst an.
+ABGERISSEN = (
+    "⚠️ Der Text davor ist unvollständig: nur {zugestellt} von {ganz} Teilen kamen durch, "
+    "{fehlend} fehlen. Was fehlt, steht nicht hier — den Grund nennt das Log des Bots."
+)
+
 BEFEHLE = (
     "• `/chronik start` — ich lege die Sitzung an und öffne ihren Thread; ab dort wird jede "
     "Nachricht eine Notiz. Das Fenster davor nimmt freiwillig das Foundry-Passwort.\n"
@@ -186,6 +194,10 @@ BEFEHLE = (
 # eine Ankündigung. Er steht deshalb als Konstante da und nicht als Halbsatz mitten im
 # Absatz — was geteilt zugestellt wird, muss ihn nachweislich im **ersten** Stück haben,
 # und das prüft ein Test gegen genau diese Konstante.
+#
+# Daraus folgt die Reihenfolge in **jedem** Text, der ihn führt: der Ausweg steht **vor**
+# der Befehlsliste. Die Liste wächst mit jedem neuen Befehl und schiebt alles hinter sich
+# irgendwann in eine zweite Nachricht; was vor ihr steht, kommt zuerst und damit sicher an.
 AUSWEG = (
     "Wer nicht aufgezeichnet werden möchte, verlässt den Sprachkanal — außerhalb nehme "
     "ich nichts auf."
@@ -193,9 +205,9 @@ AUSWEG = (
 
 HILFE = (
     "**So schneide ich eine Sitzung mit**\n"
-    f"{BEFEHLE}"
     f"{AUSWEG} Wer später dazukommt, hört die Ansage noch einmal. "
     f"Die Aufnahmen werden nach {recordings.RETENTION_TAGE} Tagen gelöscht.\n"
+    f"{BEFEHLE}"
     "Meine Antworten sieht nur, wer den Befehl gegeben hat."
 )
 
@@ -204,10 +216,6 @@ HILFE = (
 # Frist und Befehlsliste stehen deshalb nicht als zweite Kopie hier, sondern kommen aus
 # derselben Quelle wie `/aufnahme hilfe` und die Ansage — eine Kopie driftet, und eine
 # Zusage, die vom Verhalten abweicht, ist schlimmer als keine.
-#
-# Die Reihenfolge ist keine Geschmacksfrage: der Ausweg steht **vor** der Befehlsliste,
-# weil die Liste mit jedem neuen Befehl wächst und die Zustellung sie irgendwann in eine
-# zweite Nachricht schiebt. Was vor ihr steht, kommt zuerst — und damit sicher an.
 VORSTELLUNG = (
     "**Ich bin die Chronik dieser Runde.**\n"
     "Aus dem, was ihr sprecht, was ihr schreibt und was in eurem Foundry gewürfelt wird, "
@@ -491,11 +499,43 @@ async def _zustellen(hinaus, text: str | None, *, zuletzt: dict | None = None, *
     ``zuletzt`` hängt Embed oder Ansicht an das **letzte** Stück — ein Knopf gehört unter
     den ganzen Text und nicht mitten hinein. Ohne Text bleibt genau ein Aufruf übrig; für
     ein Embed ohne Begleitsatz ist das der Normalfall.
+
+    Mehrere Stücke heißen mehrere Aufrufe, und der zweite kann scheitern, wo der erste
+    ankam. Das Teilen tauscht damit »gar nichts« gegen »die Hälfte« — deshalb meldet
+    ``_abriss_melden`` den Rest, bevor der Fehlschlag weiterfliegt.
     """
     stuecke: tuple[str | None, ...] = grenzen.teile(text or "") or (None,)
-    for stueck in stuecke[:-1]:
-        await hinaus(stueck, **jedes)
-    await hinaus(stuecke[-1], **jedes, **(zuletzt or {}))
+    for nummer, stueck in enumerate(stuecke, start=1):
+        anhang = {**jedes, **(zuletzt or {})} if nummer == len(stuecke) else jedes
+        try:
+            await hinaus(stueck, **anhang)
+        except Exception:
+            await _abriss_melden(hinaus, jedes, nummer - 1, len(stuecke))
+            raise
+
+
+async def _abriss_melden(hinaus, jedes: dict, zugestellt: int, ganz: int) -> None:
+    """Was schon draußen ist, als unvollständig kenntlich machen.
+
+    Vor dem ersten Stück ist nichts angekommen — dann bleibt es beim alten Alles-oder-nichts
+    und der Fehlschlag ist beim Aufrufer ehrlich aufgehoben. Danach steht ein Anfang im
+    Kanal, den niemand von einem ganzen Text unterscheiden kann; das Log hält die Zahlen
+    fest, und der Hinweis sagt es denen, die nur den Kanal sehen. Scheitert auch er, ist der
+    Kanal offenbar ganz zu — dann trägt das Log allein.
+    """
+    if not zugestellt:
+        return
+    logger.exception(
+        "Zustellung abgerissen: %d von %d Stücken zugestellt, %d fehlen.",
+        zugestellt,
+        ganz,
+        ganz - zugestellt,
+    )
+    with contextlib.suppress(Exception):
+        await hinaus(
+            ABGERISSEN.format(zugestellt=zugestellt, ganz=ganz, fehlend=ganz - zugestellt),
+            **jedes,
+        )
 
 
 async def _in_den_thread(bot, aufnahme: Aufnahme, text: str) -> None:
@@ -542,8 +582,9 @@ async def _beenden_und_sagen(
     #
     # Was dieser Fang **nicht** mehr verdeckt, ist die eigene Überlänge: eine Runde mit
     # dreißig Spuren reihte hier dreißig Meldungen aneinander, Discord wies die Nachricht
-    # ab, und der Satz fiel still weg (#120). Seit ``_zustellen`` teilt, kann hier nur noch
-    # ein Discord scheitern, das gerade nicht antwortet — und dem ist nichts zu sagen.
+    # ab, und der Satz fiel still weg (#120). Verdecken kann er dafür jetzt einen halb
+    # zugestellten Text — mehrere Stücke sind mehrere Aufrufe. Erkennbar bleibt das nicht
+    # durch diesen Fang, sondern weil ``_zustellen`` den Abriss vorher selbst ansagt.
     try:
         await _in_den_thread(bot, aufnahme, " ".join((beendet, *meldungen)))
     except Exception:  # noqa: BLE001
@@ -929,7 +970,7 @@ async def _verwaiste_runde_uebernehmen(config: Config, bot) -> None:
         logger.warning("Kein Kanal, um die Übernahme zu sagen — sie steht nur im Log.")
         return
     try:
-        await kanal.send(lebenszyklus.UEBERNOMMEN_GESAGT)
+        await _zustellen(kanal.send, lebenszyklus.UEBERNOMMEN_GESAGT)
     except Exception:  # noqa: BLE001
         logger.exception("Die Übernahme blieb in der Gilde ungesagt")
 
