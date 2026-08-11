@@ -207,6 +207,12 @@ dabei nicht verschwiegen: eine ausgelieferte Chronik liegt in einem Discord-Kana
 bleibt dort, das Abgeleitete überdauert also den Beleg. Genau das steht in der
 Rückfrage, damit sich holen kann, wer den Beleg braucht.
 
+**Fortnehmen kann euch die Runde niemand sonst.** Es gibt keinen Befehl und keine Seite,
+über die der Betreiber der Box eine fremde Runde sperrt oder löscht — sie verschwindet,
+weil ihr es sagt, oder weil die Frist nach dem Rauswurf abläuft. Dass er *lesen* kann, was
+hier liegt, steht in der ersten Nachricht und bleibt wahr; es ist seine Kiste. Fortnehmen
+ist die andere Zusage, und die gibt es hier bewusst nicht.
+
 ## Erfassen per Discord: der Thread ist die Sitzung
 
 `/chronik start [Titel]` legt beides zugleich an — die Sitzung und den Thread, in dem sie

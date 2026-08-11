@@ -603,7 +603,15 @@ def _darf_verwalten(wer) -> bool:
 
 
 def _darf_loeschen(wer) -> bool:
-    """Und die zerstörerischste Handlung bekommt die strengere Schranke."""
+    """Und die zerstörerischste Handlung bekommt die strengere Schranke.
+
+    Administration und nicht Gilden-Eigentum (#90): das Löschen ist der Weg einer Gruppe,
+    ihre Daten fortzunehmen, und der darf nicht an einem einzigen Konto hängen, das
+    übertragen sein oder nicht mehr vorbeikommen kann. Enger wäre es ohnehin nur auf dem
+    Papier — wer den Bot aus der Gilde werfen darf, startet damit dieselbe Löschung, bloß
+    mit dreißig Tagen Frist. Das Sofortige bekommt deshalb die strengere Schranke, das
+    Langsame die Umkehrbarkeit.
+    """
     return bool(getattr(_rechte(wer), "administrator", False))
 
 

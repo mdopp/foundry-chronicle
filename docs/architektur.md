@@ -17,6 +17,15 @@ der Frist stellt sie her, danach wird gelöscht statt wiederbelebt; `/chronik lo
 zieht die Löschung nach Rückfrage vor. Beide Befehle verlangen ein Discord-Recht — `/setup`
 die Serververwaltung, das Löschen die Administration.
 
+**Über der Runde steht niemand** (#90). Es gibt keine Instanz-Ebene, über die der Betreiber
+eine fremde Runde sperrt oder löscht: eine Runde verschwindet, weil ihre Gruppe es sagt
+oder weil die Frist abläuft — sonst gar nicht. Der Bot sagt beim Betreten, dass der
+Betreiber alles lesen kann; ein Löschknopf für ihn käme als zweite Zusage obendrauf, dass
+er die Chronik einer Gruppe auch fortnehmen kann, ohne dass sie es merkt. An der Datenbank
+steht ihm ohnehin alles offen — der Unterschied ist, dass es dafür kein Bedienelement gibt.
+`lebenszyklus.loeschen` und `sperren` haben deshalb genau einen Aufrufer außerhalb des
+Moduls: den Discord-Weg der Gruppe selbst.
+
 Konfiguration: Foundry-Adresse und -Benutzer je Runde, Discord-Bot-Token für die Instanz —
 das ist unser Token und nicht das einer Gruppe. Das Foundry-Passwort wird **nirgends**
 gespeichert: es wird beim Abgleich erfragt, lebt im Arbeitsspeicher und wird verbraucht

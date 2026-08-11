@@ -8,16 +8,20 @@ genau das steht vorher da.
 
 »Sofort« heißt dabei in jedem Faden und nicht nur in Discord, und »wer darf das« beantwortet
 Discord — beides wird hier geprüft, denn beides ist das, was ohne Prüfung still zurückfällt.
+Und niemand sonst darf es: dass es keinen Betreiber-Weg an einer fremden Runde gibt, ist
+kein Versehen, sondern eine Entscheidung (#90), und deshalb steht auch dafür ein Gate hier.
 """
 
 from __future__ import annotations
 
+import ast
 import asyncio
 import logging
 import sys
 import threading
 import types
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import pytest
 from test_bot import FakeBot, FakeIntents, FakePCMAudio, FakePermissions, FakeRechte, FakeSenke
@@ -764,6 +768,45 @@ def test_zwei_runden_derselben_sekunde_sind_nicht_dieselbe(konfiguration, monkey
     assert frisch.token and frisch.token != unsere.token
     assert chronik.dieselbe_runde(konfiguration, GILDE, unsere) is None
     assert chronik.dieselbe_runde(konfiguration, GILDE, frisch) == frisch
+
+
+# -- Und über der Runde steht niemand -----------------------------------------------------
+
+# Der Betreiber der Box löscht keine fremde Runde (#90). Technisch stünde ihm alles offen —
+# es ist seine SQLite —, der Unterschied ist das fehlende Bedienelement. Deshalb wird hier
+# nicht ein Verhalten geprüft, sondern die Menge der Aufrufer: eine neue Route, ein CLI, ein
+# zweiter Knopf tauchen als zusätzlicher Eintrag auf und fallen durch.
+QUELLEN = Path(lebenszyklus.__file__).parent
+ZERSTOEREND = frozenset({"loeschen", "sperren"})
+NUR_DIE_GRUPPE = {"bot/einrichten.py"}
+
+
+def _aufrufer() -> set[str]:
+    gefunden: set[str] = set()
+    for datei in sorted(QUELLEN.rglob("*.py")):
+        if datei.samefile(lebenszyklus.__file__):
+            continue
+        for knoten in ast.walk(ast.parse(datei.read_text(encoding="utf-8"))):
+            ruft = (
+                isinstance(knoten, ast.Call)
+                and isinstance(knoten.func, ast.Attribute)
+                and knoten.func.attr in ZERSTOEREND
+                and isinstance(knoten.func.value, ast.Name)
+                and knoten.func.value.id == "lebenszyklus"
+            )
+            holt = (
+                isinstance(knoten, ast.ImportFrom)
+                and knoten.module == "chronicle.lebenszyklus"
+                and any(name.name in ZERSTOEREND for name in knoten.names)
+            )
+            if ruft or holt:
+                gefunden.add(datei.relative_to(QUELLEN).as_posix())
+    return gefunden
+
+
+def test_nur_die_gruppe_selbst_loescht_oder_sperrt_ihre_runde():
+    """Kein Betreiber-Weg: außerhalb des Moduls ruft das nur der Discord-Weg der Gruppe."""
+    assert _aufrufer() == NUR_DIE_GRUPPE
 
 
 # -- Sofort still, und zwar überall ------------------------------------------------------

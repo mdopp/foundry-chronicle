@@ -11,7 +11,8 @@ Fast alles in diesem System gehört einer Runde. Diese Werte nicht:
   ein Name, den das Ollama dort nicht kennt, ist keine Wahl, sondern ein Lauf, der
   scheitert.
 - **Die Verwaltungsgruppe.** Sie stammt aus der Benutzerverwaltung der Box und gilt für
-  die Weboberfläche dieser Instanz.
+  die Weboberfläche dieser Instanz — und nur für sie: Rechte über eine fremde Runde
+  trägt sie nicht und bekommt sie auch nicht (#90).
 - **Der abgeschlossene Erststart.** Er gilt der Oberfläche, nicht dem Spiel.
 
 Die beiden letzten verschwinden mit der Oberfläche (#69); Token und Ollama bleiben.
