@@ -544,6 +544,22 @@ def test_die_einrichtung_empfiehlt_das_spielerkonto_und_ein_eigenes_konto(bot):
     assert "»Chronik«" in gesagt
 
 
+def test_der_rat_sagt_auch_dass_die_rechte_je_figur_vergeben_werden(bot):
+    """»Mit denselben Rechten« ist Handarbeit — sonst sieht »Chronik« fast nichts (#113).
+
+    ``permissions.effective_level`` ist ``max(ownership.default, ownership[userId])``: ein
+    frisch angelegtes Konto steht in keiner Karte und bekommt nur, was ``default`` ohnehin
+    freigibt. Der Rat führte ohne diesen Zusatz in die schlechteste aller Varianten.
+    """
+    interaktion = ausfuellen(
+        einrichtungsfenster(bot, FakeCtx(gilde=FakeGilde())), benutzer="Chronik"
+    )
+
+    gesagt = interaktion.response.gesendet[0]["text"]
+    assert "je Figur" in gesagt
+    assert "Beobachter" in gesagt
+
+
 def test_wer_nur_die_uhrzeit_richtet_hoert_den_satz_nicht_noch_einmal(bot):
     ctx = FakeCtx(gilde=FakeGilde())
     ausfuellen(einrichtungsfenster(bot, ctx), benutzer="Chronist")

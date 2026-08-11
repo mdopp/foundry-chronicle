@@ -110,7 +110,13 @@ AUGEN = (
     "Mit welchem Konto ich mich anmelde, entscheidet, was ich von eurer Welt sehe: ein "
     "Spielerkonto zeigt mir, was die Runde erlebt hat — ein Konto der Spielleitung auch "
     "ungespielte Handlungsstränge, verdeckte NSCs und Fallen. Nehmt das Spielerkonto; am "
-    "saubersten ein eigenes Foundry-Konto »Chronik« mit denselben Rechten."
+    "saubersten ein eigenes Foundry-Konto »Chronik« mit denselben Rechten.\n"
+    "\n"
+    "**»Mit denselben Rechten« ist Handarbeit.** Foundry vergibt die Sicht auf eine Figur "
+    "**je Figur**, in deren Besitzrechten; ein frisch angelegtes Konto steht in keiner und "
+    "sieht deshalb **weniger als jedes Spielerkonto**. Tragt es bei den Figuren der Runde "
+    "ein — mindestens als Beobachter, denn »eingeschränkt« zeigt mir nur den Namen. Wie "
+    "das im Einzelnen geht, steht in `docs/foundry-zugriff.md`."
 )
 
 # Ein leeres Feld heißt hier dasselbe wie überall sonst: unverändert. Sonst löschte ein
@@ -150,7 +156,6 @@ FEHLT = "Es fehlt noch: {was}. Ruf `/setup` noch einmal auf, wenn du es nachtrag
 STEHT_BEREIT = "Weiter geht es mit `/chronik start` — das legt die erste Sitzung an."
 
 UHRZEIT_UNLESBAR = "Mit »{wert}« kann ich nichts anfangen — ich bleibe bei {uhrzeit} Uhr."
-
 # -- Verabschieden ----------------------------------------------------------------------
 
 LOESCHEN_FRAGE = (
