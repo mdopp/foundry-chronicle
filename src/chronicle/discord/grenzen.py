@@ -21,6 +21,8 @@ Zahl der Menüzeilen in ``chronicle.bot.erinnern``, die Kanalliste in
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 # Discords Grenze je Nachricht. Nitro hebt sie auf 4000 — für einen Bot gilt sie nicht.
 NACHRICHT = 2000
 
@@ -68,3 +70,30 @@ def gekappt(text: str, grenze: int, hinweis: str = "") -> str:
     if len(text) <= grenze:
         return text
     return text[: grenze - len(hinweis)].rstrip() + hinweis
+
+
+def zeilenweise(zeilen: Sequence[str], grenze: int, hinweis: str = "") -> str:
+    """Wie ``gekappt``, aber es fällt nur eine **ganze** Zeile weg.
+
+    Für Listen, deren Zeilen Markdown tragen. Ein harter Schnitt landet mitten in einem
+    ``[Titel](url)``: die Klammer bleibt offen, Discord zeigt die letzte Zeile als Rohtext,
+    und der halbe Link steht als Adresse da. Eine Zeile ganz wegzulassen kostet einen
+    Eintrag mehr und gibt dafür einen Text zurück, der überall heil ist.
+
+    Passt nicht einmal die erste Zeile, bleibt nur der harte Schnitt — nichts anzuzeigen
+    wäre die schlechtere Antwort.
+    """
+    ganz = "\n".join(zeilen)
+    if len(ganz) <= grenze:
+        return ganz
+    passend: list[str] = []
+    laenge = 0
+    for zeile in zeilen:
+        gewachsen = laenge + len(zeile) + (1 if passend else 0)
+        if gewachsen > grenze - len(hinweis):
+            break
+        passend.append(zeile)
+        laenge = gewachsen
+    if not passend:
+        return gekappt(ganz, grenze, hinweis)
+    return "\n".join(passend) + hinweis

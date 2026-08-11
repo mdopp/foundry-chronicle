@@ -11,6 +11,7 @@ geschrieben**, und **was angesagt wurde, steht im Wortlaut im Protokoll.**
 from __future__ import annotations
 
 import asyncio
+import logging
 import sqlite3
 import sys
 import types
@@ -1155,15 +1156,19 @@ def test_die_vorstellung_sagt_frist_und_befehle_aus_einer_quelle():
         assert satzteil in gateway.VORSTELLUNG
 
 
-def test_der_ausweg_steht_in_der_ersten_nachricht():
+@pytest.mark.parametrize("welcher", ["VORSTELLUNG", "HILFE"])
+def test_der_ausweg_steht_in_der_ersten_nachricht(welcher):
     """Auch wenn die Befehlsliste dahinter noch zwei Nachrichten füllt.
 
     Genau das war der Fehler aus #109: die Liste wuchs, die Nachricht riss Discords Grenze,
-    und mit ihr fiel der Satz aus, der den Ausweg aus der Aufnahme nennt.
+    und mit ihr fiel der Satz aus, der den Ausweg aus der Aufnahme nennt. Er gilt für
+    **jeden** Text, der den Ausweg führt — sonst hält die Reihenfolge nur dort, wo gerade
+    jemand hingesehen hat, und der nächste Befehl reißt sie anderswo.
     """
-    assert gateway.AUSWEG in grenzen.teile(gateway.VORSTELLUNG)[0]
+    ganz = getattr(gateway, welcher)
+    assert gateway.AUSWEG in grenzen.teile(ganz)[0]
 
-    gewachsen = gateway.VORSTELLUNG.replace(gateway.BEFEHLE, gateway.BEFEHLE * 4)
+    gewachsen = ganz.replace(gateway.BEFEHLE, gateway.BEFEHLE * 4)
     stuecke = grenzen.teile(gewachsen)
 
     assert len(stuecke) > 1
@@ -1487,6 +1492,57 @@ def test_wenige_spurmeldungen_bleiben_eine_nachricht(
     alle_gehen(bot, runde)
 
     assert len(thread.geschrieben) == 1
+
+
+class FakeZuckendesDiscord:
+    """Nimmt jede Nachricht an — außer der einen, bei der es zuckt."""
+
+    def __init__(self, *, bricht_beim):
+        self.geschrieben = []
+        self._bricht_beim = bricht_beim
+        self._versuche = 0
+
+    async def send(self, text):
+        self._versuche += 1
+        if self._versuche == self._bricht_beim:
+            raise RuntimeError("Discord nimmt die Nachricht nicht an")
+        self.geschrieben.append(text)
+
+
+def test_ein_abgerissener_text_sagt_selbst_an_dass_er_abgerissen_ist(caplog):
+    """Teilen tauscht »gar nichts« gegen »die Hälfte« — die darf nicht wie ein Ganzes aussehen.
+
+    Bricht die Zustellung nach dem ersten Stück ab, endet der Absatz im Kanal mitten im
+    Satz und nichts sagt der Runde, dass etwas fehlt. Ein zerrissener Text, den niemand
+    als zerrissen erkennt, ist schlimmer als eine fehlende Nachricht.
+    """
+    text = "Zeile.\n" * 900
+    stuecke = len(grenzen.teile(text))
+    assert stuecke > 2
+    kanal = FakeZuckendesDiscord(bricht_beim=2)
+
+    with caplog.at_level(logging.ERROR), pytest.raises(RuntimeError):
+        asyncio.run(gateway._zustellen(kanal.send, text))
+
+    # Der Hinweis steht hinter dem, was ankam — und nennt beide Zahlen, wie das Log.
+    assert kanal.geschrieben[-1] == gateway.ABGERISSEN.format(
+        zugestellt=1, ganz=stuecke, fehlend=stuecke - 1
+    )
+    assert f"1 von {stuecke} Stücken zugestellt, {stuecke - 1} fehlen" in caplog.text
+
+
+def test_scheitert_schon_das_erste_stueck_bleibt_es_beim_alles_oder_nichts(caplog):
+    """Gegenprobe: ohne angekommenen Anfang gibt es nichts kenntlich zu machen.
+
+    Ein Hinweis auf einen Text, den niemand gesehen hat, wäre selbst die Irreführung.
+    """
+    kanal = FakeZuckendesDiscord(bricht_beim=1)
+
+    with caplog.at_level(logging.ERROR), pytest.raises(RuntimeError):
+        asyncio.run(gateway._zustellen(kanal.send, "Zeile.\n" * 900))
+
+    assert kanal.geschrieben == []
+    assert "abgerissen" not in caplog.text
 
 
 def test_der_leere_kanal_beendet_den_mitschnitt_und_nicht_die_sitzung(

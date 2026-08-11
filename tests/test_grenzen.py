@@ -66,3 +66,32 @@ def test_gekappt_kuerzt_nur_was_zu_lang_ist():
     lang = grenzen.gekappt("a" * 2000, grenzen.EMBED_FELD, "…")
     assert len(lang) == grenzen.EMBED_FELD
     assert lang.endswith("…")
+
+
+def test_zeilenweise_laesst_keine_halbe_zeile_stehen():
+    """Ein harter Schnitt landet mitten in ``[Titel](url)`` — dann steht die Zeile roh da."""
+    zeilen = [
+        f"[Sitzung vom 2026-06-{tag:02d}](https://discord.example/kanal/{tag}0000000)"
+        for tag in range(1, 41)
+    ]
+
+    gekuerzt = grenzen.zeilenweise(zeilen, grenzen.EMBED_FELD, "\n… und weitere.")
+
+    assert len(gekuerzt) <= grenzen.EMBED_FELD
+    assert gekuerzt.endswith("\n… und weitere.")
+    behalten = gekuerzt.removesuffix("\n… und weitere.").split("\n")
+    # Jede behaltene Zeile steht unversehrt da, keine ist angeschnitten.
+    assert behalten == zeilen[: len(behalten)]
+    assert 0 < len(behalten) < len(zeilen)
+
+
+def test_zeilenweise_laesst_was_hineinpasst_unangetastet():
+    zeilen = ["[eins](u)", "[zwei](u)"]
+    assert grenzen.zeilenweise(zeilen, grenzen.EMBED_FELD, "…") == "[eins](u)\n[zwei](u)"
+
+
+def test_zeilenweise_schneidet_hart_wenn_nicht_einmal_die_erste_zeile_passt():
+    # Nichts anzuzeigen wäre die schlechtere Antwort als eine angeschnittene Zeile.
+    gekuerzt = grenzen.zeilenweise(["z" * 3000], grenzen.EMBED_FELD, "…")
+    assert len(gekuerzt) == grenzen.EMBED_FELD
+    assert gekuerzt.endswith("…")
