@@ -1246,6 +1246,92 @@ def test_der_gescheiterte_abschied_sagt_es_statt_zu_verschwinden(
     assert thread.geschrieben == [gateway.LEER_GESCHEITERT]
 
 
+def test_eine_misslungene_ansage_macht_aus_dem_ende_keinen_fehlschlag(
+    konfiguration, sitzung_im_thread, ohne_espeak, runde, kurze_frist
+):
+    """``LEER_GESCHEITERT`` gehört dem gescheiterten Beenden, nicht der stummen Ansage.
+
+    Umfasste ein ``try`` beides, schriebe ein zuckendes ``thread.send`` »die Aufnahme gilt
+    weiter als laufend, gib `/aufnahme stop`« in den Thread — während der Lauf beendet, der
+    Bot getrennt und die Spuren eingereiht sind und ``/aufnahme stop`` »keine Aufnahme«
+    antwortet. Genau die falsche Anweisung, gegen die dieser Wächter gebaut ist.
+    """
+    bot = gateway.baue(konfiguration)
+    thread = FakeTextkanal()
+    bot.kanaele[THREAD] = thread
+    ungestoert = thread.send
+
+    async def zuckt(text):
+        if text.startswith(gateway.LEER_BEENDET):
+            raise RuntimeError("thread.send zuckt")
+        await ungestoert(text)
+
+    thread.send = zuckt
+
+    async def ablauf():
+        await befehl(bot, "start")(FakeCtx(runde.mira))
+        runde.kanal.verbindung.senke.write(sprachdaten(stille(480)), runde.mira)
+        nur_der_bot(runde.kanal)
+        await bot.ereignisse["on_voice_state_update"](runde.mira, zustand(runde.kanal), zustand())
+        await ruhen()
+        ctx = FakeCtx(runde.mira)
+        await befehl(bot, "stop")(ctx)
+        return ctx
+
+    ctx = asyncio.run(ablauf())
+
+    assert runde.kanal.verbindung.getrennt
+    assert not runde.kanal.verbindung.schneidet
+    (spur,) = recordings.pending(unsere_runde(konfiguration))
+    assert spur.filename.endswith("Mira.wav")
+    # Der Lauf ist zu Ende — und die Meldung, die das Gegenteil behauptet, blieb aus.
+    assert gateway.LAEUFT_NICHT in ctx.antworten
+    assert thread.geschrieben == []
+
+
+def test_nach_dem_gescheiterten_abschied_stellt_erst_ein_neuer_gang_den_waechter(
+    konfiguration, sitzung_im_thread, ohne_espeak, runde, kurze_frist
+):
+    """Die Rücknahme gibt den Lauf zurück, den abbestellten Wächter aber nicht.
+
+    Das ist entschieden und nicht vergessen: einen neuen zu stellen hieße, bei bleibendem
+    Fehler alle neunzig Sekunden denselben Fehlschlag in den Thread zu schreiben. Also
+    sagt ``LEER_GESCHEITERT``, was gilt — von selbst geschieht nichts mehr, und erst wer
+    den Kanal betritt und wieder verlässt, bestellt einen neuen Wächter.
+    """
+    bot = gateway.baue(konfiguration)
+    thread = FakeTextkanal()
+    bot.kanaele[THREAD] = thread
+    dazu = bot.ereignisse["on_voice_state_update"]
+
+    async def ablauf():
+        await befehl(bot, "start")(FakeCtx(runde.mira))
+        verbindung = runde.kanal.verbindung
+        verbindung.senke.write(sprachdaten(stille(480)), runde.mira)
+        verbindung.trennen_stolpert = True
+        anwesend = nur_der_bot(runde.kanal)
+        await dazu(runde.mira, zustand(runde.kanal), zustand())
+        await ruhen()
+        assert thread.geschrieben == [gateway.LEER_GESCHEITERT]
+        # Mehrere Fristen lang von selbst: kein zweiter Versuch, kein zweiter Satz.
+        await asyncio.sleep(FRIST * 3)
+        assert thread.geschrieben == [gateway.LEER_GESCHEITERT]
+        assert not verbindung.getrennt
+        # Und jetzt das, was die Meldung ankündigt: betreten, verlassen, Wächter steht.
+        runde.kanal.members = anwesend
+        await dazu(runde.mira, zustand(), zustand(runde.kanal))
+        verbindung.trennen_stolpert = False
+        nur_der_bot(runde.kanal)
+        await dazu(runde.mira, zustand(runde.kanal), zustand())
+        await ruhen()
+
+    asyncio.run(ablauf())
+
+    assert runde.kanal.verbindung.getrennt
+    assert not runde.kanal.verbindung.schneidet
+    assert thread.geschrieben[-1].startswith(gateway.LEER_BEENDET)
+
+
 def test_nach_gescheitertem_beenden_greift_aufnahme_stop_noch(
     konfiguration, sitzung_im_thread, ohne_espeak, runde, kurze_frist
 ):

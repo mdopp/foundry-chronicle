@@ -120,9 +120,10 @@ LEER_BEENDET = (
 
 LEER_GESCHEITERT = (
     "Im Sprachkanal war niemand mehr, aber das Beenden ist schiefgegangen — die Aufnahme "
-    "gilt weiter als laufend, und ich bin womöglich noch im Kanal. Bitte einmal "
-    "`/aufnahme stop` geben: das nimmt genau diesen Lauf und reiht die Spuren nach. "
-    "Der Grund steht im Log des Bots."
+    "gilt weiter als laufend, und ich bin womöglich noch im Kanal. Von selbst sehe ich "
+    "erst wieder nach, wenn jemand den Kanal betritt und ihn erneut verlässt. Bitte "
+    "einmal `/aufnahme stop` geben: das nimmt genau diesen Lauf und reiht die Spuren "
+    "nach. Der Grund steht im Log des Bots."
 )
 
 UNBEKANNT = "unbekannt"
@@ -385,6 +386,10 @@ async def _mitschnitt_beenden(lauf: _Lauf, runde: Runde | None = None) -> tuple[
         # Ohne diese Rücknahme wäre der Anspruch das Ende: der Bot säße weiter im Kanal,
         # die Spuren lägen uneingereiht, und ``/aufnahme stop`` antwortete ab jetzt immer
         # »keine Aufnahme« — zu beenden wäre das nur noch durch einen Neustart.
+        # Der abbestellte Wächter kommt dabei **nicht** zurück: einen neuen zu stellen
+        # hieße, bei bleibendem Fehler alle neunzig Sekunden denselben Fehlschlag in den
+        # Thread zu schreiben. Also sagt ``LEER_GESCHEITERT`` es stattdessen — von selbst
+        # sieht erst wieder nach, wen ``on_voice_state_update`` neu bestellt.
         lauf.aufnahme, lauf.stimme = aufnahme, stimme
         raise
 
@@ -435,7 +440,6 @@ async def _abschied_bei_leere(bot, lauf: _Lauf, aufnahme: Aufnahme) -> None:
     logger.info("Sprachkanal #%s leer — der Mitschnitt endet.", aufnahme.kanal.name)
     try:
         meldungen = await _mitschnitt_beenden(lauf)
-        await _sagen(bot, aufnahme, " ".join((LEER_BEENDET, *meldungen)))
     except Exception:  # noqa: BLE001
         # Ein Faden nebenher hat niemanden, dem er den Fehlschlag antworten könnte. Ihn
         # als unabgeholte Ausnahme verfallen zu lassen hieße: die Runde erfährt nichts,
@@ -443,6 +447,15 @@ async def _abschied_bei_leere(bot, lauf: _Lauf, aufnahme: Aufnahme) -> None:
         logger.exception("Abschied bei leerem Sprachkanal gescheitert")
         with contextlib.suppress(Exception):
             await _sagen(bot, aufnahme, LEER_GESCHEITERT)
+        return
+    # Die Erfolgsmeldung steht außerhalb: umfasste ein ``try`` beides, machte ein zuckendes
+    # ``thread.send`` aus einem gelungenen Ende einen gemeldeten Fehlschlag — und schickte
+    # zu ``/aufnahme stop``, das dann »keine Aufnahme« antwortet. Bleibt sie ungesagt, ist
+    # das ein fehlender Satz; ``LEER_GESCHEITERT`` wäre ein falscher.
+    try:
+        await _sagen(bot, aufnahme, " ".join((LEER_BEENDET, *meldungen)))
+    except Exception:  # noqa: BLE001
+        logger.exception("Der Abschied bei leerem Sprachkanal blieb ungesagt")
 
 
 def _erledigt(faden) -> bool:
