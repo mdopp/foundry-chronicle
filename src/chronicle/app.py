@@ -8,17 +8,17 @@ Fehlt die Foundry-Konfiguration, läuft der Dienst trotzdem und erklärt in der
 Foundry-Karte der Einstellungen, was fehlt — eine harte Abhängigkeit rechtfertigt eine
 verständliche Meldung, keine Startverweigerung. Mitgeschrieben wird auch dann.
 
-Beim ersten Mal führt ``/einrichtung`` durch dieselben Speicherwege in Schritten, statt
-fünf gleichrangige Reiter hinzustellen. Der Wizard schreibt nichts selbst: er füllt
-dasselbe Formular wie ``/einstellungen`` und ruft denselben ``settings.save``-Weg auf.
+Beim ersten Mal führt ``/einrichtung`` in Schritten durch die Einrichtung, statt fünf
+gleichrangige Reiter hinzustellen; geschrieben wird über denselben ``settings.save``-Weg.
 
 ``basis`` ist die Umgebung beim Start; gefragt wird nie sie, sondern
-``settings.effective(basis, runde)`` — ein in ``/einstellungen`` gesetzter Wert gewinnt und
-wirkt ohne Neustart.
+``settings.effective(basis, runde)`` — ein gepflegter Wert gewinnt und wirkt ohne Neustart.
 
 Diese Oberfläche kennt **keine Runden**: sie arbeitet stillschweigend in der ersten. Mit
-#69 verschwindet sie ganz, Discord wird die Oberfläche — bis dahin ist das die ehrlichste
-Übersetzung des alten »eine Instanz pro Gruppe« in die neue Welt.
+#69 verschwindet sie — **bis auf ``/einstellungen``**: dort stehen seit #89 nur noch die
+Werte der *Instanz* — Bot-Token, Ollama, Verwaltungsgruppe —, und die haben in Discord
+keinen Ort, weil sie keiner Gilde gehören. Alles Runden-eigene ist von dieser Seite
+verschwunden; gepflegt wird es per ``/setup`` in Discord.
 
 Der nächtliche Lauf hängt an ``dienst()`` und nicht an ``create_app``: eine App, die nur
 befragt wird — im Test, im Skript —, soll nicht anfangen zu arbeiten. Er läuft hier und
@@ -139,13 +139,6 @@ def create_app(config: Config | None = None, *, zeitplan: bool = False) -> Flask
             return None
         return render_template("keine_verwaltung.html"), 403
 
-    def zugang_ziel() -> str:
-        # Nach einem »Später« ist die Einrichtung abgehakt und das Band führt in die
-        # Einstellungen — sonst zurück in den Wizard.
-        if instanz.onboarding_done(basis.database_path):
-            return url_for("einstellungen")
-        return url_for("einrichtung")
-
     def testwelt_aktiv() -> bool:
         return settings.foundry_quelle(runde) == settings.TESTWELT
 
@@ -180,10 +173,12 @@ def create_app(config: Config | None = None, *, zeitplan: bool = False) -> Flask
         if testwelt:
             return rahmen
         if not settings.effective(basis, runde).foundry_configured:
-            # Der Weg in die Einrichtung steht nur dem offen, der sie auch gehen darf.
+            # Der Weg in die Einrichtung steht nur dem offen, der sie auch gehen darf. Und
+            # er führt in den Wizard: der Foundry-Zugang gehört der Runde und steht in den
+            # Einstellungen seit #89 nicht mehr.
             return rahmen | {
                 "verbindung": UNKONFIGURIERT,
-                "zugang": zugang_ziel() if verwalter else None,
+                "zugang": url_for("einrichtung") if verwalter else None,
             }
         if lauf is not None and lauf.laeuft:
             return rahmen | {"verbindung": ABGLEICH_LAEUFT}
@@ -201,7 +196,7 @@ def create_app(config: Config | None = None, *, zeitplan: bool = False) -> Flask
         # fragt ein Modal danach.
         zugang.merken(runde, request.form.get("foundry_password", ""))
         jobs.start(basis, runde, jobs.ABGLEICH, lambda: jobs.abgleich(basis, runde))
-        return redirect(zurueck(url_for("einstellungen", _anchor="zustand")))
+        return redirect(zurueck(url_for("sitzungen")))
 
     @app.post("/sitzungen/<int:sitzung_id>/chronik")
     def chronik_anstossen(sitzung_id: int) -> Response:
@@ -454,20 +449,11 @@ def create_app(config: Config | None = None, *, zeitplan: bool = False) -> Flask
             quellen=settings.sources(basis, runde),
             config=settings.effective(basis, runde),
             schema_version=db.current_schema_version(basis.database_path),
-            abgleich=foundry.current(basis, runde),
             remote_user=request.headers.get(REMOTE_USER_HEADER),
-            nightly_time=settings.nightly_time(runde),
-            nightly_zone=settings.nightly_zone(runde),
-            zonen=settings.ZONEN,
-            nachtlauf=nightly.letzter(runde),
             admin_group=instanz.admin_group(basis.database_path)
             if sperr_gruppe is None
             else sperr_gruppe,
             sperr_gruppe=sperr_gruppe,
-            quelle=settings.foundry_quelle(runde),
-            quelle_feld=settings.QUELLE_KEY,
-            quelle_server=settings.SERVER,
-            quelle_testwelt=settings.TESTWELT,
             **felder(),
         )
 
@@ -477,10 +463,9 @@ def create_app(config: Config | None = None, *, zeitplan: bool = False) -> Flask
 
     @app.post("/einstellungen")
     def einstellungen_speichern() -> Response | str:
-        uebernehmen(settings.KEYS)
-        settings.save_foundry_quelle(runde, request.form.get(settings.QUELLE_KEY, ""))
-        settings.save_nightly_time(runde, request.form.get(settings.NIGHTLY_KEY, ""))
-        settings.save_nightly_zone(runde, request.form.get(settings.NIGHTLY_ZONE_KEY, ""))
+        # Nur die Werte der Instanz: ein Formular, das die Runden-Felder gar nicht mehr
+        # zeigt, würde sie sonst mit jedem Speichern löschen — sie stehen in Discord.
+        uebernehmen(settings.INSTANZ_KEYS)
         # Ein gar nicht abgesendetes Feld heißt »unverändert«: ein Formular ohne dieses
         # Feld darf die Verwaltungsrolle nicht still zurücknehmen.
         gruppe = request.form.get(instanz.ADMIN_GROUP_KEY)
@@ -528,11 +513,11 @@ def create_app(config: Config | None = None, *, zeitplan: bool = False) -> Flask
             return redirect(url_for("sitzungen"))
         return redirect(url_for("einrichtung_schritt", schritt=namen[naechster]))
 
-    # Die Statusseite ist im Abschnitt »Zustand« der Einstellungen aufgegangen; die
-    # Adresse steht in Lesezeichen und alten Bändern, deshalb 301 statt 404.
+    # Die Statusseite ist in den Einstellungen aufgegangen; die Adresse steht in
+    # Lesezeichen und alten Bändern, deshalb 301 statt 404.
     @app.get("/status")
     def status() -> Response:
-        return redirect(url_for("einstellungen", _anchor="zustand"), 301)
+        return redirect(url_for("einstellungen"), 301)
 
     # Test-Seam und Install-Gate der ServiceBay-Box (servicebay.healthcheck).
     @app.get("/healthz")

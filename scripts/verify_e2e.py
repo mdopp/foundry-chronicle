@@ -66,10 +66,12 @@ NOTIZFORMULAR = re.compile(r'action="/szenen/(\d+)/notizen"')
 # Die Protokollseite kennzeichnet den Rückblick über seine Klasse (protokoll.html).
 RUECKBLICK = 'class="chronik rueckblick"'
 
-# Der erste Schritt des Erststart-Wizards und der Anker, in dem /status aufgegangen ist.
+# Der erste Schritt des Erststart-Wizards und die Seite, in der /status aufgegangen ist.
 ERSTER_SCHRITT = "/einrichtung/foundry"
 
-ZUSTAND = 'id="zustand"'
+# Woran die Betreiber-Seite zu erkennen ist: das Feld für den Bot-Token. Es ist der Grund,
+# warum sie #69 überlebt (#89) — fehlt es, ist die Instanz ohne Weg zum Token.
+BETREIBERSEITE = 'name="discord_bot_token"'
 
 
 class Fehlschlag(AssertionError):
@@ -146,12 +148,11 @@ def durchlauf(basis: str, umgeb: dict[str, str], lauf: Lauf) -> None:
     lauf.ok("Erststart führt in die Einrichtung")
 
     status, seite, ziel = abruf(basis + "/status")
-    pruefe(status == 200, f"Zustand: HTTP {status}")
+    pruefe(status == 200, f"Betreiber-Seite: HTTP {status}")
     pfad = urllib.parse.urlsplit(ziel)
-    pruefe(pfad.path == "/einstellungen", f"Zustand: /status landete auf {ziel}")
-    pruefe(pfad.fragment == "zustand", f"Zustand: kein Anker in {ziel}")
-    pruefe(ZUSTAND in seite, "Zustand: der Abschnitt fehlt auf der Einstellungsseite")
-    lauf.ok("/status leitet in den Zustand der Einstellungen um")
+    pruefe(pfad.path == "/einstellungen", f"Betreiber-Seite: /status landete auf {ziel}")
+    pruefe(BETREIBERSEITE in seite, "Betreiber-Seite: das Feld für den Bot-Token fehlt")
+    lauf.ok("/status leitet auf die Betreiber-Seite mit dem Bot-Token um")
 
     status, _, ziel = abruf(basis + "/", daten={"played_on": "", "title": "Durchstich"})
     pruefe(status == 200, f"Sitzung anlegen: HTTP {status}")

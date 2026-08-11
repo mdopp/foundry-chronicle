@@ -368,17 +368,19 @@ def test_was_keine_zone_ist_laesst_die_bisherige_stehen(stelle, unsinn):
     assert settings.nightly_zone(runde(stelle)) == "Pacific/Auckland"
 
 
-def test_die_zone_kommt_aus_dem_formular(stelle):
+def test_uhrzeit_und_zone_stehen_nicht_auf_der_betreiberseite(stelle):
+    """Sie gehören der Runde und werden in Discord gepflegt — ``/setup`` setzt die Uhrzeit."""
+    settings.save_nightly_time(runde(stelle), "22:15")
+    settings.save_nightly_zone(runde(stelle), "Pacific/Auckland")
     client = create_app(stelle).test_client()
-    client.post("/einstellungen", data={"nightly_zone": "Pacific/Auckland"})
+
+    html = client.get("/einstellungen").get_data(as_text=True)
+    assert 'name="nightly_zone"' not in html
+    assert 'name="nightly_time"' not in html
+
+    client.post("/einstellungen", data={"nightly_time": "03:00", "nightly_zone": "Europe/Berlin"})
+    assert settings.nightly_time(runde(stelle)) == "22:15"
     assert settings.nightly_zone(runde(stelle)) == "Pacific/Auckland"
-
-
-def test_die_seite_nennt_die_zone_zu_der_uhrzeit(stelle):
-    html = create_app(stelle).test_client().get("/einstellungen").get_data(as_text=True)
-
-    assert 'name="nightly_zone"' in html
-    assert f'<option value="{settings.DEFAULT_NIGHTLY_ZONE}" selected>' in html
 
 
 def test_eine_uhrzeit_wird_gespeichert(stelle):
@@ -394,16 +396,13 @@ def test_was_keine_uhrzeit_ist_laesst_die_bisherige_stehen(stelle, unsinn):
     assert settings.nightly_time(runde(stelle)) == "22:15"
 
 
-def test_die_uhrzeit_kommt_aus_dem_formular(stelle):
-    client = create_app(stelle).test_client()
-    client.post("/einstellungen", data={"nightly_time": "02:45"})
-    assert settings.nightly_time(runde(stelle)) == "02:45"
+# --- Was der letzte Lauf hergibt -----------------------------------------------------
+#
+# Angezeigt wird das seit #89 nicht mehr auf der Betreiber-Seite: der Lauf gehört der
+# Runde. Erzählt wird er in Discord; hier steht, was dafür bereitliegt.
 
 
-# --- Was in den Einstellungen steht --------------------------------------------------
-
-
-def test_jede_karte_zeigt_das_ergebnis_ihres_eigenen_schritts(stelle):
+def test_jeder_schritt_kommt_mit_seinem_eigenen_ergebnis_zurueck(stelle):
     abgelegter_lauf(
         stelle,
         [
@@ -414,20 +413,16 @@ def test_jede_karte_zeigt_das_ergebnis_ihres_eigenen_schritts(stelle):
         ],
     )
 
-    html = create_app(stelle).test_client().get("/einstellungen").get_data(as_text=True)
+    letzter = nightly.letzter(runde(stelle))
 
-    assert "Zwei Diktate abgelegt." in html
-    assert "Eine Spur verschriftet." in html
-    assert "Stand vom Mittwoch geholt." in html
-    assert "Sitzung vom 05.08. geschrieben." in html
-    assert nightly.letzter(runde(stelle)).zeitpunkt in html
+    assert letzter.diktat.text == "Zwei Diktate abgelegt."
+    assert letzter.transkript.text == "Eine Spur verschriftet."
+    assert letzter.abgleich.text == "Stand vom Mittwoch geholt."
+    assert letzter.chronik.text == "Sitzung vom 05.08. geschrieben."
+    assert letzter.zeitpunkt == "06.08.2026 um 06:00"
 
 
-def test_ohne_gelaufene_nacht_sagt_die_seite_wann_die_erste_kommt(stelle):
-    html = create_app(stelle).test_client().get("/einstellungen").get_data(as_text=True)
-
-    assert "Noch keine Nacht gelaufen" in html
-    assert settings.DEFAULT_NIGHTLY_TIME in html
+def test_ohne_gelaufene_nacht_gibt_es_keinen_lauf(stelle):
     assert nightly.letzter(runde(stelle)) is None
 
 
@@ -438,8 +433,6 @@ def test_ein_unterbrochener_lauf_steht_ehrlich_da(stelle):
 
     assert letzter.fehler == jobs.UNTERBROCHEN
     assert not letzter.laeuft
-    html = create_app(stelle).test_client().get("/einstellungen").get_data(as_text=True)
-    assert jobs.UNTERBROCHEN in html
 
 
 def test_ein_laufender_lauf_zeigt_sich_als_unterwegs(stelle):
@@ -454,8 +447,6 @@ def test_ein_laufender_lauf_zeigt_sich_als_unterwegs(stelle):
     letzter = nightly.letzter(runde(stelle))
 
     assert letzter.laeuft
-    html = create_app(stelle).test_client().get("/einstellungen").get_data(as_text=True)
-    assert "noch unterwegs" in html
 
 
 # --- Wo der Zeitplan hängt -----------------------------------------------------------

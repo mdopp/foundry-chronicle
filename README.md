@@ -39,14 +39,13 @@ python -m chronicle          # die Weboberfläche, bis #69 sie abschaltet
 
 Beim ersten Mal führt `/` durch die Einrichtung — Foundry, dann Discord, dann Ollama,
 jeder Schritt überspringbar; danach wird unter `/` mitgeschrieben — Sitzung, Szenen,
-Notizen. Der Abschnitt *Zustand* unter `/einstellungen#zustand` sagt, was konfiguriert
-ist und wann zuletzt mit Foundry abgeglichen wurde; `/status` leitet mit 301 dorthin. Am Notizfeld sitzt ein
+Notizen. `/status` leitet mit 301 auf `/einstellungen`. Am Notizfeld sitzt ein
 **Diktier-Knopf** für kurze Notizen: er nutzt die Spracherkennung des Browsers, die über
 die **Cloud des Browser-Herstellers** läuft und nicht auf dieser Box — Browser ohne
 `SpeechRecognition` zeigen ihn gar nicht erst.
 
 **Anstoßen kann der Nutzer selbst.** *Chronik erstellen* (Sitzungs- und Chronikseite) und
-*Jetzt abgleichen* (Band und *Zustand*) starten **server-eigene Läufe** nach dem
+*Jetzt abgleichen* (Band) starten **server-eigene Läufe** nach dem
 ServiceBay-Standard für lange Prozesse: der Zustand steht in der Tabelle `job`, überlebt
 Neuladen und geschlossenen Reiter, und ein Neustart mitten im Lauf wird beim nächsten
 Blick ehrlich als unterbrochen vermerkt statt für immer zu laufen. Je Art läuft höchstens
@@ -54,21 +53,30 @@ einer. Der Chronik-Lauf verschriftet erst die wartenden Aufnahmen und ruft dann 
 Funktionen wie `python -m chronicle.compose`: ein Knopf ist der zweite Auslöser, nicht der
 zweite Weg. Die Stapel-Einstiege unten bleiben — sie sind der Weg für Cron und Betrieb.
 
-Foundry-Adresse und -Benutzer, der Discord-Bot-Token sowie Ollama-Adresse und -Modell
-werden unter `/einstellungen` gepflegt und liegen in der SQLite. Die Umgebung —
-`FOUNDRY_URL`, `FOUNDRY_USER`, `DISCORD_BOT_TOKEN`, `OLLAMA_URL`, `OLLAMA_MODEL` — bleibt
-als Vorgabe beim ersten Start lesbar und ist beim Entwickeln der bequeme Weg; **ein in der
-Oberfläche gesetzter Wert gewinnt**, und der Abschnitt *Zustand* zeigt je Wert, woher er
-kommt. Das Box-Template setzt keine davon (siehe unten).
+**`/einstellungen` ist die Betreiber-Seite und bleibt genau deshalb bestehen, wenn #69 die
+übrige Oberfläche abräumt** (Owner-Entscheidung 2026-08-11, [#89](../../issues/89)): dort
+stehen der Discord-Bot-Token, Ollama-Adresse und -Modell sowie die Verwaltungsgruppe — die
+gehören der Instanz und keiner Gilde, haben also in Discord keinen Ort. Alles Runden-eigene
+— Foundry-Adresse und -Benutzer, Zustellkanal, Uhrzeit des nächtlichen Laufs — ist von
+dieser Seite verschwunden und wird in Discord mit `/setup` gepflegt. Weil dort ein
+Geheimnis liegt, bleibt ADR 0001 (Authelia-SSO) für sie in Kraft.
+
+Die Werte liegen in der SQLite. Die Umgebung — `FOUNDRY_URL`, `FOUNDRY_USER`,
+`DISCORD_BOT_TOKEN`, `OLLAMA_URL`, `OLLAMA_MODEL` — bleibt als Vorgabe beim ersten Start
+lesbar und ist beim Entwickeln der bequeme Weg; **ein gepflegter Wert gewinnt**, und die
+Technikdetails der Betreiber-Seite zeigen je Instanz-Wert, woher er kommt. Das
+Box-Template setzt keine davon (siehe unten).
 
 **Woher die Spieldaten kommen, ist eine Auswahl je Runde:** *Echter Server* oder
 *Eingebaute Testwelt*. Die Testwelt ist eine Beispielwelt im Paket — 19 Konten, 91
 Figuren, 8 Chat-Nachrichten, 32 Szenen —, die der Abgleich durch dieselbe Strecke schickt
 wie eine Antwort vom Server: Berechtigungsfilter, System-Adapter, Zwischenspeicher. Kein
 Netz, kein Passwort, kein zweiter Prozess; damit lässt sich die Instanz auch dann prüfen,
-wenn der Foundry-Server aus ist. Solange sie aktiv ist, sagen das Band auf jeder Seite und
-die Foundry-Karte: *Testwelt aktiv — das sind keine echten Kampagnendaten.* Umschalten
-ersetzt den Zwischenspeicher im Ganzen.
+wenn der Foundry-Server aus ist. Solange sie aktiv ist, sagt das Band auf jeder Seite:
+*Testwelt aktiv — das sind keine echten Kampagnendaten.* Umschalten ersetzt den
+Zwischenspeicher im Ganzen; es gehört der Runde (`settings.save_foundry_quelle`) und hat
+seit #89 keinen Schalter mehr auf der Betreiber-Seite — der Weg dorthin kommt mit #69 in
+Discord.
 
 **Sie ist erzeugt, nicht abgegriffen.** `src/chronicle/foundry/testwelt.json` fällt
 Zeichen für Zeichen aus [`scripts/erzeuge_testwelt.py`](scripts/erzeuge_testwelt.py), und
@@ -94,7 +102,7 @@ Ollama der Box. Offen bleibt dann allein die Modellwahl. Rein aus der Umgebung k
 `CHRONICLE_DATA_DIR` (Vorgabe `./data`), `CHRONICLE_RECORDINGS_DIR` (Vorgabe
 `./recordings`) sowie `CHRONICLE_WHISPER_MODEL` und `CHRONICLE_WHISPER_DEVICE` (beide
 leer = automatisch, siehe [Transkription](#transkription)). Fehlt die
-Foundry-Konfiguration, startet der Dienst trotzdem und erklärt im *Zustand*, was fehlt.
+Foundry-Konfiguration, startet der Dienst trotzdem und sagt es im Band auf jeder Seite.
 
 Ein eigenes Login gibt es nicht: angemeldet wird am Proxy (ServiceBay-ADR 0001), der
 `Remote-User` setzt. Auf der Box gehört deshalb `CHRONICLE_REQUIRE_REMOTE_USER=1` in die
@@ -429,8 +437,9 @@ liegt das Pod-Template `daggerheart-chronik`. Auf der Box wird das Repo einmal i
 `config.registries[]` eingetragen (Git-URL dieses Repos), danach steht das Template im
 Installations-Assistenten neben den mitgelieferten.
 
-Der Assistent fragt nur nach Subdomain, Port und Image-Tag. **Foundry, Discord und Ollama
-werden nach dem ersten Start unter `/einstellungen` eingerichtet**, nicht beim
+Der Assistent fragt nur nach Subdomain, Port und Image-Tag. **Bot-Token und Ollama werden
+nach dem ersten Start unter `/einstellungen` eingerichtet, der Foundry-Zugang in
+Discord**, nicht beim
 Installieren: Der Assistent würfelt für eine Variable vom Typ `secret` einen Zufallswert
 aus — richtig für ein internes Geheimnis, falsch für Zugangsdaten, die nur die
 Gegenstelle kennt. Ein solcher Wert meldete sich einmal als Bot-Token bei Discord an und
