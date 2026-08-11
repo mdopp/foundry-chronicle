@@ -31,7 +31,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from chronicle import jobs, lebenszyklus, notes, recordings, zugang
+from chronicle import jobs, lebenszyklus, notes, recordings, settings, zugang
 from chronicle import runde as runden
 from chronicle.bot import BotFehler
 from chronicle.config import Config
@@ -78,6 +78,14 @@ ANGELEGT = (
 
 THREAD_STEHT = "Die Sitzung steht: {thread} — dort geht es weiter."
 
+# Thread und Sitzung stehen, nur die Begrüßung darin kam nicht durch. Das muss anders
+# klingen als ein Fehlschlag: »noch einmal versuchen« legte hier ein zweites Paar an.
+STUMM_ANGELEGT = (
+    "Die Sitzung steht: {thread} — meine Begrüßung darin ist aber nicht angekommen. Ruf "
+    "`/chronik start` **nicht** noch einmal auf, sonst stehen zwei; schreib einfach dort "
+    "weiter, jede Nachricht wird eine Notiz."
+)
+
 SZENE = "Neue Szene »{name}«. Was ab jetzt geschrieben wird, gehört dazu."
 SZENE_OHNE_NAMEN = "Neue Szene. Was ab jetzt geschrieben wird, gehört dazu."
 
@@ -114,6 +122,15 @@ OHNE_FOUNDRY = (
     "Ohne Foundry-Passwort: die Sitzung läuft, nur die Zahlen fehlen. `/chronik fertig` "
     "fragt dann noch einmal danach."
 )
+
+KEIN_FOUNDRY = (
+    "Nach dem Foundry-Passwort frage ich nicht: für diese Runde ist gerade kein "
+    "Foundry-Server im Spiel. `/setup` trägt eine Adresse ein, wenn doch einer dazukommt."
+)
+
+# Der Platzhalter des Abschlussfensters, wenn ein anderes Mitglied etwas hinterlegt hat.
+# Discord kürzt Platzhalter bei 100 Zeichen — deshalb der kurze Satz.
+FREMDES_HINWEIS = "Es liegt eines von jemand anderem bereit — es gilt deines."
 
 
 class ChronikFehler(BotFehler):
@@ -215,7 +232,7 @@ def sitzung_anlegen(runde: Runde, thread_id: str, titel: str = "") -> int:
     return notes.create_session(runde, title=titel, thread_id=thread_id)
 
 
-def passwort_merken(runde: Runde, eingabe: str) -> bool:
+def passwort_merken(runde: Runde, eingabe: str, wer: str) -> bool:
     """Das Passwort vom Sitzungsbeginn — gemerkt wird nur, was auch dasteht.
 
     Ein leeres Feld heißt hier **überspringen**, nicht vergessen: wer beim Start nichts
@@ -224,13 +241,44 @@ def passwort_merken(runde: Runde, eingabe: str) -> bool:
     """
     if not eingabe.strip():
         return False
-    zugang.merken(runde, eingabe)
+    zugang.merken(runde, eingabe, wer=wer)
     return True
 
 
-def passwort_bereit(runde: Runde) -> bool:
-    """Ob für diese Runde noch eines bereitliegt — *ob*, nie *was*."""
+def passwort_bereit(runde: Runde, wer: str) -> bool:
+    """Ob **für diese Person** eines bereitliegt — *ob*, nie *was*.
+
+    Nicht bloß »es liegt eines da«: ``/chronik start`` steht jedem Mitglied offen, und
+    eine fremde Eingabe würde sonst ohne Rückfrage dem Foundry-Konto dieser Runde
+    vorgezeigt, ausgelöst von jemandem, der sie nie gesehen hat. Wer nicht selbst
+    hinterlegt hat, bekommt darum das Fenster — und damit den Weg zum eigenen Passwort,
+    ohne die zwölf Stunden abzuwarten.
+    """
+    return bool(wer) and zugang.gemerkt_von(runde) == wer
+
+
+def passwort_gehalten(runde: Runde) -> bool:
+    """Ob überhaupt eines bereitliegt, gleich von wem — *ob*, nie *was*."""
     return zugang.ist_gemerkt(runde)
+
+
+def foundry_im_spiel(config: Config, runde: Runde) -> bool:
+    """Ob ein eingegebenes Passwort überhaupt irgendwo vorgezeigt würde.
+
+    Auf der Testwelt und ohne eingetragene Adresse redet der Abgleich mit keinem Server.
+    Danach zu fragen hieße, ein Geheimnis für nichts einzusammeln — und es läge dann bis
+    zur harten Frist herum.
+    """
+    if settings.foundry_quelle(runde) == settings.TESTWELT:
+        return False
+    return bool(settings.effective(config, runde).foundry_url)
+
+
+def starthinweis(config: Config, runde: Runde, gemerkt: bool) -> str:
+    """Was der Start über das Passwort sagt — drei Lagen, drei Sätze."""
+    if not foundry_im_spiel(config, runde):
+        return KEIN_FOUNDRY
+    return MIT_FOUNDRY if gemerkt else OHNE_FOUNDRY
 
 
 def szene_setzen(runde: Runde, session_id: int, name: str, *, zeitpunkt: str = "") -> str:
@@ -307,6 +355,7 @@ def abschluss_starten(
     session_id: int,
     passwort: str | None,
     *,
+    wer: str = "",
     melden: Callable[[str], None],
 ) -> str:
     """Abgleich, Verschriften, Komponieren — ein Auftrag, eine Meldung im Thread.
@@ -319,7 +368,7 @@ def abschluss_starten(
     if jobs.running(runde, jobs.CHRONIK):
         return LAEUFT_SCHON
     if passwort is not None:
-        zugang.merken(runde, passwort)
+        zugang.merken(runde, passwort, wer=wer)
     auftrag = jobs.start(
         config,
         runde,

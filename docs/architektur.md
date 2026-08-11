@@ -19,9 +19,10 @@ die Serververwaltung, das Löschen die Administration.
 
 Konfiguration: Foundry-Adresse und -Benutzer je Runde, Discord-Bot-Token für die Instanz —
 das ist unser Token und nicht das einer Gruppe. Das Foundry-Passwort wird **nirgends**
-gespeichert: es wird beim Sitzungsstart erfragt — freiwillig —, lebt im Arbeitsspeicher
-und wird vom Abgleich verbraucht (#64/#96). Wer beim Start keines gibt, wird beim
-Abschluss gefragt. Alles andere kommt aus Foundry.
+gespeichert: es wird beim Sitzungsstart erfragt — freiwillig und nur, wo ein Foundry-Server
+im Spiel ist —, lebt im Arbeitsspeicher und wird vom Abgleich verbraucht (#64/#96). Wer
+beim Start keines gibt, wird beim Abschluss gefragt; und gefragt wird auch, wessen
+Abschluss auf der Eingabe eines anderen säße. Alles andere kommt aus Foundry.
 
 Wie der Zugriff auf Foundry technisch läuft, steht in [`foundry-zugriff.md`](foundry-zugriff.md).
 

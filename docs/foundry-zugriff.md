@@ -128,8 +128,23 @@ Umgebungsvariable, nicht in einer Datei. Gefragt wird beim **Sitzungsstart**, da
 Foundry den Abend über offen steht (#96) — freiwillig; ohne es läuft die Sitzung ohne
 Zahlen weiter, und der Abschluss fragt noch einmal. Es lebt bis dahin im Arbeitsspeicher
 (`chronicle.zugang`), verfällt dort nach zwölf Stunden und wird vom Abgleich verbraucht —
-auch vom gescheiterten. Hashen ginge nicht: wir müssen es vorzeigen, nicht prüfen. Und es
-steht in keinem Aufrufargument (landet sonst in der Shell-History) und in keiner Logzeile.
+auch vom gescheiterten und auch von dem, der auf der Testwelt oder an einer ruhenden Runde
+abbricht, bevor er einen Server sieht. Hashen ginge nicht: wir müssen es vorzeigen, nicht
+prüfen. Und es steht in keinem Aufrufargument (landet sonst in der Shell-History) und in
+keiner Logzeile.
+
+**Gefragt wird nur, wo es auch vorgezeigt würde.** Eine Runde ohne eingetragene Adresse
+oder auf der Testwelt bekommt kein Fenster: ein Geheimnis einzusammeln, das nirgends
+hingeht, ist der schlechteste Tausch — es läge nur bis zur Frist im Speicher.
+
+**Und nur, wer es hinterlegt hat, überspringt die Frage.** Seit das Passwort beim Start
+kommt, sind Hinterlegen und Verbrauchen zwei Handlungen, und `/chronik start` steht jedem
+Mitglied offen. Neben dem Passwort liegt deshalb die Discord-Kennung dessen, der es gab
+(`zugang.gemerkt_von`); `/chronik fertig` nimmt den kurzen Weg nur für genau diese Person.
+Jeder andere bekommt das Fenster — und damit sofort den Weg zum eigenen Passwort, ohne die
+zwölf Stunden abzuwarten. Verworfen wird nichts: eine spätere Eingabe überschreibt die
+frühere, sie wird nur nie *ungefragt* dem Foundry-Konto der Runde vorgezeigt. Eine
+Discord-Kennung ist im Kanal ohnehin sichtbar und damit selbst kein Geheimnis.
 
 ## Die Testwelt: erzeugen, abgreifen, anonymisieren, abspielen
 

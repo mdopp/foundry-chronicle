@@ -203,41 +203,44 @@ def sync(
     zeitpunkt = _now()
     scope = _open(config, runde)
     try:
-        # Nach dem Rauswurf wird bei dieser Gruppe nichts mehr geholt — auch nicht mit
-        # einem Passwort, das noch im Speicher liegt. Die Sperre steht vor der Quellwahl:
-        # auch die Testwelt schriebe in die Runde, und eine ruhende Runde bekommt nichts
-        # mehr, gleich woher es käme.
-        if lebenszyklus.ruht(runde):
-            return SyncState(message=lebenszyklus.RUHT, stale=True)
-        if settings.foundry_quelle(runde) == settings.TESTWELT:
-            return _testwelt(scope, zeitpunkt)
+        # Ein Abgleich verbraucht das Passwort — der gescheiterte ebenso wie der, der gar
+        # nicht erst zu einem Server geht. Deshalb umschließt das ``vergiss`` auch die
+        # beiden Abkürzungen darunter: sonst läge eine Eingabe nach »ruhende Runde« oder
+        # »Testwelt« bis zur harten Frist im Speicher.
         try:
-            geheim = passwort or zugang.passwort(runde)
-            wirksam = settings.effective(config, runde)
-            user_id, raw = (client or FoundryClient(wirksam, geheim)).fetch_world()
-        except FoundryError as fehler:
-            grund = NICHT_ERREICHBAR.format(grund=fehler)
-            logger.warning("Foundry-Abgleich fehlgeschlagen: %s", fehler)
-            store.record_failure(scope, grund, zeitpunkt)
-            return _state(store.load(scope), grund, zeitpunkt)
+            # Nach dem Rauswurf wird bei dieser Gruppe nichts mehr geholt — auch nicht mit
+            # einem Passwort, das noch im Speicher liegt. Die Sperre steht vor der
+            # Quellwahl: auch die Testwelt schriebe in die Runde, und eine ruhende Runde
+            # bekommt nichts mehr, gleich woher es käme.
+            if lebenszyklus.ruht(runde):
+                return SyncState(message=lebenszyklus.RUHT, stale=True)
+            if settings.foundry_quelle(runde) == settings.TESTWELT:
+                return _testwelt(scope, zeitpunkt)
+            try:
+                geheim = passwort or zugang.passwort(runde)
+                wirksam = settings.effective(config, runde)
+                user_id, raw = (client or FoundryClient(wirksam, geheim)).fetch_world()
+            except FoundryError as fehler:
+                grund = NICHT_ERREICHBAR.format(grund=fehler)
+                logger.warning("Foundry-Abgleich fehlgeschlagen: %s", fehler)
+                store.record_failure(scope, grund, zeitpunkt)
+                return _state(store.load(scope), grund, zeitpunkt)
+            gefunden = identity(raw)
+            gebunden = store.world(scope)
+            if not umhaengen and _falsche_welt(gebunden, gefunden):
+                grund = ANDERE_WELT.format(erwartet=gebunden.title, gefunden=gefunden.title)
+                logger.warning("Foundry zeigt eine andere Welt: %s", gefunden.id)
+                store.record_failure(scope, grund, zeitpunkt)
+                return _state(store.load(scope), grund, zeitpunkt)
+            store.save(scope, project(raw, user_id, fetched_at=zeitpunkt))
+            store.bind_world(scope, gefunden)
+            # Gemeldet wird der Bestand, nicht die Lieferung: die Nachrichten sind ein
+            # Archiv, und ein Abgleich, der »3 Chat-Nachrichten« meldet, während 200
+            # gespeichert sind, zählte das Falsche.
+            snapshot = store.load(scope)
+            logger.info("Foundry-Abgleich fertig: %s", _umfang(snapshot))
+            return _state(snapshot, None, None)
         finally:
-            # Ein Abgleich verbraucht das Passwort — auch der gescheiterte. Sonst läge es
-            # nach einem »Foundry ist aus« bis zur harten Frist herum.
             zugang.vergiss(runde)
-        gefunden = identity(raw)
-        gebunden = store.world(scope)
-        if not umhaengen and _falsche_welt(gebunden, gefunden):
-            grund = ANDERE_WELT.format(erwartet=gebunden.title, gefunden=gefunden.title)
-            logger.warning("Foundry zeigt eine andere Welt: %s", gefunden.id)
-            store.record_failure(scope, grund, zeitpunkt)
-            return _state(store.load(scope), grund, zeitpunkt)
-        store.save(scope, project(raw, user_id, fetched_at=zeitpunkt))
-        store.bind_world(scope, gefunden)
-        # Gemeldet wird der Bestand, nicht die Lieferung: die Nachrichten sind ein Archiv,
-        # und ein Abgleich, der »3 Chat-Nachrichten« meldet, während 200 gespeichert sind,
-        # zählte das Falsche.
-        snapshot = store.load(scope)
-        logger.info("Foundry-Abgleich fertig: %s", _umfang(snapshot))
-        return _state(snapshot, None, None)
     finally:
         scope.close()
