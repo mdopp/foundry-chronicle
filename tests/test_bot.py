@@ -11,6 +11,7 @@ geschrieben**, und **was angesagt wurde, steht im Wortlaut im Protokoll.**
 from __future__ import annotations
 
 import asyncio
+import sqlite3
 import sys
 import types
 import wave
@@ -372,6 +373,76 @@ def test_stoppen_beendet_den_mitschnitt_trennt_und_reiht_ein(
     assert not aufnahme.laeuft
     assert len(recordings.pending(unsere_runde(konfiguration))) == 1
     assert "wartet auf den Stapel" in meldungen[0]
+
+
+def sprecher(spur) -> str:
+    """Der Name aus dem Spurdateinamen — ``sitzung1-20260811T…-Mira.wav`` → ``Mira``."""
+    return Path(spur.filename).stem.split("-")[-1]
+
+
+class StolpertBeimEinreihen:
+    """``recordings.enqueue``, das bei der n-ten Spur einmal ausfällt — und dann nicht mehr."""
+
+    def __init__(self, nummer: int):
+        self.nummer = nummer
+        self.versuche = 0
+        self._echt = recordings.enqueue
+
+    def __call__(self, *args, **kwargs):
+        self.versuche += 1
+        if self.versuche == self.nummer:
+            raise sqlite3.OperationalError("database is locked")
+        return self._echt(*args, **kwargs)
+
+
+def test_eine_gescheiterte_spur_haelt_die_uebrigen_nicht_auf(
+    konfiguration, sitzung_id, ohne_espeak, monkeypatch
+):
+    """Eine Spur ohne Zeile ist für ``sweep`` unsichtbar: nicht verschriftet, nicht
+    gelöscht. Sie darf weder die übrigen aufhalten noch still verschwinden (#104)."""
+    aufnahme = asyncio.run(
+        recorder.starten(konfiguration, FakeStimme(MIRA, BROK, SPAET), unsere_runde(konfiguration))
+    )
+    for wer in (MIRA, BROK, SPAET):
+        aufnahme.schreiben(wer, stille(480))
+    monkeypatch.setattr(recordings, "enqueue", StolpertBeimEinreihen(2))
+
+    with pytest.raises(recorder.AufnahmeFehler) as gefangen:
+        aufnahme.beenden()
+
+    eingereiht = [spur.filename for spur in recordings.pending(unsere_runde(konfiguration))]
+    assert len(eingereiht) == 2
+    assert not any(name.endswith("Brok.wav") for name in eingereiht)
+    assert "Brok" in str(gefangen.value)
+    assert list(konfiguration.recordings_dir.glob("*Brok.wav")) != []
+
+
+def test_der_zweite_anlauf_holt_die_liegengebliebene_spur_nach(
+    konfiguration, sitzung_id, ohne_espeak, monkeypatch
+):
+    """Der Repro aus #104: was schon drin ist, wird übersprungen statt erneut versucht.
+
+    Ohne das Überspringen fiele der zweite Anlauf über die UNIQUE-Bedingung der ersten
+    Spur, und die dahinter kämen nie in die Warteschlange.
+    """
+    aufnahme = asyncio.run(
+        recorder.starten(konfiguration, FakeStimme(MIRA, BROK, SPAET), unsere_runde(konfiguration))
+    )
+    for wer in (MIRA, BROK, SPAET):
+        aufnahme.schreiben(wer, stille(480))
+    monkeypatch.setattr(recordings, "enqueue", StolpertBeimEinreihen(2))
+    with pytest.raises(recorder.AufnahmeFehler):
+        aufnahme.beenden()
+
+    meldungen = aufnahme.beenden()
+
+    assert sorted(sprecher(spur) for spur in recordings.pending(unsere_runde(konfiguration))) == [
+        "Aelin",
+        "Brok",
+        "Mira",
+    ]
+    assert len(meldungen) == 3
+    assert all("wartet auf den Stapel" in meldung for meldung in meldungen)
 
 
 def test_eine_aufnahme_schreibt_nicht_in_die_runde_von_nachher(
@@ -1371,6 +1442,41 @@ def test_nach_gescheitertem_beenden_greift_aufnahme_stop_noch(
     assert not runde.kanal.verbindung.schneidet
     (spur,) = recordings.pending(unsere_runde(konfiguration))
     assert spur.filename.endswith("Mira.wav")
+
+
+def test_ein_zweites_aufnahme_stop_holt_die_liegengebliebene_spur_nach(
+    konfiguration, sitzung_im_thread, ohne_espeak, runde, monkeypatch
+):
+    """Der Repro aus #104, so wie er gemeldet wurde: ``/aufnahme stop`` ein zweites Mal.
+
+    Vorher scheiterte der zweite Anlauf an der UNIQUE-Bedingung der schon eingereihten
+    ersten Spur — und die zweite blieb für immer als Datei ohne Zeile liegen: weder
+    verschriftet noch nach Frist gelöscht.
+    """
+    bot = gateway.baue(konfiguration)
+    bot.kanaele[THREAD] = FakeTextkanal()
+
+    async def ablauf():
+        await befehl(bot, "start")(FakeCtx(runde.mira))
+        senke = runde.kanal.verbindung.senke
+        senke.write(sprachdaten(stille(480)), runde.mira)
+        senke.write(sprachdaten(stille(480)), runde.brok)
+        monkeypatch.setattr(recordings, "enqueue", StolpertBeimEinreihen(2))
+        erster, zweiter = FakeCtx(runde.mira), FakeCtx(runde.mira)
+        await befehl(bot, "stop")(erster)
+        await befehl(bot, "stop")(zweiter)
+        return erster, zweiter
+
+    erster, zweiter = asyncio.run(ablauf())
+
+    assert erster.antworten[0].startswith("Das hat nicht geklappt")
+    assert BROK.name in erster.antworten[0]
+    assert gateway.LAEUFT_NICHT not in zweiter.antworten
+    assert not any(antwort.startswith("Das hat nicht geklappt") for antwort in zweiter.antworten)
+    assert sorted(sprecher(spur) for spur in recordings.pending(unsere_runde(konfiguration))) == [
+        BROK.name,
+        MIRA.name,
+    ]
 
 
 def test_zwei_beender_zugleich_geben_dem_zweiten_keine_leere_antwort(
