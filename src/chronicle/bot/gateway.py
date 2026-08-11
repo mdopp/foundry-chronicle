@@ -262,14 +262,52 @@ def _discord():
     return discord
 
 
+# ``davey`` fehlt bei uns mit Absicht: es meldet Discord DAVE-Fähigkeit, und dann kommt
+# der Ton Ende-zu-Ende verschlüsselt an, während py-cord erst dekodiert und danach
+# entschlüsselt — der Opus-Dekoder sieht Rauschen. Siehe pyproject.toml. Ein Fehlen darf
+# den Start also nicht aufhalten; PyNaCl muss dagegen da sein.
+ABSICHTLICH_OHNE = frozenset({"davey"})
+
+
+def _dave_abmelden(discord) -> None:
+    """Discord die DAVE-Fassung **0** melden — sonst hört der Bot nichts.
+
+    py-cord schickt im Handschlag ``max_dave_protocol_version`` und nimmt dafür, was
+    ``davey`` mitbringt. Wird DAVE ausgehandelt, kommt der Ton Ende-zu-Ende verschlüsselt
+    an — und ``opus.py`` dekodiert **erst** Opus und entschlüsselt **danach**. Der Dekoder
+    sieht Rauschen, wirft »corrupted stream«, der Empfänger stirbt und die Sitzung bekommt
+    keine einzige Spur. Am 2026-08-11 genau so erlebt.
+
+    Die Abhängigkeiten holen ``davey`` deshalb nicht mehr (siehe ``pyproject.toml``).
+    Diese Zeile ist der zweite Riegel: ``py-cord[voice]`` zieht es mit, und ein
+    Nachbarpaket kann es jederzeit wieder hereinbringen. Steht die Fassung dann auf 0,
+    stuft Discord den Kanal auf die Transportverschlüsselung herunter, die PyNaCl liest.
+
+    Fällt DAVE eines Tages nicht mehr weg, weil Discord es erzwingt, hört der Bot auf zu
+    hören — dann hilft nur eine py-cord-Fassung, die vor dem Dekodieren entschlüsselt
+    (Pycord-Issue #3139).
+    """
+    zustand = getattr(getattr(discord, "voice", None), "state", None)
+    if zustand is None or getattr(zustand, "DAVE_PROTOCOL_VERSION", 0) == 0:
+        return
+    logger.info(
+        "DAVE wird abgemeldet: gemeldet wird Fassung 0 statt %s.", zustand.DAVE_PROTOCOL_VERSION
+    )
+    zustand.DAVE_PROTOCOL_VERSION = 0
+
+
 def _sprache_pruefen(discord) -> None:
     """Beim Start prüfen, was sonst erst im Sprachkanal auffällt.
 
-    Fehlt PyNaCl oder davey, verbindet sich py-cord anstandslos und schreibt eine einzige
-    Warnzeile ins Log; scheitern würde erst ``/aufnahme start``, mitten im Befehl und für
-    den Aufrufer unsichtbar. Ein Bot, der nichts hören kann, soll das beim Start sagen.
+    Fehlt PyNaCl, verbindet sich py-cord anstandslos und schreibt eine einzige Warnzeile
+    ins Log; scheitern würde erst ``/aufnahme start``, mitten im Befehl und für den
+    Aufrufer unsichtbar. Ein Bot, der nichts hören kann, soll das beim Start sagen.
     """
-    fehlend = discord.utils.get_missing_voice_dependencies()
+    fehlend = tuple(
+        name
+        for name in discord.utils.get_missing_voice_dependencies()
+        if name not in ABSICHTLICH_OHNE
+    )
     if fehlend:
         raise BotFehler(SPRACHE_FEHLT.format(fehlend=", ".join(fehlend)))
 
@@ -1491,6 +1529,7 @@ def _feld(discord, beschreibung: str):
 def baue(config: Config):
     """Der Bot mit seinen Befehlen und dem Thread, der die Sitzung ist — ohne Verbindung."""
     discord = _discord()
+    _dave_abmelden(discord)
     _sprache_pruefen(discord)
     absichten = discord.Intents.none()
     absichten.guilds = True

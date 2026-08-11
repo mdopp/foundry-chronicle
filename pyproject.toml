@@ -26,12 +26,24 @@ transcribe = ["faster-whisper>=1.1"]
 # eine Datei begrenzt. py-cord belegt das Paket ``discord``; ein daneben installiertes
 # discord.py schlägt sich mit ihm.
 #
-# **Das Extra ``[voice]`` wird von py-cord abgeholt, nicht von Hand nachgebaut.** Genau
-# das war der Fehler davor: PyNaCl war abgeschrieben, ``davey`` fehlte — und ohne davey
-# spricht py-cord Discords DAVE-Verschlüsselung nicht, meldet »voice will NOT be
-# supported« und der Bot verbindet sich, ohne je etwas zu hören. ``davey`` steht daneben
-# trotzdem namentlich, damit die Zeile sagt, worauf es ankommt.
-discord = ["py-cord[voice]>=2.8.1", "davey>=0.1.6"]
+# **``davey`` fehlt hier mit Absicht — und das ist die Bedingung dafür, dass der Bot
+# überhaupt etwas hört.** py-cord meldet Discord als höchste unterstützte Fassung von
+# DAVE das, was ``davey`` mitbringt, sonst **0**. Mit davey wird DAVE ausgehandelt, der
+# Ton kommt Ende-zu-Ende verschlüsselt an — und py-cord dekodiert in ``opus.py`` **erst**
+# Opus und entschlüsselt **danach**. Der Dekoder sieht also Rauschen und wirft »corrupted
+# stream«; der Empfänger stirbt, die Sitzung bekommt keine Spur. Genau so am 2026-08-11
+# erlebt. Ohne davey melden wir 0, Discord stuft den Kanal auf die reine
+# Transportverschlüsselung herunter, und die kann py-cord mit PyNaCl lesen.
+#
+# Ohne davey schreibt py-cord eine Warnzeile (»voice will NOT be supported«) — sie ist
+# irreführend: abgeschaltet wird nichts, siehe ``utils.warn_if_voice_dependencies_missing``.
+# Wirklich nötig ist **PyNaCl**, und das holt ``[voice]``.
+#
+# **Wenn Discord DAVE eines Tages erzwingt, hört der Bot auf zu hören.** Dann hilft nur
+# eine py-cord-Fassung, die vor dem Dekodieren entschlüsselt — Pycord-Issue #3139.
+# Ohne ``[voice]``, weil dieses Extra ``davey`` mitzieht. PyNaCl steht deshalb hier
+# selbst, mit py-cords eigener Schranke.
+discord = ["py-cord>=2.8.1", "PyNaCl>=1.6.2,<1.7"]
 # py-cord gehört hier dazu, obwohl nur der Bot es braucht: der Regressionstest
 # registriert unsere Senke gegen py-cords **echten** Empfangs-Router. Genau das haben die
 # Attrappen nicht gesehen — zweimal hintereinander fiel erst auf der Box auf, dass wir
@@ -43,7 +55,8 @@ dev = [
     "ruff>=0.6",
     "pre-commit>=3.7",
     "pyyaml>=6.0",
-    "py-cord[voice]>=2.8.1",
+    "py-cord>=2.8.1",
+    "PyNaCl>=1.6.2,<1.7",
 ]
 
 [build-system]
