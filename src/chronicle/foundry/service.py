@@ -11,12 +11,14 @@ entscheidet vor dem Speichern, ob dieser Server überhaupt die Welt dieser Runde
 
 from __future__ import annotations
 
+import json
 import logging
 from datetime import UTC, datetime
+from pathlib import Path
 
 from chronicle import db, lebenszyklus, settings, zugang
 from chronicle.config import Config
-from chronicle.foundry import store
+from chronicle.foundry import store, testwelt
 from chronicle.foundry.client import FoundryClient, FoundryError
 from chronicle.foundry.model import NICHT_MEHR_VORHANDEN, SyncState, World, WorldSnapshot
 from chronicle.foundry.world import identity, project
@@ -25,6 +27,24 @@ from chronicle.runde import Runde
 logger = logging.getLogger(__name__)
 
 NICHT_ERREICHBAR = "Foundry war nicht erreichbar: {grund}"
+
+ABZUG_GESCHRIEBEN = (
+    "Der Weltabzug liegt in {ziel} — {groesse} KB. Er trägt die Klarnamen aller Konten "
+    "dieser Welt und gehört nie ins Repo. Für eine eincheckbare Fixture erst durch "
+    "scripts/anonymisiere_welt.py schicken."
+)
+
+# Der Abzug ist personenbezogen und landet deshalb immer im selben, gitignorierten Ordner:
+# ein frei wählbarer Pfad hieße, dass ein Tippfehler ihn neben den Quelltext legt, wo ihn
+# keine Ignore-Regel mehr fängt.
+ABZUG_ORDNER = Path("dumps")
+ABZUG_ZIEL = ABZUG_ORDNER / "welt-dump.json"
+
+# Ein Wortlaut für alle Stellen: Band, Karte und Abgleichsmeldung sagen denselben Satz.
+# Zwei Formulierungen wären zwei Gelegenheiten, eine davon zu übersehen.
+TESTWELT_STAND = (
+    "{hinweis} Eingespielt aus der mitgelieferten Fixture: {umfang}. Es war kein Server im Spiel."
+)
 
 ANDERE_WELT = (
     "Dieser Foundry-Server zeigt gerade eine andere Welt: erwartet war »{erwartet}«, "
@@ -113,6 +133,56 @@ def failed(config: Config, runde: Runde) -> bool:
         scope.close()
 
 
+def _testwelt(scope: db.Scope, zeitpunkt: str) -> SyncState:
+    """Die eingebaute Welt durch dieselbe Strecke — nur ohne Netz davor.
+
+    Gebunden wird die Runde an sie **nicht**: die Testwelt ist keine Kampagne, und eine
+    Bindung an sie machte das Zurückschalten auf den echten Server zu einem Weltwechsel,
+    den der Abgleich dann verweigern müsste.
+    """
+    user_id, raw = testwelt.abzug()
+    store.save(scope, project(raw, user_id, fetched_at=zeitpunkt))
+    snapshot = store.load(scope)
+    logger.info("Testwelt eingespielt: %s", _umfang(snapshot))
+    return SyncState(
+        message=TESTWELT_STAND.format(hinweis=testwelt.HINWEIS, umfang=_umfang(snapshot)),
+        snapshot=snapshot,
+    )
+
+
+def abzug(
+    config: Config,
+    runde: Runde,
+    ziel: Path,
+    *,
+    passwort: str | None = None,
+    client: FoundryClient | None = None,
+) -> str:
+    """Der rohe Weltabzug in eine Datei — derselbe Handschlag, kein Filter, kein Speicher.
+
+    Was hier herauskommt, ist die ungefilterte Antwort des Servers: die Klarnamen aller
+    Konten, Journale, Charakterbiografien. Sie geht deshalb bewusst **nicht** durch
+    ``project`` und **nicht** in die SQLite — sie ist Rohstoff für den Anonymisierer und
+    sonst nichts.
+    """
+    geheim = passwort or zugang.passwort(runde)
+    wirksam = settings.effective(config, runde)
+    try:
+        _user_id, raw = (client or FoundryClient(wirksam, geheim)).fetch_world()
+    finally:
+        zugang.vergiss(runde)
+    ziel.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    # ``mode`` beim Anlegen ist von der umask beschnitten und wird ganz übergangen, wenn
+    # das Verzeichnis schon steht — ein vorhandenes 0755 bliebe sonst offen.
+    ziel.parent.chmod(0o700)
+    # Erst die Rechte, dann der Inhalt: eine Datei mit Klarnamen darf nicht einmal
+    # kurzzeitig für alle lesbar dastehen.
+    ziel.touch(mode=0o600, exist_ok=True)
+    ziel.chmod(0o600)
+    ziel.write_text(json.dumps(raw, ensure_ascii=False), encoding="utf-8")
+    return ABZUG_GESCHRIEBEN.format(ziel=ziel, groesse=ziel.stat().st_size // 1024)
+
+
 def sync(
     config: Config,
     runde: Runde,
@@ -134,9 +204,13 @@ def sync(
     scope = _open(config, runde)
     try:
         # Nach dem Rauswurf wird bei dieser Gruppe nichts mehr geholt — auch nicht mit
-        # einem Passwort, das noch im Speicher liegt.
+        # einem Passwort, das noch im Speicher liegt. Die Sperre steht vor der Quellwahl:
+        # auch die Testwelt schriebe in die Runde, und eine ruhende Runde bekommt nichts
+        # mehr, gleich woher es käme.
         if lebenszyklus.ruht(runde):
             return SyncState(message=lebenszyklus.RUHT, stale=True)
+        if settings.foundry_quelle(runde) == settings.TESTWELT:
+            return _testwelt(scope, zeitpunkt)
         try:
             geheim = passwort or zugang.passwort(runde)
             wirksam = settings.effective(config, runde)

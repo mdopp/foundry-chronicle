@@ -64,6 +64,17 @@ DEFAULT_NIGHTLY_ZONE = "Europe/Berlin"
 # nicht gespeichert — ein aus dem Formular kommender Name geht so nie an ``ZoneInfo``.
 ZONEN: tuple[str, ...] = tuple(sorted(available_timezones()))
 
+# Woher die Spieldaten kommen. Auch das gehört der Runde und nicht der Umgebung: die eine
+# Gruppe spielt auf ihrem Server, die andere probiert die Instanz erst einmal aus. Steht
+# hier ``testwelt``, redet der Abgleich mit niemandem — er liest die mitgelieferte,
+# erzeugte Welt. Was dann angezeigt wird, ist erfunden, und die Oberfläche sagt das
+# an jeder Stelle dazu; eine Verwechslung wäre der teuerste Fehler dieses Schalters.
+QUELLE_KEY = "foundry_quelle"
+SERVER = "server"
+TESTWELT = "testwelt"
+QUELLEN = (SERVER, TESTWELT)
+DEFAULT_QUELLE = SERVER
+
 FRONTEND = "Frontend"
 UMGEBUNG = "Umgebung"
 STANDARD = "Standard dieser Box"
@@ -168,6 +179,21 @@ def save_nightly_zone(runde: Runde, value: str) -> bool:
     return True
 
 
+def foundry_quelle(runde: Runde) -> str:
+    """Echter Server oder eingebaute Testwelt — ein unbekannter Wert ist der Server."""
+    wert = _lesen(runde, QUELLE_KEY)
+    return wert if wert in QUELLEN else DEFAULT_QUELLE
+
+
+def save_foundry_quelle(runde: Runde, value: str) -> bool:
+    """Speichert die Quelle; ein unbekannter Wert lässt die bisherige stehen."""
+    gewaehlt = value.strip()
+    if gewaehlt not in QUELLEN:
+        return False
+    save(runde, {QUELLE_KEY: gewaehlt})
+    return True
+
+
 def save(runde: Runde, values: Mapping[str, str | None]) -> None:
     """Leerer Wert heißt: Eintrag weg, die Umgebung gilt wieder.
 
@@ -175,7 +201,7 @@ def save(runde: Runde, values: Mapping[str, str | None]) -> None:
     ``values`` — sonst löscht ein leer abgesendetes Formularfeld es.
     """
     instanz.save(runde.database_path, values)
-    erlaubt = (*RUNDEN_KEYS, NIGHTLY_KEY, NIGHTLY_ZONE_KEY)
+    erlaubt = (*RUNDEN_KEYS, NIGHTLY_KEY, NIGHTLY_ZONE_KEY, QUELLE_KEY)
     scope = db.scoped(runde)
     try:
         with scope:

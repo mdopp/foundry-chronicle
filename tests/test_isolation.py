@@ -286,6 +286,7 @@ ABFRAGEN = {
     "settings.is_set": lambda c, r, i: settings.is_set(c, r, "foundry_url"),
     "settings.nightly_time": lambda c, r, i: settings.nightly_time(r),
     "settings.nightly_zone": lambda c, r, i: settings.nightly_zone(r),
+    "settings.foundry_quelle": lambda c, r, i: settings.foundry_quelle(r),
     "settings.nightly_at": lambda c, r, i: settings.nightly_at("04:00"),
     "service.current": lambda c, r, i: foundry_service.current(c, r),
     "service.failed": lambda c, r, i: foundry_service.failed(c, r),
@@ -359,7 +360,9 @@ SCHREIBER = frozenset(
         "settings.save",
         "settings.save_nightly_time",
         "settings.save_nightly_zone",
+        "settings.save_foundry_quelle",
         "service.sync",
+        "service.abzug",
         "zugang.merken",
         "zugang.vergiss",
         "store.save",
@@ -596,6 +599,14 @@ def test_ollama_gehoert_der_instanz_und_nicht_der_runde(zwei_runden):
         connection.close()
     assert "ollama_model" not in gepflegt
     assert "ollama_url" not in gepflegt
+
+
+def test_die_quelle_der_spieldaten_gehoert_der_runde(zwei_runden):
+    """Die eine Gruppe probiert die Testwelt aus, die andere spielt weiter auf ihrem Server."""
+    _config, a, b, _ids = zwei_runden
+    settings.save_foundry_quelle(a, settings.TESTWELT)
+    assert settings.foundry_quelle(a) == settings.TESTWELT
+    assert settings.foundry_quelle(b) == settings.SERVER
 
 
 def test_bot_token_gehoert_der_instanz_und_nicht_der_runde(zwei_runden):

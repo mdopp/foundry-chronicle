@@ -16,7 +16,29 @@
       wird keine Zahl. Ohne Zugang wird trotzdem mitgeschrieben, die Chronik bleibt dann
       ohne diese Zahlen.</p>
 
-    {% if config.foundry_configured %}
+    <fieldset class="wahl">
+      <legend>Quelle</legend>
+      <label class="zeile">
+        <input type="radio" name="{{ quelle_feld }}" value="{{ quelle_server }}"
+               {% if quelle != quelle_testwelt %}checked{% endif %}>
+        <span>Echter Server — Adresse, Benutzer und Passwort weiter unten.</span>
+      </label>
+      <label class="zeile">
+        <input type="radio" name="{{ quelle_feld }}" value="{{ quelle_testwelt }}"
+               {% if quelle == quelle_testwelt %}checked{% endif %}>
+        <span>Eingebaute Testwelt — eine erfundene Beispielwelt aus dem Paket, ohne
+          Netz und ohne Passwort. <strong>Das sind keine echten Kampagnendaten.</strong></span>
+      </label>
+      <p class="gedaempft">Umschalten ersetzt beim nächsten Abgleich den ganzen
+        Zwischenspeicher mit der jeweils anderen Welt. Szenen, die auf Nachrichten der
+        anderen Welt verweisen, laufen dann ins Leere — das ist harmlos und mit dem
+        Rück-Abgleich wieder da.</p>
+    </fieldset>
+
+    {% if quelle == quelle_testwelt %}
+      <p class="hinweis"><strong>{{ testwelt_hinweis }}</strong> Was unten als letzter
+        Abgleich steht, stammt aus der mitgelieferten Fixture — nicht von eurem Server.</p>
+    {% elif config.foundry_configured %}
       <p class="steht">Zugang steht: <code>{{ config.foundry_user }}</code> auf
         <code>{{ config.foundry_url }}</code>. Das Passwort wird nicht gespeichert.</p>
     {% else %}
@@ -46,6 +68,9 @@
       gespeicherten Zugang.</p>
     {# Das Feld gehört zum Abgleich-Formular unten, nicht zum Speichern-Formular: das
        Passwort geht in diesen einen Lauf und in keine Einstellung. #}
+    {% if quelle == quelle_testwelt %}
+    <p class="gedaempft">Die Testwelt braucht kein Passwort — sie liegt als Datei im Paket.</p>
+    {% else %}
     <div class="feld">
       <label for="foundry_password">Foundry-Passwort für diesen Abgleich</label>
       <input id="foundry_password" name="foundry_password" type="password" form="abgleich"
@@ -53,6 +78,7 @@
       <p class="gedaempft">Wird nicht gespeichert: es gilt für diesen Abgleich und ist
         danach vergessen — beim nächsten Mal fragt die Seite wieder.</p>
     </div>
+    {% endif %}
     <div class="absenden">
       <button type="submit" class="leise" form="abgleich">Jetzt abgleichen</button>
     </div>
@@ -223,6 +249,7 @@
   <p class="gedaempft">Woher jeder Wert gerade stammt — was hier gespeichert ist, schlägt
     die Umgebung:</p>
   <dl>
+    <dt>Quelle der Spieldaten</dt><dd>{{ quelle }}</dd>
     <dt>Foundry-Adresse</dt><dd>{{ quellen.foundry_url }}</dd>
     <dt>Foundry-Benutzer</dt><dd>{{ quellen.foundry_user }}</dd>
     <dt>Discord-Bot-Token</dt><dd>{{ quellen.discord_bot_token }}</dd>

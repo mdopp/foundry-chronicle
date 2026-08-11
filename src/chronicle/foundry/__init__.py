@@ -17,9 +17,11 @@ from chronicle.foundry.model import (
     World,
     WorldSnapshot,
 )
-from chronicle.foundry.service import current, failed, sync
+from chronicle.foundry.service import abzug, current, failed, sync
+from chronicle.foundry.testwelt import HINWEIS as TESTWELT_HINWEIS
 
 __all__ = [
+    "TESTWELT_HINWEIS",
     "Character",
     "ChatMessage",
     "Die",
@@ -33,6 +35,7 @@ __all__ = [
     "SyncState",
     "World",
     "WorldSnapshot",
+    "abzug",
     "current",
     "failed",
     "sync",
