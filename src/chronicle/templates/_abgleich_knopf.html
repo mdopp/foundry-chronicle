@@ -1,6 +1,0 @@
-{# Zurück auf die Seite, von der aus angestoßen wurde — der Abgleich ist eine Handlung
-   nebenbei, kein Ortswechsel. #}
-<form method="post" action="{{ url_for('abgleich_anstossen') }}">
-  <input type="hidden" name="zurueck" value="{{ request.path }}">
-  <div class="absenden"><button type="submit" class="leise">Jetzt abgleichen</button></div>
-</form>

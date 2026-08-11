@@ -602,17 +602,19 @@ def test_der_bot_token_gehoert_der_instanz_und_keiner_runde(zwei_runden):
     config, a, b, _ids = zwei_runden
     instanz.save(config.database_path, {"discord_bot_token": TOKEN})
 
-    # Er steht in ``meta`` und in keiner runden-eigenen Zeile — sonst läge er im Zugriff
-    # einer Gruppe, sobald sie ihre eigenen Einstellungen liest.
-    for gruppe in (a, b):
-        assert "discord_bot_token" not in _gepflegte_zeilen(gruppe)
-
-    # Und die Wege, die einer Gilde offenstehen, kommen an ihn nicht heran: ``/setup``
-    # und die Kanalwahl kennen nur Werte der Runde und nennen ihn in keinem Satz.
+    # Erst schreiben, dann nachsehen — vor dem Schreiben sagt die Prüfung nichts. ``/setup``
+    # und die Kanalwahl sind die Wege, die einer Gilde offenstehen; der Schreibversuch mit
+    # der Runde als Absender ist der, den ein Formular ihr eröffnen könnte.
     eingerichtet = bot_einrichten.einrichten(
         config, "gilde-b", "Zweite", adresse="https://b.example", benutzer="chronist"
     )
     kanal = bot_einrichten.kanal_setzen(b, "4711")
+    settings.save(b, {"discord_bot_token": TOKEN})
+
+    # Er steht in ``meta`` und in keiner runden-eigenen Zeile — sonst läge er im Zugriff
+    # einer Gruppe, sobald sie ihre eigenen Einstellungen liest.
+    for gruppe in (a, b):
+        assert "discord_bot_token" not in _gepflegte_zeilen(gruppe)
 
     assert TOKEN not in eingerichtet.meldung + kanal
     assert instanz.stored(config.database_path)["discord_bot_token"] == TOKEN

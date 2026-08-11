@@ -44,8 +44,8 @@ Notizen. `/status` leitet mit 301 auf `/einstellungen`. Am Notizfeld sitzt ein
 die **Cloud des Browser-Herstellers** läuft und nicht auf dieser Box — Browser ohne
 `SpeechRecognition` zeigen ihn gar nicht erst.
 
-**Anstoßen kann der Nutzer selbst.** *Chronik erstellen* (Sitzungs- und Chronikseite) und
-*Jetzt abgleichen* (Band) starten **server-eigene Läufe** nach dem
+**Anstoßen kann der Nutzer selbst.** *Chronik erstellen* (Sitzungs- und Chronikseite)
+startet einen **server-eigenen Lauf** nach dem
 ServiceBay-Standard für lange Prozesse: der Zustand steht in der Tabelle `job`, überlebt
 Neuladen und geschlossenen Reiter, und ein Neustart mitten im Lauf wird beim nächsten
 Blick ehrlich als unterbrochen vermerkt statt für immer zu laufen. Je Art läuft höchstens
@@ -58,8 +58,10 @@ zweite Weg. Die Stapel-Einstiege unten bleiben — sie sind der Weg für Cron un
 stehen der Discord-Bot-Token, Ollama-Adresse und -Modell sowie die Verwaltungsgruppe — die
 gehören der Instanz und keiner Gilde, haben also in Discord keinen Ort. Alles Runden-eigene
 — Foundry-Adresse und -Benutzer, Zustellkanal, Uhrzeit des nächtlichen Laufs — ist von
-dieser Seite verschwunden und wird in Discord mit `/setup` gepflegt. Weil dort ein
-Geheimnis liegt, bleibt ADR 0001 (Authelia-SSO) für sie in Kraft.
+dieser Seite verschwunden und wird in Discord mit `/setup` gepflegt; auch den
+Foundry-Abgleich stößt niemand mehr hier an, sondern `/chronik fertig` in Discord oder der
+nächtliche Lauf. Weil auf der Seite ein Geheimnis liegt, bleibt ADR 0001 (Authelia-SSO)
+für sie in Kraft.
 
 Die Werte liegen in der SQLite. Die Umgebung — `FOUNDRY_URL`, `FOUNDRY_USER`,
 `DISCORD_BOT_TOKEN`, `OLLAMA_URL`, `OLLAMA_MODEL` — bleibt als Vorgabe beim ersten Start
@@ -123,10 +125,13 @@ python -m chronicle.transcribe 1 mira.ogg --loeschen   # Aufnahme danach entfern
 ```
 
 Von selbst läuft das alles im **nächtlichen Lauf**: abholen, verschriften, abgleichen,
-komponieren — zu einer Uhrzeit, die jede Runde für sich einstellt (Vorgabe 04:00), in
-**ihrer eigenen Zeitzone** (Vorgabe `Europe/Berlin`); der Container selbst bleibt auf
-UTC, weil eine Instanz mehrere Runden trägt. Die Stapel-Einstiege oben sind der Weg für
-Cron, Betrieb und Ungeduld.
+komponieren — zu einer Uhrzeit, die jede Runde für sich einstellt (`/setup` in Discord,
+Vorgabe 04:00). Sie gilt in einer **runden-eigenen Zeitzone**; der Container selbst bleibt
+auf UTC, weil eine Instanz mehrere Runden trägt. **Einstellen lässt sich die Zone gerade
+nirgends** — seit #89 hat sie kein Feld mehr und in Discord noch keins, es gilt also für
+jede Runde `Europe/Berlin`; festgehalten ist die Lücke in
+[#110](../../issues/110). Die Stapel-Einstiege oben sind der Weg für Cron, Betrieb und
+Ungeduld.
 
 Ohne Argumente wird abgearbeitet, was über die Oberfläche hochgeladen wurde und noch
 wartet: auf der Sitzungsseite lädt ein **Diktat** — eine Sprachnotiz aus der

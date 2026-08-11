@@ -20,6 +20,11 @@ Werte der *Instanz* — Bot-Token, Ollama, Verwaltungsgruppe —, und die haben 
 keinen Ort, weil sie keiner Gilde gehören. Alles Runden-eigene ist von dieser Seite
 verschwunden; gepflegt wird es per ``/setup`` in Discord.
 
+Aus demselben Grund stößt diese Oberfläche **keinen Foundry-Abgleich** mehr an: er redet
+mit dem Server *einer* Runde und braucht deren Passwort, das hier niemand mehr eingibt.
+Angestoßen wird er von ``/chronik fertig`` in Discord und vom nächtlichen Lauf; das Band
+sagt weiterhin, wie es um den letzten steht.
+
 Der nächtliche Lauf hängt an ``dienst()`` und nicht an ``create_app``: eine App, die nur
 befragt wird — im Test, im Skript —, soll nicht anfangen zu arbeiten. Er läuft hier und
 nicht im Aufnahme-Bot, weil es den ohne Bot-Token gar nicht gibt (siehe
@@ -44,7 +49,6 @@ from chronicle import (
     roles,
     search,
     settings,
-    zugang,
 )
 from chronicle import runde as runden
 from chronicle.compose import client as sprachmodell
@@ -98,7 +102,6 @@ VERWALTUNG = frozenset(
         "zuordnung_speichern",
         "register_vorschlaege",
         "register_entscheiden",
-        "abgleich_anstossen",
         "chronik_anstossen",
     }
 )
@@ -144,13 +147,10 @@ def create_app(config: Config | None = None, *, zeitplan: bool = False) -> Flask
 
     @app.context_processor
     def verbindungsband() -> dict[str, object]:
-        # ``abgleich_job`` steht auch dort, wo kein Band hängt: die Einstellungen zeigen
-        # denselben Lauf im Abschnitt »Zustand«, nur ausführlicher.
         if g.get("abgewiesen"):
             return {
                 "verbindung": None,
                 "zugang": None,
-                "abgleich_job": None,
                 "verwalter": False,
                 "testwelt": False,
             }
@@ -160,7 +160,6 @@ def create_app(config: Config | None = None, *, zeitplan: bool = False) -> Flask
         rahmen = {
             "verbindung": None,
             "zugang": None,
-            "abgleich_job": lauf,
             "verwalter": verwalter,
             # Das Band der Testwelt hängt auch dort, wo sonst keines hängt — in den
             # Einstellungen und im Wizard. Wer erfundene Zahlen für echte hält, ist der
@@ -183,20 +182,6 @@ def create_app(config: Config | None = None, *, zeitplan: bool = False) -> Flask
         if lauf is not None and lauf.laeuft:
             return rahmen | {"verbindung": ABGLEICH_LAEUFT}
         return rahmen | {"verbindung": VERALTET if foundry.failed(basis, runde) else None}
-
-    def zurueck(fallback: str) -> str:
-        ziel = request.form.get("zurueck", "")
-        # Nur ein Pfad dieses Dienstes — »//woanders« führte aus ihm hinaus.
-        return ziel if ziel.startswith("/") and not ziel.startswith("//") else fallback
-
-    @app.post("/abgleich")
-    def abgleich_anstossen() -> Response:
-        # Das Passwort kommt mit dem Knopf und geht in den Arbeitsspeicher, nicht in die
-        # Datenbank; der Lauf verbraucht es. Der ganze Weg fällt mit #69 weg — in Discord
-        # fragt ein Modal danach.
-        zugang.merken(runde, request.form.get("foundry_password", ""))
-        jobs.start(basis, runde, jobs.ABGLEICH, lambda: jobs.abgleich(basis, runde))
-        return redirect(zurueck(url_for("sitzungen")))
 
     @app.post("/sitzungen/<int:sitzung_id>/chronik")
     def chronik_anstossen(sitzung_id: int) -> Response:
