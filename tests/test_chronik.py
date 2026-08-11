@@ -114,6 +114,9 @@ class FakeCtx:
         self.antworten: list[str] = []
         self.modale: list[FakeModal] = []
         self.aufgeschoben = False
+        # Ein Fenster antwortet über seine eigene Interaktion. Hier ist es dieselbe
+        # Attrappe, damit ein Test alles Gesagte an einer Stelle nachlesen kann.
+        self.response = types.SimpleNamespace(send_message=self.respond)
 
     async def defer(self, **rest):
         self.aufgeschoben = True
@@ -218,9 +221,17 @@ def chronikbefehl(bot, name):
     return bot.gruppen[gateway.GRUPPE_CHRONIK].befehle[name]
 
 
-def sitzung_starten(bot, ctx=None, titel=""):
+def sitzung_starten(bot, ctx=None, titel="", *, passwort=""):
+    """``/chronik start`` samt dem Fenster, das seit #96 davor steht."""
     ctx = ctx if ctx is not None else FakeCtx()
-    asyncio.run(chronikbefehl(bot, "start")(ctx, titel))
+
+    async def ablauf():
+        await chronikbefehl(bot, "start")(ctx, titel)
+        for fenster in ctx.modale:
+            fenster.children[0].value = passwort
+            await fenster.callback(ctx)
+
+    asyncio.run(ablauf())
     thread = ctx.channel.threads[-1] if ctx.channel.threads else None
     return ctx, thread
 
@@ -268,7 +279,8 @@ def test_start_legt_sitzung_und_thread_an_und_sagt_wie_es_weitergeht(stelle, bot
     assert notes.session(unsere, sitzung_id).title == "Der Keller"
     assert thread.name == "Der Keller"
     assert thread.gesendet == [chronik.ANGELEGT]
-    assert ctx.antworten == [chronik.THREAD_STEHT.format(thread=thread.mention)]
+    (antwort,) = ctx.antworten
+    assert chronik.THREAD_STEHT.format(thread=thread.mention) in antwort
 
 
 def test_ohne_titel_traegt_der_thread_das_datum(stelle, bot):
@@ -285,17 +297,78 @@ def test_ohne_runde_fuer_diesen_server_entsteht_nichts(stelle, bot):
     (antwort,) = ctx.antworten
     assert chronik.KEINE_RUNDE in antwort
     assert ctx.channel.threads == []
+    assert ctx.modale == []
 
 
 def test_ohne_thread_recht_bleibt_keine_halbe_sitzung_liegen(stelle, bot):
     _config, unsere = stelle
     ctx = FakeCtx(kanal=FakeTextkanal(darf=False))
 
-    asyncio.run(chronikbefehl(bot, "start")(ctx, ""))
+    sitzung_starten(bot, ctx, passwort=PASSWORT)
 
     (antwort,) = ctx.antworten
     assert chronik.KEIN_THREAD in antwort
     assert notes.sessions(unsere) == ()
+    # Kein Thread, keine Sitzung — und erst recht kein Passwort, das bis zur Frist läge.
+    assert not zugang.ist_gemerkt(unsere)
+
+
+# -- Das Passwort beim Sitzungsstart ----------------------------------------------------
+
+
+def test_start_fragt_das_passwort_im_fenster_und_haelt_es_die_sitzung_ueber(stelle, bot):
+    _config, unsere = stelle
+
+    ctx, thread = sitzung_starten(bot, passwort=PASSWORT)
+
+    assert ctx.modale[0].title == chronik.START_TITEL
+    assert zugang.passwort(unsere) == PASSWORT
+    assert chronik.MIT_FOUNDRY in ctx.antworten[0]
+    # Gezeigt wird *ob*, nie *was* — auch nicht im Thread, den die ganze Runde liest.
+    assert PASSWORT not in " ".join(ctx.antworten + thread.gesendet)
+
+
+def test_ohne_passwort_laeuft_die_sitzung_trotzdem(stelle, bot):
+    _config, unsere = stelle
+
+    ctx, thread = sitzung_starten(bot)
+
+    assert notes.session_of_thread(unsere, str(thread.id)) is not None
+    assert not zugang.ist_gemerkt(unsere)
+    assert chronik.OHNE_FOUNDRY in ctx.antworten[0]
+
+
+def test_ein_leeres_feld_wirft_ein_liegendes_passwort_nicht_weg(stelle, bot):
+    """Leer heißt überspringen, nicht vergessen — sonst nähme ein zweiter Start der
+    laufenden Sitzung ihren Zugang zu Foundry."""
+    _config, unsere = stelle
+    sitzung_starten(bot, passwort=PASSWORT)
+
+    sitzung_starten(bot)
+
+    assert zugang.passwort(unsere) == PASSWORT
+
+
+def test_ein_altes_startfenster_merkt_das_passwort_keiner_fremden_runde(stelle, bot):
+    """Wie am Fenster des Abschlusses: die Kennung wird nach einer Löschung neu vergeben,
+    und ein Fenster von vorhin darf nicht in die frische Runde hineinschreiben."""
+    config, unsere = stelle
+    ctx = FakeCtx()
+
+    async def ablauf():
+        await chronikbefehl(bot, "start")(ctx, "")
+        lebenszyklus.loeschen(config, unsere)
+        frisch = runden.anlegen(config.database_path, "Frisch", guild_id=GILDE)
+        ctx.modale[0].children[0].value = PASSWORT
+        await ctx.modale[0].callback(ctx)
+        return frisch
+
+    frisch = asyncio.run(ablauf())
+
+    assert ctx.antworten == [chronik.VERALTET]
+    assert ctx.channel.threads == []
+    assert notes.sessions(frisch) == ()
+    assert not zugang.ist_gemerkt(frisch)
 
 
 # -- Jede Nachricht ist eine Notiz ------------------------------------------------------
@@ -586,6 +659,52 @@ def test_fertig_fragt_nach_dem_passwort_und_stoesst_den_einen_lauf_an(stelle, bo
     assert interaktion.response.gesendet == [chronik.FERTIG]
     assert thread.gesendet == [chronik.ANGELEGT, STEHT]
     assert jobs.latest(unsere, jobs.CHRONIK, sitzung_id).result == STEHT
+
+
+def test_nach_dem_passwort_beim_start_fragt_der_abschluss_nicht_noch_einmal(
+    stelle, bot, monkeypatch
+):
+    _config, unsere = stelle
+    _ctx, thread = sitzung_starten(bot, passwort=PASSWORT)
+    gesehen = []
+
+    def abschluss(config, eine, session_id):
+        gesehen.append(zugang.passwort(eine))
+        return STEHT
+
+    monkeypatch.setattr(jobs, "abschluss", abschluss)
+    ctx = FakeCtx(kanal=thread)
+
+    async def ablauf():
+        await chronikbefehl(bot, "fertig")(ctx)
+        await _bis_der_lauf_durch_ist(unsere)
+
+    asyncio.run(ablauf())
+
+    assert ctx.modale == []
+    assert gesehen == [PASSWORT]
+    assert ctx.antworten == [chronik.FERTIG]
+
+
+def test_auch_mit_gemerktem_passwort_endet_die_aufnahme_vor_dem_lauf(
+    stelle, bot, monkeypatch, ohne_espeak
+):
+    _config, unsere = stelle
+    _ctx, thread = sitzung_starten(bot, passwort=PASSWORT)
+    mitschnitt = mitschnitt_starten(bot)
+    monkeypatch.setattr(jobs, "abschluss", lambda config, eine, sid: STEHT)
+    ctx = FakeCtx(kanal=thread)
+
+    async def ablauf():
+        await chronikbefehl(bot, "fertig")(ctx)
+        await _bis_der_lauf_durch_ist(unsere)
+
+    asyncio.run(ablauf())
+
+    assert mitschnitt.kanal.verbindung.getrennt
+    assert [spur.filename.split("-")[-1] for spur in recordings.pending(unsere)] == ["Mira.wav"]
+    (antwort,) = ctx.antworten
+    assert "wartet auf den Stapel" in antwort and chronik.FERTIG in antwort
 
 
 def test_ein_altes_passwortfenster_zeigt_das_passwort_keiner_fremden_runde(

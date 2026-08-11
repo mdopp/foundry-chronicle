@@ -141,7 +141,8 @@ UNERWARTET = "unerwarteter Fehler im Bot ({typ})."
 
 BEFEHLE = (
     "• `/chronik start` — ich lege die Sitzung an und öffne den Thread dazu; ab dort wird "
-    "jede Nachricht eine Notiz.\n"
+    "jede Nachricht eine Notiz. Im Fenster davor kannst du das Foundry-Passwort geben — "
+    "freiwillig.\n"
     "• `/szene <Name>` — die Trennlinie zur nächsten Szene.\n"
     "• `/aufnahme start` — ich komme in deinen Sprachkanal, spiele eine hörbare Ansage "
     "und schneide **erst danach** mit, je Sprecherin und Sprecher eine eigene Spur.\n"
@@ -150,7 +151,7 @@ BEFEHLE = (
     "höre ich nach einer kurzen Frist von selbst auf und sage es im Thread.\n"
     "• `/chronik fertig` — Sitzung abschließen: läuft noch eine Aufnahme, beende ich sie "
     "zuerst und reihe die Spuren ein; danach Zahlen holen, verschriften, Chronik "
-    "schreiben.\n"
+    "schreiben. Nach dem Passwort frage ich nur, wenn beim Start keines kam.\n"
     "• `/suche <Wort>` — ich sehe in Notizen, Diktaten, Chroniken und im Register nach; "
     "jeder Treffer führt dorthin zurück, wo er steht.\n"
     "• `/wer <Name>` — was im Register über einen Namen steht.\n"
@@ -541,6 +542,72 @@ async def _noch_dieselbe(config: Config, interaction, runde):
     return gemeint
 
 
+def _startfenster(config: Config, runde, titel: str):
+    """Das Passwort wird beim Start erfragt — freiwillig, damit Foundry den Abend über offen ist.
+
+    Ein Modal und kein Befehls-Argument: ein Argument stünde als Klartext in der
+    Befehlszeile und damit im Verlauf des Kanals. Angelegt wird die Sitzung **hier**, nach
+    dem Absenden — auch ohne Passwort, denn daran darf keine Sitzung scheitern.
+    """
+    discord = _discord()
+
+    class Startfenster(discord.ui.Modal):
+        def __init__(self) -> None:
+            super().__init__(
+                discord.ui.InputText(
+                    label=chronik.START_FELD,
+                    placeholder=chronik.START_HINWEIS,
+                    required=False,
+                ),
+                title=chronik.START_TITEL,
+            )
+
+        async def callback(self, interaction) -> None:
+            # Dieselbe Prüfung wie am Passwortfenster des Abschlusses: die Runde von vorhin
+            # kann eine fremde geworden sein, und ihr ginge sonst das Passwort dieser Gruppe.
+            gemeint = _dieselbe(config, interaction, runde)
+            if gemeint is None:
+                await interaction.response.send_message(chronik.VERALTET, ephemeral=True)
+                return
+            try:
+                thread = await _thread_anlegen(interaction, chronik.threadname(titel))
+                chronik.sitzung_anlegen(gemeint, str(thread.id), titel)
+                gemerkt = chronik.passwort_merken(gemeint, self.children[0].value or "")
+            except BotFehler as fehler:
+                await interaction.response.send_message(
+                    GESCHEITERT.format(grund=str(fehler)), ephemeral=True
+                )
+                return
+            await thread.send(chronik.ANGELEGT)
+            steht = chronik.THREAD_STEHT.format(thread=thread.mention)
+            hinweis = chronik.MIT_FOUNDRY if gemerkt else chronik.OHNE_FOUNDRY
+            await interaction.response.send_message(f"{steht} {hinweis}", ephemeral=True)
+
+    return Startfenster()
+
+
+async def _abschliessen(
+    config: Config, runde, session_id: int, passwort: str | None, lauf: _Lauf, kanal
+) -> str:
+    """Erst den Mitschnitt beenden, dann den einen Lauf — die Reihenfolge steht fest.
+
+    ``passwort`` ist ``None``, wenn beim Start eines gegeben wurde: dann wird nicht noch
+    einmal gefragt und das Gemerkte auch nicht überschrieben.
+    """
+    meldungen: tuple[str, ...] = ()
+    try:
+        meldungen = await _mitschnitt_beenden(lauf, runde)
+        meldung = chronik.abschluss_starten(
+            config, runde, session_id, passwort, melden=_melder(kanal)
+        )
+    except BotFehler as fehler:
+        meldung = GESCHEITERT.format(grund=str(fehler))
+    except Exception as fehler:  # noqa: BLE001
+        logger.exception("Abschluss der Sitzung gescheitert")
+        meldung = GESCHEITERT.format(grund=UNERWARTET.format(typ=type(fehler).__name__))
+    return " ".join((*meldungen, meldung))
+
+
 def _passwortfrage(config: Config, runde, session_id: int, lauf: _Lauf):
     """Das Passwort wird erfragt, verbraucht und vergessen — es steht in keinem Feld.
 
@@ -566,22 +633,10 @@ def _passwortfrage(config: Config, runde, session_id: int, lauf: _Lauf):
             if gemeint is None:
                 await interaction.response.send_message(chronik.VERALTET, ephemeral=True)
                 return
-            meldungen: tuple[str, ...] = ()
-            try:
-                meldungen = await _mitschnitt_beenden(lauf, gemeint)
-                meldung = chronik.abschluss_starten(
-                    config,
-                    gemeint,
-                    session_id,
-                    self.children[0].value,
-                    melden=_melder(interaction.channel),
-                )
-            except BotFehler as fehler:
-                meldung = GESCHEITERT.format(grund=str(fehler))
-            except Exception as fehler:  # noqa: BLE001
-                logger.exception("Abschluss der Sitzung gescheitert")
-                meldung = GESCHEITERT.format(grund=UNERWARTET.format(typ=type(fehler).__name__))
-            await interaction.response.send_message(" ".join((*meldungen, meldung)), ephemeral=True)
+            antwort = await _abschliessen(
+                config, gemeint, session_id, self.children[0].value, lauf, interaction.channel
+            )
+            await interaction.response.send_message(antwort, ephemeral=True)
 
     return Passwortfrage()
 
@@ -594,8 +649,8 @@ def _rechte(wer):
 def _darf_verwalten(wer) -> bool:
     """``/setup`` ist die Schranke vor dem Foundry-Passwort.
 
-    Wer die Adresse setzt, bestimmt, welchem Server das nächste ``/chronik fertig`` das
-    Passwort der Spielleitung vorzeigt. Discords Vorgabe für einen Befehl ohne Angabe ist
+    Wer die Adresse setzt, bestimmt, welchem Server der Bot das Passwort der Spielleitung
+    vorzeigt. Discords Vorgabe für einen Befehl ohne Angabe ist
     »jedes Mitglied« — deshalb steht hier eine Angabe.
     """
     rechte = _rechte(wer)
@@ -1003,11 +1058,9 @@ def baue(config: Config):
     @antwortet
     async def chronik_start(ctx, titel: str = "") -> None:
         runde = chronik.runde_verlangen(config, ctx.guild_id)
-        await ctx.defer(ephemeral=True)
-        thread = await _thread_anlegen(ctx, chronik.threadname(titel))
-        chronik.sitzung_anlegen(runde, str(thread.id), titel)
-        await thread.send(chronik.ANGELEGT)
-        await ctx.respond(chronik.THREAD_STEHT.format(thread=thread.mention), ephemeral=True)
+        # Kein ``defer`` davor: ein Fenster geht nur als *erste* Antwort auf den Befehl.
+        # Deshalb entsteht die Sitzung erst im Rückruf des Fensters.
+        await ctx.send_modal(_startfenster(config, runde, titel))
 
     @chronikgruppe.command(
         name="fertig", description="Sitzung abschließen und die Chronik anstoßen"
@@ -1016,6 +1069,13 @@ def baue(config: Config):
     async def chronik_fertig(ctx) -> None:
         runde = chronik.runde_verlangen(config, ctx.guild_id)
         sitzung = chronik.sitzung_verlangen(runde, str(ctx.channel_id))
+        if chronik.passwort_bereit(runde):
+            await ctx.defer(ephemeral=True)
+            await ctx.respond(
+                await _abschliessen(config, runde, sitzung, None, lauf, ctx.channel),
+                ephemeral=True,
+            )
+            return
         await ctx.send_modal(_passwortfrage(config, runde, sitzung, lauf))
 
     @chronikgruppe.command(

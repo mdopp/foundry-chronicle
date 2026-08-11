@@ -101,6 +101,20 @@ PASSWORT_TITEL = "Sitzung abschließen"
 PASSWORT_FELD = "Passwort für Foundry"
 PASSWORT_HINWEIS = "Nur für diesen einen Abgleich — es wird nirgends gespeichert."
 
+START_TITEL = "Sitzung beginnen"
+START_FELD = "Passwort für Foundry — freiwillig"
+START_HINWEIS = "Leer lassen geht: dann eben ohne die Zahlen."
+
+MIT_FOUNDRY = (
+    "Das Passwort liegt bis zum Abschluss bereit — gespeichert wird es nirgends, und "
+    "`/chronik fertig` fragt nicht noch einmal."
+)
+
+OHNE_FOUNDRY = (
+    "Ohne Foundry-Passwort: die Sitzung läuft, nur die Zahlen fehlen. `/chronik fertig` "
+    "fragt dann noch einmal danach."
+)
+
 
 class ChronikFehler(BotFehler):
     """Was ein Befehl im Thread nicht tun kann — gesagt wird es, still scheitert nichts."""
@@ -201,6 +215,24 @@ def sitzung_anlegen(runde: Runde, thread_id: str, titel: str = "") -> int:
     return notes.create_session(runde, title=titel, thread_id=thread_id)
 
 
+def passwort_merken(runde: Runde, eingabe: str) -> bool:
+    """Das Passwort vom Sitzungsbeginn — gemerkt wird nur, was auch dasteht.
+
+    Ein leeres Feld heißt hier **überspringen**, nicht vergessen: wer beim Start nichts
+    eingibt, soll damit nicht das Passwort einer schon laufenden Sitzung wegwerfen. Das
+    ``merken`` selbst deutet leer als vergessen — deshalb steht die Unterscheidung hier.
+    """
+    if not eingabe.strip():
+        return False
+    zugang.merken(runde, eingabe)
+    return True
+
+
+def passwort_bereit(runde: Runde) -> bool:
+    """Ob für diese Runde noch eines bereitliegt — *ob*, nie *was*."""
+    return zugang.ist_gemerkt(runde)
+
+
 def szene_setzen(runde: Runde, session_id: int, name: str, *, zeitpunkt: str = "") -> str:
     sauber = name.strip()
     notes.add_scene(runde, session_id, title=sauber, at=zeitpunkt)
@@ -273,17 +305,21 @@ def abschluss_starten(
     config: Config,
     runde: Runde,
     session_id: int,
-    passwort: str,
+    passwort: str | None,
     *,
     melden: Callable[[str], None],
 ) -> str:
     """Abgleich, Verschriften, Komponieren — ein Auftrag, eine Meldung im Thread.
 
     Das Passwort wird gemerkt und vom Abgleich verbraucht; liegen bleibt es nicht.
+    ``None`` heißt: es wurde beim Start gegeben und liegt schon bereit — dann wird das
+    Gemerkte nicht überschrieben. Ein leerer Text bleibt dagegen ein leeres Feld und
+    vergisst, was da war.
     """
     if jobs.running(runde, jobs.CHRONIK):
         return LAEUFT_SCHON
-    zugang.merken(runde, passwort)
+    if passwort is not None:
+        zugang.merken(runde, passwort)
     auftrag = jobs.start(
         config,
         runde,
