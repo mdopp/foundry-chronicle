@@ -11,13 +11,13 @@ geschrieben**, und **was angesagt wurde, steht im Wortlaut im Protokoll.**
 from __future__ import annotations
 
 import asyncio
-import functools
 import inspect
 import io
 import logging
 import sqlite3
 import sys
 import threading
+import time
 import tomllib
 import types
 import wave
@@ -157,9 +157,9 @@ class FakeStimme:
         self.ablauf: list[str] = []
         self.angesagt: list[Path] = []
         self.aufnahme = None
-        self.melden = None
         # Wie py-cord: der Bot sitzt da, wo er hingehört, bis ihn jemand zieht.
         self.verschoben = False
+        self.schneidet = False
 
     def mitglieder(self):
         return tuple(self._anwesend)
@@ -171,13 +171,15 @@ class FakeStimme:
         self.ablauf.append("ansage")
         self.angesagt.append(datei)
 
-    def mitschneiden(self, aufnahme, melden=None):
+    def mitschneiden(self, aufnahme):
         self.ablauf.append("mitschnitt")
         self.aufnahme = aufnahme
-        self.melden = melden
+        self.schneidet = True
 
     def mitschnitt_beenden(self):
         self.ablauf.append("mitschnitt-ende")
+        lief_noch, self.schneidet = self.schneidet, False
+        return lief_noch
 
     async def trennen(self):
         self.ablauf.append("getrennt")
@@ -978,10 +980,6 @@ class FakeTokenAbgelehnt(Exception):
     """Steht für ``discord.errors.LoginFailure`` — der Token taugt nicht (mehr)."""
 
 
-class FakeOpusError(Exception):
-    """``discord.opus.OpusError`` — bei DAVE-Ton mit »corrupted stream«."""
-
-
 class FakeNichtGefunden(Exception):
     """Steht für ``discord.NotFound`` — 404, den Kanal gibt es nicht mehr."""
 
@@ -1077,28 +1075,26 @@ class FakeVoiceClient:
         self.guild = kanal.guild
         self.gespielt = []
         self.senke = None
-        self.rueckruf = None
         self.schneidet = False
         self.getrennt = False
         self.trennen_stolpert = False
         # Was ankommt, sobald der Mitschnitt läuft: ``(pcm, sprecher)`` je Paket. In echt
         # füttert py-cords Empfangs-Router die Senke aus seinem eigenen Faden.
         self.ankommend = []
-        # Woran der Empfänger stirbt, wenn er stirbt — py-cord legt das in ``reader.error``.
-        self.fehler = None
+        # Ob der Empfänger dabei stirbt — dann hört der Mitschnitt von selbst auf.
+        self.router_stirbt = False
 
     def play(self, quelle, *, after):
         self.gespielt.append(quelle)
         after(None)
 
-    def start_recording(self, senke, rueckruf):
+    def start_recording(self, senke):
         self.senke = senke
-        self.rueckruf = rueckruf
         self.schneidet = True
         for pcm, sprecher in self.ankommend:
             senke.write(sprachdaten(pcm), sprecher)
-        if self.fehler is not None:
-            self.paketrouter_stirbt(self.fehler)
+        if self.router_stirbt:
+            self.paketrouter_stirbt()
 
     def is_recording(self):
         return self.schneidet
@@ -1109,19 +1105,15 @@ class FakeVoiceClient:
             raise RuntimeError("You are not recording")
         self.schneidet = False
         self.senke.cleanup()
-        # Und so kommt der Fehler heraus: ``AudioReader._stop`` reicht ``reader.error`` an
-        # den Rückruf — im Normalfall ist das ``None``.
-        if self.rueckruf is not None:
-            self.rueckruf(self.fehler)
 
-    def paketrouter_stirbt(self, fehler):
-        """Wie py-cord: der Router legt den Fehler ab und beendet den Mitschnitt selbst.
+    def paketrouter_stirbt(self):
+        """Wie py-cord: der Router beendet den Mitschnitt selbst und sagt es niemandem.
 
         ``PacketRouter.run`` fängt, was beim Dekodieren fliegt, schreibt es nach
         ``reader.error`` und ruft im ``finally`` ``client.stop_recording()`` — alles in
-        seinem eigenen Faden, ohne dass der laufende Befehl etwas davon sieht.
+        seinem eigenen Faden. Heraus kommt der Fehler seit dem festgenagelten Stand
+        nirgends mehr; sichtbar bleibt allein, dass nicht mehr mitgeschnitten wird.
         """
-        self.fehler = fehler
         self.stop_recording()
 
     async def disconnect(self):
@@ -1142,15 +1134,15 @@ class FakeSprachkanalOhneChat:
         self.name = "Runde"
         self.members = list(mitglieder)
         self.verbindung = None
-        # Was der Kanal an Ton hergibt, sobald jemand mitschneidet — und woran der
-        # Empfänger dabei stirbt. Beides wird an die Verbindung durchgereicht.
+        # Was der Kanal an Ton hergibt, sobald jemand mitschneidet — und ob der Empfänger
+        # dabei stirbt. Beides wird an die Verbindung durchgereicht.
         self.ankommend = []
-        self.fehler = None
+        self.router_stirbt = False
 
     async def connect(self):
         self.verbindung = FakeVoiceClient(self)
         self.verbindung.ankommend = self.ankommend
-        self.verbindung.fehler = self.fehler
+        self.verbindung.router_stirbt = self.router_stirbt
         if self.guild.me is not None:
             # Beitreten ist auch ein Zustandswechsel: Discord führt den Bot ab jetzt hier.
             self.guild.me.voice.channel = self
@@ -1255,13 +1247,7 @@ def pycord(monkeypatch):
     fehler.NotFound = FakeNichtGefunden
     modul.errors = fehler
     modul.NotFound = FakeNichtGefunden
-    # ``discord.opus`` haelt den Fehler, an dem der Dekoder scheitert — daran unterscheidet
-    # der Bot »kommt nichts Lesbares an« von »irgendein Abbruch«.
-    opus = types.ModuleType("discord.opus")
-    opus.OpusError = FakeOpusError
-    modul.opus = opus
     monkeypatch.setitem(sys.modules, "discord", modul)
-    monkeypatch.setitem(sys.modules, "discord.opus", opus)
     monkeypatch.setattr(FakeBot, "erzeugt", [])
     return modul
 
@@ -1579,7 +1565,7 @@ def probespuren(konfiguration) -> list[Path]:
     return list(konfiguration.recordings_dir.glob("sitzung*"))
 
 
-def test_der_empfangstest_nennt_pakete_fehler_und_spuren(
+def test_der_empfangstest_nennt_pakete_und_spuren(
     konfiguration, sitzung_id, ohne_espeak, runde, kurze_probe
 ):
     runde.kanal.ankommend = [(PAKET, runde.mira), (PAKET, runde.mira), (PAKET, runde.brok)]
@@ -1590,7 +1576,6 @@ def test_der_empfangstest_nennt_pakete_fehler_und_spuren(
 
     (antwort,) = ctx.antworten
     assert "Pakete: 3" in antwort
-    assert "Dekodierfehler: 0" in antwort
     assert "Spuren: 2" in antwort
     assert f"• {MIRA.name}: {2 * len(PAKET)} Bytes" in antwort
     assert f"• {BROK.name}: {len(PAKET)} Bytes" in antwort
@@ -1600,44 +1585,71 @@ def test_der_empfangstest_nennt_pakete_fehler_und_spuren(
     assert runde.kanal.verbindung.getrennt
 
 
-def test_ein_dekodierfehler_wird_als_solcher_erkannt_und_benannt(
+def test_der_bericht_zaehlt_keine_dekodierfehler_und_sagt_das_auch(
+    konfiguration, sitzung_id, ohne_espeak, runde, kurze_probe
+):
+    """Keine Zahl, die es nicht gibt — und kein Schweigen darüber, dass sie fehlt.
+
+    Bis zum festgenagelten Stand stand hier »Dekodierfehler: 0«. Die Zahl war seit dem
+    Stand aus Pycord-PR #3159 nicht mehr zu haben: ``PacketDecoder._decode_packet`` fängt
+    den ``OpusError`` an der Quelle ab und dekodiert mit Paketverlust-Verschleierung
+    weiter. Eine stehengebliebene Null hätte danach »nichts verloren« behauptet, wo nur
+    »nicht gezählt« stimmte — der teuerste Fehler, den ein Bericht machen kann.
+    """
+    runde.kanal.ankommend = [(PAKET, runde.mira)]
+    bot = gateway.baue(konfiguration)
+    ctx = FakeCtx(runde.mira)
+
+    asyncio.run(befehl(bot, "test")(ctx))
+
+    (antwort,) = ctx.antworten
+    assert "Dekodierfehler:" not in antwort
+    assert recorder.PROBE_RAHMENVERLUST in antwort
+
+
+def test_ein_empfang_der_von_selbst_aufhoert_faellt_nicht_gruen_aus(
     konfiguration, sitzung_id, ohne_espeak, runde, kurze_probe
 ):
     """Der Fall, für den es den Befehl gibt — und der einzige, den man nicht sehen kann.
 
-    Der Fehler entsteht in py-cords Paket-Router, in einem eigenen Faden; der Befehl selbst
-    läuft ungestört weiter. Ohne den Rückruf stünde hier »kein einziges Paket« — richtig
-    gezählt, aber ohne den Grund, den man kennt.
+    Der Paket-Router stirbt in einem eigenen Faden und ruft dort ``stop_recording``; der
+    Befehl selbst läuft ungestört weiter. Die Zahlen von davor sind dann sämtlich in
+    Ordnung — hier sogar ein angekommenes Paket und eine Spur. Nur das »trägt« daneben
+    wäre falsch, und genau dafür steht der Abbruch im Urteil vor der Paketzahl.
     """
-    runde.kanal.fehler = FakeOpusError("corrupted stream")
+    runde.kanal.ankommend = [(PAKET, runde.mira)]
+    runde.kanal.router_stirbt = True
     bot = gateway.baue(konfiguration)
     ctx = FakeCtx(runde.mira)
 
     asyncio.run(befehl(bot, "test")(ctx))
 
     (antwort,) = ctx.antworten
-    assert "Dekodierfehler: 1" in antwort
-    assert "corrupted stream" in antwort
-    assert "FakeOpusError" in antwort
-    assert "Es kommt nichts Lesbares an" in antwort
+    assert "Pakete: 1" in antwort
+    assert recorder.PROBE_ABGEBROCHEN.format(dauer=recorder.PROBE_DAUER) in antwort
     assert recorder.PROBE_TRAEGT not in antwort
+    assert recorder.PROBE_STILL.format(dauer=recorder.PROBE_DAUER) not in antwort
 
 
-def test_ein_abbruch_ohne_dekodierfehler_wird_nicht_zu_einem_gemacht(
+def test_ein_abbruch_ohne_paket_wird_nicht_der_stille_angelastet(
     konfiguration, sitzung_id, ohne_espeak, runde, kurze_probe
 ):
-    """Die Gegenprobe zum Test darüber: nicht jeder Abbruch ist ein Dekodierfehler."""
-    runde.kanal.fehler = RuntimeError("die Verbindung ist weg")
+    """Die Gegenprobe: null Pakete heißen nicht dasselbe wie null Pakete.
+
+    Stirbt der Empfang sofort, ist die Zahl »0« richtig — die Erklärung »dann hat wohl
+    niemand gesprochen« aber falsch, und sie schickt die Runde ein zweites Mal reden.
+    Deshalb steht der Abbruch im Urteil vor der Paketzahl, nicht dahinter.
+    """
+    runde.kanal.router_stirbt = True
     bot = gateway.baue(konfiguration)
     ctx = FakeCtx(runde.mira)
 
     asyncio.run(befehl(bot, "test")(ctx))
 
     (antwort,) = ctx.antworten
-    assert "Dekodierfehler: 0" in antwort
-    assert "Der Empfang ist abgebrochen" in antwort
-    assert "die Verbindung ist weg" in antwort
-    assert recorder.PROBE_TRAEGT not in antwort
+    assert "Pakete: 0" in antwort
+    assert recorder.PROBE_ABGEBROCHEN.format(dauer=recorder.PROBE_DAUER) in antwort
+    assert recorder.PROBE_STILL.format(dauer=recorder.PROBE_DAUER) not in antwort
 
 
 def test_ohne_ein_einziges_paket_faellt_das_urteil_nicht_gruen_aus(
@@ -1777,7 +1789,7 @@ def test_eine_unloeschbare_probespur_wird_beim_namen_genannt(
     spuren = aufnahme.verwerfen()
 
     text = recorder.bericht(
-        recorder.Probe(kanal=KANAL.name, dauer=1, pakete=1, stoerungen=(), spuren=spuren)
+        recorder.Probe(kanal=KANAL.name, dauer=1, pakete=1, abgebrochen=False, spuren=spuren)
     )
     assert [spur.geloescht for spur in spuren] == [False]
     assert MIRA.name in text
@@ -3487,32 +3499,51 @@ class SpielzeugSprachclient:
         self._connection = types.SimpleNamespace(
             add_socket_listener=lambda rueckruf: None,
             remove_socket_listener=lambda rueckruf: None,
+            # Der Empfangspfad fragt beim Dekodieren, ob eine DAVE-Sitzung laeuft.
+            dave_session=None,
         )
+        # Woher der Dekoder den Sprecher zu einer SSRC nimmt; leer heisst »noch unbekannt«.
+        self._ssrc_to_id = {}
         self.reader = None
+        self.beendet_von = []
 
     def stop_recording(self):
         # Genau dieser Aufruf steht im ``finally`` von ``PacketRouter.run``.
+        self.beendet_von.append(threading.current_thread())
         self.reader.stop()
 
 
-class WartetEinmal:
-    """py-cords ``MultiDataEvent``, so weit der Router ihn braucht: ein Weckruf, ein Decoder."""
+class WartetBisGeweckt:
+    """py-cords ``MultiDataEvent``, so weit der Router ihn braucht.
 
-    def __init__(self, decoder):
-        self.items = [decoder]
+    ``register``/``unregister`` sind hier folgenlos: der echte Weckruf traegt die Decoder
+    ein und aus, waehrend ``PacketRouter._do_run`` ueber genau diese Liste laeuft — was
+    hier eine Schleife ueber eine Liste waere, die sich unter ihr aendert.
+    """
+
+    def __init__(self, *decoder):
+        self.items = list(decoder)
+        self._weckruf = threading.Event()
 
     def wait(self):
-        return None
+        self._weckruf.wait()
+        self._weckruf.clear()
 
     def notify(self):
-        return None
+        self._weckruf.set()
 
     def clear(self):
         self.items = []
 
+    def register(self, decoder):
+        return None
+
+    def unregister(self, decoder):
+        return None
+
 
 class StirbtBeimDekodieren:
-    """Was ``PacketDecoder.pop_data`` tut, wenn der Ton verschluesselt ankommt."""
+    """Was ``PacketDecoder.pop_data`` tut, wenn es doch einmal durchschlaegt."""
 
     def __init__(self, fehler):
         self.fehler = fehler
@@ -3521,51 +3552,219 @@ class StirbtBeimDekodieren:
         raise self.fehler
 
 
-def test_pycord_traegt_den_dekodierfehler_aus_seinem_eigenen_faden_heraus(
-    konfiguration, sitzung_id
-):
-    """Der Weg, auf dem der Fehler ueberhaupt zu sehen ist — gegen die echte Bibliothek.
+class EinPaket:
+    """Der Jitter-Puffer eines Decoders, auf ein Paket eingedampft."""
 
-    ``PacketRouter`` ist ein eigener Thread. Stirbt er am Dekodieren, faengt ``run`` den
-    Fehler, legt ihn in ``reader.error`` und ruft ``client.stop_recording()``; erst
-    ``AudioReader._stop`` reicht ihn als ``after(self.error)`` heraus. Im Befehl, der den
-    Mitschnitt gestartet hat, kommt nichts an — genau deshalb sah `/aufnahme start` gruen
-    aus, waehrend keine einzige Zeile geschrieben wurde.
+    def __init__(self, paket):
+        self._pakete = [paket]
 
-    Der Fehlercode -4 heisst bei libopus »corrupted stream«; hier steht der Text daneben,
-    weil libopus in der Testumgebung nicht geladen ist.
+    def pop(self, timeout=0):
+        return self._pakete.pop() if self._pakete else None
+
+    def is_ready(self):
+        return bool(self._pakete)
+
+
+class GibtAufUndVerschleiert:
+    """py-cords ``Decoder`` an der einen Stelle, die zaehlt: der erste Versuch wirft.
+
+    libopus ist in der Testumgebung nicht geladen, ein echter ``Decoder`` also nicht zu
+    bauen. Der Code unter Pruefung ist ohnehin ``_decode_packet`` — was es mit dem Wurf
+    anfaengt, nicht das Dekodieren selbst.
     """
+
+    def __init__(self, fehler, ersatz):
+        self.fehler = fehler
+        self.ersatz = ersatz
+        self.aufrufe = []
+
+    def decode(self, data, *, fec=False):
+        self.aufrufe.append(data)
+        if len(self.aufrufe) == 1:
+            raise self.fehler
+        return self.ersatz
+
+
+def _decoder_am_echten_dekodierpfad(router, opus_decoder, paket):
+    """Ein ``PacketDecoder``, dessen ``pop_data``/``_decode_packet`` echt sind.
+
+    Gebaut wird an ``__init__`` vorbei, weil das einen echten ``Decoder`` anlegt und der
+    ohne libopus nicht zu haben ist. Alles, was der Empfangspfad danach liest, steht hier.
+    """
+    from discord.opus import PacketDecoder
+
+    decoder = PacketDecoder.__new__(PacketDecoder)
+    decoder.router = router
+    decoder.ssrc = 4711
+    decoder._decoder = opus_decoder
+    decoder._buffer = EinPaket(paket)
+    decoder._cached_id = None
+    decoder._last_seq = decoder._last_ts = -1
+    return decoder
+
+
+def test_ein_dekodierfehler_toetet_den_paket_router_nicht(konfiguration, sitzung_id, caplog):
+    """Warum wir auf einem unveroeffentlichten py-cord sitzen — gegen die echte Bibliothek.
+
+    Echter ``AudioReader``, echter ``PacketRouter``, echter Thread und py-cords eigenes
+    ``PacketDecoder._decode_packet``. Der festgenagelte Stand aus Pycord-PR #3159 faengt
+    den ``OpusError`` an der Quelle ab und dekodiert mit Paketverlust-Verschleierung
+    weiter — ``decode(None)`` ist genau das. Ein Schluesselwechsel kostet damit Rahmen
+    statt der ganzen Aufnahme: der Router lebt weiter, der Mitschnitt laeuft, und in der
+    Spur steht der Ersatz.
+
+    Bis 2.8.1 flog der Fehler bis in ``PacketRouter.run``, der Empfang starb, und
+    `/aufnahme start` sah dabei gruen aus. Wer diesen Test rot sieht, sitzt wieder auf
+    einer Fassung ohne #3159.
+    """
+    pytest.importorskip("discord")
     from discord.opus import OpusError
     from discord.voice.receive.reader import AudioReader
 
-    gemeldet = []
-    faden = []
+    aufnahme, senke = echte_senke(konfiguration, sitzung_id)
+    client = SpielzeugSprachclient()
+    client.reader = reader = AudioReader(senke, client, start=False)
+    reader.active = True
+    senke.init(client)
+
+    ersatz = stille(480)
+    opus_decoder = GibtAufUndVerschleiert(OpusError(-4, "corrupted stream"), ersatz)
+    paket = types.SimpleNamespace(decrypted_data=b"unlesbar", sequence=7, timestamp=960)
+    decoder = _decoder_am_echten_dekodierpfad(reader.packet_router, opus_decoder, paket)
+    reader.packet_router.waiter = WartetBisGeweckt(decoder)
+
+    with caplog.at_level(logging.WARNING, logger="discord.opus"):
+        reader.packet_router.start()
+        try:
+            reader.packet_router.waiter.notify()
+            for _ in range(500):
+                if aufnahme.pakete:
+                    break
+                time.sleep(0.01)
+            # Der Zustand genau nach dem verschluckten Rahmen: gleich beendet dieser Test
+            # den Router selbst, und ``PacketRouter.run`` ruft in seinem ``finally``
+            # immer ``stop_recording`` — auch beim geordneten Ende.
+            lebt_weiter = reader.packet_router.is_alive()
+            beendet_von = list(client.beendet_von)
+        finally:
+            reader.packet_router.stop()
+            reader.packet_router.join(timeout=5)
+
+    assert aufnahme.pakete == 1, "der verschleierte Rahmen muss in der Spur landen"
+    assert opus_decoder.aufrufe == [b"unlesbar", None], (
+        "auf den Wurf muss der Ersatzversuch ohne Daten folgen — das ist die Verschleierung"
+    )
+    assert reader.error is None, "der Fehler darf den Empfaenger nicht erreichen"
+    assert lebt_weiter, "der Paket-Router muss den Dekodierfehler ueberleben"
+    assert beendet_von == [], "und den Mitschnitt nicht von selbst beenden"
+    # Sichtbar bleibt er allein hier — genau das sagt ``PROBE_RAHMENVERLUST`` dem Betreiber.
+    warnungen = [satz for satz in caplog.messages if "Opus decode failed" in satz]
+    assert warnungen, (
+        "py-cord meldet den verschluckten Rahmen nicht mehr so — dann stimmt der Satz "
+        f"ueber das Log im Bericht nicht mehr: {recorder.PROBE_RAHMENVERLUST}"
+    )
+
+
+def test_ein_sterbender_paket_router_beendet_den_mitschnitt_aus_seinem_eigenen_faden(
+    konfiguration, sitzung_id
+):
+    """Das einzige Signal, das ein Abbruch noch hergibt — gegen die echte Bibliothek.
+
+    ``PacketRouter`` ist ein eigener Thread. Faellt er doch einmal um, faengt ``run`` den
+    Fehler, legt ihn in ``reader.error`` und ruft aus **seinem** Faden
+    ``client.stop_recording()``. Im Befehl, der den Mitschnitt gestartet hat, kommt nichts
+    an; heraus gereicht wird der Fehler seit #3159 nirgends mehr. Was bleibt, ist, dass
+    nicht mehr mitgeschnitten wird — daran haengt ``Sprachverbindung.mitschnitt_beenden``.
+    """
+    pytest.importorskip("discord")
+    from discord.opus import OpusError
+    from discord.voice.receive.reader import AudioReader
+
     _, senke = echte_senke(konfiguration, sitzung_id)
     client = SpielzeugSprachclient()
-
-    def melden(stoerung):
-        faden.append(threading.current_thread())
-        gemeldet.append(stoerung)
-
-    client.reader = reader = AudioReader(
-        senke,
-        client,
-        after=functools.partial(gateway._abgeschlossen, melden=melden),
-        start=False,
-    )
+    client.reader = reader = AudioReader(senke, client, start=False)
     reader.active = True
-    reader.packet_router.waiter = WartetEinmal(
+    reader.packet_router.waiter = WartetBisGeweckt(
         StirbtBeimDekodieren(OpusError(-4, "corrupted stream"))
     )
+    reader.packet_router.waiter.notify()
 
     reader.packet_router.start()
     reader.packet_router.join(timeout=5)
 
     assert not reader.packet_router.is_alive()
     assert isinstance(reader.error, OpusError)
-    (stoerung,) = gemeldet
-    assert stoerung.dekodierfehler, "ein Dekodierfehler muss als solcher erkannt werden"
-    assert "corrupted stream" in stoerung.text
-    # Und er kam von woanders her: deshalb sieht ihn der Befehl nicht.
-    assert faden == [reader.packet_router]
-    assert faden[0] is not threading.current_thread()
+    # Der Mitschnitt ist aus, und beendet hat ihn ein anderer Faden als dieser.
+    assert not reader.is_listening()
+    assert client.beendet_von == [reader.packet_router]
+    assert client.beendet_von[0] is not threading.current_thread()
+
+
+def test_pycord_ruft_den_abschluss_rueckruf_ohne_zusatzargumente_gar_nicht_auf(
+    konfiguration, sitzung_id
+):
+    """Warum es hier keinen ``after``-Rueckruf mehr gibt — gegen die echte Bibliothek.
+
+    ``AudioReader._stop`` ruft ``self.after(self.sink, *self.args)``, und nur ``if
+    self.after and self.args``. ``start_recording(senke, rueckruf)`` reicht als ``args``
+    das leere Tupel durch: der Rueckruf laeuft also nie. Und liefe er, bekaeme er die
+    Senke als erstes Argument, nicht den Fehler — 2.8.1 rief noch ``after(self.error)``.
+
+    Beides zusammen macht jeden Abschluss-Rueckruf hier zu totem Code, der obendrein die
+    Senke fuer einen Fehler halten wuerde. Wer diesen Test rot sieht, kann den Rueckruf
+    wiederhaben — dann aber mit der Signatur, die dieser Test dann zeigt.
+    """
+    pytest.importorskip("discord")
+    from discord.voice.receive.reader import AudioReader
+
+    _, senke = echte_senke(konfiguration, sitzung_id)
+    client = SpielzeugSprachclient()
+    gerufen = []
+
+    client.reader = reader = AudioReader(
+        senke, client, after=lambda *was: gerufen.append(was), args=(), start=False
+    )
+    reader.active = True
+    reader.stop()
+
+    assert gerufen == [], "ohne Zusatzargumente ruft py-cord den Rueckruf nicht auf"
+
+    _, zweite = echte_senke(konfiguration, sitzung_id)
+    zweiter = AudioReader(
+        zweite, client, after=lambda *was: gerufen.append(was), args=("mitgegeben",), start=False
+    )
+    zweiter.active = True
+    zweiter.stop()
+
+    assert gerufen == [(zweite, "mitgegeben")], (
+        "und mit Zusatzargumenten bekommt er die Senke, nicht den Fehler"
+    )
+
+
+def test_pycord_verdrahtet_die_senke_beim_wechsel_weiterhin_nicht(konfiguration, sitzung_id):
+    """Warum ``mitschneiden`` ``senke.init`` selbst ruft, obwohl py-cord es inzwischen tut.
+
+    ``AudioReader.__init__`` ruft ``sink.init(client)`` auf dem festgenagelten Stand
+    selbst — ``set_sink`` aber nicht, und ``PacketDecoder._decode_packet`` beginnt
+    weiterhin mit ``assert self.sink.client``. Eine Senke, die auf diesem Weg
+    hereinkaeme, brachte den Empfaenger beim ersten Paket um; der Preis eines vergessenen
+    ``vc`` ist eine ganze Sitzung. Also bleibt die Zeile stehen, auch wenn sie im
+    Normalfall denselben Wert ein zweites Mal setzt.
+    """
+    pytest.importorskip("discord")
+    from discord.opus import PacketDecoder
+    from discord.voice.receive.reader import AudioReader
+
+    _, erste = echte_senke(konfiguration, sitzung_id)
+    _, zweite = echte_senke(konfiguration, sitzung_id)
+    client = SpielzeugSprachclient()
+    client.reader = reader = AudioReader(erste, client, start=False)
+
+    assert erste.client is client, "beim Bauen verdrahtet py-cord selbst"
+
+    reader.set_sink(zweite)
+
+    assert zweite.client is None, "beim Wechsel nicht — deshalb bleibt ``senke.init`` stehen"
+    assert "assert self.sink.client" in inspect.getsource(PacketDecoder._decode_packet), (
+        "ohne diesen ``assert`` waere die Verdrahtung folgenlos — und die Zeile entbehrlich"
+    )

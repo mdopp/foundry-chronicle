@@ -20,7 +20,6 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import functools
-import importlib
 import logging
 import wave
 from collections.abc import Callable
@@ -390,9 +389,14 @@ class Sprachverbindung:
         )
         await fertig.wait()
 
-    def mitschneiden(self, aufnahme: Aufnahme, melden: recorder.Melder | None = None) -> None:
+    def mitschneiden(self, aufnahme: Aufnahme) -> None:
         senke = _senke(self, aufnahme)
-        self._vc.start_recording(senke, functools.partial(_abgeschlossen, melden=melden))
+        # Ohne Abschluss-Rückruf: der festgenagelte Stand ruft ihn als ``after(sink, *args)``
+        # und nur, solange ``args`` nicht leer ist — ``start_recording`` ohne Zusatzargumente
+        # setzt genau das leere Tupel. Ein Rückruf hier liefe also nie, und selbst wenn,
+        # bekäme er die Senke statt des Fehlers. Was der Empfang taugt, sagt deshalb
+        # ``mitschnitt_beenden``.
+        self._vc.start_recording(senke)
         # ``Sink.client`` liest ``self.vc``, und ``opus.py`` prüft es mit einem ``assert``,
         # sobald das erste Paket kommt. Die veröffentlichte 2.8.1 setzt es im Empfangspfad
         # **nie** — ``sink._client = self.client`` steht in ``voice/receive/reader.py``
@@ -404,51 +408,24 @@ class Sprachverbindung:
         # **nicht** vornimmt und der Preis eines vergessenen ``vc`` eine ganze Sitzung ist.
         senke.init(self._vc)
 
-    def mitschnitt_beenden(self) -> None:
-        # Der zweite Anlauf nach einem gescheiterten Trennen soll das Trennen nachholen und
-        # nicht daran scheitern, dass der erste den Mitschnitt schon angehalten hat —
-        # py-cord wirft dafür »You are not recording«.
-        if self._vc.is_recording():
-            self._vc.stop_recording()
+    def mitschnitt_beenden(self) -> bool:
+        """Beendet den Mitschnitt und sagt, ob er überhaupt noch lief.
+
+        Das »noch« ist die Auskunft: stirbt py-cords Paket-Router, ruft er in seinem
+        ``finally`` selbst ``stop_recording`` — der Mitschnitt ist dann längst aus, ohne
+        dass jemand hier etwas gesehen hätte. Genau das sah aus wie eine laufende Aufnahme.
+
+        Der zweite Anlauf nach einem gescheiterten Trennen soll das Trennen nachholen und
+        nicht daran scheitern, dass der erste den Mitschnitt schon angehalten hat —
+        py-cord wirft dafür »You are not recording«.
+        """
+        if not self._vc.is_recording():
+            return False
+        self._vc.stop_recording()
+        return True
 
     async def trennen(self) -> None:
         await self._vc.disconnect()
-
-
-def _dekodierfehler(fehler: BaseException) -> bool:
-    """Ob py-cords Opus-Dekoder aufgegeben hat — bei verschlüsseltem Ton »corrupted stream«.
-
-    Die Klasse wird ausdrücklich importiert und nicht als Attribut von ``discord`` erfragt —
-    dieselbe Lehre wie beim DAVE-Riegel: ein Attribut, das es je nach Ladereihenfolge nicht
-    gibt, ließe die Unterscheidung still ins Leere laufen, und jeder Dekodierfehler ginge
-    als »irgendein Abbruch« durch.
-    """
-    return isinstance(fehler, importlib.import_module("discord.opus").OpusError)
-
-
-def _abgeschlossen(fehler: BaseException | None = None, *, melden: recorder.Melder | None) -> None:
-    """py-cords Rückruf am Ende des Mitschnitts — und der einzige Ort, an dem sein Fehler steht.
-
-    Stirbt der Paket-Router an einem Dekodierfehler, geschieht das in **seinem eigenen
-    Faden**: ``PacketRouter.run`` fängt ihn, legt ihn in ``reader.error`` und ruft von dort
-    ``stop_recording``; erst ``AudioReader._stop`` reicht ihn als ``after(self.error)``
-    hier herein. Im Befehl, der den Mitschnitt gestartet hat, kommt er nie an — dort ist
-    alles grün, während schon nichts mehr geschrieben wird.
-
-    Der Rückruf ist deshalb auch nicht ``async``: py-cord ruft ihn geradeheraus auf und
-    wartet auf nichts. Eine Nebenläufigkeit, die niemand abwartet, verschluckte ihn.
-
-    Die Spuren schließt ``Aufnahme.beenden``; hier wird nur gemeldet.
-    """
-    if fehler is None or melden is None:
-        return
-    logger.warning("Der Empfang ist abgebrochen: %s: %s", type(fehler).__name__, fehler)
-    melden(
-        recorder.Stoerung(
-            text=f"{type(fehler).__name__}: {fehler}",
-            dekodierfehler=_dekodierfehler(fehler),
-        )
-    )
 
 
 def _mitglied(quelle) -> consent.Member:
