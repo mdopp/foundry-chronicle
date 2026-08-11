@@ -401,6 +401,24 @@ def _melder(ziel) -> Callable[[str], None]:
     return melden
 
 
+def _dieselbe(config: Config, interaction, runde):
+    """Die Runde, gegen die diese Ansicht gebaut wurde — sofern sie es noch ist.
+
+    Jede Ansicht lebt eine Viertelstunde und schließt ihre ``Runde`` ein; die Kennung
+    darunter kann in der Zeit gelöscht und an eine fremde Gilde neu vergeben sein.
+    Entschieden wird deshalb gegen den Stand von jetzt, in **jedem** Rückruf.
+    """
+    return chronik.dieselbe_runde(config, getattr(interaction, "guild_id", None), runde)
+
+
+async def _noch_dieselbe(config: Config, interaction, runde):
+    """Wie ``_dieselbe``, und ein Klick, der nichts tut, sagt es auch."""
+    gemeint = _dieselbe(config, interaction, runde)
+    if gemeint is None:
+        await interaction.response.edit_message(content=chronik.VERALTET, view=None)
+    return gemeint
+
+
 def _passwortfrage(config: Config, runde, session_id: int, lauf: _Lauf):
     """Das Passwort wird erfragt, verbraucht und vergessen — es steht in keinem Feld.
 
@@ -419,12 +437,19 @@ def _passwortfrage(config: Config, runde, session_id: int, lauf: _Lauf):
             )
 
         async def callback(self, interaction) -> None:
+            # Das Fenster trägt die Runde von vorhin mit. Ist es nicht mehr dieselbe, ginge
+            # das Passwort dieser Gruppe an das Foundry einer fremden — die Adresse dorthin
+            # steht in *ihrer* Runde.
+            gemeint = _dieselbe(config, interaction, runde)
+            if gemeint is None:
+                await interaction.response.send_message(chronik.VERALTET, ephemeral=True)
+                return
             meldungen: tuple[str, ...] = ()
             try:
-                meldungen = await _mitschnitt_beenden(lauf, runde)
+                meldungen = await _mitschnitt_beenden(lauf, gemeint)
                 meldung = chronik.abschluss_starten(
                     config,
-                    runde,
+                    gemeint,
                     session_id,
                     self.children[0].value,
                     melden=_melder(interaction.channel),
@@ -495,7 +520,12 @@ def _textkanaele(gilde) -> tuple[tuple[str, str], ...]:
 
 
 def _kanalansicht(config: Config, runde, gilde):
-    """Ein Menü mit den Textkanälen dieser Gilde — die Wahl wirkt sofort."""
+    """Ein Menü mit den Textkanälen dieser Gilde — die Wahl wirkt sofort.
+
+    Und sie wirkt gegen den Stand von jetzt: ein Kanal aus dieser Gilde, in die Runde einer
+    fremden geschrieben, schickte deren Chroniken künftig hierher. Anders als ein
+    Löschknopf ist das keine einmalige Fehlhandlung, sondern eine dauerhafte.
+    """
     discord = _discord()
 
     gebaut = discord.ui.Select(
@@ -511,7 +541,10 @@ def _kanalansicht(config: Config, runde, gilde):
 
     @_geklickt
     async def gewaehlt(interaction) -> None:
-        satz = einrichten.kanal_setzen(runde, gebaut.values[0])
+        gemeint = await _noch_dieselbe(config, interaction, runde)
+        if gemeint is None:
+            return
+        satz = einrichten.kanal_setzen(gemeint, gebaut.values[0])
         await interaction.response.edit_message(content=satz, view=None)
 
     gebaut.callback = gewaehlt
@@ -522,6 +555,23 @@ def _kanalansicht(config: Config, runde, gilde):
             self.add_item(gebaut)
 
     return Kanalansicht()
+
+
+async def _offenlegen(interaction) -> bool:
+    """Die Offenlegung in den Kanal — sichtbar für die Gruppe, nicht nur für einen.
+
+    Ob sie angekommen ist, entscheidet, ob die Runde wieder in Dienst geht; deshalb wird
+    hier gefangen statt weitergereicht.
+    """
+    kanal = getattr(interaction, "channel", None)
+    if kanal is None:
+        return False
+    try:
+        await kanal.send(einrichten.OFFENLEGUNG)
+    except Exception:  # noqa: BLE001
+        logger.exception("Offenlegung nicht zugestellt")
+        return False
+    return True
 
 
 def _einrichtungsfenster(config: Config, ctx):
@@ -573,8 +623,18 @@ def _einrichtungsfenster(config: Config, ctx):
                 modell=modell,
                 uhrzeit=uhrzeit,
             )
+            meldung = fertig.meldung
+            # Hier geht eine ruhende Runde wieder in Dienst — der eine Weg zurück, auf dem
+            # keine Begrüßung steht. Die Offenlegung gehört deshalb hierher, und zwar in
+            # den Kanal: sie ist eine Aussage an die Gruppe, nicht an den einen, der
+            # eingerichtet hat. Freigegeben wird erst, wenn sie angekommen ist.
+            if fertig.ruhte:
+                if await _offenlegen(interaction):
+                    einrichten.wieder_im_dienst(config, fertig.runde)
+                else:
+                    meldung = f"{meldung} {einrichten.STILL_GEBLIEBEN}"
             await interaction.response.send_message(
-                f"{fertig.meldung} {einrichten.KANAL_FRAGE}",
+                f"{meldung} {einrichten.KANAL_FRAGE}",
                 view=_kanalansicht(config, fertig.runde, gilde),
                 ephemeral=True,
             )
@@ -604,14 +664,16 @@ def _loeschansicht(config: Config, runde):
         if not _darf_loeschen(wer):
             await interaction.response.edit_message(content=einrichten.NUR_ADMIN, view=None)
             return
-        gemeint = chronik.dieselbe_runde(config, interaction.guild_id, runde)
+        gemeint = _dieselbe(config, interaction, runde)
         if gemeint is None:
             await interaction.response.edit_message(content=einrichten.LOESCHEN_VERALTET, view=None)
             return
-        await interaction.response.edit_message(
-            content=einrichten.geloescht(config, gemeint, veranlasst_von=_veranlasser(wer)),
-            view=None,
+        # Dateien und Zeilen einer großen Runde: das dauert und gehört nicht auf die
+        # Ereignisschleife — solange sie rechnet, antwortet der Bot niemandem.
+        meldung = await asyncio.to_thread(
+            einrichten.geloescht, config, gemeint, veranlasst_von=_veranlasser(wer)
         )
+        await interaction.response.edit_message(content=meldung, view=None)
 
     @_geklickt
     async def verworfen(interaction) -> None:
@@ -668,7 +730,7 @@ def _geklickt(arbeit):
     return gefasst
 
 
-def _registeransicht(runde, stand: erinnern.Offen):
+def _registeransicht(config: Config, runde, stand: erinnern.Offen):
     """Je Vorschlag eine Reihe: sein Name, die drei Arten, ein Nein."""
     if not stand.eintraege:
         return None
@@ -691,9 +753,14 @@ def _registeransicht(runde, stand: erinnern.Offen):
 
         @_geklickt
         async def entschieden(interaction) -> None:
-            satz = erinnern.entscheiden(runde, eintrag.id, art)
-            naechste = erinnern.offen(runde, meldung=satz)
-            await _ersetzen(interaction, naechste.antwort, _registeransicht(runde, naechste))
+            gemeint = await _noch_dieselbe(config, interaction, runde)
+            if gemeint is None:
+                return
+            satz = erinnern.entscheiden(gemeint, eintrag.id, art)
+            naechste = erinnern.offen(gemeint, meldung=satz)
+            await _ersetzen(
+                interaction, naechste.antwort, _registeransicht(config, gemeint, naechste)
+            )
 
         gebaut.callback = entschieden
         return gebaut
@@ -709,7 +776,7 @@ def _registeransicht(runde, stand: erinnern.Offen):
     return Registeransicht()
 
 
-def _zuordnungsansicht(runde, stand: erinnern.Zuordnung):
+def _zuordnungsansicht(config: Config, runde, stand: erinnern.Zuordnung):
     """Je aufgenommener Person ein Menü mit den Foundry-Spielern dieser Runde."""
     if not stand.personen:
         return None
@@ -731,9 +798,14 @@ def _zuordnungsansicht(runde, stand: erinnern.Zuordnung):
 
         @_geklickt
         async def gewaehlt(interaction) -> None:
-            satz = erinnern.zuordnen(runde, person.discord_user_id, gebaut.values[0])
-            naechste = erinnern.zuordnung(runde, meldung=satz)
-            await _ersetzen(interaction, naechste.antwort, _zuordnungsansicht(runde, naechste))
+            gemeint = await _noch_dieselbe(config, interaction, runde)
+            if gemeint is None:
+                return
+            satz = erinnern.zuordnen(gemeint, person.discord_user_id, gebaut.values[0])
+            naechste = erinnern.zuordnung(gemeint, meldung=satz)
+            await _ersetzen(
+                interaction, naechste.antwort, _zuordnungsansicht(config, gemeint, naechste)
+            )
 
         gebaut.callback = gewaehlt
         return gebaut
@@ -876,7 +948,7 @@ def baue(config: Config):
     async def register_offen(ctx) -> None:
         runde = chronik.runde_verlangen(config, ctx.guild_id)
         stand = erinnern.offen(runde)
-        await _antworten(ctx, stand.antwort, _registeransicht(runde, stand))
+        await _antworten(ctx, stand.antwort, _registeransicht(config, runde, stand))
 
     @bot.slash_command(
         name=BEFEHL_ZUORDNUNG, description="Festhalten, wer welchen Foundry-Spieler spielt"
@@ -885,7 +957,7 @@ def baue(config: Config):
     async def zuordnung(ctx) -> None:
         runde = chronik.runde_verlangen(config, ctx.guild_id)
         stand = erinnern.zuordnung(runde)
-        await _antworten(ctx, stand.antwort, _zuordnungsansicht(runde, stand))
+        await _antworten(ctx, stand.antwort, _zuordnungsansicht(config, runde, stand))
 
     @bot.slash_command(name=BEFEHL_SZENE, description="Die Trennlinie zur nächsten Szene ziehen")
     @antwortet
@@ -933,15 +1005,20 @@ def baue(config: Config):
 
     @bot.event
     async def on_guild_join(gilde) -> None:
-        # Erst der Kanal, dann die Begrüßung: sie gibt eine verabschiedete Runde wieder
-        # frei, und wieder im Dienst zu sein, ohne dass die Gruppe die Offenlegung je
-        # gelesen hat, ist genau der Zustand, für den es sie gibt. Ohne Kanal bleibt die
-        # Runde still — ``/setup`` bringt sie zurück und sagt die Offenlegung dabei.
+        # Erst der Kanal, dann der Satz, und die Freigabe zuletzt: wieder im Dienst zu
+        # sein, ohne dass die Gruppe die Offenlegung je gelesen hat, ist genau der Zustand,
+        # für den es sie gibt. Ohne Kanal bleibt die Runde still — ``/setup`` bringt sie
+        # zurück und sagt die Offenlegung dabei.
         kanal = _begruessungskanal(gilde)
         if kanal is None:
             logger.warning("Kein Kanal zum Begrüßen in %s", gilde.id)
             return
-        await kanal.send(einrichten.begruessung(config, str(gilde.id)))
+        # Eine abgelaufene Runde wird hier gelöscht, mit Dateien und Zeilen: nicht auf der
+        # Ereignisschleife, sonst steht der ganze Bot währenddessen.
+        zurueck = await asyncio.to_thread(einrichten.begruessung, config, str(gilde.id))
+        await kanal.send(zurueck.text)
+        if zurueck.wartet is not None:
+            einrichten.wieder_im_dienst(config, zurueck.wartet)
 
     @bot.event
     async def on_guild_remove(gilde) -> None:

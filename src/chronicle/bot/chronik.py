@@ -52,6 +52,13 @@ GESPERRT = (
     "Danach ist es gelöscht."
 )
 
+# Was ein Klick sagt, dessen Ansicht eine Runde meint, die es so nicht mehr gibt. Getan
+# wird dann nichts: die Kennung darunter kann inzwischen einer fremden Gilde gehören.
+VERALTET = (
+    "Diese Ansicht ist von vorhin, und seither hat sich hier etwas geändert. Ich habe "
+    "nichts geändert — ruf den Befehl noch einmal auf."
+)
+
 NUR_IM_THREAD = (
     "Das geht nur im Thread einer Sitzung. `/chronik start` beginnt eine — danach dort "
     "weiterschreiben."
@@ -154,15 +161,19 @@ def runde_zum_loeschen(config: Config, guild_id: str) -> Runde:
 def dieselbe_runde(config: Config, guild_id: str | None, runde: Runde) -> Runde | None:
     """Die Runde von vorhin — aber nur, wenn sie es noch ist.
 
-    Ein Knopf lebt eine Viertelstunde und trägt die Runde mit, gegen die gefragt wurde.
-    Die Kennung allein trägt diese Zusage nicht: ``runde.id`` ist ein ``INTEGER PRIMARY
-    KEY`` ohne ``AUTOINCREMENT``, SQLite vergibt sie nach einer Löschung also wieder. Ohne
-    diesen Vergleich löschte ein alter Knopf die frische Runde einer fremden Gilde.
+    Ein Knopf, ein Menü, ein Fenster lebt eine Viertelstunde und trägt die Runde mit, gegen
+    die gefragt wurde. Die Kennung allein trägt diese Zusage nicht: ``runde.id`` ist ein
+    ``INTEGER PRIMARY KEY`` ohne ``AUTOINCREMENT``, SQLite vergibt sie nach einer Löschung
+    also wieder. ``created_at`` reicht auch nicht — es steht auf die Sekunde genau, und
+    zwei Runden in derselben Sekunde sind eine Sekunde. Verglichen wird deshalb der
+    Zufallswert, den jede Runde beim Anlegen bekommt.
+
+    Ohne diesen Vergleich schriebe ein Menü aus Gilde A in die frische Runde von Gilde B.
     """
     if guild_id is None:
         return None
     gefunden = runden.fuer_gilde(config.database_path, str(guild_id))
-    if gefunden is None or gefunden.id != runde.id or gefunden.created_at != runde.created_at:
+    if gefunden is None or (gefunden.id, gefunden.token) != (runde.id, runde.token):
         return None
     return gefunden
 

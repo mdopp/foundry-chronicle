@@ -42,6 +42,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -66,6 +67,11 @@ GESPERRT = "Runde »{name}«: gesperrt, Löschung am {datum}."
 GELOESCHT = "Runde »{name}«: nach {tage} Tagen vollständig gelöscht."
 AUF_VERLANGEN = "Runde »{name}«: auf Verlangen von {wer} vollständig gelöscht."
 ZURUECK = "Runde »{name}«: wieder freigegeben."
+
+# Was der Lauf meldet, wenn eine Runde nicht wegzubekommen ist. Die Zahl der Tage steht
+# darin, weil erst sie den Unterschied zeigt: einmal stolpern ist ein Tag, jeden Tag
+# stolpern ist eine gebrochene Zusage.
+NICHT_GELOESCHT = "Runde »{name}«: seit {tage} Tagen zur Löschung fällig und nicht fort — {grund}"
 
 # Was eine ruhende Runde einem Lauf antwortet, der trotzdem an sie herantritt.
 RUHT = "Diese Runde ruht — es wird nichts mehr geholt und nichts mehr abgelegt."
@@ -109,24 +115,39 @@ def ruht(runde: Runde) -> bool:
     return frisch is None or frisch.gesperrt
 
 
+@dataclass(frozen=True)
+class Beansprucht:
+    """Die Runde und die zwei Tatsachen, die der Aufrufer sonst raten müsste.
+
+    ``neu`` ist keine Frage der Kennung: die vergibt SQLite nach einer Löschung wieder, und
+    wer sie vergleicht, hält eine frisch angelegte Runde für die alte und sagt der Gruppe,
+    ihre Einstellungen stünden noch — während sie gerade fortgelöscht wurden.
+    """
+
+    runde: Runde
+    neu: bool
+    ruhte: bool
+
+
 @runden.instanzweit
-def beanspruchen(config: Config, guild_id: str, name: str) -> Runde:
+def beanspruchen(config: Config, guild_id: str, name: str) -> Beansprucht:
     """Die Runde dieser Gilde — vorhandene übernehmen, sonst eine anlegen.
 
-    Eine gesperrte Runde wird dabei wieder freigegeben: wer den Bot zurückholt, holt seine
-    Chronik zurück, solange sie noch da ist. Genau das ist der Sinn der Frist — und genau
-    bis zu ihrem Ende. Eine abgelaufene wird hier gelöscht und nicht wiederbelebt: dass der
-    tägliche Lauf noch nicht bei ihr war, ist kein Grund, ein Versprechen zurückzunehmen.
+    Eine abgelaufene wird hier gelöscht und nicht wiederbelebt: dass der tägliche Lauf noch
+    nicht bei ihr war, ist kein Grund, ein Versprechen zurückzunehmen.
+
+    Freigegeben wird hier **nicht**. Wer den Bot zurückholt, holt seine Chronik zurück,
+    solange sie noch da ist — aber erst, wenn die Offenlegung bei der Gruppe angekommen
+    ist, und ob sie das ist, weiß nur, wer sie zustellt (``freigeben``).
     """
     vorhanden = runden.fuer_gilde(config.database_path, str(guild_id))
     if vorhanden is not None and _abgelaufen(vorhanden):
         loeschen(config, vorhanden)
         vorhanden = None
     if vorhanden is None:
-        return runden.anlegen(config.database_path, name, guild_id=str(guild_id))
-    if vorhanden.gesperrt:
-        return freigeben(config.database_path, vorhanden)
-    return vorhanden
+        frisch = runden.anlegen(config.database_path, name, guild_id=str(guild_id))
+        return Beansprucht(runde=frisch, neu=True, ruhte=False)
+    return Beansprucht(runde=vorhanden, neu=False, ruhte=vorhanden.gesperrt)
 
 
 @runden.instanzweit
@@ -151,12 +172,16 @@ def sperren(database_path: Path, guild_id: str) -> Runde | None:
 
 
 @runden.instanzweit
-def wiedereinladung(config: Config, guild_id: str) -> Runde | None:
-    """Der Bot ist zurück — war die Runde gesperrt, ist sie wieder da. Sonst nichts.
+def rueckkehr(config: Config, guild_id: str) -> Runde | None:
+    """Der Bot ist zurück — die ruhende Runde, die auf ihre Freigabe wartet. Sonst nichts.
 
     Angelegt wird hier nichts: eine Gilde, die den Bot zum ersten Mal einlädt, bekommt
     ihre Runde beim Einrichten und nicht beim Betreten. Und eine, deren Frist abgelaufen
     ist, kommt nicht zurück, sondern geht jetzt — begrüßt wird dann wie beim ersten Mal.
+
+    Freigegeben wird hier nicht: das tut ``freigeben``, und zwar erst, wenn die Offenlegung
+    wirklich in einem Kanal steht. Eine Runde wieder im Dienst, deren Gruppe sie nie
+    gelesen hat, ist genau der Zustand, für den es sie gibt.
     """
     vorhanden = runden.fuer_gilde(config.database_path, str(guild_id))
     if vorhanden is None or not vorhanden.gesperrt:
@@ -164,7 +189,7 @@ def wiedereinladung(config: Config, guild_id: str) -> Runde | None:
     if _abgelaufen(vorhanden):
         loeschen(config, vorhanden)
         return None
-    return freigeben(config.database_path, vorhanden)
+    return vorhanden
 
 
 @runden.instanzweit
@@ -267,10 +292,31 @@ def loeschen(config: Config, runde: Runde, *, veranlasst_von: str | None = None)
     return meldung
 
 
+def _ueberfaellig(runde: Runde, jetzt: datetime) -> int:
+    return max((jetzt - datetime.fromisoformat(runde.delete_after)).days, 0)
+
+
 @runden.instanzweit
 def sweep(config: Config, *, jetzt: datetime | None = None) -> tuple[str, ...]:
-    """Die Frist durchsetzen. Beliebig oft aufrufbar — was fort ist, ist nicht mehr fällig."""
-    return tuple(loeschen(config, eine) for eine in faellig(config.database_path, jetzt=jetzt))
+    """Die Frist durchsetzen. Beliebig oft aufrufbar — was fort ist, ist nicht mehr fällig.
+
+    Je Runde ein eigener Versuch: eine, die dauerhaft nicht wegzubekommen ist — eine
+    gesperrte Datei, ein kaputter Pfad —, hielte sonst jede hinter ihr für immer auf, und
+    zwar Tag für Tag dieselben. Was scheitert, steht danach im Log und in der Antwort,
+    mit der Zahl der Tage, die es schon fällig ist.
+    """
+    zeitpunkt = _now() if jetzt is None else jetzt
+    meldungen = []
+    for eine in faellig(config.database_path, jetzt=zeitpunkt):
+        try:
+            meldungen.append(loeschen(config, eine))
+        except Exception as fehler:  # noqa: BLE001
+            meldung = NICHT_GELOESCHT.format(
+                name=eine.name, tage=_ueberfaellig(eine, zeitpunkt), grund=fehler
+            )
+            logger.error("%s", meldung)
+            meldungen.append(meldung)
+    return tuple(meldungen)
 
 
 @runden.instanzweit

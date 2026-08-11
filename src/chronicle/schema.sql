@@ -15,11 +15,16 @@ CREATE TABLE IF NOT EXISTS meta (
 -- geworfen, ist die Runde sofort still und verschwindet nach der Frist. Zwei Spalten und
 -- nicht eine gerechnete, weil die Frist eine **Zusage** ist — sie steht als Datum da und
 -- lässt sich nicht dadurch verschieben, dass jemand später an der Konstante dreht.
+--
+-- ``token`` ist der Zufallswert, an dem eine Runde wiedererkannt wird. Die ``id`` taugt
+-- dafür nicht: sie ist ein ``INTEGER PRIMARY KEY`` ohne ``AUTOINCREMENT`` und wird nach
+-- einer Löschung wieder vergeben, und ``created_at`` steht nur auf die Sekunde genau.
 CREATE TABLE IF NOT EXISTS runde (
     id           INTEGER PRIMARY KEY,
     name         TEXT NOT NULL,
     guild_id     TEXT UNIQUE,
     created_at   TEXT NOT NULL,
+    token        TEXT,
     locked_at    TEXT,
     delete_after TEXT
 );

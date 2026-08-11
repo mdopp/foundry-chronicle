@@ -96,6 +96,7 @@ NACHGETRAGEN = (
     ("foundry_message", "vanished_at", "TEXT"),
     ("runde", "locked_at", "TEXT"),
     ("runde", "delete_after", "TEXT"),
+    ("runde", "token", "TEXT"),
 )
 
 _TABELLENWORT = re.compile(r"\b(?:from|join|into|update)\s+([a-z_][a-z0-9_]*)", re.IGNORECASE)

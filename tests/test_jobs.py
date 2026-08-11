@@ -5,7 +5,7 @@ import threading
 import pytest
 from conftest import GRENZE, runde, warte_bis
 
-from chronicle import db, jobs, notes
+from chronicle import db, jobs, lebenszyklus, notes
 from chronicle.config import Config
 from chronicle.foundry import service as foundry
 from chronicle.foundry.client import FoundryUnreachable
@@ -191,6 +191,17 @@ def test_eine_verschwundene_sitzung_beendet_den_lauf_ehrlich(stelle):
     with pytest.raises(jobs.JobError) as fehler:
         jobs.chronik(stelle, runde(stelle), 999)
     assert str(fehler.value) == jobs.OHNE_SITZUNG
+
+
+def test_die_ruhende_runde_bekommt_ihren_eigenen_grund(stelle, monkeypatch):
+    """Beides endet ohne Chronik, aber »gibt es nicht mehr« wäre über die Sitzung gelogen."""
+    sitzung_id = eine_sitzung_mit_notiz(stelle)
+    monkeypatch.setattr(lebenszyklus, "ruht", lambda _runde: True)
+
+    with pytest.raises(jobs.JobError) as fehler:
+        jobs.chronik(stelle, runde(stelle), sitzung_id)
+
+    assert str(fehler.value) == lebenszyklus.RUHT
 
 
 def eine_sitzung_mit_notiz(stelle):
