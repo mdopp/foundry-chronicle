@@ -17,6 +17,7 @@ anzulegen und ihr anzusehen, ob sie noch spricht.
 
 from __future__ import annotations
 
+import secrets
 import sqlite3
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -32,6 +33,7 @@ class Runde:
     guild_id: str | None
     created_at: str
     database_path: Path
+    token: str | None = None
     locked_at: str | None = None
     delete_after: str | None = None
 
@@ -69,6 +71,7 @@ def _runde(zeile: sqlite3.Row, database_path: Path) -> Runde:
         guild_id=zeile["guild_id"],
         created_at=zeile["created_at"],
         database_path=database_path,
+        token=zeile["token"],
         locked_at=zeile["locked_at"],
         delete_after=zeile["delete_after"],
     )
@@ -121,13 +124,19 @@ def fuer_gilde(database_path: Path, guild_id: str) -> Runde | None:
 
 
 def anlegen(database_path: Path, name: str, *, guild_id: str | None = None) -> Runde:
+    """Eine neue Runde — mit einem Zufallswert, an dem sie wiederzuerkennen ist.
+
+    Der Wert entscheidet später, ob ein Knopf von vorhin noch dieselbe Runde meint. Die
+    ``id`` allein trägt das nicht: SQLite vergibt sie nach einer Löschung wieder, und
+    ``created_at`` steht nur auf die Sekunde genau.
+    """
     db.init(database_path)
     connection = db.connect(database_path)
     try:
         with connection:
             zeiger = connection.execute(
-                "INSERT INTO runde (name, guild_id, created_at) VALUES (?, ?, ?)",
-                (name.strip() or db.ERSTE_RUNDE, guild_id, _now()),
+                "INSERT INTO runde (name, guild_id, created_at, token) VALUES (?, ?, ?, ?)",
+                (name.strip() or db.ERSTE_RUNDE, guild_id, _now(), secrets.token_hex(8)),
             )
         zeile = connection.execute(
             "SELECT * FROM runde WHERE id = ?", (int(zeiger.lastrowid),)

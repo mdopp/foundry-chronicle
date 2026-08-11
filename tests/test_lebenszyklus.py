@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import sys
+import threading
 import types
 from datetime import UTC, datetime, timedelta
 
@@ -52,16 +53,21 @@ MIRA = consent.Member(id="d-mira", name="Mira")
 
 
 class FakeKanal:
-    def __init__(self, kennung, name, *, darf=True):
+    def __init__(self, kennung, name, *, darf=True, bricht=False):
         self.id = kennung
         self.name = name
         self._darf = darf
+        self._bricht = bricht
         self.gesendet: list[str] = []
 
     def permissions_for(self, _wer):
         return types.SimpleNamespace(send_messages=self._darf)
 
     async def send(self, text):
+        # Das Recht sagt Discord vorher zu; halten muss es der Aufruf, und der kann
+        # trotzdem scheitern — genau dazwischen liegt der Fall, um den es hier geht.
+        if self._bricht:
+            raise RuntimeError("Discord nimmt die Nachricht nicht an")
         self.gesendet.append(text)
 
 
@@ -100,10 +106,11 @@ MITGLIED = FakeMitglied()
 
 
 class FakeInteraction:
-    def __init__(self, *, guild_id=GILDE, wer=LEITUNG):
+    def __init__(self, *, guild_id=GILDE, wer=LEITUNG, kanal=None):
         self.response = FakeAntwort()
         self.guild_id = guild_id
         self.user = wer
+        self.channel = kanal
 
 
 class FakeCtx:
@@ -237,10 +244,10 @@ def einrichtungsfenster(bot, ctx):
     return ctx.modale[-1]
 
 
-def ausfuellen(fenster, adresse="", benutzer="", modell="", uhrzeit=""):
+def ausfuellen(fenster, adresse="", benutzer="", modell="", uhrzeit="", *, kanal=None):
     for feld, wert in zip(fenster.children, (adresse, benutzer, modell, uhrzeit), strict=True):
         feld.value = wert
-    interaktion = FakeInteraction()
+    interaktion = FakeInteraction(kanal=kanal)
     asyncio.run(fenster.callback(interaktion))
     return interaktion
 
@@ -690,6 +697,41 @@ def test_ein_alter_knopf_loescht_die_frische_runde_nicht(konfiguration, bot):
     assert runden.get(konfiguration.database_path, nachbar.id) is not None
 
 
+def test_ein_altes_kanalmenue_stellt_nicht_in_die_fremde_runde_zu(konfiguration, bot):
+    """Der schlimmere Zwilling des alten Knopfes: keine einmalige Fehlhandlung, sondern
+    eine dauerhafte Fehlzustellung — ab dem Klick gingen die Chroniken der Nachbarrunde in
+    einen Kanal dieser Gilde."""
+    unsere = runden.anlegen(konfiguration.database_path, GILDENAME, guild_id=GILDE)
+    interaktion = ausfuellen(
+        einrichtungsfenster(bot, FakeCtx(gilde=FakeGilde(kanaele=(FakeKanal("777", "hier"),)))),
+        benutzer="Chronist",
+    )
+    (menue,) = interaktion.response.gesendet[0]["view"].items
+
+    lebenszyklus.loeschen(konfiguration, unsere)
+    nachbar = runden.anlegen(konfiguration.database_path, "Nachbarn", guild_id=NACHBARGILDE)
+    assert nachbar.id == unsere.id
+    menue.values = ["777"]
+    klick = FakeInteraction()
+    asyncio.run(menue.callback(klick))
+
+    assert klick.response.bearbeitet[0]["content"] == chronik.VERALTET
+    assert settings.effective(konfiguration, nachbar).discord_recap_channel is None
+
+
+def test_zwei_runden_derselben_sekunde_sind_nicht_dieselbe(konfiguration, monkeypatch):
+    """``created_at`` steht auf die Sekunde genau; der Zufallswert daneben nicht."""
+    monkeypatch.setattr(runden, "_now", lambda: "2026-05-01T20:00:00+00:00")
+    unsere = runden.anlegen(konfiguration.database_path, GILDENAME, guild_id=GILDE)
+    lebenszyklus.loeschen(konfiguration, unsere)
+    frisch = runden.anlegen(konfiguration.database_path, "Nachbarn", guild_id=GILDE)
+
+    assert (frisch.id, frisch.created_at) == (unsere.id, unsere.created_at)
+    assert frisch.token and frisch.token != unsere.token
+    assert chronik.dieselbe_runde(konfiguration, GILDE, unsere) is None
+    assert chronik.dieselbe_runde(konfiguration, GILDE, frisch) == frisch
+
+
 # -- Sofort still, und zwar überall ------------------------------------------------------
 
 
@@ -785,6 +827,30 @@ def test_ein_fehlschlag_beendet_die_taegliche_loeschung_nicht(konfiguration, mon
     assert "jemand anderem" in caplog.text
 
 
+def test_eine_sture_runde_haelt_die_naechste_nicht_auf(konfiguration, monkeypatch, caplog):
+    """Sonst hielte eine, die dauerhaft nicht wegzubekommen ist, jede hinter ihr auf —
+    jeden Tag dieselben, und niemand sähe, dass eine Zusage seit Wochen offen ist."""
+    stur = runden.anlegen(konfiguration.database_path, "Sture", guild_id=GILDE)
+    dahinter = runden.anlegen(konfiguration.database_path, "Dahinter", guild_id=NACHBARGILDE)
+    for eine in (stur, dahinter):
+        frist_setzen(konfiguration, eine, "2026-05-31T20:00:00+00:00")
+    echt = lebenszyklus.loeschen
+
+    def stolpert(config, runde, **rest):
+        if runde.id == stur.id:
+            raise PermissionError("die Datei gehört jemand anderem")
+        return echt(config, runde, **rest)
+
+    monkeypatch.setattr(lebenszyklus, "loeschen", stolpert)
+
+    meldungen = lebenszyklus.sweep(konfiguration, jetzt=datetime(2026, 7, 1, 20, tzinfo=UTC))
+
+    assert runden.get(konfiguration.database_path, stur.id) is not None
+    assert runden.get(konfiguration.database_path, dahinter.id) is None
+    assert [meldung for meldung in meldungen if "Sture" in meldung and "31 Tagen" in meldung]
+    assert "Sture" in caplog.text
+
+
 def test_ein_beendeter_faden_wird_beim_naechsten_anmelden_neu_gestartet(
     konfiguration, bot, monkeypatch
 ):
@@ -870,12 +936,84 @@ def test_ohne_kanal_zum_reden_bleibt_die_runde_still(konfiguration, bot):
 
 
 def test_setup_holt_die_offenlegung_nach(konfiguration, bot):
+    """Und zwar im Kanal: die Offenlegung ist eine Aussage an die Gruppe, nicht an den
+    einen, der eingerichtet hat — eine flüchtige Antwort liest sonst niemand sonst."""
     unsere = runden.anlegen(konfiguration.database_path, GILDENAME, guild_id=GILDE)
     austritt(bot, FakeGilde())
+    kanal = FakeKanal("300", "allgemein")
+
+    ausfuellen(
+        einrichtungsfenster(bot, FakeCtx(gilde=FakeGilde())), benutzer="Chronist", kanal=kanal
+    )
+
+    assert kanal.gesendet == [einrichten.OFFENLEGUNG]
+    assert not runden.get(konfiguration.database_path, unsere.id).gesperrt
+
+
+def test_ohne_zugestellte_offenlegung_bleibt_die_runde_still(konfiguration, bot):
+    """Freigegeben wird erst, wenn sie angekommen ist — geschrieben zu haben genügt nicht."""
+    unsere = runden.anlegen(konfiguration.database_path, GILDENAME, guild_id=GILDE)
+    austritt(bot, FakeGilde())
+
+    interaktion = ausfuellen(
+        einrichtungsfenster(bot, FakeCtx(gilde=FakeGilde())),
+        benutzer="Chronist",
+        kanal=FakeKanal("300", "allgemein", bricht=True),
+    )
+
+    assert einrichten.STILL_GEBLIEBEN in interaktion.response.gesendet[0]["text"]
+    assert runden.get(konfiguration.database_path, unsere.id).gesperrt
+
+
+def test_eine_begruessung_die_nicht_ankommt_gibt_die_runde_nicht_frei(konfiguration, bot):
+    """Die Rechteprüfung sagt zu, dass gesendet werden *darf* — nicht, dass es gelang."""
+    unsere = runden.anlegen(konfiguration.database_path, GILDENAME, guild_id=GILDE)
+    austritt(bot, FakeGilde())
+
+    with pytest.raises(RuntimeError):
+        eintritt(bot, FakeGilde(system=FakeKanal("300", "allgemein", bricht=True)))
+
+    assert runden.get(konfiguration.database_path, unsere.id).gesperrt
+
+
+def test_nach_der_frist_sagt_setup_nicht_es_bleibe_alles_wie_es_war(konfiguration, bot):
+    """Die frische Runde bekommt dieselbe Kennung — die Antwort darf trotzdem nicht
+    behaupten, die Einstellungen von vorher stünden noch."""
+    unsere = runden.anlegen(konfiguration.database_path, GILDENAME, guild_id=GILDE)
+    fuellen(konfiguration, unsere, "alpha")
+    frist_setzen(konfiguration, unsere, "2026-05-31T20:00:00+00:00")
 
     interaktion = ausfuellen(
         einrichtungsfenster(bot, FakeCtx(gilde=FakeGilde())), benutzer="Chronist"
     )
 
-    assert einrichten.OFFENLEGUNG in interaktion.response.gesendet[0]["text"]
-    assert not runden.get(konfiguration.database_path, unsere.id).gesperrt
+    frisch = runden.fuer_gilde(konfiguration.database_path, GILDE)
+    assert frisch.id == unsere.id
+    gesagt = interaktion.response.gesendet[0]["text"]
+    assert einrichten.LEER_BLEIBT not in gesagt
+    assert einrichten.EINGERICHTET.format(name=GILDENAME) in gesagt
+
+
+def test_geloescht_wird_neben_der_ereignisschleife(konfiguration, bot, monkeypatch):
+    """Dateien und Zeilen einer großen Runde dauern; solange die Schleife rechnet,
+    antwortet der Bot niemandem — weder beim Wiedersehen noch am Knopf."""
+    abgelaufen = runden.anlegen(konfiguration.database_path, GILDENAME, guild_id=GILDE)
+    frist_setzen(konfiguration, abgelaufen, "2026-05-31T20:00:00+00:00")
+    faeden = []
+    echt = lebenszyklus.loeschen
+
+    def merken(config, runde, **rest):
+        faeden.append(threading.get_ident())
+        return echt(config, runde, **rest)
+
+    monkeypatch.setattr(lebenszyklus, "loeschen", merken)
+
+    eintritt(bot, FakeGilde(system=FakeKanal("300", "allgemein")))
+
+    runden.anlegen(konfiguration.database_path, "Nachbarn", guild_id=NACHBARGILDE)
+    ctx = loeschbefehl(bot, FakeCtx(guild_id=NACHBARGILDE, gilde=FakeGilde(kennung=NACHBARGILDE)))
+    ja, _nein = ctx.ansichten[0].items
+    asyncio.run(ja.callback(FakeInteraction(guild_id=NACHBARGILDE)))
+
+    assert len(faeden) == 2
+    assert threading.get_ident() not in faeden

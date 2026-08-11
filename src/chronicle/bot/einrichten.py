@@ -29,7 +29,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from chronicle import lebenszyklus, settings
-from chronicle import runde as runden
 from chronicle.config import Config
 from chronicle.runde import Runde
 
@@ -128,6 +127,14 @@ OHNE_KANAL = "-"
 # Kanäle hat, wählt einen der ersten — oder ruft den Befehl im gewünschten Kanal auf.
 KANAL_GRENZE = 25
 
+# Der eine Weg zurück in den Dienst, auf dem keine Begrüßung steht: fehlt dem Bot in der
+# Gilde jeder beschreibbare Kanal, hätte die Gruppe die Offenlegung nie gelesen. Dann
+# bleibt die Runde still, und das wird gesagt statt verschwiegen.
+STILL_GEBLIEBEN = (
+    "Die Offenlegung konnte ich hier in keinen Kanal schreiben — deshalb bleibt die Runde "
+    "still. Gib mir Schreibrecht in diesem Kanal und ruf `/setup` noch einmal auf."
+)
+
 FEHLT = "Es fehlt noch: {was}. Ruf `/setup` noch einmal auf, wenn du es nachtragen willst."
 STEHT_BEREIT = "Weiter geht es mit `/chronik start` — das legt die erste Sitzung an."
 
@@ -181,6 +188,18 @@ class Eingerichtet:
     runde: Runde
     neu: bool
     meldung: str
+    ruhte: bool = False
+
+
+@dataclass(frozen=True)
+class Begruessung:
+    """Was gesagt wird — und die ruhende Runde, die auf ihre Freigabe wartet.
+
+    Zwei Felder und nicht ein Satz: freigegeben wird erst, wenn der Satz zugestellt ist.
+    """
+
+    text: str
+    wartet: Runde | None = None
 
 
 def _uhrzeit(runde: Runde, wert: str) -> str:
@@ -211,11 +230,14 @@ def einrichten(
     Ein leeres Feld ändert nichts. Deshalb wird gefiltert, bevor gespeichert wird: die
     Einstellungen lesen einen leeren Wert sonst als »wieder wegnehmen«, und ein zweiter
     Aufruf, der bloß den Kanal ändern soll, nähme die Adresse mit.
+
+    Ob die Runde neu ist, sagt der Lebenszyklus und nicht ein Vergleich der Kennung: nach
+    einer abgelaufenen Frist wird gelöscht und neu angelegt, und SQLite vergibt dieselbe
+    Kennung wieder. »Was du leer lässt, bleibt, wie es war« wäre dann eine Lüge über
+    Werte, die gerade fortgelöscht wurden.
     """
-    vorher = runden.fuer_gilde(config.database_path, str(guild_id))
-    ruhte = vorher is not None and vorher.gesperrt
-    runde = lebenszyklus.beanspruchen(config, guild_id, gildenname)
-    neu = vorher is None or vorher.id != runde.id
+    beansprucht = lebenszyklus.beanspruchen(config, guild_id, gildenname)
+    runde = beansprucht.runde
     werte = {
         "foundry_url": adresse.strip(),
         "foundry_user": benutzer.strip(),
@@ -224,19 +246,16 @@ def einrichten(
     settings.save(runde, {name: wert for name, wert in werte.items() if wert})
     saetze = (
         [EINGERICHTET.format(name=runde.name), KEIN_PASSWORT]
-        if neu
+        if beansprucht.neu
         else [UEBERNOMMEN.format(name=runde.name), LEER_BLEIBT]
     )
-    # Hier geht eine ruhende Runde wieder in Dienst, und das ist der eine Weg zurück, auf
-    # dem keine Begrüßung steht — fehlt dem Bot in der Gilde jeder beschreibbare Kanal,
-    # hat die Gruppe die Offenlegung sonst nie gelesen.
-    if ruhte:
-        saetze.append(OFFENLEGUNG)
     stolperte = _uhrzeit(runde, uhrzeit)
     if stolperte:
         saetze.append(stolperte)
     saetze.append(_offen(config, runde))
-    return Eingerichtet(runde=runde, neu=neu, meldung=" ".join(saetze))
+    return Eingerichtet(
+        runde=runde, neu=beansprucht.neu, meldung=" ".join(saetze), ruhte=beansprucht.ruhte
+    )
 
 
 def kanalwahl(
@@ -259,18 +278,26 @@ def kanal_setzen(runde: Runde, kanal_id: str) -> str:
     return KANAL_GESETZT.format(kanal=f"<#{kanal_id}>")
 
 
-def begruessung(config: Config, guild_id: str) -> str:
+def begruessung(config: Config, guild_id: str) -> Begruessung:
     """Der eine Satz beim Betreten — und die Rückkehr, wenn die Frist noch läuft.
 
     Angelegt wird hier nichts: eine Runde entsteht erst, wenn jemand sie einrichtet. Eine
-    verabschiedete dagegen wird sofort wieder freigegeben — sonst stünde der Bot in der
-    Gilde und die Chronik bliebe stumm. Eine abgelaufene wird gelöscht und dann begrüßt
-    wie eine fremde Gilde: was als fort zugesagt war, kommt nicht als Überraschung zurück.
+    abgelaufene wird gelöscht und dann begrüßt wie eine fremde Gilde: was als fort zugesagt
+    war, kommt nicht als Überraschung zurück.
+
+    Freigegeben wird eine verabschiedete Runde hier noch nicht — sie kommt mit
+    ``wieder_im_dienst`` zurück, wenn der Satz zugestellt ist. Ein Satz, den niemand liest,
+    weil das Senden scheiterte, ist keine Offenlegung.
     """
-    zurueck = lebenszyklus.wiedereinladung(config, str(guild_id))
-    if zurueck is None:
-        return WILLKOMMEN
-    return WILLKOMMEN_ZURUECK.format(name=zurueck.name)
+    wartet = lebenszyklus.rueckkehr(config, str(guild_id))
+    if wartet is None:
+        return Begruessung(text=WILLKOMMEN)
+    return Begruessung(text=WILLKOMMEN_ZURUECK.format(name=wartet.name), wartet=wartet)
+
+
+def wieder_im_dienst(config: Config, runde: Runde) -> Runde:
+    """Zurück in den Dienst — erst jetzt, mit der Offenlegung nachweislich zugestellt."""
+    return lebenszyklus.freigeben(config.database_path, runde)
 
 
 def loeschfrage() -> str:

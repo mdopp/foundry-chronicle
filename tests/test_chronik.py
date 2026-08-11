@@ -134,8 +134,9 @@ class FakeAntwort:
 
 
 class FakeInteraction:
-    def __init__(self, kanal):
+    def __init__(self, kanal, *, guild_id=GILDE):
         self.channel = kanal
+        self.guild_id = guild_id
         self.response = FakeAntwort()
 
 

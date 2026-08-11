@@ -44,6 +44,7 @@ from chronicle import (
     zugang,
 )
 from chronicle import runde as runden
+from chronicle.bot import chronik as bot_chronik
 from chronicle.bot import erinnern
 from chronicle.compose import service as compose_service
 from chronicle.config import Config
@@ -518,6 +519,24 @@ def test_zuordnung_und_register_bleiben_getrennt(zwei_runden):
 
     register.decide(a, {ids[2]["eintrag"]: register.Entscheidung(ja=False)})
     assert [g.entries[0].id for g in register.overview(b)] == [ids[2]["eintrag"]]
+
+
+def test_eine_ansicht_von_vorhin_meint_nicht_die_frische_runde(zwei_runden):
+    """Der Griff, an dem jede Ansicht ihre Runde wiedererkennt — Knopf, Menü und Fenster.
+
+    Eine Ansicht lebt eine Viertelstunde und schließt ihre ``Runde`` ein. ``runde.id`` ist
+    ein ``INTEGER PRIMARY KEY`` ohne ``AUTOINCREMENT``: SQLite vergibt sie nach einer
+    Löschung wieder, und dann gehört sie einer fremden Gilde. Ohne diesen Vergleich
+    schriebe das Kanalmenü von hier den Zustellkanal in die Runde von dort.
+    """
+    config, _a, b, _ids = zwei_runden
+    lebenszyklus.loeschen(config, b)
+    frisch = runden.anlegen(config.database_path, "Dritte", guild_id="gilde-c")
+    assert frisch.id == b.id
+
+    assert bot_chronik.dieselbe_runde(config, "gilde-c", b) is None
+    assert bot_chronik.dieselbe_runde(config, "gilde-c", frisch) == frisch
+    assert bot_chronik.dieselbe_runde(config, None, frisch) is None
 
 
 def test_knopf_und_menue_wirken_nur_in_der_eigenen_runde(zwei_runden):

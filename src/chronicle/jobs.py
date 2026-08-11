@@ -32,7 +32,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from chronicle import db, recordings, register
+from chronicle import db, lebenszyklus, recordings, register
 from chronicle.compose.service import compose_session, recap_session
 from chronicle.config import Config
 from chronicle.discord.ausgabe import anhaengen
@@ -295,7 +295,9 @@ def chronik(config: Config, runde: Runde, session_id: int) -> str:
     run_queue(config, runde)
     ergebnis = compose_session(config, runde, session_id)
     if ergebnis is None:
-        raise JobError(OHNE_SITZUNG)
+        # Zwei Wege hierher, und der Unterschied gehört gesagt: die Sitzung ist fort — oder
+        # die Runde ruht, seit der Lauf begann. »Gibt es nicht mehr« wäre dann falsch.
+        raise JobError(lebenszyklus.RUHT if lebenszyklus.ruht(runde) else OHNE_SITZUNG)
     recap_session(config, runde, session_id)
     deliver(config, runde, session_id)
     ausgabe = anhaengen(config, runde, session_id)

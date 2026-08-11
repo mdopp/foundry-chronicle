@@ -113,7 +113,8 @@ class FakeAntwort:
 
 
 class FakeInteraction:
-    def __init__(self):
+    def __init__(self, *, guild_id=GILDE):
+        self.guild_id = guild_id
         self.response = FakeAntwort()
 
 
