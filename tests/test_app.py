@@ -352,14 +352,11 @@ def test_die_einstellungsseite_zeigt_die_gepflegten_werte(tmp_path):
 
 
 def test_das_passwort_steht_in_keiner_antwort(tmp_path):
+    """Eingegeben wird es in Discord — gezeigt wird es auch dann auf keiner Seite hier."""
     config = Config(data_dir=tmp_path)
     client = create_app(config).test_client()
-    antwort = client.post("/abgleich", data={"foundry_password": PASSWORT})
-    assert antwort.status_code == 302
-    assert PASSWORT not in antwort.get_data(as_text=True)
-    assert PASSWORT not in antwort.headers["Location"]
-    assert warte_bis(lambda: not jobs.running(runde(config), jobs.ABGLEICH))
-    for pfad in ("/einstellungen", "/status", "/einrichtung/foundry"):
+    zugang.merken(runde(config), PASSWORT)
+    for pfad in ("/", "/einstellungen", "/status", "/einrichtung/foundry"):
         assert PASSWORT not in client.get(pfad, follow_redirects=True).get_data(as_text=True)
 
 
@@ -368,9 +365,9 @@ def test_das_passwort_wird_nirgends_gespeichert(tmp_path):
     config = Config(
         foundry_url="https://foundry.example", foundry_user="chronist", data_dir=tmp_path
     )
-    client = create_app(config).test_client()
-    client.post("/abgleich", data={"foundry_password": PASSWORT})
-    assert warte_bis(lambda: not jobs.running(runde(config), jobs.ABGLEICH))
+    create_app(config)
+    zugang.merken(runde(config), PASSWORT)
+    service.sync(config, runde(config), client=Abgleich(fehler=FoundryUnreachable("aus")))
     assert settings.stored(runde(config)) == {}
     assert not zugang.ist_gemerkt(runde(config))
     roh = b""
@@ -937,25 +934,52 @@ def test_der_chronik_knopf_steht_hinter_demselben_tuersteher(tmp_path):
     assert bewacht(tmp_path).post("/sitzungen/1/chronik").status_code == 403
 
 
-def test_ein_gescheiterter_abgleich_bietet_das_erneute_holen_an(config, welt):
+def test_ein_gescheiterter_abgleich_nennt_den_weg_nach_discord(config, welt):
+    """Das Band erklärt weiter, was los ist — anstoßen lässt sich hier nichts mehr."""
     service.sync(config, runde(config), client=Abgleich(fehler=FoundryUnreachable("keine Antwort")))
     html = gelesen(config, "/")
-    assert 'action="/abgleich"' in html
-    assert ">Jetzt abgleichen</button>" in html
+    assert "stammt aus dem Zwischenspeicher" in html
+    assert "/chronik fertig" in html
 
 
-def test_der_abgleich_kehrt_auf_die_seite_zurueck_von_der_er_kam(config, welt):
-    client = create_app(config).test_client()
-    antwort = client.post("/abgleich", data={"zurueck": f"/sitzungen/{1}"})
-    assert antwort.headers["Location"] == "/sitzungen/1"
-    assert warte_bis(lambda: not jobs.running(runde(config), jobs.ABGLEICH))
+def test_die_oberflaeche_stoesst_keinen_abgleich_mehr_an(config, welt):
+    """Er gehört einer Runde und wird in Discord ausgelöst — hier gibt es keinen Weg dahin.
+
+    Die Gegenzusage zum gelöschten ``test_der_zustand_bietet_den_abgleich_immer_an``: ein
+    Knopf ohne Passwortfeld wäre nicht bloß tot, er warf das in Discord hinterlegte
+    Passwort weg (``zugang.merken`` deutet leer als vergessen).
+    """
+    service.sync(config, runde(config), client=Abgleich(fehler=FoundryUnreachable("keine Antwort")))
+    app = create_app(config)
+    assert "/abgleich" not in {regel.rule for regel in app.url_map.iter_rules()}
+
+    client = app.test_client()
+    assert client.post("/abgleich").status_code == 404
+    for pfad in ("/", "/einstellungen", "/status"):
+        html = client.get(pfad, follow_redirects=True).get_data(as_text=True)
+        assert "/abgleich" not in html
+        assert "Jetzt abgleichen" not in html
 
 
-def test_der_abgleich_folgt_keiner_adresse_nach_draussen(config):
-    client = create_app(config).test_client()
-    antwort = client.post("/abgleich", data={"zurueck": "//woanders.example/"})
-    assert antwort.headers["Location"] == "/"
-    assert warte_bis(lambda: not jobs.running(runde(config), jobs.ABGLEICH))
+def test_kein_knopf_hier_wirft_das_hinterlegte_passwort_weg(config):
+    """Seit #96 liegt es aus ``/chronik start`` bereit — kein Formular hier löscht es.
+
+    ``zugang.merken`` deutet ein leeres Feld als vergessen. Ein Knopf ohne Passwortfeld
+    nimmt der Spielleitung damit still, was sie in Discord eingegeben hat — deshalb der
+    Rundumschlag über alle POST-Wege statt einer Liste, die ein neuer Weg nicht kennt.
+    """
+    app = create_app(config)
+    client = app.test_client()
+    gruppe = runde(config)
+    for regel in app.url_map.iter_rules():
+        if "POST" not in regel.methods:
+            continue
+        pfad = regel.rule
+        for platzhalter in ("<int:sitzung_id>", "<int:szene_id>", "<int:aufnahme_id>"):
+            pfad = pfad.replace(platzhalter, "1")
+        zugang.merken(gruppe, PASSWORT)
+        client.post(pfad.replace("<schritt>", "foundry"))
+        assert zugang.ist_gemerkt(gruppe), regel.rule
 
 
 def test_waehrend_des_abgleichs_sagt_das_band_was_laeuft(config, welt):
@@ -964,10 +988,6 @@ def test_waehrend_des_abgleichs_sagt_das_band_was_laeuft(config, welt):
 
     html = gelesen(config, "/")
     assert "Zahlen aus Foundry werden gerade geholt" in html
-
-
-def test_der_abgleich_steht_hinter_demselben_tuersteher(tmp_path):
-    assert bewacht(tmp_path).post("/abgleich").status_code == 403
 
 
 # --- Nutzersprache: was hier steht, sagt was zu tun ist ------------------------------
@@ -1063,11 +1083,10 @@ def test_auch_die_speicherwege_stehen_hinter_der_rolle(tmp_path):
     assert client.post("/zuordnung", data={}, headers=MITSPIEL).status_code == 403
 
 
-def test_die_ausloese_knoepfe_gehoeren_der_verwaltung(tmp_path):
+def test_der_ausloese_knopf_gehoert_der_verwaltung(tmp_path):
     config, sitzung_id = eine_sitzung(tmp_path)
     instanz.save_admin_group(config.database_path, GRUPPE)
     client = create_app(config).test_client()
-    assert client.post("/abgleich", headers=MITSPIEL).status_code == 403
     assert client.post(f"/sitzungen/{sitzung_id}/chronik", headers=MITSPIEL).status_code == 403
 
 
