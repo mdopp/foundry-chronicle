@@ -445,6 +445,37 @@ def test_der_zweite_anlauf_holt_die_liegengebliebene_spur_nach(
     assert all("wartet auf den Stapel" in meldung for meldung in meldungen)
 
 
+def test_eine_stumme_spur_laesst_den_zweiten_anlauf_nicht_auflaufen(
+    konfiguration, sitzung_id, ohne_espeak, monkeypatch
+):
+    """Wer nichts gesagt hat, hat auch keine Datei mehr — der zweite Anlauf muss das aushalten.
+
+    Der erste Anlauf löscht die leere Spur. Fiele der zweite darüber, stürbe er **vor** der
+    liegengebliebenen Spur — und die käme nie in die Warteschlange. Genau der Schaden aus
+    #104, nur mit anderer Ursache.
+    """
+    aufnahme = asyncio.run(
+        recorder.starten(konfiguration, FakeStimme(MIRA, BROK, SPAET), unsere_runde(konfiguration))
+    )
+    aufnahme.schreiben(MIRA, stille(480))
+    # BROK drückt die Taste, sagt aber nichts: die Spur entsteht, bleibt leer und wird
+    # beim ersten Anlauf gelöscht. Der zweite findet die Datei nicht mehr vor.
+    aufnahme.schreiben(BROK, b"")
+    aufnahme.schreiben(SPAET, stille(480))
+    monkeypatch.setattr(recordings, "enqueue", StolpertBeimEinreihen(2))
+    with pytest.raises(recorder.AufnahmeFehler):
+        aufnahme.beenden()
+
+    meldungen = aufnahme.beenden()
+
+    assert sorted(sprecher(spur) for spur in recordings.pending(unsere_runde(konfiguration))) == [
+        "Aelin",
+        "Mira",
+    ]
+    assert len(meldungen) == 2
+    assert list(konfiguration.recordings_dir.glob("*Brok.wav")) == []
+
+
 def test_eine_aufnahme_schreibt_nicht_in_die_runde_von_nachher(
     konfiguration, sitzung_id, ohne_espeak
 ):
