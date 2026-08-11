@@ -244,8 +244,8 @@ def einrichtungsfenster(bot, ctx):
     return ctx.modale[-1]
 
 
-def ausfuellen(fenster, adresse="", benutzer="", modell="", uhrzeit="", *, kanal=None):
-    for feld, wert in zip(fenster.children, (adresse, benutzer, modell, uhrzeit), strict=True):
+def ausfuellen(fenster, adresse="", benutzer="", uhrzeit="", *, kanal=None):
+    for feld, wert in zip(fenster.children, (adresse, benutzer, uhrzeit), strict=True):
         feld.value = wert
     interaktion = FakeInteraction(kanal=kanal)
     asyncio.run(fenster.callback(interaktion))
@@ -339,7 +339,9 @@ def test_das_einrichtungsfenster_fragt_nicht_nach_dem_passwort(bot):
 
     beschriftet = " ".join(f"{feld.label} {feld.placeholder}" for feld in fenster.children)
     assert "asswort" not in beschriftet
-    assert len(fenster.children) == 4
+    # Adresse, Benutzer, Uhrzeit — das Modell gehört der Instanz und steht nicht hier.
+    assert len(fenster.children) == 3
+    assert "odell" not in beschriftet
 
 
 def test_ohne_server_gibt_es_keine_runde_zu_beanspruchen(konfiguration, bot):
@@ -358,12 +360,12 @@ def test_ein_leeres_feld_laesst_den_wert_stehen(konfiguration, bot):
         einrichtungsfenster(bot, ctx), adresse="https://foundry.example", benutzer="Chronist"
     )
 
-    ausfuellen(einrichtungsfenster(bot, ctx), modell="chronist-test")
+    ausfuellen(einrichtungsfenster(bot, ctx), benutzer="Chronistin")
 
     unsere = runden.fuer_gilde(konfiguration.database_path, GILDE)
     wirksam = settings.effective(konfiguration, unsere)
     assert wirksam.foundry_url == "https://foundry.example"
-    assert wirksam.ollama_model == "chronist-test"
+    assert wirksam.foundry_user == "Chronistin"
 
 
 def test_eine_unlesbare_uhrzeit_laesst_die_bisherige_stehen(konfiguration, bot):

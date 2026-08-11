@@ -575,7 +575,9 @@ async def _offenlegen(interaction) -> bool:
 
 
 def _einrichtungsfenster(config: Config, ctx):
-    """Das Fenster für Adresse, Benutzer, Modell und Uhrzeit — nie für das Passwort.
+    """Das Fenster für Adresse, Benutzer und Uhrzeit — nie für das Passwort.
+
+    Das Modell steht hier nicht: es gehört seit #87 der Instanz und nicht der Runde.
 
     Das Passwort fehlt hier mit Absicht und nicht aus Vergesslichkeit: es wird beim
     Abschluss der Sitzung erfragt, verbraucht und vergessen. Ein Feld dafür gäbe es nur,
@@ -600,11 +602,6 @@ def _einrichtungsfenster(config: Config, ctx):
                     required=False,
                 ),
                 discord.ui.InputText(
-                    label=einrichten.FELD_MODELL,
-                    placeholder=einrichten.HINWEIS_MODELL,
-                    required=False,
-                ),
-                discord.ui.InputText(
                     label=einrichten.FELD_UHRZEIT,
                     placeholder=einrichten.HINWEIS_UHRZEIT,
                     required=False,
@@ -613,14 +610,13 @@ def _einrichtungsfenster(config: Config, ctx):
             )
 
         async def callback(self, interaction) -> None:
-            adresse, benutzer, modell, uhrzeit = (feld.value for feld in self.children)
+            adresse, benutzer, uhrzeit = (feld.value for feld in self.children)
             fertig = einrichten.einrichten(
                 config,
                 guild_id,
                 gildenname,
                 adresse=adresse,
                 benutzer=benutzer,
-                modell=modell,
                 uhrzeit=uhrzeit,
             )
             meldung = fertig.meldung
