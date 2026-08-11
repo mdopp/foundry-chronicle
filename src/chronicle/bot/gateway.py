@@ -119,9 +119,10 @@ LEER_BEENDET = (
 )
 
 LEER_GESCHEITERT = (
-    "Im Sprachkanal war niemand mehr, aber das Beenden ist schiefgegangen — ob noch "
-    "mitgeschnitten wird, weiß ich nicht sicher. Bitte einmal `/aufnahme stop` geben; "
-    "der Grund steht im Log des Bots."
+    "Im Sprachkanal war niemand mehr, aber das Beenden ist schiefgegangen — die Aufnahme "
+    "gilt weiter als laufend, und ich bin womöglich noch im Kanal. Bitte einmal "
+    "`/aufnahme stop` geben: das nimmt genau diesen Lauf und reiht die Spuren nach. "
+    "Der Grund steht im Log des Bots."
 )
 
 UNBEKANNT = "unbekannt"
@@ -263,7 +264,11 @@ class Sprachverbindung:
         self._vc.start_recording(_senke(aufnahme), _abgeschlossen)
 
     def mitschnitt_beenden(self) -> None:
-        self._vc.stop_recording()
+        # Der zweite Anlauf nach einem gescheiterten Trennen soll das Trennen nachholen und
+        # nicht daran scheitern, dass der erste den Mitschnitt schon angehalten hat —
+        # py-cord wirft dafür »You are not recording«.
+        if self._vc.is_recording():
+            self._vc.stop_recording()
 
     async def trennen(self) -> None:
         await self._vc.disconnect()
@@ -374,7 +379,14 @@ async def _mitschnitt_beenden(lauf: _Lauf, runde: Runde | None = None) -> tuple[
     lauf.aufnahme = None
     lauf.stimme = None
     _leerlauf_absagen(lauf)
-    return tuple(await recorder.stoppen(stimme, aufnahme))
+    try:
+        return tuple(await recorder.stoppen(stimme, aufnahme))
+    except BaseException:
+        # Ohne diese Rücknahme wäre der Anspruch das Ende: der Bot säße weiter im Kanal,
+        # die Spuren lägen uneingereiht, und ``/aufnahme stop`` antwortete ab jetzt immer
+        # »keine Aufnahme« — zu beenden wäre das nur noch durch einen Neustart.
+        lauf.aufnahme, lauf.stimme = aufnahme, stimme
+        raise
 
 
 def _leerlauf_absagen(lauf: _Lauf) -> None:
