@@ -16,6 +16,7 @@ import io
 import logging
 import sqlite3
 import sys
+import tomllib
 import types
 import wave
 from array import array
@@ -36,6 +37,8 @@ from chronicle.config import DEFAULT_TTS_URL, Config
 from chronicle.discord import grenzen
 
 TOKEN = "aufnahme-bot-token-nur-fuer-den-test"
+
+WURZEL = Path(__file__).resolve().parent.parent
 
 KANAL = Kanal(guild_id="11", id="77", name="Runde")
 
@@ -2920,6 +2923,91 @@ def echte_senke(konfiguration, sitzung_id, stimme=None):
     return aufnahme, gateway._senke(stimme or FakeStimme(), aufnahme)
 
 
+# Der Stand, auf dem der Sprach-Empfang unter DAVE funktioniert: Pycord-PR #3159,
+# unveröffentlicht (#60). Die Begründung steht in ``pyproject.toml``.
+PYCORD_COMMIT = "326b72acc8d1d952ac002fe07ca65581cf5952bc"
+
+
+def _auf_den_commit_genagelt(zeile: str) -> bool:
+    return f"pycord@{PYCORD_COMMIT}" in zeile
+
+
+def _py_cord_zeilen() -> list[str]:
+    pyproject = tomllib.loads((WURZEL / "pyproject.toml").read_text(encoding="utf-8"))
+    extras = pyproject["project"]["optional-dependencies"]
+    return [zeile for name in ("discord", "dev") for zeile in extras[name] if "py-cord" in zeile]
+
+
+def test_beide_extras_nageln_py_cord_auf_denselben_commit():
+    """Das Image installiert ``[discord]``, die CI ``[dev]`` — beide müssen dasselbe sein.
+
+    Eine CI, die gegen eine andere Fassung prüft als das Image mitbringt, prüft die
+    falsche; und ein Branchname statt eines Commits macht aus dem Bau von gestern einen
+    anderen als den von heute.
+    """
+    zeilen = _py_cord_zeilen()
+
+    assert len(zeilen) == 2, f"py-cord steht nicht in beiden Extras: {zeilen}"
+    assert all(_auf_den_commit_genagelt(zeile) for zeile in zeilen), zeilen
+
+
+def test_eine_veroeffentlichung_oder_ein_branchname_faellt_durch_dieselbe_pruefung():
+    """Gegenprobe: genau die beiden Zeilen, die hier nicht stehen dürfen."""
+    assert not _auf_den_commit_genagelt("py-cord[voice]>=2.8.1")
+    assert not _auf_den_commit_genagelt(
+        "py-cord[voice] @ git+https://github.com/Pycord-Development/pycord@fix/voice-rec-2"
+    )
+
+
+def test_installiert_ist_der_festgenagelte_stand_und_nicht_die_veroeffentlichung():
+    """Die Zeile in ``pyproject.toml`` nützt nichts, wenn danebenher 2.8.1 liegt.
+
+    py-cord belegt das Paket ``discord``; eine ältere Installation im selben Umfeld
+    beantwortet den Import und der ganze Abschnitt hier prüft die falsche Bibliothek. Die
+    Veröffentlichung meldet sich als ``2.8.1``, der festgenagelte Stand trägt den Commit
+    im Versionsstring.
+    """
+    pytest.importorskip("discord")
+    from importlib.metadata import version
+
+    gemeldet = version("py-cord")
+
+    assert PYCORD_COMMIT[:8] in gemeldet, f"py-cord ist {gemeldet}, nicht der Stand aus #3159"
+
+
+def test_pycord_entschluesselt_vor_dem_dekodieren_und_stirbt_nicht_am_rekey():
+    """Der eigentliche Grund für den festgenagelten Stand (#60).
+
+    In der Veröffentlichung 2.8.1 ruft ``PacketDecoder._decode_packet`` ``dave.decrypt``
+    auf dem bereits **dekodierten** PCM auf; der Dekoder sieht davor Rauschen und wirft
+    ``OpusError: corrupted stream``, woran der Empfang stirbt — keine einzige Spur. Der
+    festgenagelte Stand entschlüsselt in ``PacketDecryptor.decrypt_rtp``, also **vor** dem
+    Dekodieren, und fängt den Rest — beim Rekey kann weiter ein ``OpusError`` kommen — mit
+    Paketverlust-Verschleierung ab, statt den Paket-Router umfallen zu lassen.
+    """
+    pytest.importorskip("discord")
+    from discord.opus import PacketDecoder
+    from discord.voice.receive.reader import PacketDecryptor
+
+    dekodieren = inspect.getsource(PacketDecoder._decode_packet)
+    entschluesseln = inspect.getsource(PacketDecryptor.decrypt_rtp)
+
+    assert "dave.decrypt" not in dekodieren
+    assert "OpusError" in dekodieren
+    assert "dave.decrypt" in entschluesseln
+
+
+def test_die_fassung_von_2_8_1_faellt_durch_dieselbe_pruefung():
+    """Gegenprobe: der Ausschnitt aus dem veröffentlichten ``opus.py``, wörtlich."""
+    veroeffentlicht = (
+        "            if user_id is not None and in_dave and dave.can_passthrough(user_id):\n"
+        "                pcm = dave.decrypt(user_id, davey.MediaType.audio, pcm)\n"
+    )
+
+    assert "dave.decrypt" in veroeffentlicht
+    assert "OpusError" not in veroeffentlicht
+
+
 def test_die_senke_laesst_sich_an_pycords_echtem_router_anmelden(konfiguration, sitzung_id):
     from discord.sinks import Sink
     from discord.voice.receive.router import PacketRouter, SinkEventRouter
@@ -2936,34 +3024,25 @@ def test_die_senke_laesst_sich_an_pycords_echtem_router_anmelden(konfiguration, 
     assert senke.is_opus() is False
 
 
-def test_die_alte_senke_ohne_das_protokoll_scheitert_weiter(konfiguration, sitzung_id):
-    """Der rote Gegenbeweis — ohne ihn wäre der Test oben nicht zu unterscheiden.
+def test_pycords_basissenke_bringt_das_empfangs_protokoll_selbst_mit():
+    """Der sichtbare Unterschied zum veröffentlichten 2.8.1 — und damit die Gegenprobe.
 
-    So sah unsere Senke vor diesem Fix aus: eine reine Ableitung der Basisklasse.
+    In der Veröffentlichung fehlt der Basisklasse ``__sink_listeners__``; dort scheiterte
+    ``SinkEventRouter`` mit einem ``AttributeError``, an einer schlichten Ableitung ebenso
+    wie an py-cords eigener ``WaveSink``. Der festgenagelte Stand legt das Protokoll in
+    die Basisklasse. Wer diesen Test rot sieht, sitzt wieder auf einer Fassung ohne
+    Pycord-PR #3159 — dann ist auch der Empfang wieder kaputt.
     """
-    from discord.sinks import Sink
+    pytest.importorskip("discord")
+    from discord.sinks import Sink, WaveSink
     from discord.voice.receive.router import SinkEventRouter
 
-    class AlteSpurSenke(Sink):
+    class SchlichteSenke(Sink):
         def write(self, data, user):
             pass
 
-    with pytest.raises(AttributeError, match="__sink_listeners__"):
-        SinkEventRouter(AlteSpurSenke(), LeererReader())
-
-
-def test_auch_pycords_eigene_senke_scheitert_daran(konfiguration, sitzung_id):
-    """Warum das Protokoll hier von Hand steht statt geerbt zu werden.
-
-    In py-cord 2.8.1 erfüllt **keine** mitgelieferte Senke die Erwartung des neuen
-    Empfangs-Routers — auch ``WaveSink`` nicht. Es gibt also keine Basisklasse, von der
-    man das erben könnte; wer diesen Test rot sieht, darf den Handbetrieb wegräumen.
-    """
-    from discord.sinks import WaveSink
-    from discord.voice.receive.router import SinkEventRouter
-
-    with pytest.raises(AttributeError, match="__sink_listeners__"):
-        SinkEventRouter(WaveSink(), LeererReader())
+    SinkEventRouter(SchlichteSenke(), LeererReader())
+    SinkEventRouter(WaveSink(), LeererReader())
 
 
 def test_pycords_datenform_landet_in_der_spur_des_sprechers(konfiguration, sitzung_id):
