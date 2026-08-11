@@ -237,7 +237,15 @@ def pycord(monkeypatch):
     oberflaeche.Modal = FakeModal
     oberflaeche.InputText = FakeInputText
     modul.ui = oberflaeche
+    # ``discord.voice.state`` haelt die DAVE-Fassung, die wir beim Bauen auf 0 setzen.
+    stimmzustand = types.ModuleType("discord.voice.state")
+    stimmzustand.DAVE_PROTOCOL_VERSION = 1
+    stimme = types.ModuleType("discord.voice")
+    stimme.state = stimmzustand
+    modul.voice = stimme
     monkeypatch.setitem(sys.modules, "discord", modul)
+    monkeypatch.setitem(sys.modules, "discord.voice", stimme)
+    monkeypatch.setitem(sys.modules, "discord.voice.state", stimmzustand)
     monkeypatch.setattr(FakeBot, "erzeugt", [])
     return modul
 

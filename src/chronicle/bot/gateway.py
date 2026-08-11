@@ -20,6 +20,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import functools
+import importlib
 import logging
 import wave
 from collections.abc import Callable
@@ -279,14 +280,15 @@ def _dave_abmelden(discord) -> None:
     Erzwingt Discord DAVE eines Tages, hört der Bot auf zu hören — dann hilft nur eine
     py-cord-Fassung, die vor dem Dekodieren entschlüsselt (Pycord-Issue #3139).
     """
-    zustand = getattr(getattr(discord, "voice", None), "state", None)
-    if zustand is None or getattr(zustand, "DAVE_PROTOCOL_VERSION", 0) == 0:
-        return
-    logger.info(
-        "DAVE wird abgemeldet: gemeldet wird Fassung 0 statt %s.",
-        zustand.DAVE_PROTOCOL_VERSION,
-    )
+    # Ausdrücklich importieren: ``discord.voice`` ist zu diesem Zeitpunkt **kein Attribut**
+    # von ``discord``. Ein ``getattr`` darauf lief still ins Leere — der Riegel tat nichts,
+    # und im Handschlag stand weiter Fassung 1. Genau daran ist der erste Anlauf am
+    # 2026-08-11 gescheitert, ohne eine Zeile zu hinterlassen.
+    zustand = importlib.import_module("discord.voice.state")
+    vorher = zustand.DAVE_PROTOCOL_VERSION
     zustand.DAVE_PROTOCOL_VERSION = 0
+    # Laut sagen statt still lassen: wer hier nichts liest, weiß nicht, ob es griff.
+    logger.info("DAVE abgemeldet: gemeldet wird Fassung 0 statt %s.", vorher)
 
 
 def _sprache_pruefen(discord) -> None:
