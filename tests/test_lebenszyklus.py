@@ -560,6 +560,35 @@ def test_der_rat_sagt_auch_dass_die_rechte_je_figur_vergeben_werden(bot):
     assert "Beobachter" in gesagt
 
 
+def test_die_antwort_der_einrichtung_bleibt_unter_discords_grenze(bot):
+    """Der schlimmste Fall: neue Runde, Konto gesetzt, Uhrzeit unlesbar, Felder offen.
+
+    Discord weist eine Interaktionsantwort über 2000 Zeichen ab — dann erführe der
+    Einrichtende nicht einmal, ob seine Runde nun steht (#114).
+    """
+    interaktion = ausfuellen(
+        einrichtungsfenster(bot, FakeCtx(gilde=FakeGilde())),
+        benutzer="Chronik",
+        uhrzeit="viertel nach sieben",
+    )
+
+    assert len(interaktion.response.gesendet[0]["text"]) <= 2000
+
+
+def test_eine_masslose_uhrzeit_wird_gekuerzt_zurueckgegeben(bot):
+    """4000 Zeichen passen in ein ``InputText``, aber nicht in die Antwort darauf (#114)."""
+    lang = "z" * 4000
+
+    interaktion = ausfuellen(
+        einrichtungsfenster(bot, FakeCtx(gilde=FakeGilde())), benutzer="Chronik", uhrzeit=lang
+    )
+
+    gesagt = interaktion.response.gesendet[0]["text"]
+    assert len(gesagt) <= 2000
+    assert lang not in gesagt
+    assert einrichten.ECHO_GEKUERZT in gesagt
+
+
 def test_wer_nur_die_uhrzeit_richtet_hoert_den_satz_nicht_noch_einmal(bot):
     ctx = FakeCtx(gilde=FakeGilde())
     ausfuellen(einrichtungsfenster(bot, ctx), benutzer="Chronist")
