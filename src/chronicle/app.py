@@ -146,16 +146,38 @@ def create_app(config: Config | None = None, *, zeitplan: bool = False) -> Flask
             return url_for("einstellungen")
         return url_for("einrichtung")
 
+    def testwelt_aktiv() -> bool:
+        return settings.foundry_quelle(runde) == settings.TESTWELT
+
     @app.context_processor
     def verbindungsband() -> dict[str, object]:
         # ``abgleich_job`` steht auch dort, wo kein Band hängt: die Einstellungen zeigen
         # denselben Lauf im Abschnitt »Zustand«, nur ausführlicher.
         if g.get("abgewiesen"):
-            return {"verbindung": None, "zugang": None, "abgleich_job": None, "verwalter": False}
+            return {
+                "verbindung": None,
+                "zugang": None,
+                "abgleich_job": None,
+                "verwalter": False,
+                "testwelt": False,
+            }
         verwalter = roles.ist_verwalter(request, basis.database_path)
         lauf = jobs.latest(runde, jobs.ABGLEICH)
-        rahmen = {"verbindung": None, "zugang": None, "abgleich_job": lauf, "verwalter": verwalter}
+        testwelt = testwelt_aktiv()
+        rahmen = {
+            "verbindung": None,
+            "zugang": None,
+            "abgleich_job": lauf,
+            "verwalter": verwalter,
+            # Das Band der Testwelt hängt auch dort, wo sonst keines hängt — in den
+            # Einstellungen und im Wizard. Wer erfundene Zahlen für echte hält, ist der
+            # teuerste Fehler dieses Schalters, und dagegen hilft nur Wiederholung.
+            "testwelt": testwelt,
+            "testwelt_hinweis": foundry.TESTWELT_HINWEIS,
+        }
         if request.endpoint in OHNE_BAND:
+            return rahmen
+        if testwelt:
             return rahmen
         if not settings.effective(basis, runde).foundry_configured:
             # Der Weg in die Einrichtung steht nur dem offen, der sie auch gehen darf.
@@ -197,7 +219,7 @@ def create_app(config: Config | None = None, *, zeitplan: bool = False) -> Flask
     def einrichtung_offen() -> bool:
         # Die Einrichtung steht offen, solange Foundry fehlt — nicht nur beim ersten
         # Aufruf. Wer sie nicht jetzt machen will, legt sie mit »Später« beiseite.
-        if instanz.onboarding_done(basis.database_path):
+        if instanz.onboarding_done(basis.database_path) or testwelt_aktiv():
             return False
         return not settings.effective(basis, runde).foundry_configured
 
@@ -442,6 +464,10 @@ def create_app(config: Config | None = None, *, zeitplan: bool = False) -> Flask
             if sperr_gruppe is None
             else sperr_gruppe,
             sperr_gruppe=sperr_gruppe,
+            quelle=settings.foundry_quelle(runde),
+            quelle_feld=settings.QUELLE_KEY,
+            quelle_server=settings.SERVER,
+            quelle_testwelt=settings.TESTWELT,
             **felder(),
         )
 
@@ -452,6 +478,7 @@ def create_app(config: Config | None = None, *, zeitplan: bool = False) -> Flask
     @app.post("/einstellungen")
     def einstellungen_speichern() -> Response | str:
         uebernehmen(settings.KEYS)
+        settings.save_foundry_quelle(runde, request.form.get(settings.QUELLE_KEY, ""))
         settings.save_nightly_time(runde, request.form.get(settings.NIGHTLY_KEY, ""))
         settings.save_nightly_zone(runde, request.form.get(settings.NIGHTLY_ZONE_KEY, ""))
         # Ein gar nicht abgesendetes Feld heißt »unverändert«: ein Formular ohne dieses

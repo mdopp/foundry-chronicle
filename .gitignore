@@ -14,6 +14,11 @@ htmlcov/
 .claude/worktrees/
 .claude/settings.local.json
 
+# Roher Weltabzug aus `python -m chronicle.foundry --dump`: traegt die Klarnamen aller
+# Konten der Welt. Nur die anonymisierte Fassung darf eingecheckt werden.
+welt-dump*.json
+dumps/
+
 # Lokale Daten und Aufnahmen — gehoeren nie ins Repo
 data/
 *.db

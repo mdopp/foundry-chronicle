@@ -1,0 +1,2193 @@
+{
+ "userId": "stlNMUpWR6ekmCii",
+ "world": {
+  "id": "erfundene-testwelt",
+  "type": "world",
+  "version": null,
+  "coreVersion": "0.0.1",
+  "systemVersion": "0.0.1"
+ },
+ "system": {
+  "id": "daggerheart",
+  "type": "system",
+  "version": "0.0.1"
+ },
+ "users": [
+  {
+   "_id": "LmnVP8mcmCzw8sZ4",
+   "role": 4,
+   "character": null,
+   "name": "Konto-01"
+  },
+  {
+   "_id": "q9CZNAs3LgaFnEWe",
+   "role": 4,
+   "character": null,
+   "name": "Konto-02"
+  },
+  {
+   "_id": "CJQyQxdgYQXitcl3",
+   "role": 3,
+   "character": null,
+   "name": "Konto-03"
+  },
+  {
+   "_id": "stlNMUpWR6ekmCii",
+   "role": 2,
+   "character": "9wk9fVQ2LvHk5GmE",
+   "name": "Konto-04"
+  },
+  {
+   "_id": "iU4obq1qRUgEG1QL",
+   "role": 2,
+   "character": "p8owoYib78DHG0EI",
+   "name": "Konto-05"
+  },
+  {
+   "_id": "rL8QvLzisqnD5mNo",
+   "role": 1,
+   "character": "jCk3bl2MjMuM3Ze0",
+   "name": "Konto-06"
+  },
+  {
+   "_id": "DNNfl74fFUtuSCFq",
+   "role": 1,
+   "character": "QjmDRMNR5vAHDz7S",
+   "name": "Konto-07"
+  },
+  {
+   "_id": "TFiX9S4eicHocsdc",
+   "role": 1,
+   "character": "TAh450rRaGWgZvgf",
+   "name": "Konto-08"
+  },
+  {
+   "_id": "nKeh9dFdJ7T2rQF0",
+   "role": 1,
+   "character": "F3rVwpZykO5sHlCx",
+   "name": "Konto-09"
+  },
+  {
+   "_id": "TMvuGd05weZijnQn",
+   "role": 1,
+   "character": "DoMjmZnDGfEr7oaD",
+   "name": "Konto-10"
+  },
+  {
+   "_id": "Q1xAgV7W8FjnXUKn",
+   "role": 1,
+   "character": "GVZI5elWEjHBtzTw",
+   "name": "Konto-11"
+  },
+  {
+   "_id": "WbcjK4XdxZAx20Ff",
+   "role": 1,
+   "character": "8uUU3Ja3lYbz49OC",
+   "name": "Konto-12"
+  },
+  {
+   "_id": "PVx6d6HzNUWzDZYZ",
+   "role": 1,
+   "character": "8tdwb6WJ8ljHtrkE",
+   "name": "Konto-13"
+  },
+  {
+   "_id": "AfvhKZP0nYyiL73h",
+   "role": 1,
+   "character": "QWkxT5D5oq9mc91j",
+   "name": "Konto-14"
+  },
+  {
+   "_id": "Wk5OyThcSngGzOpt",
+   "role": 1,
+   "character": "6y2aECZAulxh9xgR",
+   "name": "Konto-15"
+  },
+  {
+   "_id": "XJD5d2YyJ4dkshIt",
+   "role": 1,
+   "character": "cGkVohA1GQljAsZe",
+   "name": "Konto-16"
+  },
+  {
+   "_id": "hB4bCNcZSLmFr1gx",
+   "role": 1,
+   "character": "zrxxVlulzQwNzcn1",
+   "name": "Konto-17"
+  },
+  {
+   "_id": "xipg4hivABuj6VOn",
+   "role": 1,
+   "character": "NzjtaU0d8zVN9TSE",
+   "name": "Konto-18"
+  },
+  {
+   "_id": "C0tJqxf2zQL8Suaj",
+   "role": 1,
+   "character": "TdXmbGdCoSOXH0DS",
+   "name": "Konto-19"
+  }
+ ],
+ "actors": [
+  {
+   "_id": "9wk9fVQ2LvHk5GmE",
+   "type": "character",
+   "ownership": {
+    "default": 0,
+    "LmnVP8mcmCzw8sZ4": 3,
+    "stlNMUpWR6ekmCii": 3,
+    "iU4obq1qRUgEG1QL": 2,
+    "rL8QvLzisqnD5mNo": 2,
+    "DNNfl74fFUtuSCFq": 2,
+    "TFiX9S4eicHocsdc": 2,
+    "nKeh9dFdJ7T2rQF0": 2
+   },
+   "name": "Figur-001"
+  },
+  {
+   "_id": "p8owoYib78DHG0EI",
+   "type": "character",
+   "ownership": {
+    "default": 0,
+    "LmnVP8mcmCzw8sZ4": 3,
+    "stlNMUpWR6ekmCii": 2,
+    "iU4obq1qRUgEG1QL": 3,
+    "rL8QvLzisqnD5mNo": 2,
+    "DNNfl74fFUtuSCFq": 2,
+    "TFiX9S4eicHocsdc": 2,
+    "nKeh9dFdJ7T2rQF0": 2
+   },
+   "name": "Figur-002"
+  },
+  {
+   "_id": "jCk3bl2MjMuM3Ze0",
+   "type": "character",
+   "ownership": {
+    "default": 0,
+    "LmnVP8mcmCzw8sZ4": 3,
+    "stlNMUpWR6ekmCii": 2,
+    "iU4obq1qRUgEG1QL": 2,
+    "rL8QvLzisqnD5mNo": 3,
+    "DNNfl74fFUtuSCFq": 2,
+    "TFiX9S4eicHocsdc": 2,
+    "nKeh9dFdJ7T2rQF0": 2
+   },
+   "name": "Figur-003"
+  },
+  {
+   "_id": "QjmDRMNR5vAHDz7S",
+   "type": "character",
+   "ownership": {
+    "default": 0,
+    "LmnVP8mcmCzw8sZ4": 3,
+    "stlNMUpWR6ekmCii": 2,
+    "iU4obq1qRUgEG1QL": 2,
+    "rL8QvLzisqnD5mNo": 2,
+    "DNNfl74fFUtuSCFq": 3,
+    "TFiX9S4eicHocsdc": 2,
+    "nKeh9dFdJ7T2rQF0": 2
+   },
+   "name": "Figur-004"
+  },
+  {
+   "_id": "TAh450rRaGWgZvgf",
+   "type": "character",
+   "ownership": {
+    "default": 0,
+    "LmnVP8mcmCzw8sZ4": 3,
+    "stlNMUpWR6ekmCii": 2,
+    "iU4obq1qRUgEG1QL": 2,
+    "rL8QvLzisqnD5mNo": 2,
+    "DNNfl74fFUtuSCFq": 2,
+    "TFiX9S4eicHocsdc": 3,
+    "nKeh9dFdJ7T2rQF0": 2
+   },
+   "name": "Figur-005"
+  },
+  {
+   "_id": "F3rVwpZykO5sHlCx",
+   "type": "character",
+   "ownership": {
+    "default": 0,
+    "LmnVP8mcmCzw8sZ4": 3,
+    "stlNMUpWR6ekmCii": 2,
+    "iU4obq1qRUgEG1QL": 2,
+    "rL8QvLzisqnD5mNo": 2,
+    "DNNfl74fFUtuSCFq": 2,
+    "TFiX9S4eicHocsdc": 2,
+    "nKeh9dFdJ7T2rQF0": 3
+   },
+   "name": "Figur-006"
+  },
+  {
+   "_id": "DoMjmZnDGfEr7oaD",
+   "type": "character",
+   "ownership": {
+    "default": 0,
+    "LmnVP8mcmCzw8sZ4": 3,
+    "TMvuGd05weZijnQn": 3,
+    "Q1xAgV7W8FjnXUKn": 2,
+    "WbcjK4XdxZAx20Ff": 2,
+    "PVx6d6HzNUWzDZYZ": 2,
+    "AfvhKZP0nYyiL73h": 2,
+    "Wk5OyThcSngGzOpt": 2
+   },
+   "name": "Figur-007"
+  },
+  {
+   "_id": "GVZI5elWEjHBtzTw",
+   "type": "character",
+   "ownership": {
+    "default": 0,
+    "LmnVP8mcmCzw8sZ4": 3,
+    "TMvuGd05weZijnQn": 2,
+    "Q1xAgV7W8FjnXUKn": 3,
+    "WbcjK4XdxZAx20Ff": 2,
+    "PVx6d6HzNUWzDZYZ": 2,
+    "AfvhKZP0nYyiL73h": 2,
+    "Wk5OyThcSngGzOpt": 2
+   },
+   "name": "Figur-008"
+  },
+  {
+   "_id": "8uUU3Ja3lYbz49OC",
+   "type": "character",
+   "ownership": {
+    "default": 0,
+    "LmnVP8mcmCzw8sZ4": 3,
+    "TMvuGd05weZijnQn": 2,
+    "Q1xAgV7W8FjnXUKn": 2,
+    "WbcjK4XdxZAx20Ff": 3,
+    "PVx6d6HzNUWzDZYZ": 2,
+    "AfvhKZP0nYyiL73h": 2,
+    "Wk5OyThcSngGzOpt": 2
+   },
+   "name": "Figur-009"
+  },
+  {
+   "_id": "8tdwb6WJ8ljHtrkE",
+   "type": "character",
+   "ownership": {
+    "default": 0,
+    "LmnVP8mcmCzw8sZ4": 3,
+    "TMvuGd05weZijnQn": 2,
+    "Q1xAgV7W8FjnXUKn": 2,
+    "WbcjK4XdxZAx20Ff": 2,
+    "PVx6d6HzNUWzDZYZ": 3,
+    "AfvhKZP0nYyiL73h": 2,
+    "Wk5OyThcSngGzOpt": 2
+   },
+   "name": "Figur-010"
+  },
+  {
+   "_id": "QWkxT5D5oq9mc91j",
+   "type": "character",
+   "ownership": {
+    "default": 0,
+    "LmnVP8mcmCzw8sZ4": 3,
+    "TMvuGd05weZijnQn": 2,
+    "Q1xAgV7W8FjnXUKn": 2,
+    "WbcjK4XdxZAx20Ff": 2,
+    "PVx6d6HzNUWzDZYZ": 2,
+    "AfvhKZP0nYyiL73h": 3,
+    "Wk5OyThcSngGzOpt": 2
+   },
+   "name": "Figur-011"
+  },
+  {
+   "_id": "6y2aECZAulxh9xgR",
+   "type": "character",
+   "ownership": {
+    "default": 0,
+    "LmnVP8mcmCzw8sZ4": 3,
+    "TMvuGd05weZijnQn": 2,
+    "Q1xAgV7W8FjnXUKn": 2,
+    "WbcjK4XdxZAx20Ff": 2,
+    "PVx6d6HzNUWzDZYZ": 2,
+    "AfvhKZP0nYyiL73h": 2,
+    "Wk5OyThcSngGzOpt": 3
+   },
+   "name": "Figur-012"
+  },
+  {
+   "_id": "cGkVohA1GQljAsZe",
+   "type": "character",
+   "ownership": {
+    "default": 0,
+    "LmnVP8mcmCzw8sZ4": 3,
+    "XJD5d2YyJ4dkshIt": 3,
+    "hB4bCNcZSLmFr1gx": 2,
+    "xipg4hivABuj6VOn": 2,
+    "C0tJqxf2zQL8Suaj": 2
+   },
+   "name": "Figur-013"
+  },
+  {
+   "_id": "zrxxVlulzQwNzcn1",
+   "type": "character",
+   "ownership": {
+    "default": 0,
+    "LmnVP8mcmCzw8sZ4": 3,
+    "XJD5d2YyJ4dkshIt": 2,
+    "hB4bCNcZSLmFr1gx": 3,
+    "xipg4hivABuj6VOn": 2,
+    "C0tJqxf2zQL8Suaj": 2
+   },
+   "name": "Figur-014"
+  },
+  {
+   "_id": "NzjtaU0d8zVN9TSE",
+   "type": "character",
+   "ownership": {
+    "default": 0,
+    "LmnVP8mcmCzw8sZ4": 3,
+    "XJD5d2YyJ4dkshIt": 2,
+    "hB4bCNcZSLmFr1gx": 2,
+    "xipg4hivABuj6VOn": 3,
+    "C0tJqxf2zQL8Suaj": 2
+   },
+   "name": "Figur-015"
+  },
+  {
+   "_id": "TdXmbGdCoSOXH0DS",
+   "type": "character",
+   "ownership": {
+    "default": 0,
+    "LmnVP8mcmCzw8sZ4": 3,
+    "XJD5d2YyJ4dkshIt": 2,
+    "hB4bCNcZSLmFr1gx": 2,
+    "xipg4hivABuj6VOn": 2,
+    "C0tJqxf2zQL8Suaj": 3
+   },
+   "name": "Figur-016"
+  },
+  {
+   "_id": "dCLd92whmSc9yXbf",
+   "type": "character",
+   "ownership": {
+    "default": 0,
+    "LmnVP8mcmCzw8sZ4": 3
+   },
+   "name": "Figur-017"
+  },
+  {
+   "_id": "JvUrRuio96bxeCyn",
+   "type": "character",
+   "ownership": {
+    "default": 0,
+    "LmnVP8mcmCzw8sZ4": 3
+   },
+   "name": "Figur-018"
+  },
+  {
+   "_id": "H0fqmtdgGSdUfOrh",
+   "type": "adversary",
+   "ownership": {
+    "default": 1,
+    "LmnVP8mcmCzw8sZ4": 3
+   },
+   "name": "Figur-019"
+  },
+  {
+   "_id": "0hyY6owBQQqCguME",
+   "type": "adversary",
+   "ownership": {
+    "default": 1,
+    "LmnVP8mcmCzw8sZ4": 3
+   },
+   "name": "Figur-020"
+  },
+  {
+   "_id": "KCMy5ADtNJ0PiC0F",
+   "type": "adversary",
+   "ownership": {
+    "default": 1,
+    "LmnVP8mcmCzw8sZ4": 3
+   },
+   "name": "Figur-021"
+  },
+  {
+   "_id": "T1yOlUD3sTmjWmYD",
+   "type": "adversary",
+   "ownership": {
+    "default": 1,
+    "LmnVP8mcmCzw8sZ4": 3
+   },
+   "name": "Figur-022"
+  },
+  {
+   "_id": "GQpm653IoaqVjnMF",
+   "type": "adversary",
+   "ownership": {
+    "default": 1,
+    "LmnVP8mcmCzw8sZ4": 3
+   },
+   "name": "Figur-023"
+  },
+  {
+   "_id": "hDWKB8S2OUyEj8o2",
+   "type": "adversary",
+   "ownership": {
+    "default": 1,
+    "LmnVP8mcmCzw8sZ4": 3
+   },
+   "name": "Figur-024"
+  },
+  {
+   "_id": "m2CqiHjys2ZE59qp",
+   "type": "adversary",
+   "ownership": {
+    "default": 1,
+    "LmnVP8mcmCzw8sZ4": 3
+   },
+   "name": "Figur-025"
+  },
+  {
+   "_id": "whA8l90SmCuiR0ZB",
+   "type": "adversary",
+   "ownership": {
+    "default": 1,
+    "LmnVP8mcmCzw8sZ4": 3
+   },
+   "name": "Figur-026"
+  },
+  {
+   "_id": "N9aAR9UFZvLlX6Xy",
+   "type": "adversary",
+   "ownership": {
+    "default": 1,
+    "LmnVP8mcmCzw8sZ4": 3
+   },
+   "name": "Figur-027"
+  },
+  {
+   "_id": "csqNczBw0wGCdmq0",
+   "type": "adversary",
+   "ownership": {
+    "default": 1,
+    "LmnVP8mcmCzw8sZ4": 3
+   },
+   "name": "Figur-028"
+  },
+  {
+   "_id": "MBQ5sRPymzvuGyJB",
+   "type": "adversary",
+   "ownership": {
+    "default": 1,
+    "LmnVP8mcmCzw8sZ4": 3
+   },
+   "name": "Figur-029"
+  },
+  {
+   "_id": "rLGswD9tUazMtiqK",
+   "type": "adversary",
+   "ownership": {
+    "default": 1,
+    "LmnVP8mcmCzw8sZ4": 3
+   },
+   "name": "Figur-030"
+  },
+  {
+   "_id": "tFq02L7dtXKc0V5r",
+   "type": "adversary",
+   "ownership": {
+    "default": 1,
+    "LmnVP8mcmCzw8sZ4": 3
+   },
+   "name": "Figur-031"
+  },
+  {
+   "_id": "fdtYdQAhLgHnC5uP",
+   "type": "adversary",
+   "ownership": {
+    "default": 1,
+    "LmnVP8mcmCzw8sZ4": 3
+   },
+   "name": "Figur-032"
+  },
+  {
+   "_id": "KLmwXdZEyoMeevzC",
+   "type": "adversary",
+   "ownership": {
+    "default": 1,
+    "LmnVP8mcmCzw8sZ4": 3
+   },
+   "name": "Figur-033"
+  },
+  {
+   "_id": "7lNhy7VgPzGAhstf",
+   "type": "adversary",
+   "ownership": {
+    "default": 1,
+    "LmnVP8mcmCzw8sZ4": 3
+   },
+   "name": "Figur-034"
+  },
+  {
+   "_id": "pYMBwjjlBHYwPVDH",
+   "type": "adversary",
+   "ownership": {
+    "default": 1,
+    "LmnVP8mcmCzw8sZ4": 3
+   },
+   "name": "Figur-035"
+  },
+  {
+   "_id": "XsebQs9YPPQI7NKv",
+   "type": "adversary",
+   "ownership": {
+    "default": 1,
+    "LmnVP8mcmCzw8sZ4": 3
+   },
+   "name": "Figur-036"
+  },
+  {
+   "_id": "ormF6H6n2B30L51Y",
+   "type": "adversary",
+   "ownership": {
+    "default": 1,
+    "LmnVP8mcmCzw8sZ4": 3
+   },
+   "name": "Figur-037"
+  },
+  {
+   "_id": "WP3YvQogTqRbDPmy",
+   "type": "adversary",
+   "ownership": {
+    "default": 1,
+    "LmnVP8mcmCzw8sZ4": 3
+   },
+   "name": "Figur-038"
+  },
+  {
+   "_id": "vY1UfHYzI1APwORt",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "LmnVP8mcmCzw8sZ4": 3
+   },
+   "name": "Figur-039"
+  },
+  {
+   "_id": "8TV8kOxXFQzgaRgm",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "LmnVP8mcmCzw8sZ4": 3
+   },
+   "name": "Figur-040"
+  },
+  {
+   "_id": "Qu0M4mdWNLRRjtBu",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "LmnVP8mcmCzw8sZ4": 3
+   },
+   "name": "Figur-041"
+  },
+  {
+   "_id": "iaH33slCdUuP0Yq4",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "LmnVP8mcmCzw8sZ4": 3
+   },
+   "name": "Figur-042"
+  },
+  {
+   "_id": "4R7CAvU8pCzIiS8T",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "LmnVP8mcmCzw8sZ4": 3
+   },
+   "name": "Figur-043"
+  },
+  {
+   "_id": "ZQHjVVPZKuJD3oKV",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "LmnVP8mcmCzw8sZ4": 3
+   },
+   "name": "Figur-044"
+  },
+  {
+   "_id": "MFCCUxOHEspRHBk9",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "LmnVP8mcmCzw8sZ4": 3
+   },
+   "name": "Figur-045"
+  },
+  {
+   "_id": "bqeJXRJ7QtiG6U7Z",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "LmnVP8mcmCzw8sZ4": 3
+   },
+   "name": "Figur-046"
+  },
+  {
+   "_id": "aWqvWY98WLPY2vTg",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "LmnVP8mcmCzw8sZ4": 3
+   },
+   "name": "Figur-047"
+  },
+  {
+   "_id": "YKRiyYkXdgggG7Cx",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "LmnVP8mcmCzw8sZ4": 3
+   },
+   "name": "Figur-048"
+  },
+  {
+   "_id": "BNzjdzb4bbm3IDm1",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "LmnVP8mcmCzw8sZ4": 3
+   },
+   "name": "Figur-049"
+  },
+  {
+   "_id": "feahO6B3c7aDn8By",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "LmnVP8mcmCzw8sZ4": 3
+   },
+   "name": "Figur-050"
+  },
+  {
+   "_id": "fDlYyPmk7qVuft51",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "LmnVP8mcmCzw8sZ4": 3
+   },
+   "name": "Figur-051"
+  },
+  {
+   "_id": "OCgrbC9ISEl7NSQq",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "LmnVP8mcmCzw8sZ4": 3
+   },
+   "name": "Figur-052"
+  },
+  {
+   "_id": "7TNyPIMxkVQFwIA5",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "LmnVP8mcmCzw8sZ4": 3
+   },
+   "name": "Figur-053"
+  },
+  {
+   "_id": "aRRTGVZp556Lga1K",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "LmnVP8mcmCzw8sZ4": 3,
+    "stlNMUpWR6ekmCii": 1,
+    "iU4obq1qRUgEG1QL": 1,
+    "rL8QvLzisqnD5mNo": 1,
+    "DNNfl74fFUtuSCFq": 1,
+    "TFiX9S4eicHocsdc": 1,
+    "nKeh9dFdJ7T2rQF0": 1
+   },
+   "name": "Figur-054"
+  },
+  {
+   "_id": "H9kwIXyJ8CypfeH9",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "LmnVP8mcmCzw8sZ4": 3,
+    "stlNMUpWR6ekmCii": 1,
+    "iU4obq1qRUgEG1QL": 1,
+    "rL8QvLzisqnD5mNo": 1,
+    "DNNfl74fFUtuSCFq": 1,
+    "TFiX9S4eicHocsdc": 1,
+    "nKeh9dFdJ7T2rQF0": 1
+   },
+   "name": "Figur-055"
+  },
+  {
+   "_id": "kF1peAHG8AiN9N9g",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "LmnVP8mcmCzw8sZ4": 3,
+    "stlNMUpWR6ekmCii": 1,
+    "iU4obq1qRUgEG1QL": 1,
+    "rL8QvLzisqnD5mNo": 1,
+    "DNNfl74fFUtuSCFq": 1,
+    "TFiX9S4eicHocsdc": 1,
+    "nKeh9dFdJ7T2rQF0": 1
+   },
+   "name": "Figur-056"
+  },
+  {
+   "_id": "qlLxx2yVQrGWq8Oh",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "LmnVP8mcmCzw8sZ4": 3,
+    "stlNMUpWR6ekmCii": 1,
+    "iU4obq1qRUgEG1QL": 1,
+    "rL8QvLzisqnD5mNo": 1,
+    "DNNfl74fFUtuSCFq": 1,
+    "TFiX9S4eicHocsdc": 1,
+    "nKeh9dFdJ7T2rQF0": 1
+   },
+   "name": "Figur-057"
+  },
+  {
+   "_id": "L2ZNJEq9Zey228gK",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "LmnVP8mcmCzw8sZ4": 3,
+    "stlNMUpWR6ekmCii": 1,
+    "iU4obq1qRUgEG1QL": 1,
+    "rL8QvLzisqnD5mNo": 1,
+    "DNNfl74fFUtuSCFq": 1,
+    "TFiX9S4eicHocsdc": 1,
+    "nKeh9dFdJ7T2rQF0": 1
+   },
+   "name": "Figur-058"
+  },
+  {
+   "_id": "4mEoMf2s1pjHONdM",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "LmnVP8mcmCzw8sZ4": 3,
+    "stlNMUpWR6ekmCii": 1,
+    "iU4obq1qRUgEG1QL": 1,
+    "rL8QvLzisqnD5mNo": 1,
+    "DNNfl74fFUtuSCFq": 1,
+    "TFiX9S4eicHocsdc": 1,
+    "nKeh9dFdJ7T2rQF0": 1
+   },
+   "name": "Figur-059"
+  },
+  {
+   "_id": "W03qnFLflrXouZr0",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "LmnVP8mcmCzw8sZ4": 3,
+    "stlNMUpWR6ekmCii": 1,
+    "iU4obq1qRUgEG1QL": 1,
+    "rL8QvLzisqnD5mNo": 1,
+    "DNNfl74fFUtuSCFq": 1,
+    "TFiX9S4eicHocsdc": 1,
+    "nKeh9dFdJ7T2rQF0": 1
+   },
+   "name": "Figur-060"
+  },
+  {
+   "_id": "BJuu2KuyhCVmA6iB",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "LmnVP8mcmCzw8sZ4": 3,
+    "stlNMUpWR6ekmCii": 1,
+    "iU4obq1qRUgEG1QL": 1,
+    "rL8QvLzisqnD5mNo": 1,
+    "DNNfl74fFUtuSCFq": 1,
+    "TFiX9S4eicHocsdc": 1,
+    "nKeh9dFdJ7T2rQF0": 1
+   },
+   "name": "Figur-061"
+  },
+  {
+   "_id": "mn8x0cT3Wgly74nl",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "LmnVP8mcmCzw8sZ4": 3,
+    "stlNMUpWR6ekmCii": 1,
+    "iU4obq1qRUgEG1QL": 1,
+    "rL8QvLzisqnD5mNo": 1,
+    "DNNfl74fFUtuSCFq": 1,
+    "TFiX9S4eicHocsdc": 1,
+    "nKeh9dFdJ7T2rQF0": 1
+   },
+   "name": "Figur-062"
+  },
+  {
+   "_id": "nP8k9jHO5C1zJyPE",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "LmnVP8mcmCzw8sZ4": 3,
+    "stlNMUpWR6ekmCii": 1,
+    "iU4obq1qRUgEG1QL": 1,
+    "rL8QvLzisqnD5mNo": 1,
+    "DNNfl74fFUtuSCFq": 1,
+    "TFiX9S4eicHocsdc": 1,
+    "nKeh9dFdJ7T2rQF0": 1
+   },
+   "name": "Figur-063"
+  },
+  {
+   "_id": "ZRk1ovK2jNz7XuhN",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "LmnVP8mcmCzw8sZ4": 3,
+    "q9CZNAs3LgaFnEWe": 3,
+    "TMvuGd05weZijnQn": 2,
+    "Q1xAgV7W8FjnXUKn": 2,
+    "WbcjK4XdxZAx20Ff": 2,
+    "PVx6d6HzNUWzDZYZ": 2,
+    "AfvhKZP0nYyiL73h": 2,
+    "Wk5OyThcSngGzOpt": 2
+   },
+   "name": "Figur-064"
+  },
+  {
+   "_id": "3xxTYXi1KeTPHnA5",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "LmnVP8mcmCzw8sZ4": 3,
+    "q9CZNAs3LgaFnEWe": 3,
+    "TMvuGd05weZijnQn": 2,
+    "Q1xAgV7W8FjnXUKn": 2,
+    "WbcjK4XdxZAx20Ff": 2,
+    "PVx6d6HzNUWzDZYZ": 2,
+    "AfvhKZP0nYyiL73h": 2,
+    "Wk5OyThcSngGzOpt": 2
+   },
+   "name": "Figur-065"
+  },
+  {
+   "_id": "YcUcFFLSwOrZR66v",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "LmnVP8mcmCzw8sZ4": 3,
+    "q9CZNAs3LgaFnEWe": 3,
+    "TMvuGd05weZijnQn": 2,
+    "Q1xAgV7W8FjnXUKn": 2,
+    "WbcjK4XdxZAx20Ff": 2,
+    "PVx6d6HzNUWzDZYZ": 2,
+    "AfvhKZP0nYyiL73h": 2,
+    "Wk5OyThcSngGzOpt": 2
+   },
+   "name": "Figur-066"
+  },
+  {
+   "_id": "1IQYC8pSnZm299aP",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "LmnVP8mcmCzw8sZ4": 3,
+    "q9CZNAs3LgaFnEWe": 3,
+    "TMvuGd05weZijnQn": 2,
+    "Q1xAgV7W8FjnXUKn": 2,
+    "WbcjK4XdxZAx20Ff": 2,
+    "PVx6d6HzNUWzDZYZ": 2,
+    "AfvhKZP0nYyiL73h": 2,
+    "Wk5OyThcSngGzOpt": 2
+   },
+   "name": "Figur-067"
+  },
+  {
+   "_id": "apMoR1Xd0TaKCLOS",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "LmnVP8mcmCzw8sZ4": 3,
+    "q9CZNAs3LgaFnEWe": 3,
+    "TMvuGd05weZijnQn": 2,
+    "Q1xAgV7W8FjnXUKn": 2,
+    "WbcjK4XdxZAx20Ff": 2,
+    "PVx6d6HzNUWzDZYZ": 2,
+    "AfvhKZP0nYyiL73h": 2,
+    "Wk5OyThcSngGzOpt": 2
+   },
+   "name": "Figur-068"
+  },
+  {
+   "_id": "B3JLERQGj6s34Pap",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "LmnVP8mcmCzw8sZ4": 3,
+    "q9CZNAs3LgaFnEWe": 3,
+    "TMvuGd05weZijnQn": 2,
+    "Q1xAgV7W8FjnXUKn": 2,
+    "WbcjK4XdxZAx20Ff": 2,
+    "PVx6d6HzNUWzDZYZ": 2,
+    "AfvhKZP0nYyiL73h": 2,
+    "Wk5OyThcSngGzOpt": 2
+   },
+   "name": "Figur-069"
+  },
+  {
+   "_id": "GtRzhyAHMzu56rh2",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "LmnVP8mcmCzw8sZ4": 3,
+    "q9CZNAs3LgaFnEWe": 3,
+    "TMvuGd05weZijnQn": 2,
+    "Q1xAgV7W8FjnXUKn": 2,
+    "WbcjK4XdxZAx20Ff": 2,
+    "PVx6d6HzNUWzDZYZ": 2,
+    "AfvhKZP0nYyiL73h": 2,
+    "Wk5OyThcSngGzOpt": 2
+   },
+   "name": "Figur-070"
+  },
+  {
+   "_id": "h7LaPs9DgpxDHuUf",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "LmnVP8mcmCzw8sZ4": 3,
+    "q9CZNAs3LgaFnEWe": 3,
+    "TMvuGd05weZijnQn": 2,
+    "Q1xAgV7W8FjnXUKn": 2,
+    "WbcjK4XdxZAx20Ff": 2,
+    "PVx6d6HzNUWzDZYZ": 2,
+    "AfvhKZP0nYyiL73h": 2,
+    "Wk5OyThcSngGzOpt": 2
+   },
+   "name": "Figur-071"
+  },
+  {
+   "_id": "sONKYHWTYB3hcMjN",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "LmnVP8mcmCzw8sZ4": 3,
+    "q9CZNAs3LgaFnEWe": 3,
+    "TMvuGd05weZijnQn": 2,
+    "Q1xAgV7W8FjnXUKn": 2,
+    "WbcjK4XdxZAx20Ff": 2,
+    "PVx6d6HzNUWzDZYZ": 2,
+    "AfvhKZP0nYyiL73h": 2,
+    "Wk5OyThcSngGzOpt": 2
+   },
+   "name": "Figur-072"
+  },
+  {
+   "_id": "1UsEEoprAGc7PZKq",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "LmnVP8mcmCzw8sZ4": 3,
+    "q9CZNAs3LgaFnEWe": 3,
+    "TMvuGd05weZijnQn": 2,
+    "Q1xAgV7W8FjnXUKn": 2,
+    "WbcjK4XdxZAx20Ff": 2,
+    "PVx6d6HzNUWzDZYZ": 2,
+    "AfvhKZP0nYyiL73h": 2,
+    "Wk5OyThcSngGzOpt": 2
+   },
+   "name": "Figur-073"
+  },
+  {
+   "_id": "kXcIp1PLYeiop1d8",
+   "type": "adversary",
+   "ownership": {
+    "default": 2,
+    "LmnVP8mcmCzw8sZ4": 3
+   },
+   "name": "Figur-074"
+  },
+  {
+   "_id": "64EBOGVUExw5epIF",
+   "type": "adversary",
+   "ownership": {
+    "default": 2,
+    "LmnVP8mcmCzw8sZ4": 3
+   },
+   "name": "Figur-075"
+  },
+  {
+   "_id": "OGnxrxtPI6IE206j",
+   "type": "adversary",
+   "ownership": {
+    "default": 2,
+    "LmnVP8mcmCzw8sZ4": 3
+   },
+   "name": "Figur-076"
+  },
+  {
+   "_id": "RBb6IxqZyjhiWkVq",
+   "type": "adversary",
+   "ownership": {
+    "default": 2,
+    "LmnVP8mcmCzw8sZ4": 3
+   },
+   "name": "Figur-077"
+  },
+  {
+   "_id": "QkPBoyCXafjjlgT9",
+   "type": "adversary",
+   "ownership": {
+    "default": 2,
+    "LmnVP8mcmCzw8sZ4": 3
+   },
+   "name": "Figur-078"
+  },
+  {
+   "_id": "M3mICQIOlZDEY4MC",
+   "type": "adversary",
+   "ownership": {
+    "default": 2,
+    "LmnVP8mcmCzw8sZ4": 3
+   },
+   "name": "Figur-079"
+  },
+  {
+   "_id": "G5QYhy7KZwTmo0WT",
+   "type": "adversary",
+   "ownership": {
+    "default": 2,
+    "LmnVP8mcmCzw8sZ4": 3
+   },
+   "name": "Figur-080"
+  },
+  {
+   "_id": "YqXUJAiNo6VKC5AP",
+   "type": "adversary",
+   "ownership": {
+    "default": 2,
+    "LmnVP8mcmCzw8sZ4": 3
+   },
+   "name": "Figur-081"
+  },
+  {
+   "_id": "yQn6CZ94UgB5MTOw",
+   "type": "companion",
+   "ownership": {
+    "default": 0,
+    "LmnVP8mcmCzw8sZ4": 3,
+    "stlNMUpWR6ekmCii": 3,
+    "iU4obq1qRUgEG1QL": 1,
+    "rL8QvLzisqnD5mNo": 1,
+    "DNNfl74fFUtuSCFq": 1,
+    "TFiX9S4eicHocsdc": 1,
+    "nKeh9dFdJ7T2rQF0": 1
+   },
+   "name": "Figur-082"
+  },
+  {
+   "_id": "vlzM0iBGN53RnpU0",
+   "type": "companion",
+   "ownership": {
+    "default": 0,
+    "LmnVP8mcmCzw8sZ4": 3,
+    "stlNMUpWR6ekmCii": 1,
+    "iU4obq1qRUgEG1QL": 3,
+    "rL8QvLzisqnD5mNo": 1,
+    "DNNfl74fFUtuSCFq": 1,
+    "TFiX9S4eicHocsdc": 1,
+    "nKeh9dFdJ7T2rQF0": 1
+   },
+   "name": "Figur-083"
+  },
+  {
+   "_id": "QSXQSYvqTljrAA9G",
+   "type": "companion",
+   "ownership": {
+    "default": 0,
+    "LmnVP8mcmCzw8sZ4": 3,
+    "stlNMUpWR6ekmCii": 1,
+    "iU4obq1qRUgEG1QL": 1,
+    "rL8QvLzisqnD5mNo": 3,
+    "DNNfl74fFUtuSCFq": 1,
+    "TFiX9S4eicHocsdc": 1,
+    "nKeh9dFdJ7T2rQF0": 1
+   },
+   "name": "Figur-084"
+  },
+  {
+   "_id": "EWXzVn7rj20mWwUn",
+   "type": "companion",
+   "ownership": {
+    "default": 0,
+    "LmnVP8mcmCzw8sZ4": 3,
+    "stlNMUpWR6ekmCii": 1,
+    "iU4obq1qRUgEG1QL": 1,
+    "rL8QvLzisqnD5mNo": 1,
+    "DNNfl74fFUtuSCFq": 3,
+    "TFiX9S4eicHocsdc": 1,
+    "nKeh9dFdJ7T2rQF0": 1
+   },
+   "name": "Figur-085"
+  },
+  {
+   "_id": "6o0gPNRe6tCx9CY3",
+   "type": "companion",
+   "ownership": {
+    "default": 0,
+    "LmnVP8mcmCzw8sZ4": 3,
+    "stlNMUpWR6ekmCii": 1,
+    "iU4obq1qRUgEG1QL": 1,
+    "rL8QvLzisqnD5mNo": 1,
+    "DNNfl74fFUtuSCFq": 1,
+    "TFiX9S4eicHocsdc": 3,
+    "nKeh9dFdJ7T2rQF0": 1
+   },
+   "name": "Figur-086"
+  },
+  {
+   "_id": "4K6ezuDu8XbmpSqs",
+   "type": "companion",
+   "ownership": {
+    "default": 0,
+    "LmnVP8mcmCzw8sZ4": 3,
+    "stlNMUpWR6ekmCii": 1,
+    "iU4obq1qRUgEG1QL": 1,
+    "rL8QvLzisqnD5mNo": 1,
+    "DNNfl74fFUtuSCFq": 1,
+    "TFiX9S4eicHocsdc": 1,
+    "nKeh9dFdJ7T2rQF0": 3
+   },
+   "name": "Figur-087"
+  },
+  {
+   "_id": "fceFZCNSVCdDiihV",
+   "type": "companion",
+   "ownership": {
+    "default": 0,
+    "LmnVP8mcmCzw8sZ4": 3,
+    "TMvuGd05weZijnQn": 3,
+    "Q1xAgV7W8FjnXUKn": 1,
+    "WbcjK4XdxZAx20Ff": 1,
+    "PVx6d6HzNUWzDZYZ": 1,
+    "AfvhKZP0nYyiL73h": 1,
+    "Wk5OyThcSngGzOpt": 1
+   },
+   "name": "Figur-088"
+  },
+  {
+   "_id": "UBis7KDs5znMU5dN",
+   "type": "party",
+   "ownership": {
+    "default": 0,
+    "LmnVP8mcmCzw8sZ4": 3,
+    "stlNMUpWR6ekmCii": 2,
+    "iU4obq1qRUgEG1QL": 2,
+    "rL8QvLzisqnD5mNo": 2,
+    "DNNfl74fFUtuSCFq": 2,
+    "TFiX9S4eicHocsdc": 2,
+    "nKeh9dFdJ7T2rQF0": 2
+   },
+   "name": "Figur-089"
+  },
+  {
+   "_id": "XK702QoB0ienb9Uh",
+   "type": "party",
+   "ownership": {
+    "default": 0,
+    "LmnVP8mcmCzw8sZ4": 3,
+    "TMvuGd05weZijnQn": 2,
+    "Q1xAgV7W8FjnXUKn": 2,
+    "WbcjK4XdxZAx20Ff": 2,
+    "PVx6d6HzNUWzDZYZ": 2,
+    "AfvhKZP0nYyiL73h": 2,
+    "Wk5OyThcSngGzOpt": 2
+   },
+   "name": "Figur-090"
+  },
+  {
+   "_id": "NBYeax0DrgupAsT0",
+   "type": "environment",
+   "ownership": {
+    "default": 2,
+    "LmnVP8mcmCzw8sZ4": 3
+   },
+   "name": "Figur-091"
+  }
+ ],
+ "messages": [
+  {
+   "_id": "SDO6OD2WebAkOaCw",
+   "timestamp": 946684800000,
+   "author": "LmnVP8mcmCzw8sZ4",
+   "type": "base",
+   "style": 0,
+   "whisper": [
+    "LmnVP8mcmCzw8sZ4"
+   ],
+   "blind": false,
+   "content": "[Erfundene Welt — hier hat nie jemand etwas gesagt.]",
+   "speaker": {
+    "scene": null,
+    "actor": null,
+    "token": null,
+    "alias": "Konto-01"
+   }
+  },
+  {
+   "_id": "lDcrrpEpHX0xAcbE",
+   "timestamp": 946685100000,
+   "author": "LmnVP8mcmCzw8sZ4",
+   "type": "dualityRoll",
+   "style": 0,
+   "whisper": [],
+   "blind": true,
+   "content": "",
+   "speaker": {
+    "scene": "4LAXZUvouN3UR91O",
+    "actor": "F3rVwpZykO5sHlCx",
+    "token": "njYBITq5GVX7nGsw",
+    "alias": "Figur-006"
+   },
+   "system": {
+    "roll": {
+     "title": "Knowledge Roll",
+     "total": 7,
+     "formula": "1d12 + 1d12 + 3",
+     "type": "action",
+     "isCritical": false,
+     "modifierTotal": 3,
+     "advantage": {
+      "type": 0
+     },
+     "dice": [
+      {
+       "dice": "d12",
+       "total": 3,
+       "formula": "1d12",
+       "results": [
+        {
+         "result": 3,
+         "active": true
+        }
+       ],
+       "rerolled": {
+        "any": false,
+        "rerolls": []
+       }
+      },
+      {
+       "dice": "d12",
+       "total": 1,
+       "formula": "1d12",
+       "results": [
+        {
+         "result": 1,
+         "active": true
+        }
+       ],
+       "rerolled": {
+        "any": false,
+        "rerolls": []
+       }
+      }
+     ],
+     "hope": {
+      "dice": "d12",
+      "value": 3,
+      "rerolled": {
+       "any": false,
+       "rerolls": []
+      }
+     },
+     "fear": {
+      "dice": "d12",
+      "value": 1,
+      "rerolled": {
+       "any": false,
+       "rerolls": []
+      }
+     },
+     "result": {
+      "duality": 1,
+      "total": 4,
+      "label": "Hope"
+     }
+    }
+   },
+   "rolls": [
+    "{\"class\": \"DualityRoll\", \"formula\": \"1d12 + 1d12 + 3\", \"total\": 7, \"evaluated\": true, \"dice\": [], \"terms\": [{\"class\": \"Die\", \"evaluated\": true, \"number\": 1, \"faces\": 12, \"modifiers\": [], \"results\": [{\"result\": 3, \"active\": true}]}, {\"class\": \"OperatorTerm\", \"evaluated\": true, \"operator\": \"+\"}, {\"class\": \"Die\", \"evaluated\": true, \"number\": 1, \"faces\": 12, \"modifiers\": [], \"results\": [{\"result\": 1, \"active\": true}]}, {\"class\": \"OperatorTerm\", \"evaluated\": true, \"operator\": \"+\"}, {\"class\": \"NumericTerm\", \"evaluated\": true, \"number\": 3}], \"options\": {\"title\": \"Knowledge Roll\", \"roll\": {\"title\": \"Knowledge Roll\", \"total\": 7, \"formula\": \"1d12 + 1d12 + 3\", \"type\": \"action\", \"isCritical\": false, \"modifierTotal\": 3, \"advantage\": {\"type\": 0}, \"dice\": [{\"dice\": \"d12\", \"total\": 3, \"formula\": \"1d12\", \"results\": [{\"result\": 3, \"active\": true}], \"rerolled\": {\"any\": false, \"rerolls\": []}}, {\"dice\": \"d12\", \"total\": 1, \"formula\": \"1d12\", \"results\": [{\"result\": 1, \"active\": true}], \"rerolled\": {\"any\": false, \"rerolls\": []}}], \"hope\": {\"dice\": \"d12\", \"value\": 3, \"rerolled\": {\"any\": false, \"rerolls\": []}}, \"fear\": {\"dice\": \"d12\", \"value\": 1, \"rerolled\": {\"any\": false, \"rerolls\": []}}, \"result\": {\"duality\": 1, \"total\": 4, \"label\": \"Hope\"}}}}"
+   ]
+  },
+  {
+   "_id": "KwWmidXvSxDzIHE3",
+   "timestamp": 946685160000,
+   "author": "stlNMUpWR6ekmCii",
+   "type": "dualityRoll",
+   "style": 0,
+   "whisper": [],
+   "blind": false,
+   "content": "",
+   "speaker": {
+    "scene": "4LAXZUvouN3UR91O",
+    "actor": "9wk9fVQ2LvHk5GmE",
+    "token": "qTWhGJBGnI3iRKML",
+    "alias": "Figur-001"
+   },
+   "system": {
+    "roll": {
+     "title": "Knowledge Roll",
+     "total": 12,
+     "formula": "1d12 + 1d12 + 1",
+     "type": "action",
+     "isCritical": false,
+     "modifierTotal": 1,
+     "advantage": {
+      "type": 0
+     },
+     "dice": [
+      {
+       "dice": "d12",
+       "total": 9,
+       "formula": "1d12",
+       "results": [
+        {
+         "result": 9,
+         "active": true
+        }
+       ],
+       "rerolled": {
+        "any": false,
+        "rerolls": []
+       }
+      },
+      {
+       "dice": "d12",
+       "total": 2,
+       "formula": "1d12",
+       "results": [
+        {
+         "result": 2,
+         "active": true
+        }
+       ],
+       "rerolled": {
+        "any": false,
+        "rerolls": []
+       }
+      }
+     ],
+     "hope": {
+      "dice": "d12",
+      "value": 9,
+      "rerolled": {
+       "any": false,
+       "rerolls": []
+      }
+     },
+     "fear": {
+      "dice": "d12",
+      "value": 2,
+      "rerolled": {
+       "any": false,
+       "rerolls": []
+      }
+     },
+     "result": {
+      "duality": 1,
+      "total": 11,
+      "label": "Hope"
+     }
+    }
+   },
+   "rolls": [
+    "{\"class\": \"DualityRoll\", \"formula\": \"1d12 + 1d12 + 1\", \"total\": 12, \"evaluated\": true, \"dice\": [], \"terms\": [{\"class\": \"Die\", \"evaluated\": true, \"number\": 1, \"faces\": 12, \"modifiers\": [], \"results\": [{\"result\": 9, \"active\": true}]}, {\"class\": \"OperatorTerm\", \"evaluated\": true, \"operator\": \"+\"}, {\"class\": \"Die\", \"evaluated\": true, \"number\": 1, \"faces\": 12, \"modifiers\": [], \"results\": [{\"result\": 2, \"active\": true}]}, {\"class\": \"OperatorTerm\", \"evaluated\": true, \"operator\": \"+\"}, {\"class\": \"NumericTerm\", \"evaluated\": true, \"number\": 1}], \"options\": {\"title\": \"Knowledge Roll\", \"roll\": {\"title\": \"Knowledge Roll\", \"total\": 12, \"formula\": \"1d12 + 1d12 + 1\", \"type\": \"action\", \"isCritical\": false, \"modifierTotal\": 1, \"advantage\": {\"type\": 0}, \"dice\": [{\"dice\": \"d12\", \"total\": 9, \"formula\": \"1d12\", \"results\": [{\"result\": 9, \"active\": true}], \"rerolled\": {\"any\": false, \"rerolls\": []}}, {\"dice\": \"d12\", \"total\": 2, \"formula\": \"1d12\", \"results\": [{\"result\": 2, \"active\": true}], \"rerolled\": {\"any\": false, \"rerolls\": []}}], \"hope\": {\"dice\": \"d12\", \"value\": 9, \"rerolled\": {\"any\": false, \"rerolls\": []}}, \"fear\": {\"dice\": \"d12\", \"value\": 2, \"rerolled\": {\"any\": false, \"rerolls\": []}}, \"result\": {\"duality\": 1, \"total\": 11, \"label\": \"Hope\"}}}}"
+   ]
+  },
+  {
+   "_id": "BOVZYOyoOWUXFbeR",
+   "timestamp": 946685220000,
+   "author": "iU4obq1qRUgEG1QL",
+   "type": "dualityRoll",
+   "style": 0,
+   "whisper": [],
+   "blind": false,
+   "content": "",
+   "speaker": {
+    "scene": "4LAXZUvouN3UR91O",
+    "actor": "p8owoYib78DHG0EI",
+    "token": "CGdvu0i5t5QD97af",
+    "alias": "Figur-002"
+   },
+   "system": {
+    "roll": {
+     "title": "Instinct Roll",
+     "total": 12,
+     "formula": "1d12 + 1d12 + 3",
+     "type": "action",
+     "isCritical": false,
+     "modifierTotal": 3,
+     "advantage": {
+      "type": 0
+     },
+     "dice": [
+      {
+       "dice": "d12",
+       "total": 1,
+       "formula": "1d12",
+       "results": [
+        {
+         "result": 1,
+         "active": true
+        }
+       ],
+       "rerolled": {
+        "any": false,
+        "rerolls": []
+       }
+      },
+      {
+       "dice": "d12",
+       "total": 8,
+       "formula": "1d12",
+       "results": [
+        {
+         "result": 8,
+         "active": true
+        }
+       ],
+       "rerolled": {
+        "any": false,
+        "rerolls": []
+       }
+      }
+     ],
+     "hope": {
+      "dice": "d12",
+      "value": 1,
+      "rerolled": {
+       "any": false,
+       "rerolls": []
+      }
+     },
+     "fear": {
+      "dice": "d12",
+      "value": 8,
+      "rerolled": {
+       "any": false,
+       "rerolls": []
+      }
+     },
+     "result": {
+      "duality": -1,
+      "total": 9,
+      "label": "Fear"
+     }
+    }
+   },
+   "rolls": [
+    "{\"class\": \"DualityRoll\", \"formula\": \"1d12 + 1d12 + 3\", \"total\": 12, \"evaluated\": true, \"dice\": [], \"terms\": [{\"class\": \"Die\", \"evaluated\": true, \"number\": 1, \"faces\": 12, \"modifiers\": [], \"results\": [{\"result\": 1, \"active\": true}]}, {\"class\": \"OperatorTerm\", \"evaluated\": true, \"operator\": \"+\"}, {\"class\": \"Die\", \"evaluated\": true, \"number\": 1, \"faces\": 12, \"modifiers\": [], \"results\": [{\"result\": 8, \"active\": true}]}, {\"class\": \"OperatorTerm\", \"evaluated\": true, \"operator\": \"+\"}, {\"class\": \"NumericTerm\", \"evaluated\": true, \"number\": 3}], \"options\": {\"title\": \"Instinct Roll\", \"roll\": {\"title\": \"Instinct Roll\", \"total\": 12, \"formula\": \"1d12 + 1d12 + 3\", \"type\": \"action\", \"isCritical\": false, \"modifierTotal\": 3, \"advantage\": {\"type\": 0}, \"dice\": [{\"dice\": \"d12\", \"total\": 1, \"formula\": \"1d12\", \"results\": [{\"result\": 1, \"active\": true}], \"rerolled\": {\"any\": false, \"rerolls\": []}}, {\"dice\": \"d12\", \"total\": 8, \"formula\": \"1d12\", \"results\": [{\"result\": 8, \"active\": true}], \"rerolled\": {\"any\": false, \"rerolls\": []}}], \"hope\": {\"dice\": \"d12\", \"value\": 1, \"rerolled\": {\"any\": false, \"rerolls\": []}}, \"fear\": {\"dice\": \"d12\", \"value\": 8, \"rerolled\": {\"any\": false, \"rerolls\": []}}, \"result\": {\"duality\": -1, \"total\": 9, \"label\": \"Fear\"}}}}"
+   ]
+  },
+  {
+   "_id": "9mzDm2dTWaeXveNJ",
+   "timestamp": 946685280000,
+   "author": "rL8QvLzisqnD5mNo",
+   "type": "dualityRoll",
+   "style": 0,
+   "whisper": [],
+   "blind": false,
+   "content": "",
+   "speaker": {
+    "scene": "4LAXZUvouN3UR91O",
+    "actor": "jCk3bl2MjMuM3Ze0",
+    "token": "8bz36fOdDoOGOZqT",
+    "alias": "Figur-003"
+   },
+   "system": {
+    "roll": {
+     "title": "Instinct Roll",
+     "total": 9,
+     "formula": "1d12 + 1d12 + 1",
+     "type": "action",
+     "isCritical": true,
+     "modifierTotal": 1,
+     "advantage": {
+      "type": 0
+     },
+     "dice": [
+      {
+       "dice": "d12",
+       "total": 4,
+       "formula": "1d12",
+       "results": [
+        {
+         "result": 4,
+         "active": true
+        }
+       ],
+       "rerolled": {
+        "any": false,
+        "rerolls": []
+       }
+      },
+      {
+       "dice": "d12",
+       "total": 4,
+       "formula": "1d12",
+       "results": [
+        {
+         "result": 4,
+         "active": true
+        }
+       ],
+       "rerolled": {
+        "any": false,
+        "rerolls": []
+       }
+      }
+     ],
+     "hope": {
+      "dice": "d12",
+      "value": 4,
+      "rerolled": {
+       "any": false,
+       "rerolls": []
+      }
+     },
+     "fear": {
+      "dice": "d12",
+      "value": 4,
+      "rerolled": {
+       "any": false,
+       "rerolls": []
+      }
+     },
+     "result": {
+      "duality": 0,
+      "total": 8,
+      "label": "Critical Success"
+     }
+    }
+   },
+   "rolls": [
+    "{\"class\": \"DualityRoll\", \"formula\": \"1d12 + 1d12 + 1\", \"total\": 9, \"evaluated\": true, \"dice\": [], \"terms\": [{\"class\": \"Die\", \"evaluated\": true, \"number\": 1, \"faces\": 12, \"modifiers\": [], \"results\": [{\"result\": 4, \"active\": true}]}, {\"class\": \"OperatorTerm\", \"evaluated\": true, \"operator\": \"+\"}, {\"class\": \"Die\", \"evaluated\": true, \"number\": 1, \"faces\": 12, \"modifiers\": [], \"results\": [{\"result\": 4, \"active\": true}]}, {\"class\": \"OperatorTerm\", \"evaluated\": true, \"operator\": \"+\"}, {\"class\": \"NumericTerm\", \"evaluated\": true, \"number\": 1}], \"options\": {\"title\": \"Instinct Roll\", \"roll\": {\"title\": \"Instinct Roll\", \"total\": 9, \"formula\": \"1d12 + 1d12 + 1\", \"type\": \"action\", \"isCritical\": true, \"modifierTotal\": 1, \"advantage\": {\"type\": 0}, \"dice\": [{\"dice\": \"d12\", \"total\": 4, \"formula\": \"1d12\", \"results\": [{\"result\": 4, \"active\": true}], \"rerolled\": {\"any\": false, \"rerolls\": []}}, {\"dice\": \"d12\", \"total\": 4, \"formula\": \"1d12\", \"results\": [{\"result\": 4, \"active\": true}], \"rerolled\": {\"any\": false, \"rerolls\": []}}], \"hope\": {\"dice\": \"d12\", \"value\": 4, \"rerolled\": {\"any\": false, \"rerolls\": []}}, \"fear\": {\"dice\": \"d12\", \"value\": 4, \"rerolled\": {\"any\": false, \"rerolls\": []}}, \"result\": {\"duality\": 0, \"total\": 8, \"label\": \"Critical Success\"}}}}"
+   ]
+  },
+  {
+   "_id": "8s8np5nCK4cS3yUl",
+   "timestamp": 946685340000,
+   "author": "DNNfl74fFUtuSCFq",
+   "type": "dualityRoll",
+   "style": 0,
+   "whisper": [],
+   "blind": false,
+   "content": "",
+   "speaker": {
+    "scene": "sIihjbihkpdAWwzb",
+    "actor": "QjmDRMNR5vAHDz7S",
+    "token": "y6PeyeT8X8iMoo9D",
+    "alias": "Figur-004"
+   },
+   "system": {
+    "roll": {
+     "title": "Presence Roll",
+     "total": 20,
+     "formula": "1d12 + 1d12 + 2",
+     "type": "action",
+     "isCritical": true,
+     "modifierTotal": 2,
+     "advantage": {
+      "type": 0
+     },
+     "dice": [
+      {
+       "dice": "d12",
+       "total": 9,
+       "formula": "1d12",
+       "results": [
+        {
+         "result": 9,
+         "active": true
+        }
+       ],
+       "rerolled": {
+        "any": false,
+        "rerolls": []
+       }
+      },
+      {
+       "dice": "d12",
+       "total": 9,
+       "formula": "1d12",
+       "results": [
+        {
+         "result": 9,
+         "active": true
+        }
+       ],
+       "rerolled": {
+        "any": false,
+        "rerolls": []
+       }
+      }
+     ],
+     "hope": {
+      "dice": "d12",
+      "value": 9,
+      "rerolled": {
+       "any": false,
+       "rerolls": []
+      }
+     },
+     "fear": {
+      "dice": "d12",
+      "value": 9,
+      "rerolled": {
+       "any": false,
+       "rerolls": []
+      }
+     },
+     "result": {
+      "duality": 0,
+      "total": 18,
+      "label": "Critical Success"
+     }
+    }
+   },
+   "rolls": [
+    "{\"class\": \"DualityRoll\", \"formula\": \"1d12 + 1d12 + 2\", \"total\": 20, \"evaluated\": true, \"dice\": [], \"terms\": [{\"class\": \"Die\", \"evaluated\": true, \"number\": 1, \"faces\": 12, \"modifiers\": [], \"results\": [{\"result\": 9, \"active\": true}]}, {\"class\": \"OperatorTerm\", \"evaluated\": true, \"operator\": \"+\"}, {\"class\": \"Die\", \"evaluated\": true, \"number\": 1, \"faces\": 12, \"modifiers\": [], \"results\": [{\"result\": 9, \"active\": true}]}, {\"class\": \"OperatorTerm\", \"evaluated\": true, \"operator\": \"+\"}, {\"class\": \"NumericTerm\", \"evaluated\": true, \"number\": 2}], \"options\": {\"title\": \"Presence Roll\", \"roll\": {\"title\": \"Presence Roll\", \"total\": 20, \"formula\": \"1d12 + 1d12 + 2\", \"type\": \"action\", \"isCritical\": true, \"modifierTotal\": 2, \"advantage\": {\"type\": 0}, \"dice\": [{\"dice\": \"d12\", \"total\": 9, \"formula\": \"1d12\", \"results\": [{\"result\": 9, \"active\": true}], \"rerolled\": {\"any\": false, \"rerolls\": []}}, {\"dice\": \"d12\", \"total\": 9, \"formula\": \"1d12\", \"results\": [{\"result\": 9, \"active\": true}], \"rerolled\": {\"any\": false, \"rerolls\": []}}], \"hope\": {\"dice\": \"d12\", \"value\": 9, \"rerolled\": {\"any\": false, \"rerolls\": []}}, \"fear\": {\"dice\": \"d12\", \"value\": 9, \"rerolled\": {\"any\": false, \"rerolls\": []}}, \"result\": {\"duality\": 0, \"total\": 18, \"label\": \"Critical Success\"}}}}"
+   ]
+  },
+  {
+   "_id": "CXyjYAz0ZW623OiO",
+   "timestamp": 946685400000,
+   "author": "TFiX9S4eicHocsdc",
+   "type": "dualityRoll",
+   "style": 0,
+   "whisper": [],
+   "blind": false,
+   "content": "",
+   "speaker": {
+    "scene": "sIihjbihkpdAWwzb",
+    "actor": "TAh450rRaGWgZvgf",
+    "token": "kmBPcvURGcFIazIF",
+    "alias": "Figur-005"
+   },
+   "system": {
+    "roll": {
+     "title": "Presence Roll",
+     "total": 7,
+     "formula": "1d12 + 1d12 + 1",
+     "type": "action",
+     "isCritical": false,
+     "modifierTotal": 1,
+     "advantage": {
+      "type": 0
+     },
+     "dice": [
+      {
+       "dice": "d12",
+       "total": 2,
+       "formula": "1d12",
+       "results": [
+        {
+         "result": 2,
+         "active": true
+        }
+       ],
+       "rerolled": {
+        "any": false,
+        "rerolls": []
+       }
+      },
+      {
+       "dice": "d12",
+       "total": 4,
+       "formula": "1d12",
+       "results": [
+        {
+         "result": 4,
+         "active": true
+        }
+       ],
+       "rerolled": {
+        "any": false,
+        "rerolls": []
+       }
+      }
+     ],
+     "hope": {
+      "dice": "d12",
+      "value": 2,
+      "rerolled": {
+       "any": false,
+       "rerolls": []
+      }
+     },
+     "fear": {
+      "dice": "d12",
+      "value": 4,
+      "rerolled": {
+       "any": false,
+       "rerolls": []
+      }
+     },
+     "result": {
+      "duality": -1,
+      "total": 6,
+      "label": "Fear"
+     }
+    }
+   },
+   "rolls": [
+    "{\"class\": \"DualityRoll\", \"formula\": \"1d12 + 1d12 + 1\", \"total\": 7, \"evaluated\": true, \"dice\": [], \"terms\": [{\"class\": \"Die\", \"evaluated\": true, \"number\": 1, \"faces\": 12, \"modifiers\": [], \"results\": [{\"result\": 2, \"active\": true}]}, {\"class\": \"OperatorTerm\", \"evaluated\": true, \"operator\": \"+\"}, {\"class\": \"Die\", \"evaluated\": true, \"number\": 1, \"faces\": 12, \"modifiers\": [], \"results\": [{\"result\": 4, \"active\": true}]}, {\"class\": \"OperatorTerm\", \"evaluated\": true, \"operator\": \"+\"}, {\"class\": \"NumericTerm\", \"evaluated\": true, \"number\": 1}], \"options\": {\"title\": \"Presence Roll\", \"roll\": {\"title\": \"Presence Roll\", \"total\": 7, \"formula\": \"1d12 + 1d12 + 1\", \"type\": \"action\", \"isCritical\": false, \"modifierTotal\": 1, \"advantage\": {\"type\": 0}, \"dice\": [{\"dice\": \"d12\", \"total\": 2, \"formula\": \"1d12\", \"results\": [{\"result\": 2, \"active\": true}], \"rerolled\": {\"any\": false, \"rerolls\": []}}, {\"dice\": \"d12\", \"total\": 4, \"formula\": \"1d12\", \"results\": [{\"result\": 4, \"active\": true}], \"rerolled\": {\"any\": false, \"rerolls\": []}}], \"hope\": {\"dice\": \"d12\", \"value\": 2, \"rerolled\": {\"any\": false, \"rerolls\": []}}, \"fear\": {\"dice\": \"d12\", \"value\": 4, \"rerolled\": {\"any\": false, \"rerolls\": []}}, \"result\": {\"duality\": -1, \"total\": 6, \"label\": \"Fear\"}}}}"
+   ]
+  },
+  {
+   "_id": "KXuypyMoTo1FdVnF",
+   "timestamp": 946685460000,
+   "author": "nKeh9dFdJ7T2rQF0",
+   "type": "dualityRoll",
+   "style": 0,
+   "whisper": [],
+   "blind": false,
+   "content": "",
+   "speaker": {
+    "scene": "sIihjbihkpdAWwzb",
+    "actor": "F3rVwpZykO5sHlCx",
+    "token": "Y1q8WuGFL6cW50St",
+    "alias": "Figur-006"
+   },
+   "system": {
+    "roll": {
+     "title": "Agility Roll",
+     "total": 18,
+     "formula": "1d12 + 1d12 + 1",
+     "type": "action",
+     "isCritical": false,
+     "modifierTotal": 1,
+     "advantage": {
+      "type": 0
+     },
+     "dice": [
+      {
+       "dice": "d12",
+       "total": 12,
+       "formula": "1d12",
+       "results": [
+        {
+         "result": 12,
+         "active": true
+        }
+       ],
+       "rerolled": {
+        "any": false,
+        "rerolls": []
+       }
+      },
+      {
+       "dice": "d12",
+       "total": 5,
+       "formula": "1d12",
+       "results": [
+        {
+         "result": 5,
+         "active": true
+        }
+       ],
+       "rerolled": {
+        "any": false,
+        "rerolls": []
+       }
+      }
+     ],
+     "hope": {
+      "dice": "d12",
+      "value": 12,
+      "rerolled": {
+       "any": false,
+       "rerolls": []
+      }
+     },
+     "fear": {
+      "dice": "d12",
+      "value": 5,
+      "rerolled": {
+       "any": false,
+       "rerolls": []
+      }
+     },
+     "result": {
+      "duality": 1,
+      "total": 17,
+      "label": "Hope"
+     }
+    }
+   },
+   "rolls": [
+    "{\"class\": \"DualityRoll\", \"formula\": \"1d12 + 1d12 + 1\", \"total\": 18, \"evaluated\": true, \"dice\": [], \"terms\": [{\"class\": \"Die\", \"evaluated\": true, \"number\": 1, \"faces\": 12, \"modifiers\": [], \"results\": [{\"result\": 12, \"active\": true}]}, {\"class\": \"OperatorTerm\", \"evaluated\": true, \"operator\": \"+\"}, {\"class\": \"Die\", \"evaluated\": true, \"number\": 1, \"faces\": 12, \"modifiers\": [], \"results\": [{\"result\": 5, \"active\": true}]}, {\"class\": \"OperatorTerm\", \"evaluated\": true, \"operator\": \"+\"}, {\"class\": \"NumericTerm\", \"evaluated\": true, \"number\": 1}], \"options\": {\"title\": \"Agility Roll\", \"roll\": {\"title\": \"Agility Roll\", \"total\": 18, \"formula\": \"1d12 + 1d12 + 1\", \"type\": \"action\", \"isCritical\": false, \"modifierTotal\": 1, \"advantage\": {\"type\": 0}, \"dice\": [{\"dice\": \"d12\", \"total\": 12, \"formula\": \"1d12\", \"results\": [{\"result\": 12, \"active\": true}], \"rerolled\": {\"any\": false, \"rerolls\": []}}, {\"dice\": \"d12\", \"total\": 5, \"formula\": \"1d12\", \"results\": [{\"result\": 5, \"active\": true}], \"rerolled\": {\"any\": false, \"rerolls\": []}}], \"hope\": {\"dice\": \"d12\", \"value\": 12, \"rerolled\": {\"any\": false, \"rerolls\": []}}, \"fear\": {\"dice\": \"d12\", \"value\": 5, \"rerolled\": {\"any\": false, \"rerolls\": []}}, \"result\": {\"duality\": 1, \"total\": 17, \"label\": \"Hope\"}}}}"
+   ]
+  }
+ ],
+ "scenes": [
+  {
+   "_id": "GQlF5FICNRnCptpS",
+   "ownership": {
+    "default": 0,
+    "LmnVP8mcmCzw8sZ4": 3
+   },
+   "name": "Szene-01"
+  },
+  {
+   "_id": "idCna70rkLzx0Dwu",
+   "ownership": {
+    "default": 0,
+    "LmnVP8mcmCzw8sZ4": 3
+   },
+   "name": "Szene-02"
+  },
+  {
+   "_id": "wDJmNaCp77Qexyw7",
+   "ownership": {
+    "default": 0,
+    "LmnVP8mcmCzw8sZ4": 3
+   },
+   "name": "Szene-03"
+  },
+  {
+   "_id": "ef9N9FeTpnBhZYVX",
+   "ownership": {
+    "default": 0,
+    "LmnVP8mcmCzw8sZ4": 3
+   },
+   "name": "Szene-04"
+  },
+  {
+   "_id": "7QuIAKmKKTJ4gJnl",
+   "ownership": {
+    "default": 0,
+    "LmnVP8mcmCzw8sZ4": 3
+   },
+   "name": "Szene-05"
+  },
+  {
+   "_id": "VKQ9Cpz3dMSQSBge",
+   "ownership": {
+    "default": 0,
+    "LmnVP8mcmCzw8sZ4": 3
+   },
+   "name": "Szene-06"
+  },
+  {
+   "_id": "UVoJaqL0wiHPgN1N",
+   "ownership": {
+    "default": 0,
+    "LmnVP8mcmCzw8sZ4": 3
+   },
+   "name": "Szene-07"
+  },
+  {
+   "_id": "lMBlITf7YhppHAwq",
+   "ownership": {
+    "default": 0,
+    "LmnVP8mcmCzw8sZ4": 3
+   },
+   "name": "Szene-08"
+  },
+  {
+   "_id": "De2mYKVGO9tzYwD1",
+   "ownership": {
+    "default": 0,
+    "LmnVP8mcmCzw8sZ4": 3
+   },
+   "name": "Szene-09"
+  },
+  {
+   "_id": "8akUs8MivHmMBl2z",
+   "ownership": {
+    "default": 0,
+    "LmnVP8mcmCzw8sZ4": 3
+   },
+   "name": "Szene-10"
+  },
+  {
+   "_id": "4LAXZUvouN3UR91O",
+   "ownership": {
+    "default": 0,
+    "LmnVP8mcmCzw8sZ4": 3,
+    "stlNMUpWR6ekmCii": 2,
+    "iU4obq1qRUgEG1QL": 2,
+    "rL8QvLzisqnD5mNo": 2,
+    "DNNfl74fFUtuSCFq": 2,
+    "TFiX9S4eicHocsdc": 2,
+    "nKeh9dFdJ7T2rQF0": 2
+   },
+   "name": "Szene-11"
+  },
+  {
+   "_id": "sIihjbihkpdAWwzb",
+   "ownership": {
+    "default": 0,
+    "LmnVP8mcmCzw8sZ4": 3,
+    "stlNMUpWR6ekmCii": 2,
+    "iU4obq1qRUgEG1QL": 2,
+    "rL8QvLzisqnD5mNo": 2,
+    "DNNfl74fFUtuSCFq": 2,
+    "TFiX9S4eicHocsdc": 2,
+    "nKeh9dFdJ7T2rQF0": 2
+   },
+   "name": "Szene-12"
+  },
+  {
+   "_id": "7ljNHFLyGHq4zVj2",
+   "ownership": {
+    "default": 0,
+    "LmnVP8mcmCzw8sZ4": 3,
+    "stlNMUpWR6ekmCii": 2,
+    "iU4obq1qRUgEG1QL": 2,
+    "rL8QvLzisqnD5mNo": 2,
+    "DNNfl74fFUtuSCFq": 2,
+    "TFiX9S4eicHocsdc": 2,
+    "nKeh9dFdJ7T2rQF0": 2
+   },
+   "name": "Szene-13"
+  },
+  {
+   "_id": "lmHjq3zLVRzRPXm2",
+   "ownership": {
+    "default": 0,
+    "LmnVP8mcmCzw8sZ4": 3,
+    "stlNMUpWR6ekmCii": 2,
+    "iU4obq1qRUgEG1QL": 2,
+    "rL8QvLzisqnD5mNo": 2,
+    "DNNfl74fFUtuSCFq": 2,
+    "TFiX9S4eicHocsdc": 2,
+    "nKeh9dFdJ7T2rQF0": 2
+   },
+   "name": "Szene-14"
+  },
+  {
+   "_id": "rmKzdqzlQgfBLYYO",
+   "ownership": {
+    "default": 0,
+    "LmnVP8mcmCzw8sZ4": 3,
+    "stlNMUpWR6ekmCii": 2,
+    "iU4obq1qRUgEG1QL": 2,
+    "rL8QvLzisqnD5mNo": 2,
+    "DNNfl74fFUtuSCFq": 2,
+    "TFiX9S4eicHocsdc": 2,
+    "nKeh9dFdJ7T2rQF0": 2
+   },
+   "name": "Szene-15"
+  },
+  {
+   "_id": "tw1ttT6zRhFOkMir",
+   "ownership": {
+    "default": 0,
+    "LmnVP8mcmCzw8sZ4": 3,
+    "stlNMUpWR6ekmCii": 2,
+    "iU4obq1qRUgEG1QL": 2,
+    "rL8QvLzisqnD5mNo": 2,
+    "DNNfl74fFUtuSCFq": 2,
+    "TFiX9S4eicHocsdc": 2,
+    "nKeh9dFdJ7T2rQF0": 2
+   },
+   "name": "Szene-16"
+  },
+  {
+   "_id": "oMlRd5D6encidrzY",
+   "ownership": {
+    "default": 0,
+    "LmnVP8mcmCzw8sZ4": 3,
+    "stlNMUpWR6ekmCii": 2,
+    "iU4obq1qRUgEG1QL": 2,
+    "rL8QvLzisqnD5mNo": 2,
+    "DNNfl74fFUtuSCFq": 2,
+    "TFiX9S4eicHocsdc": 2,
+    "nKeh9dFdJ7T2rQF0": 2
+   },
+   "name": "Szene-17"
+  },
+  {
+   "_id": "jyQBIvacUfZA90Pt",
+   "ownership": {
+    "default": 0,
+    "LmnVP8mcmCzw8sZ4": 3,
+    "stlNMUpWR6ekmCii": 2,
+    "iU4obq1qRUgEG1QL": 2,
+    "rL8QvLzisqnD5mNo": 2,
+    "DNNfl74fFUtuSCFq": 2,
+    "TFiX9S4eicHocsdc": 2,
+    "nKeh9dFdJ7T2rQF0": 2
+   },
+   "name": "Szene-18"
+  },
+  {
+   "_id": "2XM07qjvLiCAKP7a",
+   "ownership": {
+    "default": 0,
+    "LmnVP8mcmCzw8sZ4": 3,
+    "TMvuGd05weZijnQn": 2,
+    "Q1xAgV7W8FjnXUKn": 2,
+    "WbcjK4XdxZAx20Ff": 2,
+    "PVx6d6HzNUWzDZYZ": 2,
+    "AfvhKZP0nYyiL73h": 2,
+    "Wk5OyThcSngGzOpt": 2
+   },
+   "name": "Szene-19"
+  },
+  {
+   "_id": "xksL3yjWWF2xLz2v",
+   "ownership": {
+    "default": 0,
+    "LmnVP8mcmCzw8sZ4": 3,
+    "TMvuGd05weZijnQn": 2,
+    "Q1xAgV7W8FjnXUKn": 2,
+    "WbcjK4XdxZAx20Ff": 2,
+    "PVx6d6HzNUWzDZYZ": 2,
+    "AfvhKZP0nYyiL73h": 2,
+    "Wk5OyThcSngGzOpt": 2
+   },
+   "name": "Szene-20"
+  },
+  {
+   "_id": "QSaLeMPDlmeYGwHc",
+   "ownership": {
+    "default": 0,
+    "LmnVP8mcmCzw8sZ4": 3,
+    "TMvuGd05weZijnQn": 2,
+    "Q1xAgV7W8FjnXUKn": 2,
+    "WbcjK4XdxZAx20Ff": 2,
+    "PVx6d6HzNUWzDZYZ": 2,
+    "AfvhKZP0nYyiL73h": 2,
+    "Wk5OyThcSngGzOpt": 2
+   },
+   "name": "Szene-21"
+  },
+  {
+   "_id": "1T43DsVcbj1SjXu2",
+   "ownership": {
+    "default": 0,
+    "LmnVP8mcmCzw8sZ4": 3,
+    "TMvuGd05weZijnQn": 2,
+    "Q1xAgV7W8FjnXUKn": 2,
+    "WbcjK4XdxZAx20Ff": 2,
+    "PVx6d6HzNUWzDZYZ": 2,
+    "AfvhKZP0nYyiL73h": 2,
+    "Wk5OyThcSngGzOpt": 2
+   },
+   "name": "Szene-22"
+  },
+  {
+   "_id": "Nr1pQUFQvrxSFwmL",
+   "ownership": {
+    "default": 0,
+    "LmnVP8mcmCzw8sZ4": 3,
+    "TMvuGd05weZijnQn": 2,
+    "Q1xAgV7W8FjnXUKn": 2,
+    "WbcjK4XdxZAx20Ff": 2,
+    "PVx6d6HzNUWzDZYZ": 2,
+    "AfvhKZP0nYyiL73h": 2,
+    "Wk5OyThcSngGzOpt": 2
+   },
+   "name": "Szene-23"
+  },
+  {
+   "_id": "AXyAVwfCNbYka9KS",
+   "ownership": {
+    "default": 0,
+    "LmnVP8mcmCzw8sZ4": 3,
+    "TMvuGd05weZijnQn": 2,
+    "Q1xAgV7W8FjnXUKn": 2,
+    "WbcjK4XdxZAx20Ff": 2,
+    "PVx6d6HzNUWzDZYZ": 2,
+    "AfvhKZP0nYyiL73h": 2,
+    "Wk5OyThcSngGzOpt": 2
+   },
+   "name": "Szene-24"
+  },
+  {
+   "_id": "PNBlIdSl02JXxjDx",
+   "ownership": {
+    "default": 0,
+    "LmnVP8mcmCzw8sZ4": 3,
+    "TMvuGd05weZijnQn": 2,
+    "Q1xAgV7W8FjnXUKn": 2,
+    "WbcjK4XdxZAx20Ff": 2,
+    "PVx6d6HzNUWzDZYZ": 2,
+    "AfvhKZP0nYyiL73h": 2,
+    "Wk5OyThcSngGzOpt": 2
+   },
+   "name": "Szene-25"
+  },
+  {
+   "_id": "eTPO2X2Wz1x6EwRV",
+   "ownership": {
+    "default": 0,
+    "LmnVP8mcmCzw8sZ4": 3,
+    "TMvuGd05weZijnQn": 2,
+    "Q1xAgV7W8FjnXUKn": 2,
+    "WbcjK4XdxZAx20Ff": 2,
+    "PVx6d6HzNUWzDZYZ": 2,
+    "AfvhKZP0nYyiL73h": 2,
+    "Wk5OyThcSngGzOpt": 2
+   },
+   "name": "Szene-26"
+  },
+  {
+   "_id": "eePIAM8qtqymCatP",
+   "ownership": {
+    "default": 2,
+    "LmnVP8mcmCzw8sZ4": 3
+   },
+   "name": "Szene-27"
+  },
+  {
+   "_id": "zoVkLOoynfpdea1a",
+   "ownership": {
+    "default": 2,
+    "LmnVP8mcmCzw8sZ4": 3
+   },
+   "name": "Szene-28"
+  },
+  {
+   "_id": "PSGfvMGAnC4UJ5Th",
+   "ownership": {
+    "default": 2,
+    "LmnVP8mcmCzw8sZ4": 3
+   },
+   "name": "Szene-29"
+  },
+  {
+   "_id": "NSu5GFnbOBhzS8M9",
+   "ownership": {
+    "default": 2,
+    "LmnVP8mcmCzw8sZ4": 3
+   },
+   "name": "Szene-30"
+  },
+  {
+   "_id": "llPieUFfCcMcRo2Z",
+   "ownership": {
+    "default": 2,
+    "LmnVP8mcmCzw8sZ4": 3
+   },
+   "name": "Szene-31"
+  },
+  {
+   "_id": "dMevtfd7VSbPXy8c",
+   "ownership": {
+    "default": 2,
+    "LmnVP8mcmCzw8sZ4": 3
+   },
+   "name": "Szene-32"
+  }
+ ]
+}

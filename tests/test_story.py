@@ -23,7 +23,7 @@ import pytest
 from conftest import runde
 from mocks import foundry_mock, ollama_mock
 
-from chronicle import db, foundry, notes, protocol
+from chronicle import db, foundry, notes, protocol, settings
 from chronicle.app import create_app
 from chronicle.compose.composer import (
     BELEG_TITEL,
@@ -34,6 +34,7 @@ from chronicle.compose.composer import (
 from chronicle.compose.recap import FAEDEN_TITEL
 from chronicle.compose.service import compose_session, recap_session
 from chronicle.config import Config
+from chronicle.foundry import testwelt
 
 # Authelia setzt den Header am Proxy; die App baut kein eigenes Login.
 KOPF = {"Remote-User": "erzaehlerin"}
@@ -273,3 +274,34 @@ def test_vom_aufsetzen_bis_zur_ersten_chronik(tmp_path, mock_foundry, mock_ollam
     sitzung_id = station_4_erste_sitzung(client, config)
     station_5_erste_zusammenfassung(config, sitzung_id, mock_ollama)
     station_6_wiederfinden(client, sitzung_id)
+
+
+def test_dieselben_stationen_gegen_die_eingebaute_testwelt(tmp_path):
+    """Dieselbe Geschichte ohne Server: die Quelle steht auf Testwelt.
+
+    Das ist die zweite Hälfte des Beweises. Der Handschlag ist oben abgedeckt; hier zählt
+    die Strecke **danach** — und dass die Oberfläche keinen Zweifel lässt, woher die
+    Zahlen stammen.
+    """
+    config, client = station_1_aufsetzen(tmp_path)
+    umstellen = sende(client, "/einstellungen", **{settings.QUELLE_KEY: settings.TESTWELT})
+    assert umstellen.status_code == 302
+
+    stand = foundry.sync(config, runde(config))
+    assert not stand.stale, stand.message
+    assert "keine echten Kampagnendaten" in stand.message
+    assert stand.snapshot.characters and stand.snapshot.messages
+
+    # Die Einrichtung ist damit entschieden — und jede Seite sagt, was hier läuft.
+    assert hole(client, "/").status_code == 200
+    for pfad in ("/", "/protokolle", "/einstellungen"):
+        assert testwelt.HINWEIS in hole(client, pfad).get_data(as_text=True), pfad
+
+    # Mitschreiben und Komponieren laufen unverändert weiter — die Quelle ändert nur,
+    # woher die Zahlen kommen.
+    angelegt = sende(client, "/", played_on=GESPIELT_AM, title=TITEL)
+    sitzung_id = int(angelegt.headers["Location"].rsplit("/", 1)[-1])
+    szene = notes.session(runde(config), sitzung_id).scenes[0]
+    assert sende(client, f"/szenen/{szene.id}/notizen", text=NOTIZEN[0]).status_code == 302
+    geschrieben = notes.session(runde(config), sitzung_id).scenes[0].notes
+    assert [notiz.text for notiz in geschrieben] == [NOTIZEN[0]]

@@ -1,5 +1,7 @@
+import json
 import logging
 
+import pytest
 from conftest import (
     GM_FIGUR,
     GM_GEFLUESTER,
@@ -13,6 +15,7 @@ from conftest import (
 )
 
 import chronicle.foundry.__main__ as batch
+from chronicle import runde as runden
 from chronicle import zugang
 from chronicle.foundry import service, store
 from chronicle.foundry.client import FoundryUnreachable
@@ -277,7 +280,7 @@ def test_stapellauf_fragt_nach_dem_passwort_und_meldet_ueber_den_rueckgabewert(
             config, runde(config), client=Abgleich(welt), passwort=passwort
         ),
     )
-    assert batch.main() == 0
+    assert batch.main([]) == 0
     assert gefragt == [batch.FRAGE]
 
     monkeypatch.setattr(
@@ -287,4 +290,95 @@ def test_stapellauf_fragt_nach_dem_passwort_und_meldet_ueber_den_rueckgabewert(
             config, runde(config), client=Abgleich(fehler=FoundryUnreachable("aus"))
         ),
     )
-    assert batch.main() == 1
+    assert batch.main([]) == 1
+
+
+def test_der_abzug_schreibt_die_rohe_welt_und_warnt(config, welt, tmp_path):
+    """Der Abzug geht weder durch den Filter noch in die Datenbank — das ist sein Zweck."""
+    ziel = tmp_path / "abzug" / "welt-dump.json"
+    meldung = service.abzug(config, runde(config), ziel, passwort=PASSWORT, client=Abgleich(welt))
+    assert json.loads(ziel.read_text(encoding="utf-8")) == welt
+    assert GM_GEFLUESTER in ziel.read_text(encoding="utf-8")
+    assert "nie ins Repo" in meldung
+    assert "anonymisiere_welt.py" in meldung
+    assert service.current(config, runde(config)).snapshot is None
+
+
+def test_der_abzug_verbraucht_das_gemerkte_passwort(config, welt, tmp_path):
+    zugang.merken(runde(config), PASSWORT)
+    service.abzug(config, runde(config), tmp_path / "welt-dump.json", client=Abgleich(welt))
+    assert zugang.passwort(runde(config)) is None
+
+
+def test_der_stapellauf_kann_abgreifen(config, welt, tmp_path, monkeypatch):
+    """Das Ziel ist nicht wählbar: der Abzug landet immer im gitignorierten Ordner.
+
+    Ein freier Pfad war die Restlücke — ``--dump abzug.json`` hätte den Abzug neben den
+    Quelltext gelegt, wo ihn weder ``welt-dump*.json`` noch ``dumps/`` gefangen hätte.
+    """
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(batch, "getpass", lambda frage: PASSWORT)
+    monkeypatch.setattr(batch.Config, "from_env", classmethod(lambda cls: config))
+    monkeypatch.setattr(service, "FoundryClient", lambda _config, _passwort: Abgleich(welt))
+    assert batch.main(["--dump"]) == 0
+    ziel = tmp_path / service.ABZUG_ZIEL
+    assert json.loads(ziel.read_text(encoding="utf-8")) == welt
+    # Klarnamen liegen nicht für alle lesbar herum.
+    assert ziel.stat().st_mode & 0o077 == 0
+
+    monkeypatch.setattr(
+        service,
+        "FoundryClient",
+        lambda _config, _passwort: Abgleich(fehler=FoundryUnreachable("aus")),
+    )
+    assert batch.main(["--dump"]) == 1
+
+
+def test_ein_vorhandener_ordner_wird_nachgezogen(config, welt, tmp_path):
+    """``mkdir(mode=…)`` greift nur beim Anlegen — ein schon offener Ordner bliebe offen."""
+    ordner = tmp_path / "dumps"
+    ordner.mkdir(mode=0o755)
+    ordner.chmod(0o755)
+    service.abzug(
+        config, runde(config), ordner / "welt-dump.json", passwort=PASSWORT, client=Abgleich(welt)
+    )
+    assert ordner.stat().st_mode & 0o077 == 0
+
+
+def test_der_stapellauf_verlangt_die_runde_sobald_es_mehrere_gibt(config, monkeypatch, capsys):
+    """Sonst zöge ``--dump`` still den ungefilterten Abzug der ersten Runde."""
+    monkeypatch.setattr(batch.Config, "from_env", classmethod(lambda cls: config))
+    zweite = runden.anlegen(config.database_path, "Die Zweiten")
+    assert batch.main(["--dump"]) == 1
+    assert "mehrere Runden" in capsys.readouterr().err
+
+    assert batch.main([f"--runde={zweite.id + 99}"]) == 1
+    assert "Keine Runde mit der Kennung" in capsys.readouterr().err
+
+
+def test_der_stapellauf_sagt_welche_runde_er_nimmt(config, welt, tmp_path, monkeypatch, capsys):
+    zweite = runden.anlegen(config.database_path, "Die Zweiten")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(batch, "getpass", lambda frage: PASSWORT)
+    monkeypatch.setattr(batch.Config, "from_env", classmethod(lambda cls: config))
+    monkeypatch.setattr(service, "FoundryClient", lambda _config, _passwort: Abgleich(welt))
+    assert batch.main([f"--runde={zweite.id}", "--dump"]) == 0
+    assert f"Runde {zweite.id}: Die Zweiten" in capsys.readouterr().out
+
+
+def test_ein_freier_pfad_ist_kein_argument_mehr(config, monkeypatch):
+    monkeypatch.setattr(batch.Config, "from_env", classmethod(lambda cls: config))
+    with pytest.raises(SystemExit):
+        batch.main(["--dump", "abzug.json"])
+
+
+def test_kein_passwort_in_den_logzeilen_eines_abzugs(config, welt, tmp_path, caplog):
+    with caplog.at_level(logging.DEBUG):
+        service.abzug(
+            config,
+            runde(config),
+            tmp_path / "welt-dump.json",
+            passwort=PASSWORT,
+            client=Abgleich(welt),
+        )
+    assert PASSWORT not in caplog.text
