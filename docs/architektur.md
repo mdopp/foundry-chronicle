@@ -139,7 +139,9 @@ passiert ist** — und Teile davon nacherzählen können.
   nicht über einen Handlungsfaden und nicht über eine Figur. Gearbeitet wird rollierend wie
   in der Komposition: je Sitzung ein Aufruf, mitgeführt wird nur der zuletzt angenommene
   Absatz. Eine Sitzung ohne bestätigten Registereintrag wird als **Lücke benannt** statt
-  überbrückt; die Zahlenschranke läuft gegen die Chroniken des Bereichs. Der Lauf gehört
+  überbrückt; die Zahlenschranke läuft je Sitzung gegen ihre Chronik und ihre
+  Registereinträge, und die Überschriften setzt die Stufe selbst — ein Absatz, der sich
+  eine eigene aufmacht, wird verworfen. Der Lauf gehört
   dem Server, nicht dem Befehl, und das Ergebnis geht als Markdown-Datei in den Kanal, in
   dem es angefordert wurde.
 

@@ -212,6 +212,20 @@ def fuellen(config: Config, runde, marke: str) -> dict[str, int]:
         text=f"Ansage {marke}",
         members=(consent.Member(id="d-1", name=f"Mensch {marke}"),),
     )
+    # Ein zweiter Abend, damit der Bereich der Nacherzählung wirklich einer ist: über eine
+    # einzige Sitzung könnte er eine fremde strukturell nie erreichen — und ein vergessenes
+    # ``WHERE runde_id = ?`` in der Bereichsabfrage bliebe unbemerkt.
+    spaeter = notes.create_session(
+        runde, played_on="2026-05-08", title=f"Zweiter Abend {marke}", thread_id=f"spaet-{marke}"
+    )
+    scope = db.scoped(runde)
+    try:
+        compose_service.save(
+            scope, spaeter, f"Chronik vom zweiten Abend {marke}", "2026-05-08T21:00:00+00:00"
+        )
+    finally:
+        scope.close()
+
     people.confirm(runde, {"d-1": "u-1"})
     # Ollama trägt hier bewusst keine Marke: es gehört seit #87 der Instanz und ist damit
     # kein Kanarienvogel für ein Leck zwischen Runden, sondern ein geteilter Wert.
@@ -219,6 +233,7 @@ def fuellen(config: Config, runde, marke: str) -> dict[str, int]:
     zugang.merken(runde, f"passwort-{marke}", wer=f"wer-{marke}")
     return {
         "sitzung": sitzung,
+        "spaeter": spaeter,
         "szene": szene.id,
         "aufnahme": aufnahme.id,
         "transkript": transkript,
@@ -313,15 +328,17 @@ ABFRAGEN = {
         r, lambda s: compose_service.recap_material(s, i["sitzung"])
     ),
     # Die Nacherzählung läuft über einen Sitzungsbereich und das Register — zwei Wege in
-    # eine fremde Kampagne, wenn einer davon die Runde vergisst.
+    # eine fremde Kampagne, wenn einer davon die Runde vergisst. Der Bereich geht deshalb
+    # über **beide** Abende: eine Abfrage von einer Sitzung zu sich selbst kann eine fremde
+    # gar nicht erst einsammeln und prüfte die Schranke nie.
     "service.erzaehl_material": lambda c, r, i: _mit_scope(
         r,
         lambda s: compose_service.erzaehl_material(
-            s, i["sitzung"], i["sitzung"], register.nach_sitzung(r)
+            s, i["sitzung"], i["spaeter"], register.nach_sitzung(r)
         ),
     ),
     "service.erzaehlen": lambda c, r, i: compose_service.erzaehlen(
-        c, r, i["sitzung"], i["sitzung"], register.nach_sitzung(r)
+        c, r, i["sitzung"], i["spaeter"], register.nach_sitzung(r)
     ),
     "service.names": lambda c, r, i: _mit_scope(
         r, lambda s: transcribe_service.names(s, i["sitzung"])

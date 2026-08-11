@@ -7,10 +7,11 @@ wörtlich, Verbindungstext unter einer Überschrift, die ihn als unbelegt auswei
 
 Zwei Dinge sind hier die eigentliche Arbeit:
 
-* **Die Zahlenschranke.** Nach jedem Modellaufruf wird geprüft, ob der Text eine Ziffer
-  enthält, die nicht in den Notizen oder Fakten dieser Sitzung steht. Wenn ja, wird der
-  Absatz verworfen — die Szene bleibt dann bei ihrer geordneten Fassung. Eine Lücke ist
-  besser als ein erfundener Satz, dem man das nicht ansieht.
+* **Die Zahlenschranke.** Nach jedem Modellaufruf wird geprüft, ob der Text eine Zahl
+  nennt, die nicht in den Notizen oder Fakten dieser Sitzung steht — in Ziffern,
+  ausgeschrieben oder römisch. Wenn ja, wird der Absatz verworfen; die Szene bleibt dann
+  bei ihrer geordneten Fassung. Eine Lücke ist besser als ein erfundener Satz, dem man das
+  nicht ansieht. Wie weit sie reicht und wo sie aufhört, steht bei ``numbers``.
 * **Szene für Szene.** Ein Sitzungstranskript passt nicht in ein Kontextfenster. Jede
   Szene ist ein eigener Aufruf; mitgeführt wird nur der zuletzt angenommene Absatz, und
   der hat die Zahlenschranke bereits passiert.
@@ -27,7 +28,70 @@ from chronicle.foundry.model import NICHT_MEHR_VORHANDEN, ChatMessage, Roll
 
 logger = logging.getLogger(__name__)
 
-ZIFFERN = re.compile(r"\d+")
+# Eine Zahl bleibt zusammen: »3.5« ist ein Wert und nicht die belegte 3 neben der belegten
+# 5. Ohne das Trennzeichen im Muster ließe sich aus zwei belegten Ziffern eine dritte Zahl
+# zusammensetzen, die nirgends steht.
+ZIFFERN = re.compile(r"\d+(?:[.,:]\d+)*")
+
+# Römisch geschrieben ist dieselbe Zahl — geprüft wird der Wert, nicht die Schreibweise.
+# Ohne Kleinschreibung, sonst verschluckte das Muster halbe deutsche Wörter.
+ROEMISCH = re.compile(
+    r"\b(?=[MDCLXVI])M{0,3}(?:C[MD]|D?C{0,3})(?:X[CL]|L?X{0,3})(?:I[XV]|V?I{0,3})\b"
+)
+
+ROEMISCHE_WERTE = {"M": 1000, "D": 500, "C": 100, "L": 50, "X": 10, "V": 5, "I": 1}
+
+# Ausgeschrieben ist eine Zahl immer noch eine Zahl. »ein« fehlt mit Absicht: als
+# unbestimmter Artikel stünde es in fast jedem Satz und verwürfe jeden zweiten Absatz.
+EINER = {
+    "null": 0,
+    "eins": 1,
+    "ein": 1,
+    "zwei": 2,
+    "drei": 3,
+    "vier": 4,
+    "fünf": 5,
+    "fuenf": 5,
+    "sechs": 6,
+    "sieben": 7,
+    "acht": 8,
+    "neun": 9,
+}
+
+ZAHLWERTE = {name: wert for name, wert in EINER.items() if name != "ein"} | {
+    "zehn": 10,
+    "elf": 11,
+    "zwölf": 12,
+    "zwoelf": 12,
+    "dutzend": 12,
+    "dreizehn": 13,
+    "vierzehn": 14,
+    "fünfzehn": 15,
+    "fuenfzehn": 15,
+    "sechzehn": 16,
+    "siebzehn": 17,
+    "achtzehn": 18,
+    "neunzehn": 19,
+    "zwanzig": 20,
+    "dreißig": 30,
+    "dreissig": 30,
+    "vierzig": 40,
+    "fünfzig": 50,
+    "fuenfzig": 50,
+    "sechzig": 60,
+    "siebzig": 70,
+    "achtzig": 80,
+    "neunzig": 90,
+    "hundert": 100,
+    "tausend": 1000,
+}
+
+ZAHLWORT = re.compile(
+    r"\b(?:(" + "|".join(sorted(EINER, key=len, reverse=True)) + r")(?:und)?)?"
+    r"(" + "|".join(sorted(ZAHLWERTE, key=len, reverse=True)) + r")"
+    r"(?:mal|fach|erlei|er|en|e)?\b",
+    re.IGNORECASE,
+)
 
 NOTIZEN_TITEL = "### Notizen"
 BELEG_TITEL = "### Belegt aus Foundry"
@@ -91,8 +155,42 @@ class Composition:
         return f"Chronik aus {umfang}. {self.reason}"
 
 
+def _roemischer_wert(wort: str) -> int:
+    wert = 0
+    groesstes = 0
+    for zeichen in reversed(wort):
+        einzeln = ROEMISCHE_WERTE[zeichen]
+        wert += -einzeln if einzeln < groesstes else einzeln
+        groesstes = max(groesstes, einzeln)
+    return wert
+
+
+def _wortwert(vorsilbe: str, grundwort: str) -> int:
+    grund = ZAHLWERTE[grundwort.lower()]
+    if not vorsilbe:
+        return grund
+    vorne = EINER[vorsilbe.lower()]
+    return vorne * grund if grund >= 100 else vorne + grund
+
+
 def numbers(text: str) -> set[str]:
-    return set(ZIFFERN.findall(text))
+    """Die Zahlen eines Textes — Ziffern, römisch Geschriebenes und ausgeschriebene Zahlwörter.
+
+    Vergleichbar gemacht wird über den Wert: »XVII« und »siebzehn« zählen als ``17``.
+    Ziffernfolgen bleiben dagegen so stehen, wie sie geschrieben sind, damit ``3.5`` nicht
+    als belegt gilt, bloß weil ``3`` und ``5`` irgendwo einzeln vorkommen.
+
+    **Die Grenze:** vollständig ist das nicht und kann es nicht sein. Eine einzelne belegte
+    Ziffer lässt sich weiter in eine neue Aussage setzen — steht ``5`` in der Vorlage, kommt
+    »5 Prozent« durch. Ordnungszahlwörter fehlen mit Absicht: »erst« und »zweit« stehen im
+    Deutschen zu oft für etwas anderes, und ein Absatz, der an »erst spät« scheitert, wäre
+    ein Fehlalarm bei jedem zweiten Satz. Die Schranke fängt das plump Erfundene, nicht
+    jede denkbare Umschreibung.
+    """
+    gefunden = set(ZIFFERN.findall(text))
+    gefunden |= {str(_roemischer_wert(wort)) for wort in ROEMISCH.findall(text) if wort}
+    gefunden |= {str(_wortwert(*treffer)) for treffer in ZAHLWORT.findall(text)}
+    return gefunden
 
 
 def _einzeilig(text: str) -> str:
