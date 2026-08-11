@@ -15,6 +15,7 @@ statt Wochen später in einer fremden Chronik zu stehen.
 from __future__ import annotations
 
 import re
+import secrets
 import sqlite3
 from datetime import UTC, datetime
 from importlib import resources
@@ -24,7 +25,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:  # pragma: no cover - nur für die Typprüfung
     from chronicle.runde import Runde
 
-SCHEMA_VERSION = 18
+SCHEMA_VERSION = 19
 
 # Der Name der ersten Runde: die Bestände der Entwicklungs-Instanz wandern hier hinein,
 # und eine frische Datenbank bekommt sie ebenfalls — die Oberfläche braucht bis zu ihrer
@@ -191,6 +192,39 @@ def _nachtragen(connection: sqlite3.Connection) -> None:
             connection.execute(f"ALTER TABLE {tabelle} ADD COLUMN {spalte} {typ}")
 
 
+def kennung() -> str:
+    """Der Zufallswert, an dem eine Runde über einen Klick hinweg wiedererkannt wird."""
+    return secrets.token_hex(8)
+
+
+def _kennung_nachtragen(connection: sqlite3.Connection) -> None:
+    """Jede bestehende Runde bekommt eine Kennung, und die Spalte wird ``NOT NULL``.
+
+    Ohne beides ist die Zusicherung nur zufällig wahr: zwei Runden ohne Kennung und eine
+    wiederverwendete Id vergleichen sich als dieselbe, und die Schranke vor jedem alten
+    Knopf fiele still auf Id-Gleichheit zurück. SQLite kann eine Spalte nicht nachträglich
+    auf ``NOT NULL`` setzen — die Tabelle wird deshalb wie bei der Wanderung umbenannt,
+    neu gebaut und umgefüllt.
+    """
+    spalten = {zeile["name"]: zeile for zeile in connection.execute("PRAGMA table_info(runde)")}
+    if not spalten or spalten["token"]["notnull"]:
+        return
+    # ``legacy_alter_table`` wirkt nur außerhalb einer Transaktion — und ohne es zöge das
+    # Umbenennen die Fremdschlüssel aller Kindtabellen mit auf ``runde__alt``.
+    connection.commit()
+    connection.execute("PRAGMA legacy_alter_table = ON")
+    connection.execute("PRAGMA foreign_keys = OFF")
+    for zeile in connection.execute("SELECT id FROM runde WHERE token IS NULL").fetchall():
+        connection.execute("UPDATE runde SET token = ? WHERE id = ?", (kennung(), int(zeile["id"])))
+    connection.execute("ALTER TABLE runde RENAME TO runde__alt")
+    connection.executescript(schema_sql())
+    liste = ", ".join(spalten)
+    connection.execute(f"INSERT INTO runde ({liste}) SELECT {liste} FROM runde__alt")
+    connection.execute("DROP TABLE runde__alt")
+    connection.execute("PRAGMA foreign_keys = ON")
+    connection.execute("PRAGMA legacy_alter_table = OFF")
+
+
 def erste_runde_id(connection: sqlite3.Connection) -> int:
     """Die Runde mit der kleinsten Id — angelegt, falls es noch keine gibt.
 
@@ -201,8 +235,8 @@ def erste_runde_id(connection: sqlite3.Connection) -> int:
     if zeile is not None and zeile["id"] is not None:
         return int(zeile["id"])
     zeiger = connection.execute(
-        "INSERT INTO runde (name, guild_id, created_at) VALUES (?, NULL, ?)",
-        (ERSTE_RUNDE, datetime.now(UTC).isoformat(timespec="seconds")),
+        "INSERT INTO runde (name, guild_id, created_at, token) VALUES (?, NULL, ?, ?)",
+        (ERSTE_RUNDE, datetime.now(UTC).isoformat(timespec="seconds"), kennung()),
     )
     return int(zeiger.lastrowid)
 
@@ -310,9 +344,12 @@ def init(database_path: Path) -> None:
         # dieser Durchlauf legt ihn an der neuen wieder an — und auf einer frischen
         # Datenbank legt er überhaupt erst alles an.
         connection.executescript(schema_sql())
+        # Vor allem, was eine Runde anlegen könnte: ``erste_runde_id`` schreibt eine
+        # Kennung, und die Spalte dafür kommt erst hier.
+        _nachtragen(connection)
+        _kennung_nachtragen(connection)
         _umziehen(connection, erste_runde_id(connection))
         _geheimnisse_verwerfen(connection)
-        _nachtragen(connection)
         # Der Suchindex wird abgeleitet und deshalb zuletzt neu gebaut — er liest Spalten,
         # die die Wanderung erst angelegt hat.
         connection.executescript(suchindex_sql())

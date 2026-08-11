@@ -17,7 +17,6 @@ anzulegen und ihr anzusehen, ob sie noch spricht.
 
 from __future__ import annotations
 
-import secrets
 import sqlite3
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -33,7 +32,7 @@ class Runde:
     guild_id: str | None
     created_at: str
     database_path: Path
-    token: str | None = None
+    token: str
     locked_at: str | None = None
     delete_after: str | None = None
 
@@ -136,7 +135,7 @@ def anlegen(database_path: Path, name: str, *, guild_id: str | None = None) -> R
         with connection:
             zeiger = connection.execute(
                 "INSERT INTO runde (name, guild_id, created_at, token) VALUES (?, ?, ?, ?)",
-                (name.strip() or db.ERSTE_RUNDE, guild_id, _now(), secrets.token_hex(8)),
+                (name.strip() or db.ERSTE_RUNDE, guild_id, _now(), db.kennung()),
             )
         zeile = connection.execute(
             "SELECT * FROM runde WHERE id = ?", (int(zeiger.lastrowid),)

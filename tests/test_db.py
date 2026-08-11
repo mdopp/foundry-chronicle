@@ -177,6 +177,65 @@ def test_wanderung_ist_idempotent(alte_datenbank):
     assert db.current_schema_version(alte_datenbank) == db.SCHEMA_VERSION
 
 
+def _kennungen_entfernen(pfad):
+    """Der Stand vor der Zusicherung: die Spalte ist nullbar und keine Runde hat eine."""
+    connection = sqlite3.connect(pfad)
+    connection.executescript(
+        """
+        PRAGMA legacy_alter_table = ON;
+        PRAGMA foreign_keys = OFF;
+        ALTER TABLE runde RENAME TO runde__nullbar;
+        CREATE TABLE runde (
+            id           INTEGER PRIMARY KEY,
+            name         TEXT NOT NULL,
+            guild_id     TEXT UNIQUE,
+            created_at   TEXT NOT NULL,
+            token        TEXT,
+            locked_at    TEXT,
+            delete_after TEXT);
+        INSERT INTO runde (id, name, guild_id, created_at, token, locked_at, delete_after)
+        SELECT id, name, guild_id, created_at, NULL, locked_at, delete_after
+        FROM runde__nullbar;
+        DROP TABLE runde__nullbar;
+        """
+    )
+    connection.commit()
+    connection.close()
+
+
+def test_die_wanderung_traegt_jeder_runde_eine_eigene_kennung_nach(tmp_path):
+    """Nachgetragen wird je Runde und nicht einmal für alle — sonst gälten sie als gleich."""
+    pfad = tmp_path / "chronicle.sqlite3"
+    db.init(pfad)
+    andere = runden.anlegen(pfad, "Die Andere", guild_id="4242")
+    _kennungen_entfernen(pfad)
+
+    db.init(pfad)
+
+    alle = runden.alle(pfad)
+    assert len(alle) == 2
+    assert all(runde.token for runde in alle)
+    assert len({runde.token for runde in alle}) == 2
+    assert runden.get(pfad, andere.id).name == "Die Andere"
+
+
+def test_nach_der_wanderung_ist_die_kennung_pflicht(tmp_path):
+    pfad = tmp_path / "chronicle.sqlite3"
+    db.init(pfad)
+    _kennungen_entfernen(pfad)
+    db.init(pfad)
+
+    connection = db.connect(pfad)
+    try:
+        with pytest.raises(sqlite3.IntegrityError):
+            connection.execute(
+                "INSERT INTO runde (name, guild_id, created_at) VALUES (?, ?, ?)",
+                ("Ohne Kennung", "4243", "2026-08-11T12:00:00+00:00"),
+            )
+    finally:
+        connection.close()
+
+
 def test_scope_laesst_eine_abfrage_mit_runde_durch(tmp_path):
     pfad = tmp_path / "chronicle.sqlite3"
     runde = runden.erste(pfad)

@@ -19,12 +19,15 @@ CREATE TABLE IF NOT EXISTS meta (
 -- ``token`` ist der Zufallswert, an dem eine Runde wiedererkannt wird. Die ``id`` taugt
 -- dafür nicht: sie ist ein ``INTEGER PRIMARY KEY`` ohne ``AUTOINCREMENT`` und wird nach
 -- einer Löschung wieder vergeben, und ``created_at`` steht nur auf die Sekunde genau.
+-- **``NOT NULL``, und das ist tragend:** wären zwei Runden ohne Kennung erlaubt, verglichen
+-- sich ``(id, token)`` bei wiederverwendeter Id als gleich, und die Schranke vor jedem
+-- alten Knopf fiele still auf Id-Gleichheit zurück.
 CREATE TABLE IF NOT EXISTS runde (
     id           INTEGER PRIMARY KEY,
     name         TEXT NOT NULL,
     guild_id     TEXT UNIQUE,
     created_at   TEXT NOT NULL,
-    token        TEXT,
+    token        TEXT NOT NULL,
     locked_at    TEXT,
     delete_after TEXT
 );

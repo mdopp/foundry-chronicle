@@ -539,6 +539,28 @@ def test_eine_ansicht_von_vorhin_meint_nicht_die_frische_runde(zwei_runden):
     assert bot_chronik.dieselbe_runde(config, None, frisch) is None
 
 
+def test_keine_runde_kommt_ohne_kennung_in_die_datenbank(zwei_runden):
+    """Und der Griff hält nur, solange jede Runde eine Kennung *hat*.
+
+    Zwei Runden ohne Kennung und eine wiederverwendete Id vergleichen sich als dieselbe —
+    die Schranke fiele damit still auf Id-Gleichheit zurück, ohne dass etwas rot würde.
+    Deshalb steht die Zusicherung im Schema und nicht in der Absicht des Aufrufers.
+    """
+    config, a, b, _ids = zwei_runden
+    assert a.token and b.token and a.token != b.token
+    assert all(runde.token for runde in runden.alle(config.database_path))
+
+    connection = db.connect(config.database_path)
+    try:
+        with pytest.raises(sqlite3.IntegrityError):
+            connection.execute(
+                "INSERT INTO runde (name, guild_id, created_at) VALUES (?, ?, ?)",
+                ("Ohne Kennung", "gilde-x", "2026-08-11T12:00:00+00:00"),
+            )
+    finally:
+        connection.close()
+
+
 def test_knopf_und_menue_wirken_nur_in_der_eigenen_runde(zwei_runden):
     """Ein Klick trägt die Kennung seiner Ansicht — entschieden wird trotzdem in *seiner* Runde."""
     config, a, b, ids = zwei_runden
