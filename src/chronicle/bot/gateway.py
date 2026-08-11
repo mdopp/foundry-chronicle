@@ -18,6 +18,7 @@ Der Token geht in genau einen Aufruf und in keine Logzeile.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import functools
 import logging
 import wave
@@ -115,6 +116,12 @@ LEER_BEENDET = (
     "Die Sitzung bleibt offen: hier weiterzuschreiben geht, und `/chronik fertig` bleibt "
     "eure Entscheidung. Für einen neuen Mitschnitt `/aufnahme start` — die Ansage läuft "
     "dann noch einmal."
+)
+
+LEER_GESCHEITERT = (
+    "Im Sprachkanal war niemand mehr, aber das Beenden ist schiefgegangen — ob noch "
+    "mitgeschnitten wird, weiß ich nicht sicher. Bitte einmal `/aufnahme stop` geben; "
+    "der Grund steht im Log des Bots."
 )
 
 UNBEKANNT = "unbekannt"
@@ -222,13 +229,20 @@ class Sprachverbindung:
 
     def __init__(self, voice_client) -> None:
         self._vc = voice_client
-        kanal = voice_client.channel
-        self.kanal = Kanal(guild_id=str(kanal.guild.id), id=str(kanal.id), name=kanal.name)
+        # ``voice_client.channel`` folgt dem Bot, wenn ihn jemand verschiebt. Gemeint ist
+        # aber immer der Kanal, dem die Aufnahme gehört: dort lief die Ansage, dort wurde
+        # eingewilligt, und gegen dessen Kennung entscheidet auch ``on_voice_state_update``,
+        # wer gekommen und wer gegangen ist. Würden »leer« und »gegangen« verschiedene
+        # Kanäle meinen, griffe das Netz je nach Ziel des Verschiebens nie oder zu früh.
+        self._kanal = voice_client.channel
+        self.kanal = Kanal(
+            guild_id=str(self._kanal.guild.id), id=str(self._kanal.id), name=self._kanal.name
+        )
 
     def mitglieder(self) -> tuple[consent.Member, ...]:
         return tuple(
             consent.Member(id=str(wer.id), name=wer.display_name)
-            for wer in self._vc.channel.members
+            for wer in self._kanal.members
             if not wer.bot
         )
 
@@ -350,14 +364,29 @@ async def _mitschnitt_beenden(lauf: _Lauf, runde: Runde | None = None) -> tuple[
     Mit ``runde`` nur, wenn die laufende Aufnahme dieser Runde gehört: ein Abschluss in
     der einen Gilde darf den Mitschnitt einer anderen nicht abreißen.
     """
-    if lauf.aufnahme is None:
+    aufnahme, stimme = lauf.aufnahme, lauf.stimme
+    if aufnahme is None:
         return ()
-    if runde is not None and lauf.aufnahme.runde.id != runde.id:
+    if runde is not None and aufnahme.runde.id != runde.id:
         return ()
-    meldungen = await recorder.stoppen(lauf.stimme, lauf.aufnahme)
-    lauf.stimme = None
+    # Erst beanspruchen, dann anhalten: ``recorder.stoppen`` gibt beim Trennen ab, und ein
+    # zweiter Beender in dieser Lücke bekäme von py-cord »You are not recording«.
     lauf.aufnahme = None
-    return tuple(meldungen)
+    lauf.stimme = None
+    _leerlauf_absagen(lauf)
+    return tuple(await recorder.stoppen(stimme, aufnahme))
+
+
+def _leerlauf_absagen(lauf: _Lauf) -> None:
+    """Den wartenden Wächter abbestellen — seine Aufnahme gibt es so nicht mehr.
+
+    Bliebe er liegen, unterdrückte er den Wächter der **nächsten** Aufnahme: die begänne
+    innerhalb der Frist, alle gingen, und niemand sähe je nach. Sich selbst bestellt der
+    Wächter dabei nicht ab — er beendet den Mitschnitt ja gerade.
+    """
+    faden, lauf.leer = lauf.leer, None
+    if faden is not None and faden is not asyncio.current_task():
+        faden.cancel()
 
 
 def _menschen(lauf: _Lauf) -> tuple[consent.Member, ...]:
@@ -392,13 +421,16 @@ async def _abschied_bei_leere(bot, lauf: _Lauf, aufnahme: Aufnahme) -> None:
     if lauf.aufnahme is not aufnahme or _menschen(lauf):
         return
     logger.info("Sprachkanal #%s leer — der Mitschnitt endet.", aufnahme.kanal.name)
-    meldungen = await _mitschnitt_beenden(lauf)
     try:
+        meldungen = await _mitschnitt_beenden(lauf)
         await _sagen(bot, aufnahme, " ".join((LEER_BEENDET, *meldungen)))
     except Exception:  # noqa: BLE001
-        # Ein Faden nebenher hat niemanden, dem er den Fehlschlag antworten könnte —
-        # und beendet ist der Mitschnitt ohnehin schon.
-        logger.exception("Abschied im Thread nicht zugestellt")
+        # Ein Faden nebenher hat niemanden, dem er den Fehlschlag antworten könnte. Ihn
+        # als unabgeholte Ausnahme verfallen zu lassen hieße: die Runde erfährt nichts,
+        # obwohl offen ist, ob noch mitgeschnitten wird. Also wenigstens in den Thread.
+        logger.exception("Abschied bei leerem Sprachkanal gescheitert")
+        with contextlib.suppress(Exception):
+            await _sagen(bot, aufnahme, LEER_GESCHEITERT)
 
 
 def _erledigt(faden) -> bool:
@@ -933,7 +965,9 @@ def baue(config: Config):
             return
         await ctx.defer(ephemeral=True)
         meldungen = await _mitschnitt_beenden(lauf)
-        await ctx.respond(" ".join(meldungen), ephemeral=True)
+        # Leer heißt: in der Zwischenzeit war ein anderer schneller — der leere Kanal etwa.
+        # Das ist kein Fehlschlag, und so ausgesprochen zu werden verdient er auch nicht.
+        await ctx.respond(" ".join(meldungen) or LAEUFT_NICHT, ephemeral=True)
 
     @gruppe.command(name="hilfe", description="Was der Bot tut und wie man ihn bedient")
     @antwortet
@@ -1112,13 +1146,18 @@ def baue(config: Config):
         gegangen = before.channel is not None and str(before.channel.id) == unserer
         # Beides zugleich heißt: derselbe Kanal, nur stummgeschaltet oder verschoben.
         if gekommen and not gegangen:
+            _leerlauf_absagen(lauf)
             await recorder.nachzuegler(
                 config,
                 lauf.stimme,
                 lauf.aufnahme,
                 consent.Member(id=str(member.id), name=member.display_name),
             )
-        elif gegangen and not gekommen and not _menschen(lauf) and _erledigt(lauf.leer):
+        elif gegangen and not gekommen and not _menschen(lauf):
+            # Immer neu stellen, nicht nur wenn keiner läuft: sonst zählt die Frist ab dem
+            # ersten Gehen, und wer bei T=89 zurückkommt und bei T=89,5 wieder geht, hat
+            # eine halbe Sekunde Karenz statt der zugesagten neunzig Sekunden.
+            _leerlauf_absagen(lauf)
             lauf.leer = asyncio.create_task(_abschied_bei_leere(bot, lauf, lauf.aufnahme))
 
     return bot
