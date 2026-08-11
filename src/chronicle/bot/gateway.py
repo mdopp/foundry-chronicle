@@ -95,6 +95,28 @@ NICHT_IM_KANAL = "Du bist in keinem Sprachkanal — geh hinein und ruf mich noch
 LAEUFT_SCHON = "Ich schneide schon mit."
 LAEUFT_NICHT = "Es läuft gerade keine Aufnahme."
 
+# Wie lange der Sprachkanal leer sein darf, bevor der Mitschnitt von selbst endet.
+# Anderthalb Minuten, weil ein Wiederverbinden nach Netzwechsel oder Absturz des Clients
+# darunter bleibt: wer in der Frist zurückkommt, findet seine Sitzung ungeschnitten vor.
+# Länger zu warten bringt nichts — wer nach anderthalb Minuten nicht da ist, kommt auch
+# nach zehn nicht — und kostet genau das, wogegen die Frist gebaut ist: Spuren aus Stille
+# und eine Sprachverbindung, die niemand mehr braucht. Falsch zu liegen ist nur in eine
+# Richtung teuer: wer zu spät zurückkommt, ruft ``/aufnahme start`` noch einmal und hört
+# die Ansage dabei — was ohnehin das Richtige ist, denn die vorige galt einer Gruppe, die
+# es zu dem Zeitpunkt nicht mehr gab.
+LEER_FRIST = 90
+
+# Beendet wird der **Mitschnitt**, nicht die Sitzung: der Thread bleibt offen, Notizen
+# gehen weiter, und ``/chronik fertig`` bleibt eine Entscheidung der Runde. Sie hier
+# mitzunehmen hieße, den ganzen Lauf ohne jemanden anzustoßen, der ihn wollte — und er
+# verlangt ohnehin ein Passwort, das niemand eingibt, der schon gegangen ist.
+LEER_BEENDET = (
+    "Im Sprachkanal war niemand mehr — ich habe den Mitschnitt beendet und bin gegangen. "
+    "Die Sitzung bleibt offen: hier weiterzuschreiben geht, und `/chronik fertig` bleibt "
+    "eure Entscheidung. Für einen neuen Mitschnitt `/aufnahme start` — die Ansage läuft "
+    "dann noch einmal."
+)
+
 UNBEKANNT = "unbekannt"
 
 # Ein Befehl, der nicht antwortet, lässt Discord ewig »denkt nach …« anzeigen. Das ist
@@ -115,7 +137,8 @@ BEFEHLE = (
     "• `/aufnahme start` — ich komme in deinen Sprachkanal, spiele eine hörbare Ansage "
     "und schneide **erst danach** mit, je Sprecherin und Sprecher eine eigene Spur.\n"
     "• `/aufnahme stop` — ich höre auf und gehe wieder; die Spuren wandern in den "
-    "nächtlichen Lauf und werden zu Text.\n"
+    "nächtlichen Lauf und werden zu Text. Ist niemand außer mir mehr im Sprachkanal, "
+    "höre ich nach einer kurzen Frist von selbst auf und sage es im Thread.\n"
     "• `/chronik fertig` — Sitzung abschließen: läuft noch eine Aufnahme, beende ich sie "
     "zuerst und reihe die Spuren ein; danach Zahlen holen, verschriften, Chronik "
     "schreiben.\n"
@@ -318,6 +341,7 @@ class _Lauf:
         self.aufnahme: Aufnahme | None = None
         self.frist = None
         self.abschied = None
+        self.leer = None
 
 
 async def _mitschnitt_beenden(lauf: _Lauf, runde: Runde | None = None) -> tuple[str, ...]:
@@ -334,6 +358,47 @@ async def _mitschnitt_beenden(lauf: _Lauf, runde: Runde | None = None) -> tuple[
     lauf.stimme = None
     lauf.aufnahme = None
     return tuple(meldungen)
+
+
+def _menschen(lauf: _Lauf) -> tuple[consent.Member, ...]:
+    """Wer außer dem Bot noch im Sprachkanal steht — ``mitglieder`` zählt ihn nicht mit."""
+    return () if lauf.stimme is None else lauf.stimme.mitglieder()
+
+
+async def _sagen(bot, aufnahme: Aufnahme, text: str) -> None:
+    """Ein Satz in den Thread der Sitzung — dort liest die Runde ohnehin mit."""
+    # Die Aufnahme hält ihre Runde seit Stunden. Ist sie inzwischen gelöscht und ihre
+    # Kennung neu vergeben, führte die Frage nach dem Thread in eine fremde Kampagne.
+    gemeint = lebenszyklus.dieselbe(aufnahme.runde)
+    if gemeint is None:
+        return
+    thread_id = chronik.thread_der_sitzung(gemeint, aufnahme.session_id)
+    if thread_id is None:
+        logger.info("Sitzung %s hat keinen Thread — es bleibt ungesagt.", aufnahme.session_id)
+        return
+    kennung = int(thread_id)
+    thread = bot.get_channel(kennung) or await bot.fetch_channel(kennung)
+    await thread.send(text)
+
+
+async def _abschied_bei_leere(bot, lauf: _Lauf, aufnahme: Aufnahme) -> None:
+    """Nach der Frist noch einmal nachsehen — und dann Schluss.
+
+    Noch einmal, weil die Frist genau dafür da ist: wer die Verbindung verliert und
+    zurückkommt, soll keine zerschnittene Sitzung vorfinden. Und gegen *diese* Aufnahme,
+    denn in der Frist kann eine neue begonnen haben, die diese Frist nichts angeht.
+    """
+    await asyncio.sleep(LEER_FRIST)
+    if lauf.aufnahme is not aufnahme or _menschen(lauf):
+        return
+    logger.info("Sprachkanal #%s leer — der Mitschnitt endet.", aufnahme.kanal.name)
+    meldungen = await _mitschnitt_beenden(lauf)
+    try:
+        await _sagen(bot, aufnahme, " ".join((LEER_BEENDET, *meldungen)))
+    except Exception:  # noqa: BLE001
+        # Ein Faden nebenher hat niemanden, dem er den Fehlschlag antworten könnte —
+        # und beendet ist der Mitschnitt ohnehin schon.
+        logger.exception("Abschied im Thread nicht zugestellt")
 
 
 def _erledigt(faden) -> bool:
@@ -1040,18 +1105,21 @@ def baue(config: Config):
 
     @bot.event
     async def on_voice_state_update(member, before, after) -> None:
-        if lauf.aufnahme is None or member.bot or after.channel is None:
+        if lauf.aufnahme is None or member.bot:
             return
-        if str(after.channel.id) != lauf.aufnahme.kanal.id:
-            return
-        if before.channel is not None and before.channel.id == after.channel.id:
-            return
-        await recorder.nachzuegler(
-            config,
-            lauf.stimme,
-            lauf.aufnahme,
-            consent.Member(id=str(member.id), name=member.display_name),
-        )
+        unserer = lauf.aufnahme.kanal.id
+        gekommen = after.channel is not None and str(after.channel.id) == unserer
+        gegangen = before.channel is not None and str(before.channel.id) == unserer
+        # Beides zugleich heißt: derselbe Kanal, nur stummgeschaltet oder verschoben.
+        if gekommen and not gegangen:
+            await recorder.nachzuegler(
+                config,
+                lauf.stimme,
+                lauf.aufnahme,
+                consent.Member(id=str(member.id), name=member.display_name),
+            )
+        elif gegangen and not gekommen and not _menschen(lauf) and _erledigt(lauf.leer):
+            lauf.leer = asyncio.create_task(_abschied_bei_leere(bot, lauf, lauf.aufnahme))
 
     return bot
 

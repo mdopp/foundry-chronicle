@@ -182,6 +182,10 @@ def sitzung_des_threads(runde: Runde, thread_id: str) -> int | None:
     return notes.session_of_thread(runde, thread_id)
 
 
+def thread_der_sitzung(runde: Runde, session_id: int) -> str | None:
+    return notes.thread_of_session(runde, session_id)
+
+
 def sitzung_verlangen(runde: Runde, thread_id: str) -> int:
     sitzung = sitzung_des_threads(runde, thread_id)
     if sitzung is None:
