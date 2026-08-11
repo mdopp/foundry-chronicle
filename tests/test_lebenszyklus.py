@@ -377,6 +377,51 @@ def test_das_einrichtungsfenster_fragt_nicht_nach_dem_passwort(bot):
     assert "odell" not in beschriftet
 
 
+def test_das_benutzerfeld_sagt_mit_wessen_augen_ich_sehe(bot):
+    """Wer das Konto einträgt, entscheidet über die Sicht — das steht am Feld (#78)."""
+    fenster = einrichtungsfenster(bot, FakeCtx(gilde=FakeGilde()))
+
+    _, benutzerfeld, _ = fenster.children
+    assert "Augen" in benutzerfeld.label
+    assert "Spielerkonto" in benutzerfeld.placeholder
+
+
+def test_die_beschriftungen_bleiben_in_discords_grenzen():
+    """45 Zeichen für die Beschriftung, 100 für den Hinweis — geprüft von py-cord selbst."""
+    echtes_discord = pytest.importorskip("discord")
+
+    felder = (
+        (einrichten.FELD_ADRESSE, einrichten.HINWEIS_ADRESSE),
+        (einrichten.FELD_BENUTZER, einrichten.HINWEIS_BENUTZER),
+        (einrichten.FELD_UHRZEIT, einrichten.HINWEIS_UHRZEIT),
+    )
+    for beschriftung, hinweis in felder:
+        echtes_discord.ui.InputText(label=beschriftung, placeholder=hinweis, required=False)
+
+
+def test_die_einrichtung_empfiehlt_das_spielerkonto_und_ein_eigenes_konto(bot):
+    """Der ganze Satz passt in kein Feld und steht deshalb in der Antwort."""
+    interaktion = ausfuellen(
+        einrichtungsfenster(bot, FakeCtx(gilde=FakeGilde())), benutzer="Chronist"
+    )
+
+    gesagt = interaktion.response.gesendet[0]["text"]
+    assert einrichten.AUGEN in gesagt
+    assert "Spielerkonto" in gesagt
+    assert "»Chronik«" in gesagt
+
+
+def test_wer_nur_die_uhrzeit_richtet_hoert_den_satz_nicht_noch_einmal(bot):
+    ctx = FakeCtx(gilde=FakeGilde())
+    ausfuellen(einrichtungsfenster(bot, ctx), benutzer="Chronist")
+
+    nur_uhrzeit = ausfuellen(einrichtungsfenster(bot, ctx), uhrzeit="05:00")
+    wieder_das_konto = ausfuellen(einrichtungsfenster(bot, ctx), benutzer="Chronistin")
+
+    assert einrichten.AUGEN not in nur_uhrzeit.response.gesendet[0]["text"]
+    assert einrichten.AUGEN in wieder_das_konto.response.gesendet[0]["text"]
+
+
 def test_ohne_server_gibt_es_keine_runde_zu_beanspruchen(konfiguration, bot):
     ctx = FakeCtx(guild_id=None)
 
