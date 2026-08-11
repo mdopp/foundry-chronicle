@@ -230,7 +230,7 @@ def mitschnitt_starten(bot, gilde=GILDE):
     wer = FakeMitglied(4001, "Mira")
     kanal = FakeSprachkanal(FakeGilde(gilde), wer)
     wer.voice = types.SimpleNamespace(channel=kanal)
-    asyncio.run(bot.gruppen[gateway.GRUPPE].befehle["start"](FakeSprechCtx(wer)))
+    asyncio.run(bot.gruppen[gateway.GRUPPE].befehle["start"](FakeSprechCtx(wer, guild_id=gilde)))
     kanal.verbindung.senke.write(sprachdaten(stille(480)), wer)
     return types.SimpleNamespace(kanal=kanal, wer=wer)
 
