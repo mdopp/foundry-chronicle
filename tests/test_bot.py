@@ -589,6 +589,7 @@ class FakeVoiceClient:
         self.senke = None
         self.schneidet = False
         self.getrennt = False
+        self.trennen_stolpert = False
 
     def play(self, quelle, *, after):
         self.gespielt.append(quelle)
@@ -597,6 +598,9 @@ class FakeVoiceClient:
     def start_recording(self, senke, rueckruf):
         self.senke = senke
         self.schneidet = True
+
+    def is_recording(self):
+        return self.schneidet
 
     def stop_recording(self):
         # So verhält sich py-cord: der zweite Beender bekommt eine RecordingException.
@@ -609,6 +613,8 @@ class FakeVoiceClient:
         # Das echte Trennen geht ans Netz und damit an die Schleife ab — genau hier war
         # die Lücke, durch die ein zweiter Beender kam.
         await asyncio.sleep(0)
+        if self.trennen_stolpert:
+            raise RuntimeError("Verbindung weg")
         self.getrennt = True
 
 
@@ -1238,6 +1244,47 @@ def test_der_gescheiterte_abschied_sagt_es_statt_zu_verschwinden(
     alle_gehen(bot, runde)
 
     assert thread.geschrieben == [gateway.LEER_GESCHEITERT]
+
+
+def test_nach_gescheitertem_beenden_greift_aufnahme_stop_noch(
+    konfiguration, sitzung_im_thread, ohne_espeak, runde, kurze_frist
+):
+    """Der Anspruch vor dem Abgeben darf den Fehlerpfad nicht unrettbar machen.
+
+    Ohne Rücknahme wäre der Lauf nach einem gescheiterten Trennen geleert: der Bot bliebe
+    im Kanal, die Spuren lägen uneingereiht, und ``/aufnahme stop`` antwortete ab da immer
+    »keine Aufnahme« — genau der Zustand, gegen den dieser Wächter gebaut ist, nur ohne
+    jeden Befehl, der ihn beendet. Der Satz im Thread verspricht das Gegenteil; hier wird
+    das Versprechen eingelöst.
+    """
+    bot = gateway.baue(konfiguration)
+    thread = FakeTextkanal()
+    bot.kanaele[THREAD] = thread
+
+    async def ablauf():
+        await befehl(bot, "start")(FakeCtx(runde.mira))
+        verbindung = runde.kanal.verbindung
+        verbindung.senke.write(sprachdaten(stille(480)), runde.mira)
+        verbindung.trennen_stolpert = True
+        nur_der_bot(runde.kanal)
+        await bot.ereignisse["on_voice_state_update"](runde.mira, zustand(runde.kanal), zustand())
+        await ruhen()
+        assert not verbindung.getrennt
+        # Und jetzt das, wozu die Meldung im Thread auffordert.
+        verbindung.trennen_stolpert = False
+        ctx = FakeCtx(runde.mira)
+        await befehl(bot, "stop")(ctx)
+        return ctx
+
+    ctx = asyncio.run(ablauf())
+
+    assert thread.geschrieben == [gateway.LEER_GESCHEITERT]
+    assert gateway.LAEUFT_NICHT not in ctx.antworten
+    assert not any(antwort.startswith("Das hat nicht geklappt") for antwort in ctx.antworten)
+    assert runde.kanal.verbindung.getrennt
+    assert not runde.kanal.verbindung.schneidet
+    (spur,) = recordings.pending(unsere_runde(konfiguration))
+    assert spur.filename.endswith("Mira.wav")
 
 
 def test_zwei_beender_zugleich_geben_dem_zweiten_keine_leere_antwort(
