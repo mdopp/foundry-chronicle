@@ -102,9 +102,14 @@ class FakeStimme:
         self.ablauf: list[str] = []
         self.angesagt: list[Path] = []
         self.aufnahme = None
+        # Wie py-cord: der Bot sitzt da, wo er hingehört, bis ihn jemand zieht.
+        self.verschoben = False
 
     def mitglieder(self):
         return tuple(self._anwesend)
+
+    def im_kanal(self):
+        return not self.verschoben
 
     async def ansagen(self, datei):
         self.ablauf.append("ansage")
@@ -358,6 +363,24 @@ def test_der_nachzuegler_hoert_die_ansage_noch_einmal(konfiguration, sitzung_id,
     assert spaet.kind == consent.NACHZUEGLER
     assert [wer.name for wer in spaet.members] == [SPAET.name]
     assert spaet.text == ansage.TEXT
+
+
+def test_eine_ansage_die_woanders_lief_belegt_keine_einwilligung(
+    konfiguration, sitzung_id, ohne_espeak
+):
+    """Der Eintrag ist der Nachweis einer *gehörten* Ansage, nicht einer gespielten.
+
+    Wird der Bot gezogen, während die Ansage für den Nachzügler läuft, hört der sie nie —
+    und ein Protokoll, das seine Zustimmung behauptet, wäre schlimmer als keines.
+    """
+    stimme = FakeStimme()
+    aufnahme = asyncio.run(recorder.starten(konfiguration, stimme, unsere_runde(konfiguration)))
+    stimme.verschoben = True
+
+    assert asyncio.run(recorder.nachzuegler(konfiguration, stimme, aufnahme, SPAET)) is None
+
+    (eintrag,) = consent.for_session(unsere_runde(konfiguration), sitzung_id)
+    assert eintrag.kind == consent.ANSAGE
 
 
 def test_stoppen_beendet_den_mitschnitt_trennt_und_reiht_ein(
@@ -801,7 +824,7 @@ def runde(pycord):
     for wer in (mira, brok):
         gilde.mitglieder[wer.id] = wer
         wer.voice = types.SimpleNamespace(channel=kanal)
-    return types.SimpleNamespace(gilde=gilde, kanal=kanal, mira=mira, brok=brok)
+    return types.SimpleNamespace(gilde=gilde, kanal=kanal, mira=mira, brok=brok, chronist=chronist)
 
 
 def befehl(bot, name):
@@ -1302,14 +1325,25 @@ def test_der_waechter_der_alten_aufnahme_verdraengt_den_der_neuen_nicht(
     assert thread.geschrieben[-1].startswith(gateway.LEER_BEENDET)
 
 
+def verschieben(runde, kennung=78):
+    """Ein Administrator zieht den Bot nach nebenan — py-cord trägt den Kanal nach.
+
+    Genau das tut ``voice/state.py`` → ``_update_voice_channel``, und zwar bevor das
+    Ereignis beim Bot ankommt; ``VoiceClient.channel`` ist danach der neue Kanal.
+    """
+    nachbar = FakeSprachkanal(runde.gilde, runde.mira, runde.brok)
+    nachbar.id = kennung
+    runde.kanal.verbindung.channel = nachbar
+    return nachbar
+
+
 def test_verschoben_zaehlt_weiter_der_kanal_der_aufnahme(
     konfiguration, sitzung_im_thread, ohne_espeak, runde, kurze_frist
 ):
-    """»Gegangen« und »leer« müssen denselben Kanal meinen.
+    """»Gegangen« und »leer« müssen denselben Kanal meinen — den der Ansage.
 
-    py-cord führt ``VoiceClient.channel`` nach, wenn ein Admin den Bot verschiebt. Zählte
-    die Leere dort, entschiede sie über eine fremde Besetzung: der Ursprungskanal leert
-    sich, nebenan sitzen Leute, und das Netz griffe nie.
+    Seit #103 endet der Mitschnitt beim Verschieben ohnehin; dass hier trotzdem nichts
+    hängen bleibt, hängt weiter daran, dass der Lauf seinen Ursprungskanal festhält.
     """
     bot = gateway.baue(konfiguration)
     bot.kanaele[THREAD] = FakeTextkanal()
@@ -1317,9 +1351,7 @@ def test_verschoben_zaehlt_weiter_der_kanal_der_aufnahme(
 
     async def ablauf():
         await befehl(bot, "start")(FakeCtx(runde.mira))
-        nachbar = FakeSprachkanal(runde.gilde, runde.mira, runde.brok)
-        nachbar.id = 78
-        runde.kanal.verbindung.channel = nachbar
+        verschieben(runde)
         nur_der_bot(runde.kanal)
         await dazu(runde.mira, zustand(runde.kanal), zustand())
         await ruhen()
@@ -1328,6 +1360,150 @@ def test_verschoben_zaehlt_weiter_der_kanal_der_aufnahme(
 
     assert not runde.kanal.verbindung.schneidet
     assert runde.kanal.verbindung.getrennt
+
+
+def test_wer_verschoben_wird_hoert_auf_und_sagt_warum(
+    konfiguration, sitzung_im_thread, ohne_espeak, runde, kurze_frist
+):
+    """Der Bot hat den Raum verlassen, für den die Einwilligung galt — also ist Schluss.
+
+    Nebenan sitzen Leute, die die Ansage nie gehört haben. Dass der Mitschnitt endet,
+    steht im Thread, und es steht dabei, **warum**.
+    """
+    bot = gateway.baue(konfiguration)
+    thread = FakeTextkanal()
+    bot.kanaele[THREAD] = thread
+
+    async def ablauf():
+        await befehl(bot, "start")(FakeCtx(runde.mira))
+        runde.kanal.verbindung.senke.write(sprachdaten(stille(480)), runde.mira)
+        nachbar = verschieben(runde)
+        # Sein eigenes Verschieben meldet Discord dem Bot wie jedes andere Ereignis.
+        await bot.ereignisse["on_voice_state_update"](
+            runde.chronist, zustand(runde.kanal), zustand(nachbar)
+        )
+        await ruhen()
+
+    asyncio.run(ablauf())
+
+    assert not runde.kanal.verbindung.schneidet
+    assert runde.kanal.verbindung.getrennt
+    (spur,) = recordings.pending(unsere_runde(konfiguration))
+    assert spur.filename.endswith("Mira.wav")
+    (gesagt,) = thread.geschrieben
+    assert gesagt.startswith(gateway.VERSCHOBEN.format(kanal=runde.kanal.name))
+    assert "wartet auf den Stapel" in gesagt
+
+
+def test_was_nach_dem_verschieben_ankommt_landet_in_keiner_spur(
+    konfiguration, sitzung_im_thread, ohne_espeak, runde, kurze_frist
+):
+    """Für das Stück zwischen Verschiebung und Erkennung gibt es keine Zustimmung.
+
+    Verworfen wird es nicht nachträglich, sondern gar nicht erst geschrieben: ab dem
+    Rahmen, in dem py-cord den neuen Kanal führt, fällt jede Sprachdatenlieferung weg.
+    """
+    bot = gateway.baue(konfiguration)
+    bot.kanaele[THREAD] = FakeTextkanal()
+
+    async def ablauf():
+        await befehl(bot, "start")(FakeCtx(runde.mira))
+        senke = runde.kanal.verbindung.senke
+        senke.write(sprachdaten(stille(480)), runde.mira)
+        nachbar = verschieben(runde)
+        # Zwischen Verschiebung und Erkennung: der Nachbarkanal spricht, Mira auch.
+        fremder = FakeMitglied(4404, "Fremde")
+        senke.write(sprachdaten(stille(4800)), fremder)
+        senke.write(sprachdaten(stille(4800)), runde.mira)
+        await bot.ereignisse["on_voice_state_update"](
+            runde.chronist, zustand(runde.kanal), zustand(nachbar)
+        )
+        await ruhen()
+
+    asyncio.run(ablauf())
+
+    (spur,) = recordings.pending(unsere_runde(konfiguration))
+    assert spur.filename.endswith("Mira.wav")
+    with wave.open(str(konfiguration.recordings_dir / spur.filename), "rb") as datei:
+        # Genau die 480 Rahmen von vor dem Verschieben — kein einziger danach.
+        assert datei.getnframes() == 480
+
+
+def test_der_nachzuegler_im_alten_kanal_kommt_nicht_ins_protokoll(
+    konfiguration, sitzung_im_thread, ohne_espeak, runde, kurze_frist
+):
+    """Die Nebenwirkung derselben Klasse: seine Ansage liefe nebenan, er hörte sie nie.
+
+    Kein Einwilligungseintrag darf entstehen, dessen Ansage nachweislich woanders lief.
+    """
+    bot = gateway.baue(konfiguration)
+    bot.kanaele[THREAD] = FakeTextkanal()
+    spaet = FakeMitglied(int(SPAET.id), SPAET.name)
+
+    async def ablauf():
+        await befehl(bot, "start")(FakeCtx(runde.mira))
+        verschieben(runde)
+        await bot.ereignisse["on_voice_state_update"](spaet, zustand(), zustand(runde.kanal))
+        await ruhen()
+
+    asyncio.run(ablauf())
+
+    (eintrag,) = consent.for_session(unsere_runde(konfiguration), sitzung_im_thread)
+    assert eintrag.kind == consent.ANSAGE
+    # Und die zweite Ansage hat gar nicht erst gespielt.
+    assert len(runde.kanal.verbindung.gespielt) == 1
+    assert runde.kanal.verbindung.getrennt
+
+
+def test_das_verschieben_beendet_genau_einmal_und_nicht_die_naechste_aufnahme(
+    konfiguration, sitzung_im_thread, ohne_espeak, runde, kurze_frist
+):
+    """Zwei Ereignisse, ein Ende — und der nächste Lauf bleibt davon unberührt."""
+    bot = gateway.baue(konfiguration)
+    thread = FakeTextkanal()
+    bot.kanaele[THREAD] = thread
+    dazu = bot.ereignisse["on_voice_state_update"]
+
+    async def ablauf():
+        await befehl(bot, "start")(FakeCtx(runde.mira))
+        nachbar = verschieben(runde)
+        await dazu(runde.chronist, zustand(runde.kanal), zustand(nachbar))
+        await dazu(runde.mira, zustand(), zustand(runde.kanal))
+        await ruhen()
+        # Der neue Lauf beginnt im Ursprungskanal — und ein Ereignis reißt ihn nicht ab.
+        await befehl(bot, "start")(FakeCtx(runde.mira))
+        zweite = runde.kanal.verbindung
+        await dazu(runde.mira, zustand(), zustand(runde.kanal))
+        await ruhen()
+        return zweite
+
+    zweite = asyncio.run(ablauf())
+
+    assert len(thread.geschrieben) == 1
+    assert zweite.schneidet
+    assert not zweite.getrennt
+
+
+def test_der_gescheiterte_abschied_nach_dem_verschieben_sagt_es(
+    konfiguration, sitzung_im_thread, ohne_espeak, runde, kurze_frist
+):
+    """Auch hier gilt: lieber ein Satz zu viel als ein Lauf, von dem niemand mehr weiß."""
+    bot = gateway.baue(konfiguration)
+    thread = FakeTextkanal()
+    bot.kanaele[THREAD] = thread
+
+    async def ablauf():
+        await befehl(bot, "start")(FakeCtx(runde.mira))
+        runde.kanal.verbindung.trennen_stolpert = True
+        nachbar = verschieben(runde)
+        await bot.ereignisse["on_voice_state_update"](
+            runde.chronist, zustand(runde.kanal), zustand(nachbar)
+        )
+        await ruhen()
+
+    asyncio.run(ablauf())
+
+    assert thread.geschrieben == [gateway.VERSCHOBEN_GESCHEITERT.format(kanal=runde.kanal.name)]
 
 
 def test_der_gescheiterte_abschied_sagt_es_statt_zu_verschwinden(
@@ -1604,10 +1780,10 @@ class LeererReader:
     """Der Router legt den Reader nur ab; zum Registrieren braucht er nichts von ihm."""
 
 
-def echte_senke(konfiguration, sitzung_id):
+def echte_senke(konfiguration, sitzung_id, stimme=None):
     aufnahme = Aufnahme(konfiguration, unsere_runde(konfiguration), sitzung_id, KANAL)
     aufnahme.ansage_protokollieren((MIRA,))
-    return aufnahme, gateway._senke(aufnahme)
+    return aufnahme, gateway._senke(stimme or FakeStimme(), aufnahme)
 
 
 def test_die_senke_laesst_sich_an_pycords_echtem_router_anmelden(konfiguration, sitzung_id):

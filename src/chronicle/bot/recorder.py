@@ -91,6 +91,8 @@ class Stimme(Protocol):
 
     def mitglieder(self) -> tuple[consent.Member, ...]: ...
 
+    def im_kanal(self) -> bool: ...
+
     async def ansagen(self, datei: Path) -> None: ...
 
     def mitschneiden(self, aufnahme: Aufnahme) -> None: ...
@@ -262,15 +264,23 @@ async def starten(config: Config, stimme: Stimme, runde: Runde) -> Aufnahme:
 
 async def nachzuegler(
     config: Config, stimme: Stimme, aufnahme: Aufnahme, wer: consent.Member
-) -> int:
+) -> int | None:
     """Wer später dazukommt, hört dieselbe Ansage noch einmal — und steht im Protokoll.
 
     Das ist die ehrlichere Hälfte der Wahl: bloß zu vermerken, dass jemand die Ansage
     verpasst hat, hielte fest, dass er nicht eingewilligt hat, statt ihn zu fragen.
+
+    Erst gespielt, dann protokolliert, und dazwischen nachgesehen, ob der Bot noch dort
+    ist, wo die Aufnahme läuft: der Eintrag ist der Nachweis einer *gehörten* Ansage.
+    Hat sie in einem anderen Kanal gespielt — weil jemand den Bot inzwischen gezogen hat
+    —, entsteht keiner. Ein Protokoll, das eine Zustimmung behauptet, die niemand geben
+    konnte, ist schlimmer als eine Lücke.
     """
-    kennung = aufnahme.ansage_protokollieren((wer,), art=consent.NACHZUEGLER)
     await stimme.ansagen(ansage.datei(config.recordings_dir))
-    return kennung
+    if not stimme.im_kanal():
+        logger.warning("Die Ansage für einen Nachzügler lief woanders — kein Eintrag.")
+        return None
+    return aufnahme.ansage_protokollieren((wer,), art=consent.NACHZUEGLER)
 
 
 async def stoppen(stimme: Stimme, aufnahme: Aufnahme) -> tuple[str, ...]:
