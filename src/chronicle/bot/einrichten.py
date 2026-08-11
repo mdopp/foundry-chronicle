@@ -156,6 +156,14 @@ FEHLT = "Es fehlt noch: {was}. Ruf `/setup` noch einmal auf, wenn du es nachtrag
 STEHT_BEREIT = "Weiter geht es mit `/chronik start` — das legt die erste Sitzung an."
 
 UHRZEIT_UNLESBAR = "Mit »{wert}« kann ich nichts anfangen — ich bleibe bei {uhrzeit} Uhr."
+
+# Discord nimmt in einem Feld des Fensters bis zu 4000 Zeichen an, lässt in der Antwort
+# darauf aber nur 2000 zu. Eine zurückgespiegelte Eingabe wird deshalb gekürzt, bevor sie
+# in den Satz geht: sonst weist Discord die ganze Antwort ab, und der Einrichtende erfährt
+# nicht einmal mehr, ob seine Runde nun steht.
+ECHO_GRENZE = 60
+ECHO_GEKUERZT = "…"
+
 # -- Verabschieden ----------------------------------------------------------------------
 
 LOESCHEN_FRAGE = (
@@ -218,12 +226,22 @@ class Begruessung:
     wartet: Runde | None = None
 
 
+def zurueckgespiegelt(wert: str) -> str:
+    """Eine Eingabe, die in einer Antwort wiederholt wird — auf ein zitierbares Maß."""
+    gestutzt = wert.strip()
+    if len(gestutzt) <= ECHO_GRENZE:
+        return gestutzt
+    return gestutzt[:ECHO_GRENZE] + ECHO_GEKUERZT
+
+
 def _uhrzeit(runde: Runde, wert: str) -> str:
     if not wert.strip():
         return ""
     if settings.save_nightly_time(runde, wert):
         return ""
-    return UHRZEIT_UNLESBAR.format(wert=wert.strip(), uhrzeit=settings.nightly_time(runde))
+    return UHRZEIT_UNLESBAR.format(
+        wert=zurueckgespiegelt(wert), uhrzeit=settings.nightly_time(runde)
+    )
 
 
 def _offen(config: Config, runde: Runde) -> str:
