@@ -57,9 +57,10 @@ spec:
       # footgun-subdomain-needs-public-domain.
       - name: CHRONICLE_PUBLIC_URL
         value: "https://{{CHRONICLE_SUBDOMAIN}}.{{PUBLIC_DOMAIN}}"
-      # Foundry-Zugang, Discord-Bot-Token und Ollama stehen hier bewusst NICHT: sie
-      # werden unter /einstellungen gepflegt und liegen in der SQLite, die Umgebung wäre
-      # nur die Vorgabe beim ersten Start. Als Template-Variablen haben sie geschadet —
+      # Foundry-Zugang, Discord-Bot-Token und Ollama stehen hier bewusst NICHT: Bot-Token
+      # und Ollama werden unter /einstellungen gepflegt, der Foundry-Zugang in Discord
+      # unter /setup, und beides liegt in der SQLite; die Umgebung wäre nur die Vorgabe
+      # beim ersten Start. Als Template-Variablen haben sie geschadet —
       # der Assistent erzeugt für 'type: secret' einen Zufallswert, und der meldete sich
       # als Bot-Token bei Discord an (401 in der Neustart-Schleife, siehe #33).
     ports:

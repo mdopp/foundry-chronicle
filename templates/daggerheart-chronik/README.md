@@ -22,11 +22,13 @@ noch einmal deklariert.
 ## Eingerichtet wird nach dem ersten Start, nicht im Assistenten
 
 **Foundry-Adresse und -Benutzer, der Discord-Bot-Token sowie Ollama-Adresse und -Modell
-sind keine Template-Variablen.** Sie werden unter `/einstellungen` gepflegt und liegen in
-der SQLite; der Dienst liest sie von dort, nicht aus der Umgebung. Das Foundry-Passwort
-liegt auch dort nicht — es wird beim Abgleich gefragt und danach vergessen. Beim
-ersten Aufruf führt er in Schritten hindurch; bis sie gesetzt sind, startet er trotzdem
-und erklärt im Abschnitt *Zustand* der Einstellungen, was fehlt.
+sind keine Template-Variablen.** Gepflegt werden sie an zwei Orten: Bot-Token,
+Ollama-Adresse und -Modell gehören der Instanz und stehen unter `/einstellungen`;
+Foundry-Adresse und -Benutzer gehören der Runde und werden in Discord unter `/setup`
+eingetragen. Beides liegt in der SQLite; der Dienst liest es von dort, nicht aus der
+Umgebung. Das Foundry-Passwort liegt auch dort nicht — es wird beim Abgleich gefragt und
+danach vergessen. Beim ersten Aufruf führt die Oberfläche in Schritten hindurch; bis alles
+gesetzt ist, startet der Dienst trotzdem, und der Bot sagt in Discord, was noch fehlt.
 
 Das ist kein Weglassen aus Bequemlichkeit: Der Assistent erzeugt für eine Variable vom
 Typ `secret` einen **Zufallswert**. Für ein internes Geheimnis ist das richtig, für
@@ -53,8 +55,9 @@ hängt in `chronik`, und zwar aus zwei Gründen: der Bot existiert ohne Token ga
 Präsenzgruppe hat aber trotzdem Aufnahmen zu verschriften; und ein Lauf ist eine Zeile in
 der `job`-Tabelle, deren Absturzerkennung nur trägt, solange **ein** Prozess solche Zeilen
 anlegt. Wer hier einen Container ergänzt, macht aus jedem laufenden Lauf einen
-»unterbrochenen« im Auge des anderen Prozesses. Die Uhrzeit steht unter `/einstellungen`,
-Vorgabe 04:00 nach der Uhr der Box; ein verpasstes Fenster wird nicht nachgeholt.
+»unterbrochenen« im Auge des anderen Prozesses. Die Uhrzeit gehört der Runde und steht in
+Discord unter `/setup`, Vorgabe 04:00 nach der Zone der Runde; ein verpasstes Fenster wird
+nicht nachgeholt.
 
 ## Daten
 

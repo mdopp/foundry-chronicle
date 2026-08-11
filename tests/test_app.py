@@ -7,6 +7,7 @@ from conftest import (
     systemsprache,
     warte_bis,
 )
+from flask import request
 
 import chronicle.__main__ as entry
 from chronicle import db, instanz, jobs, notes, protocol, recordings, register, settings, zugang
@@ -961,25 +962,40 @@ def test_die_oberflaeche_stoesst_keinen_abgleich_mehr_an(config, welt):
         assert "Jetzt abgleichen" not in html
 
 
+# Ein gültiger Wert je Platzhalter im URL-Baum. Wer einen neuen einführt, trägt ihn hier
+# nach — der Sweep unten scheitert sonst laut, statt den Weg still zu überspringen.
+PLATZHALTER = {"sitzung_id": 1, "szene_id": 1, "aufnahme_id": 1, "schritt": "foundry"}
+
+
 def test_kein_knopf_hier_wirft_das_hinterlegte_passwort_weg(config):
     """Seit #96 liegt es aus ``/chronik start`` bereit — kein Formular hier löscht es.
 
     ``zugang.merken`` deutet ein leeres Feld als vergessen. Ein Knopf ohne Passwortfeld
     nimmt der Spielleitung damit still, was sie in Discord eingegeben hat — deshalb der
     Rundumschlag über alle POST-Wege statt einer Liste, die ein neuer Weg nicht kennt.
+
+    Ein Weg mit unbekanntem Platzhalter zählt dabei nicht als geprüft: er ließe sich nur
+    zu einer Adresse bauen, die keine Regel trifft, und die Zusicherung ginge am 404 still
+    vorbei. Deshalb bricht der Sweep an so einem Weg ab — und belegt bei jedem anderen
+    über ``request.url_rule``, dass die Anfrage wirklich beim Handler ankam und nicht
+    unterwegs an 404 oder 405 hängen blieb.
     """
     app = create_app(config)
-    client = app.test_client()
+    adressen = app.url_map.bind("chronik.example")
     gruppe = runde(config)
-    for regel in app.url_map.iter_rules():
-        if "POST" not in regel.methods:
-            continue
-        pfad = regel.rule
-        for platzhalter in ("<int:sitzung_id>", "<int:szene_id>", "<int:aufnahme_id>"):
-            pfad = pfad.replace(platzhalter, "1")
-        zugang.merken(gruppe, PASSWORT)
-        client.post(pfad.replace("<schritt>", "foundry"))
-        assert zugang.ist_gemerkt(gruppe), regel.rule
+    with app.test_client() as client:
+        for regel in app.url_map.iter_rules():
+            if "POST" not in regel.methods:
+                continue
+            unbekannt = sorted(regel.arguments - PLATZHALTER.keys())
+            assert not unbekannt, f"{regel.rule}: kein Wert für {unbekannt}"
+            pfad = adressen.build(
+                regel.endpoint, {name: PLATZHALTER[name] for name in regel.arguments}
+            )
+            zugang.merken(gruppe, PASSWORT)
+            client.post(pfad)
+            assert request.url_rule is regel, f"{regel.rule}: nicht beim Handler angekommen"
+            assert zugang.ist_gemerkt(gruppe), regel.rule
 
 
 def test_waehrend_des_abgleichs_sagt_das_band_was_laeuft(config, welt):
