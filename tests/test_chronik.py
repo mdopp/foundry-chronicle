@@ -42,6 +42,7 @@ from chronicle import runde as runden
 from chronicle.bot import ansage, chronik, einrichten, erinnern, gateway, recorder
 from chronicle.config import Config
 from chronicle.discord import ausgabe, rueckblick
+from chronicle.foundry import client as foundry_client
 from chronicle.foundry import service as foundry_service
 from chronicle.foundry.client import FoundryUnreachable
 
@@ -1544,6 +1545,54 @@ def test_der_thread_einer_fremden_runde_ist_nicht_erreichbar(stelle, bot):
     fremde = erste_runde(config)
     assert fremde.id != unsere.id
     assert notes.session_of_thread(fremde, str(thread.id)) is None
+
+
+def test_ein_belegter_abgleich_schiebt_die_frist_des_gemerkten_passworts_nicht_weiter(
+    stelle, bot, monkeypatch
+):
+    """Dieselbe Zusage wie beim Abschluss — der freistehende Abgleich ist der zweite Weg.
+
+    Zwei Wege zum selben Merkzettel heißen zwei Gelegenheiten, die Frist aus #64 zu
+    verlängern. Was für ``/chronik fertig`` gilt, muss hier gelten, sonst wandert der
+    Fehler aus #100 einfach in den neuen Befehl.
+    """
+    _config, unsere = stelle
+    _ctx, thread = sitzung_starten(bot)
+    zugang.merken(unsere, PASSWORT, wer=str(WER))
+    faellig = zugang._gemerkt[unsere.id].ablauf
+
+    monkeypatch.setattr(jobs, "start", lambda *args, **kwargs: None)
+
+    ctx = FakeCtx(kanal=types.SimpleNamespace(id=thread.id))
+    asyncio.run(chronikbefehl(bot, "abgleich")(ctx))
+
+    assert ctx.modale == [], "wer selbst hinterlegt hat, wird nicht noch einmal gefragt"
+    assert zugang._gemerkt[unsere.id].ablauf == faellig
+
+
+def test_der_abgleich_zeigt_das_mitgebrachte_passwort_vor_und_nicht_das_gemerkte(
+    stelle, monkeypatch
+):
+    """Der Auftragsfaden sieht nicht selbst im Merkzettel nach.
+
+    Zwischen Prüfung und Lauf liegt ein ``defer``; in dieser Lücke kann ein zweites
+    Fenster den Merkzettel überschreiben. Geprüft wäre dann das eine, vorgezeigt das
+    andere — dieselbe Ersetzbarkeit, gegen die #96 gebaut wurde.
+    """
+    config, unsere = stelle
+    gesehen = []
+
+    def merken_und_melden(wirksam, geheim):
+        gesehen.append(geheim)
+        raise foundry_client.FoundryError("Foundry war aus")
+
+    monkeypatch.setattr(foundry_service, "FoundryClient", merken_und_melden)
+    zugang.merken(unsere, "das-von-jemand-anderem", wer="4002")
+
+    with pytest.raises(jobs.JobError):
+        jobs.abgleich(config, unsere, passwort="das-geprüfte")
+
+    assert gesehen == ["das-geprüfte"]
 
 
 def test_ein_belegter_lauf_schiebt_die_frist_des_gemerkten_passworts_nicht_weiter(
