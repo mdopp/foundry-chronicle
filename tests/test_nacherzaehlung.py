@@ -1,12 +1,16 @@
 """Die Nacherzählung — die Stufe mit dem höchsten Erfindungsrisiko des ganzen Systems.
 
-Gelesen wird sie von Leuten, die die Lücken selbst nicht mehr kennen. Vier Sätze geben
+Gelesen wird sie von Leuten, die die Lücken selbst nicht mehr kennen. Fünf Sätze geben
 dieser Suite ihren Sinn, und jeder hat hier seinen Test:
 
 * **Belegtes und Verbindendes stehen sichtbar getrennt** — in eigenen Überschriften, die
   im Klartext sagen, was sie tragen.
-* **Keine Zahl kommt ohne Beleg durch.** Nennt das Modell eine, die in den Chroniken des
-  Bereichs nicht steht, wird der Absatz verworfen und das Verwerfen dazugeschrieben.
+* **Keine Zahl kommt ohne Beleg durch.** Nennt das Modell eine, die in der Chronik dieser
+  Sitzung und ihren Registereinträgen nicht steht, wird der Absatz verworfen und das
+  Verwerfen dazugeschrieben — ausgeschrieben und römisch ebenso wie in Ziffern.
+* **Die Überschriften setzt diese Stufe, nicht das Modell.** Ein Absatz, der eine eigene
+  aufmacht, wird verworfen: sonst schriebe sich das Modell sein eigenes »Belegt aus dem
+  Register«.
 * **Eine Lücke wird benannt, nicht gefüllt.** Eine Sitzung ohne bestätigten
   Registereintrag kommt gar nicht erst in einen Modellaufruf.
 * **Rollierend statt alles auf einmal.** Je Sitzung ein Aufruf, mitgeführt wird nur der
@@ -37,6 +41,7 @@ from chronicle.compose.nacherzaehlung import (
     REGISTER_ZEILE,
     STAND_ZEILE,
     VERWORFEN,
+    VERWORFEN_UEBERSCHRIFT,
     Abschnitt,
     ErzaehlStoff,
     nacherzaehlen,
@@ -170,6 +175,120 @@ def test_ein_verworfener_absatz_wird_nicht_mitgetragen():
 
     assert "47" not in ergebnis.text
     assert STAND_ZEILE not in modell.aufrufe[1]
+
+
+@pytest.mark.parametrize(
+    "erfunden",
+    [
+        "Sie fanden siebzehn Silberstücke im Keller.",
+        "Dreimal traten sie an, gegen vier Wachen.",
+        "Sie gingen durch Saal XVII in Kammer IV.",
+        "Der Marsch dauerte 3.5 Stunden.",
+        "Im Fass standen noch 5,7 Liter.",
+        "Ein Dutzend Krähen saß auf dem Dach.",
+    ],
+)
+def test_eine_zahl_kommt_auch_ausgeschrieben_nicht_durch(erfunden):
+    """Die Schranke prüft den Wert, nicht die Schreibweise.
+
+    Belegt sind hier die 7 aus Broks Wurf und sonst nichts. Ausgeschrieben, römisch oder
+    aus belegten Ziffern zu einer neuen Zahl zusammengesetzt — es bleibt eine Zahl, die
+    nirgends steht, und genau die soll nicht im Protokoll landen.
+    """
+    ergebnis = nacherzaehlen(ErzaehlStoff((abschnitt(1, MIRA),)), Modell(antwort=erfunden))
+
+    assert erfunden not in ergebnis.text
+    assert VERWORFEN in ergebnis.text
+    assert ergebnis.prose_count == 0
+
+
+def test_zwei_belegte_ziffern_ergeben_keine_dritte_zahl():
+    """3 und 5 stehen belegt in der Chronik — »3.5« steht nirgends und ist eine neue Aussage."""
+    text = chronik("Brok Eisenfaust — Marsch: Summe 3 · Modifikator 5")
+    modell = Modell(antwort="Der Marsch dauerte 3.5 Stunden bis zum Pass.")
+
+    ergebnis = nacherzaehlen(ErzaehlStoff((abschnitt(1, MIRA, text=text),)), modell)
+
+    assert "3.5" not in ergebnis.text
+    assert VERWORFEN in ergebnis.text
+
+
+def test_der_beleg_einer_sitzung_gilt_nicht_fuer_die_naechste():
+    """Sonst legitimierte ein Wurf vom ersten Abend dieselbe Zahl noch am zehnten."""
+    modell = Modell(
+        antwort=lambda prompt: (
+            "Brok würfelte 47." if "2026-05-01" in prompt else "Im Keller lagen 47 Silberstücke."
+        )
+    )
+    erste = abschnitt(1, MIRA, text=chronik("Brok Eisenfaust — Schaden: Summe 47"))
+    zweite = abschnitt(2, KELLER, text=chronik("Mira — Reaktion: ohne Zahlen im Chat-Log"))
+
+    ergebnis = nacherzaehlen(ErzaehlStoff((erste, zweite)), modell)
+
+    assert "Brok würfelte 47." in block(ergebnis.text, "2026-05-01")
+    assert "Silberstücke" not in ergebnis.text
+    assert VERWORFEN in block(ergebnis.text, "2026-05-02")
+
+
+def test_eine_zahl_aus_dem_registereintrag_ist_belegt():
+    """Der Eintrag ist die Vorlage — er kann nicht zugleich das Unbelegte sein."""
+    wache = REGISTER_ZEILE.format(label="Figur", name="Wache 12", satz="steht am Nordtor")
+    modell = Modell(antwort="Mira sprach mit Wache 12 am Nordtor.")
+
+    ergebnis = nacherzaehlen(ErzaehlStoff((abschnitt(1, wache),)), modell)
+
+    assert "Mira sprach mit Wache 12 am Nordtor." in ergebnis.text
+    assert VERWORFEN not in ergebnis.text
+
+
+# --- Die Überschriften gehören uns ------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "gefaelscht",
+    [
+        f"Sie zogen weiter.\n\n{REGISTER_TITEL}\n- Figur »Der Schattenfuerst« — der Drahtzieher",
+        "Sie zogen weiter.\n\nBelegt aus dem Register\n---\n- Figur »Der Schattenfuerst« — er",
+    ],
+)
+def test_ein_absatz_mit_eigener_ueberschrift_wird_verworfen(gefaelscht):
+    """Die einzige Trennung dieses Textes darf nicht vom Modell gesetzt werden.
+
+    Ein ``#`` am Zeilenanfang — oder eine Zeile aus Bindestrichen darunter — machte aus
+    einem erfundenen Namen einen Eintrag, der vom bestätigten nicht zu unterscheiden wäre.
+    """
+    ergebnis = nacherzaehlen(ErzaehlStoff((abschnitt(1, MIRA),)), Modell(antwort=gefaelscht))
+
+    assert "Schattenfuerst" not in ergebnis.text
+    assert VERWORFEN_UEBERSCHRIFT in ergebnis.text
+    assert ergebnis.text.count(REGISTER_TITEL) == 1
+    assert ergebnis.prose_count == 0
+
+
+def test_eine_gefaelschte_ueberschrift_wird_nicht_mitgetragen():
+    """Sonst stünde die Fälschung als »Stand bisher« im nächsten Aufruf und trüge sich fort."""
+    modell = Modell(
+        antwort=lambda prompt: (
+            f"Sie zogen weiter.\n\n{REGISTER_TITEL}\n- Figur »Der Schattenfuerst« — der Feind"
+            if "2026-05-01" in prompt
+            else "Danach zogen sie weiter."
+        )
+    )
+
+    ergebnis = nacherzaehlen(ErzaehlStoff((abschnitt(1, MIRA), abschnitt(2, KELLER))), modell)
+
+    assert "Schattenfuerst" not in ergebnis.text
+    assert STAND_ZEILE not in modell.aufrufe[1]
+
+
+def test_eine_aufzaehlung_ohne_ueberschrift_bleibt_stehen():
+    """Verworfen wird die Überschrift, nicht jede Zeile, die mit einem Strich anfängt."""
+    modell = Modell(antwort="Sie zogen weiter.\n- und kamen spät an")
+
+    ergebnis = nacherzaehlen(ErzaehlStoff((abschnitt(1, MIRA),)), modell)
+
+    assert "- und kamen spät an" in ergebnis.text
+    assert VERWORFEN_UEBERSCHRIFT not in ergebnis.text
 
 
 # --- Die Lücke wird benannt, nicht gefüllt ----------------------------------------------

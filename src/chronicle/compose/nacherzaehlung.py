@@ -2,7 +2,7 @@
 
 Das ist die Stufe mit dem höchsten Erfindungsrisiko des ganzen Systems. Gelesen wird sie
 von Leuten, die die Lücken selbst nicht mehr kennen; ein glatter Satz über einer Lücke
-fällt hier niemandem mehr auf. Vier Dinge halten das:
+fällt hier niemandem mehr auf. Fünf Dinge halten das:
 
 * **Das Register wählt aus.** In den Aufruf geht nicht die Chronik einer Sitzung, sondern
   das, was ein Mensch für sie bestätigt hat. Was das Register nicht kennt, kommt nicht
@@ -11,17 +11,26 @@ fällt hier niemandem mehr auf. Vier Dinge halten das:
   bekommt keinen Absatz, sondern ihren eigenen Abschnitt, der sagt, dass hier nichts steht.
   Das Modell wird für sie gar nicht erst gefragt: die Lücke zeigt auf einen fehlenden
   Registereintrag und nicht auf ein Versagen der Prosa.
-* **Die Zahlenschranke läuft gegen die Chroniken des Bereichs.** Nennt das Modell eine
-  Ziffer, die dort nicht steht, wird der Absatz verworfen — die Sitzung bleibt dann bei
-  ihren belegten Zeilen.
+* **Die Zahlenschranke läuft je Sitzung.** Belegt ist, was in *ihrer* Chronik und in
+  *ihren* Registereinträgen steht — nicht, was irgendwann im Bereich einmal fiel. Sonst
+  legitimierte ein Wurf vom ersten Abend dieselbe Zahl noch am zehnten, und aus »Schaden
+  47« würde Wochen später »47 Silberstücke«. Was nicht belegt ist, verwirft den Absatz;
+  die Sitzung bleibt dann bei ihren belegten Zeilen.
+* **Die Überschriften gehören uns, nicht dem Modell.** Ein Absatz, der eine eigene
+  Überschrift aufmacht, wird verworfen. Die sichtbare Trennung ist das Einzige, woran ein
+  Leser Belegtes von Gedeutetem unterscheidet — dürfte das Modell sie selbst setzen,
+  schriebe es sich ein »Belegt aus dem Register«, das von unserem nicht zu unterscheiden
+  wäre. Eine Bitte im System-Prompt trägt das nicht.
 * **Rollierend, Sitzung für Sitzung.** Ein Bereich über Wochen passt in kein
   Kontextfenster. Jede Sitzung ist ein eigener Aufruf; mitgeführt wird nur der zuletzt
-  angenommene Absatz, und der hat die Zahlenschranke schon passiert — dasselbe Muster wie
+  angenommene Absatz, und der hat beide Schranken schon passiert — dasselbe Muster wie
   in der Komposition.
 
 Die Trennung steht in den Überschriften und nirgends sonst: was unter »Belegt aus dem
 Register« steht, hat ein Mensch bestätigt; was unter »Nacherzählt« steht, hat das Modell
-verbunden.
+verbunden. Was die Zahlenschranke **nicht** kann, steht bei ``composer.numbers``: sie
+vergleicht Werte, keine Bedeutungen, und eine einzeln belegte Ziffer lässt sich weiter in
+eine neue Aussage setzen.
 """
 
 from __future__ import annotations
@@ -44,7 +53,13 @@ LUECKE = (
 )
 
 VERWORFEN = (
-    "_Verworfen: der Absatz nannte eine Zahl, die in den Chroniken dieses Bereichs nicht vorkommt._"
+    "_Verworfen: der Absatz nannte eine Zahl, die weder in der Chronik dieser Sitzung noch "
+    "in ihren Registereinträgen vorkommt._"
+)
+
+VERWORFEN_UEBERSCHRIFT = (
+    "_Verworfen: der Absatz machte eine eigene Überschrift auf. Welche Zeile belegt ist und "
+    "welche gedeutet, sagen hier die Überschriften — die setzt niemand außer dieser Stufe._"
 )
 
 OHNE_MODELL = (
@@ -120,6 +135,22 @@ class Nacherzaehlung:
         return f"{satz} {self.gap_count} Lücke{mehr} benannt, nicht gefüllt."
 
 
+def _eigene_ueberschrift(absatz: str) -> bool:
+    """Ob der Absatz eine Zeile enthält, die Markdown als Überschrift läse.
+
+    ``#`` am Zeilenanfang, oder eine Zeile aus lauter ``=``/``-``, die die Zeile darüber
+    zur Überschrift macht. Beides kostet das Modell ein einziges Zeichen und fälschte
+    damit die einzige Trennung, die dieser Text hat.
+    """
+    for zeile in absatz.splitlines():
+        blank = zeile.strip()
+        if not blank:
+            continue
+        if blank.startswith("#") or set(blank) <= {"="} or set(blank) <= {"-"}:
+            return True
+    return False
+
+
 def _liste(zeilen: tuple[str, ...]) -> str:
     return "\n".join(f"- {zeile}" for zeile in zeilen)
 
@@ -156,14 +187,15 @@ def nacherzaehlen(stoff: ErzaehlStoff, model: TextModel | None = None) -> Nacher
     schreiber = model
     name = None if model is None else model.name
     grund = None if model is not None else OHNE_MODELL
-    belegt: set[str] = set()
     stand = ""
     erzaehlt = 0
     luecken = 0
     bloecke = []
 
     for abschnitt in stoff.abschnitte:
-        belegt |= numbers(abschnitt.chronicle)
+        # Je Sitzung neu: eine Zahl vom ersten Abend belegt nichts am zehnten. Und das
+        # Register zählt mit — es ist die Vorlage, aus der das Modell schöpfen soll.
+        belegt = numbers("\n".join((abschnitt.chronicle, *abschnitt.entries)))
         teile = [_kopfzeile(abschnitt)]
 
         if not abschnitt.entries:
@@ -190,6 +222,12 @@ def nacherzaehlen(stoff: ErzaehlStoff, model: TextModel | None = None) -> Nacher
                         sorted(unbelegt),
                     )
                     teile.append(f"{ERZAEHLT_TITEL}\n{VERWORFEN}")
+                elif _eigene_ueberschrift(absatz):
+                    logger.warning(
+                        "Sitzung %s: Absatz verworfen, er machte eine eigene Überschrift auf",
+                        abschnitt.session_id,
+                    )
+                    teile.append(f"{ERZAEHLT_TITEL}\n{VERWORFEN_UEBERSCHRIFT}")
                 else:
                     teile.append(f"{ERZAEHLT_TITEL}\n{absatz}")
                     stand = absatz

@@ -1260,6 +1260,21 @@ def test_ohne_geschriebene_sitzung_gibt_es_nichts_nachzuerzaehlen(stelle, bot):
     assert jobs.latest(unsere, jobs.NACHERZAEHLUNG) is None
 
 
+def test_vertauschte_daten_nennt_die_antwort_in_gespielter_reihenfolge(stelle, bot):
+    """Wer die Daten verdreht tippt, bekommt sie geordnet zurück — sonst log die Antwort.
+
+    Geordnet wird ohnehin, aber erst beim Holen der Sitzungen; die Antwort im Kanal nennt
+    die beiden Eckpunkte so, wie sie hier herauskommen.
+    """
+    _config, unsere = stelle
+    sitzungen_anlegen(unsere, "2026-05-01", "2026-05-02")
+
+    ctx = nacherzaehlen_fahren(bot, unsere, von="2026-05-02", bis="2026-05-01")
+
+    (antwort, *_) = ctx.antworten
+    assert antwort.index("2026-05-01") < antwort.index("2026-05-02")
+
+
 def test_ein_zweites_nacherzaehlen_stoesst_keinen_zweiten_lauf_an(stelle, bot, monkeypatch):
     config, unsere = stelle
     sitzungen_anlegen(unsere, "2026-05-01")
