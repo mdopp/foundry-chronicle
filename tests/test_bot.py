@@ -1582,6 +1582,48 @@ def test_ohne_verbindung_sitzt_der_bot_in_keinem_kanal(pycord, runde):
     assert not stimme.im_kanal()
 
 
+class FakeVoiceClientMitGuildProperty:
+    """Wie py-cord 2.8.1: ``guild`` ist eine Property über ``self.channel.guild``.
+
+    ``blicke`` zählt, wie oft ``channel`` noch den Kanal hergibt; danach ist er ``None``,
+    so wie py-cord ihn beim Trennen setzt. Damit liegt das Trennen zwischen den beiden
+    Blicken, die ``im_kanal`` auf ``channel`` wirft.
+    """
+
+    def __init__(self, kanal, blicke):
+        self._kanal = kanal
+        self.blicke = blicke
+
+    @property
+    def channel(self):
+        if self.blicke <= 0:
+            return None
+        self.blicke -= 1
+        return self._kanal
+
+    @property
+    def guild(self):
+        return self.channel.guild
+
+
+def test_ein_trennen_zwischen_den_beiden_blicken_wirft_nicht(pycord, runde):
+    """``VoiceClient.guild`` wirft, wenn py-cord den Kanal schon geräumt hat (#120).
+
+    ``im_kanal`` liest ``channel`` zweimal: einmal selbst für ``jetzt``, einmal über
+    ``.guild``. ``SpurSenke.write`` läuft im Empfangs-Thread, und dazwischen kann py-cord
+    ``client.channel = None`` setzen — dann warf der zweite Blick ein ``AttributeError``
+    mitten in die Senke. Ohne die zweite Quelle bleibt es bei dem, was der Voice-Client
+    beim ersten Blick sagte.
+    """
+    # Einer für den Aufbau der ``Sprachverbindung``, einer für ``jetzt`` — der Blick über
+    # ``.guild`` fällt dann schon ins Leere.
+    verbindung = FakeVoiceClientMitGuildProperty(runde.kanal, blicke=2)
+    stimme = gateway.Sprachverbindung(verbindung)
+
+    assert stimme.im_kanal() is True
+    assert verbindung.channel is None
+
+
 def test_verschoben_zaehlt_weiter_der_kanal_der_aufnahme(
     konfiguration, sitzung_im_thread, ohne_espeak, runde, kurze_frist
 ):
