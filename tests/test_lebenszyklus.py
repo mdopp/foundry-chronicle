@@ -854,31 +854,103 @@ def test_zwei_runden_derselben_sekunde_sind_nicht_dieselbe(konfiguration, monkey
 # es ist seine SQLite —, der Unterschied ist das fehlende Bedienelement. Deshalb wird hier
 # nicht ein Verhalten geprüft, sondern die Menge der Aufrufer: eine neue Route, ein CLI, ein
 # zweiter Knopf tauchen als zusätzlicher Eintrag auf und fallen durch.
-QUELLEN = Path(lebenszyklus.__file__).parent
+PAKET = Path(lebenszyklus.__file__).parent
+# ``scripts/`` zählt im Repo als Quelle (``pyproject.toml``, coverage) und ist der
+# natürliche Ort für ein Betreiber-Werkzeug — genau das, was hier nicht entstehen soll.
+QUELLEN = (PAKET, PAKET.parents[1] / "scripts")
+ZIEL = "chronicle.lebenszyklus"
 ZERSTOEREND = frozenset({"loeschen", "sperren"})
-NUR_DIE_GRUPPE = {"bot/einrichten.py"}
+NUR_DIE_GRUPPE = {"chronicle/bot/einrichten.py"}
+
+
+def _paket_der_datei(datei: Path) -> str:
+    if not datei.is_relative_to(PAKET):
+        return ""
+    return ".".join(("chronicle", *datei.relative_to(PAKET).parts[:-1]))
+
+
+def _absolut(knoten: ast.ImportFrom, paket: str) -> str:
+    """Auch ``from . import lebenszyklus`` meint dasselbe Modul wie der volle Pfad."""
+    if not knoten.level:
+        return knoten.module or ""
+    teile = paket.split(".") if paket else []
+    basis = teile[: len(teile) - (knoten.level - 1)] if knoten.level > 1 else teile
+    return ".".join((*basis, knoten.module)) if knoten.module else ".".join(basis)
+
+
+def _punktname(knoten: ast.AST) -> str | None:
+    """``chronicle.lebenszyklus`` aus einer Attribut-Kette zurückgewinnen."""
+    teile: list[str] = []
+    while isinstance(knoten, ast.Attribute):
+        teile.append(knoten.attr)
+        knoten = knoten.value
+    if not isinstance(knoten, ast.Name):
+        return None
+    teile.append(knoten.id)
+    return ".".join(reversed(teile))
+
+
+def _bindungen(baum: ast.AST, paket: str) -> tuple[set[str], set[str]]:
+    """Unter welchen Namen diese Datei das Modul kennt — und die Verben direkt."""
+    module = {ZIEL}
+    verben: set[str] = set()
+    for knoten in ast.walk(baum):
+        if isinstance(knoten, ast.Import):
+            for name in knoten.names:
+                if name.name == ZIEL and name.asname:
+                    module.add(name.asname)
+        elif isinstance(knoten, ast.ImportFrom):
+            woher = _absolut(knoten, paket)
+            for name in knoten.names:
+                if woher == "chronicle" and name.name == "lebenszyklus":
+                    module.add(name.asname or name.name)
+                elif woher == ZIEL and name.name in ZERSTOEREND:
+                    verben.add(name.asname or name.name)
+    return module, verben
+
+
+def _greift_zu(baum: ast.AST, module: set[str], verben: set[str]) -> bool:
+    """Jede *Erwähnung* zählt, nicht nur der Aufruf.
+
+    Wer ``_weg = lebenszyklus.loeschen`` schreibt und später ``_weg(…)`` ruft, hat
+    denselben Weg gebaut — die Zuweisung ist die Stelle, an der er entsteht.
+    """
+    for knoten in ast.walk(baum):
+        if (
+            isinstance(knoten, ast.Attribute)
+            and knoten.attr in ZERSTOEREND
+            and _punktname(knoten.value) in module
+        ):
+            return True
+        if isinstance(knoten, ast.Name) and knoten.id in verben:
+            return True
+        # ``getattr`` umgeht jede Namensprüfung — solange der Name dasteht, nicht diese.
+        if (
+            isinstance(knoten, ast.Call)
+            and isinstance(knoten.func, ast.Name)
+            and knoten.func.id == "getattr"
+            and len(knoten.args) >= 2
+            and _punktname(knoten.args[0]) in module
+            and isinstance(knoten.args[1], ast.Constant)
+            and knoten.args[1].value in ZERSTOEREND
+        ):
+            return True
+    return False
 
 
 def _aufrufer() -> set[str]:
     gefunden: set[str] = set()
-    for datei in sorted(QUELLEN.rglob("*.py")):
-        if datei.samefile(lebenszyklus.__file__):
+    for wurzel in QUELLEN:
+        if not wurzel.exists():
             continue
-        for knoten in ast.walk(ast.parse(datei.read_text(encoding="utf-8"))):
-            ruft = (
-                isinstance(knoten, ast.Call)
-                and isinstance(knoten.func, ast.Attribute)
-                and knoten.func.attr in ZERSTOEREND
-                and isinstance(knoten.func.value, ast.Name)
-                and knoten.func.value.id == "lebenszyklus"
-            )
-            holt = (
-                isinstance(knoten, ast.ImportFrom)
-                and knoten.module == "chronicle.lebenszyklus"
-                and any(name.name in ZERSTOEREND for name in knoten.names)
-            )
-            if ruft or holt:
-                gefunden.add(datei.relative_to(QUELLEN).as_posix())
+        for datei in sorted(wurzel.rglob("*.py")):
+            if datei.samefile(lebenszyklus.__file__):
+                continue
+            baum = ast.parse(datei.read_text(encoding="utf-8"))
+            paket = _paket_der_datei(datei)
+            module, verben = _bindungen(baum, paket)
+            if _greift_zu(baum, module, verben):
+                gefunden.add(datei.relative_to(PAKET.parent).as_posix())
     return gefunden
 
 
