@@ -22,8 +22,8 @@ import logging
 import sys
 from getpass import getpass
 
+from chronicle import db, settings
 from chronicle import runde as runden
-from chronicle import settings
 from chronicle.config import Config
 from chronicle.foundry.client import FoundryError
 from chronicle.foundry.service import ABZUG_ZIEL, abzug, sync
@@ -36,7 +36,10 @@ class Wahl(RuntimeError):
 
 
 def _gewaehlte_runde(config: Config, kennung: int | None) -> runden.Runde:
-    erste = runden.erste(config.database_path)
+    # ``erste`` tut zweierlei: Schema anlegen und, bei leerer Tabelle, eine Runde
+    # einfügen. Gebraucht wird hier nur das Schema — wer eine Kennung nennt, die es
+    # nicht gibt, soll nichts hinterlassen.
+    db.init(config.database_path)
     if kennung is not None:
         gefunden = runden.get(config.database_path, kennung)
         if gefunden is None:
@@ -46,7 +49,7 @@ def _gewaehlte_runde(config: Config, kennung: int | None) -> runden.Runde:
     if len(vorhanden) > 1:
         aufzaehlung = ", ".join(f"{runde.id} = {runde.name}" for runde in vorhanden)
         raise Wahl(f"Diese Instanz trägt mehrere Runden — bitte --runde angeben: {aufzaehlung}")
-    return erste
+    return runden.erste(config.database_path)
 
 
 def main(argv: list[str] | None = None) -> int:
