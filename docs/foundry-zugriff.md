@@ -121,7 +121,14 @@ etwas zu schützen.
 
 Es gibt keinen API-Token. Der Zugang ist das Passwort eines echten Foundry-Kontos, und
 er trägt dessen Berechtigungen — das Protokoll sieht damit genau so viel wie dieser
-Mensch. Ein eigenes Konto mit passenden Rechten ist sauberer als das eines Mitspielers.
+Mensch. Ein eigenes Konto mit passenden Rechten — etwa »Chronik« — ist sauberer als das
+eines Mitspielers.
+
+**Welches Konto es ist, ist eine Entscheidung der Gruppe** (#78), keine Nebenwirkung
+dessen, wer zufällig sein Passwort hergibt: ein Spielerkonto zeigt, was die Runde erlebt
+hat, ein Konto der Spielleitung auch ungespielte Handlungsstränge, verdeckte NSCs und
+Fallen. Für ein Sitzungsprotokoll ist das Spielerkonto fast immer richtig. Deshalb sagt
+die Einrichtung das am Benutzerfeld, und nicht nur hier.
 
 **Das Passwort wird nirgends gespeichert** (#64): nicht in der SQLite, nicht in einer
 Umgebungsvariable, nicht in einer Datei. Gefragt wird beim **Sitzungsstart**, damit

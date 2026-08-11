@@ -93,12 +93,25 @@ NUR_ADMIN = (
 SETUP_TITEL = "Runde einrichten"
 
 FELD_ADRESSE = "Adresse eures Foundry"
-FELD_BENUTZER = "Name, unter dem ich mich anmelde"
+FELD_BENUTZER = "Foundry-Konto, mit dessen Augen ich sehe"
 FELD_UHRZEIT = "Uhrzeit des nächtlichen Laufs"
 
 HINWEIS_ADRESSE = "z. B. https://foundry.example"
-HINWEIS_BENUTZER = "ein eigenes Konto genügt, ohne Spielleitungsrechte"
+# Discord lässt 45 Zeichen für die Beschriftung und 100 für den Hinweis; der ganze Satz
+# passt in keins von beidem und steht deshalb als AUGEN in der Antwort.
+HINWEIS_BENUTZER = (
+    "am besten ein Spielerkonto — sonst sehe ich auch, was ihr noch nicht gespielt habt"
+)
 HINWEIS_UHRZEIT = "leer lassen für 04:00"
+
+# Die Wahl, die niemand trifft und die trotzdem alles prägt (#78): der Zugang trägt die
+# Rechte genau eines Kontos, und was es nicht sieht, kommt in keine Chronik.
+AUGEN = (
+    "Mit welchem Konto ich mich anmelde, entscheidet, was ich von eurer Welt sehe: ein "
+    "Spielerkonto zeigt mir, was die Runde erlebt hat — ein Konto der Spielleitung auch "
+    "ungespielte Handlungsstränge, verdeckte NSCs und Fallen. Nehmt das Spielerkonto; am "
+    "saubersten ein eigenes Foundry-Konto »Chronik« mit denselben Rechten."
+)
 
 # Ein leeres Feld heißt hier dasselbe wie überall sonst: unverändert. Sonst löschte ein
 # zweiter Aufruf, der nur den Kanal ändern soll, die Adresse gleich mit.
@@ -245,6 +258,10 @@ def einrichten(
         if beansprucht.neu
         else [UEBERNOMMEN.format(name=runde.name), LEER_BLEIBT]
     )
+    # Der Satz steht dort, wo die Wahl getroffen wird — aber nicht bei jedem Aufruf: wer
+    # bloß die Uhrzeit richtet, hat über das Konto gerade nichts entschieden.
+    if beansprucht.neu or werte["foundry_user"]:
+        saetze.append(AUGEN)
     stolperte = _uhrzeit(runde, uhrzeit)
     if stolperte:
         saetze.append(stolperte)
