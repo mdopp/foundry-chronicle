@@ -1211,15 +1211,7 @@ def pycord(monkeypatch):
     fehler.NotFound = FakeNichtGefunden
     modul.errors = fehler
     modul.NotFound = FakeNichtGefunden
-    # ``discord.voice.state`` haelt die DAVE-Fassung, die wir beim Bauen auf 0 setzen.
-    stimmzustand = types.ModuleType("discord.voice.state")
-    stimmzustand.DAVE_PROTOCOL_VERSION = 1
-    stimme = types.ModuleType("discord.voice")
-    stimme.state = stimmzustand
-    modul.voice = stimme
     monkeypatch.setitem(sys.modules, "discord", modul)
-    monkeypatch.setitem(sys.modules, "discord.voice", stimme)
-    monkeypatch.setitem(sys.modules, "discord.voice.state", stimmzustand)
     monkeypatch.setattr(FakeBot, "erzeugt", [])
     return modul
 
@@ -3066,33 +3058,3 @@ def test_die_senke_haengt_an_ihrem_sprachclient(konfiguration, sitzung_id, ohne_
     assert verbindung.senke.client is verbindung, (
         "die Senke kennt ihren Sprachclient nicht — py-cord stirbt damit beim ersten Paket"
     )
-
-
-def test_dem_gateway_wird_dave_fassung_null_gemeldet(konfiguration, pycord):
-    """Sonst kommt der Ton verschluesselt an und der Opus-Dekoder sieht Rauschen.
-
-    py-cord schickt ``max_dave_protocol_version`` aus ``discord.voice.state``. Steht dort
-    etwas groesseres als 0, handelt Discord DAVE aus — und ``opus.py`` dekodiert erst und
-    entschluesselt danach. Am 2026-08-11 endete die erste echte Runde deshalb mit
-    »corrupted stream« und ohne eine einzige Spur.
-    """
-    zustand = sys.modules["discord.voice.state"]
-    assert zustand.DAVE_PROTOCOL_VERSION == 1, "die Attrappe muesste hier 1 melden"
-
-    gateway.baue(konfiguration)
-
-    assert zustand.DAVE_PROTOCOL_VERSION == 0
-
-
-def test_der_dave_riegel_greift_ueber_den_ausdruecklichen_import(konfiguration, pycord):
-    """``discord.voice`` ist **kein Attribut** von ``discord`` — ein ``getattr`` faellt durch.
-
-    Genau daran ist der erste Anlauf am 2026-08-11 gescheitert: der Riegel sah nichts vor,
-    kehrte still zurueck, und im Handschlag stand weiter Fassung 1. Das Modul muss also
-    ausdruecklich importiert werden, und es darf nicht am Attribut haengen.
-    """
-    del pycord.voice  # so sieht es in echt aus: nur ueber sys.modules erreichbar
-
-    gateway.baue(konfiguration)
-
-    assert sys.modules["discord.voice.state"].DAVE_PROTOCOL_VERSION == 0

@@ -20,7 +20,6 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import functools
-import importlib
 import logging
 import wave
 from collections.abc import Callable
@@ -261,34 +260,6 @@ def _discord():
     except ImportError as fehler:
         raise BotFehler(NICHT_INSTALLIERT) from fehler
     return discord
-
-
-def _dave_abmelden(discord) -> None:
-    """Discord die DAVE-Fassung **0** melden — sonst hört der Bot nichts.
-
-    py-cord schickt im Handschlag ``max_dave_protocol_version`` und nimmt dafür, was
-    ``davey`` mitbringt. Wird DAVE ausgehandelt, kommt der Ton Ende-zu-Ende verschlüsselt
-    an — und ``opus.py`` dekodiert **erst** Opus und entschlüsselt **danach**. Der Dekoder
-    sieht Rauschen, wirft »corrupted stream«, der Empfänger stirbt und die Sitzung bekommt
-    keine einzige Spur. Am 2026-08-11 genau so erlebt.
-
-    ``davey`` einfach wegzulassen geht nicht: py-cord wirft dann schon beim Import von
-    ``discord.voice`` (``MissingVoiceDependenciesError``). Es bleibt also installiert, und
-    hier wird nur die **gemeldete** Fassung auf 0 gesetzt. Discord stuft den Kanal dann auf
-    die Transportverschlüsselung herunter, die PyNaCl liest.
-
-    Erzwingt Discord DAVE eines Tages, hört der Bot auf zu hören — dann hilft nur eine
-    py-cord-Fassung, die vor dem Dekodieren entschlüsselt (Pycord-Issue #3139).
-    """
-    # Ausdrücklich importieren: ``discord.voice`` ist zu diesem Zeitpunkt **kein Attribut**
-    # von ``discord``. Ein ``getattr`` darauf lief still ins Leere — der Riegel tat nichts,
-    # und im Handschlag stand weiter Fassung 1. Genau daran ist der erste Anlauf am
-    # 2026-08-11 gescheitert, ohne eine Zeile zu hinterlassen.
-    zustand = importlib.import_module("discord.voice.state")
-    vorher = zustand.DAVE_PROTOCOL_VERSION
-    zustand.DAVE_PROTOCOL_VERSION = 0
-    # Laut sagen statt still lassen: wer hier nichts liest, weiß nicht, ob es griff.
-    logger.info("DAVE abgemeldet: gemeldet wird Fassung 0 statt %s.", vorher)
 
 
 def _sprache_pruefen(discord) -> None:
@@ -1520,7 +1491,6 @@ def _feld(discord, beschreibung: str):
 def baue(config: Config):
     """Der Bot mit seinen Befehlen und dem Thread, der die Sitzung ist — ohne Verbindung."""
     discord = _discord()
-    _dave_abmelden(discord)
     _sprache_pruefen(discord)
     absichten = discord.Intents.none()
     absichten.guilds = True
