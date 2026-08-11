@@ -1019,3 +1019,56 @@ def test_geloescht_wird_neben_der_ereignisschleife(konfiguration, bot, monkeypat
 
     assert len(faeden) == 2
     assert threading.get_ident() not in faeden
+
+
+class Genug(Exception):
+    """Hält den dauerhaften Lauf nach einem Durchgang an."""
+
+
+def _loeschfaeden(monkeypatch) -> list[int]:
+    """Sammelt, in welchem Faden gelöscht wurde — der der Schleife darf nicht dabei sein."""
+    faeden: list[int] = []
+    echt = lebenszyklus.loeschen
+
+    def merken(config, runde, **rest):
+        faeden.append(threading.get_ident())
+        return echt(config, runde, **rest)
+
+    monkeypatch.setattr(lebenszyklus, "loeschen", merken)
+    return faeden
+
+
+def test_setup_loescht_die_abgelaufene_runde_neben_der_ereignisschleife(
+    konfiguration, bot, monkeypatch
+):
+    """``/setup`` erreicht denselben Löschweg wie das Wiedersehen — und darf es genauso wenig
+    auf der Schleife tun."""
+    abgelaufen = runden.anlegen(konfiguration.database_path, GILDENAME, guild_id=GILDE)
+    fuellen(konfiguration, abgelaufen, "alpha")
+    frist_setzen(konfiguration, abgelaufen, "2026-05-31T20:00:00+00:00")
+    faeden = _loeschfaeden(monkeypatch)
+
+    ausfuellen(einrichtungsfenster(bot, FakeCtx(gilde=FakeGilde())), benutzer="Chronist")
+
+    assert len(faeden) == 1
+    assert threading.get_ident() not in faeden
+
+
+def test_der_taegliche_lauf_loescht_neben_der_ereignisschleife(konfiguration, monkeypatch):
+    """Der tägliche Lauf nimmt *jede* überfällige Runde — auf der Schleife stünde der Bot
+    so lange für alle still."""
+    for gilde, name in ((GILDE, GILDENAME), (NACHBARGILDE, "Nachbarn")):
+        ueberfaellig = runden.anlegen(konfiguration.database_path, name, guild_id=gilde)
+        frist_setzen(konfiguration, ueberfaellig, "2026-05-31T20:00:00+00:00")
+    faeden = _loeschfaeden(monkeypatch)
+
+    async def genug(_abstand):
+        raise Genug
+
+    with pytest.raises(Genug):
+        asyncio.run(lebenszyklus.taeglich(konfiguration, schlafen=genug))
+
+    assert len(faeden) == 2
+    assert threading.get_ident() not in faeden
+    assert runden.fuer_gilde(konfiguration.database_path, GILDE) is None
+    assert runden.fuer_gilde(konfiguration.database_path, NACHBARGILDE) is None

@@ -326,10 +326,13 @@ async def taeglich(config: Config, *, schlafen=asyncio.sleep) -> None:
     Zwei Fristen, zwei Läufe: die eine gilt jeder Audiospur auf dieser Box, die andere
     einer verabschiedeten Runde. Sie miteinander zu verheiraten hieße, dass ein Fehler in
     der einen die andere mitnimmt.
+
+    ``sweep`` läuft neben der Ereignisschleife: er löscht Dateien und Zeilen **jeder**
+    überfälligen Runde, und auf der Schleife stünde der Bot so lange für alle still.
     """
     while True:
         try:
-            sweep(config)
+            await asyncio.to_thread(sweep, config)
         # Eine gesperrte Datei, ein »database is locked« — und ohne diese Zeile endete der
         # Faden, das Löschen hörte für **alle** Runden auf, und niemand merkte es. Am
         # nächsten Tag wird es wieder versucht.
