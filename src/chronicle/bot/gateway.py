@@ -611,7 +611,11 @@ def _einrichtungsfenster(config: Config, ctx):
 
         async def callback(self, interaction) -> None:
             adresse, benutzer, uhrzeit = (feld.value for feld in self.children)
-            fertig = einrichten.einrichten(
+            # Eine abgelaufene Runde wird hier gelöscht, mit Dateien und Zeilen — derselbe
+            # Weg wie beim Wiedersehen und am Löschknopf, und deshalb nicht auf der
+            # Ereignisschleife: solange sie rechnet, antwortet der Bot niemandem.
+            fertig = await asyncio.to_thread(
+                einrichten.einrichten,
                 config,
                 guild_id,
                 gildenname,
