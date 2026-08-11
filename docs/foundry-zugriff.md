@@ -130,6 +130,28 @@ hat, ein Konto der Spielleitung auch ungespielte Handlungsstränge, verdeckte NS
 Fallen. Für ein Sitzungsprotokoll ist das Spielerkonto fast immer richtig. Deshalb sagt
 die Einrichtung das am Benutzerfeld, und nicht nur hier.
 
+### »Chronik« mit denselben Rechten — das ist Handarbeit je Figur
+
+Ein neu angelegtes Konto erbt **nichts**. Foundry hängt die Sicht auf ein Dokument an
+dessen `ownership`-Karte, und die wirksame Stufe ist `max(ownership.default,
+ownership[userId])` — steht das neue Konto in keiner Karte, bleibt ihm nur, was `default`
+ohnehin für alle offen lässt. Das ist in einer gewachsenen Welt fast nichts: **ausgeführt
+gegen die Testwelt sieht ein solches Konto 29 von 91 Figuren, davon 20 nur namentlich —
+also 9 echte.** Ein gewöhnliches Spielerkonto sieht 33–52, ein GM-Konto alle 91. Wer
+»Chronik« naiv anlegt, bekommt also **weniger** als hätte er das Konto eines Mitspielers
+genommen.
+
+Die Rechte werden deshalb **je Figur** nachgetragen, in Foundry unter *Actors* →
+Rechtsklick auf die Figur → *Configure Ownership*: dort für »Chronik« mindestens
+**Observer** setzen. `Limited` genügt nicht — daraus übernehmen wir nach der Tabelle oben
+nur den Namen, und eine Figur ohne Werte trägt keine Chronik. Ebenso wirkt es, `default`
+der Figur anzuheben; das gibt sie dann allerdings **allen** Konten frei, auch denen, die
+sie bisher nicht sahen.
+
+Für das Chat-Log gilt das nicht: Geflüstertes und blinde Würfe hängen an `whisper` und
+`blind` der Nachricht, nicht an einer Figur. Was »Chronik« davon zu sehen bekommt,
+entscheidet sich damit nachrichtenweise und lässt sich nicht nachträglich freigeben.
+
 **Das Passwort wird nirgends gespeichert** (#64): nicht in der SQLite, nicht in einer
 Umgebungsvariable, nicht in einer Datei. Gefragt wird beim **Sitzungsstart**, damit
 Foundry den Abend über offen steht (#96) — freiwillig; ohne es läuft die Sitzung ohne
