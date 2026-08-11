@@ -33,6 +33,7 @@ from chronicle import db, settings
 from chronicle.compose import client
 from chronicle.compose.client import ModelError, TextModel
 from chronicle.compose.composer import numbers
+from chronicle.compose.nacherzaehlung import REGISTER_ZEILE
 from chronicle.compose.service import KIND as CHRONIK
 from chronicle.config import Config
 from chronicle.runde import Runde
@@ -375,6 +376,29 @@ def overview(runde: Runde) -> tuple[Group, ...]:
 def pending(runde: Runde) -> tuple[Entry, ...]:
     """Was auf ein Ja oder Nein wartet."""
     return _lesen(runde, VORSCHLAG)
+
+
+def nach_sitzung(runde: Runde) -> dict[int, tuple[str, ...]]:
+    """Was das Register je Sitzung führt — fertige Zeilen, nur Bestätigtes.
+
+    Das ist die Auswahl für die Nacherzählung: eine Sitzung, zu der hier nichts steht, wird
+    dort als Lücke benannt statt erzählt. Ein Vorschlag zählt nicht mit — ein unbestätigtes
+    Register verfälschte genau den Text, der Wochen später als Gedächtnisstütze gilt.
+
+    Ein Eintrag steht je Sitzung **einmal**: die Verweise sind szenenweise, und dreimal
+    dieselbe Zeile im Aufruf hieße dem Modell, der Name sei dreimal so wichtig.
+    """
+    je_sitzung: dict[int, list[str]] = {}
+    for gruppe in overview(runde):
+        for eintrag in gruppe.entries:
+            zeile = REGISTER_ZEILE.format(
+                label=eintrag.label, name=eintrag.name, satz=eintrag.description
+            )
+            for erwaehnung in eintrag.mentions:
+                zeilen = je_sitzung.setdefault(erwaehnung.session_id, [])
+                if zeile not in zeilen:
+                    zeilen.append(zeile)
+    return {sitzung: tuple(zeilen) for sitzung, zeilen in je_sitzung.items()}
 
 
 def decide(runde: Runde, auswahl: Mapping[int, Entscheidung]) -> None:

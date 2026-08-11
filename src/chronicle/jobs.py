@@ -33,9 +33,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from chronicle import db, lebenszyklus, recordings, register
-from chronicle.compose.service import compose_session, recap_session
+from chronicle.compose.service import compose_session, erzaehlen, recap_session
 from chronicle.config import Config
-from chronicle.discord.ausgabe import anhaengen
+from chronicle.discord.ausgabe import anhaengen, erzaehlung_zustellen
 from chronicle.discord.rueckblick import deliver
 from chronicle.foundry.service import sync
 from chronicle.runde import Runde
@@ -46,6 +46,7 @@ logger = logging.getLogger(__name__)
 ABGLEICH = "abgleich"
 CHRONIK = "chronik"
 NACHTLAUF = "nachtlauf"
+NACHERZAEHLUNG = "nacherzaehlung"
 
 LAEUFT = "laeuft"
 FERTIG = "fertig"
@@ -61,6 +62,8 @@ UNTERBROCHEN = (
 )
 
 OHNE_SITZUNG = "Diese Sitzung gibt es nicht mehr."
+
+OHNE_BEREICH = "In diesem Bereich liegt keine Sitzung mehr — nachzuerzählen gibt es nichts."
 
 BELEGT = "Eine andere Runde ist gerade dran — der Lauf beginnt, sobald sie durch ist."
 
@@ -308,6 +311,22 @@ def chronik(config: Config, runde: Runde, session_id: int) -> str:
     # Bestätigen nicht angestoßen, wird es übersprungen, und das Register verfällt.
     nachsatz = "" if not vorschlaege.count else f" {vorschlaege.message}"
     return vorlauf + stand + nachsatz + (f" {ausgabe}" if ausgabe else "")
+
+
+def nacherzaehlung(config: Config, runde: Runde, von: int, bis: int, kanal_id: str) -> str:
+    """Einen Sitzungsbereich nacherzählen und die Datei dorthin stellen, wo gefragt wurde.
+
+    Das Register wird **hier** gelesen und mitgegeben: die Auswahl gehört an den Aufruf,
+    nicht in die Komposition. Ohne bestätigten Eintrag bleibt eine Sitzung eine benannte
+    Lücke — der Lauf ist damit nicht gescheitert.
+    """
+    ergebnis = erzaehlen(config, runde, von, bis, register.nach_sitzung(runde))
+    if ergebnis is None:
+        raise JobError(lebenszyklus.RUHT if lebenszyklus.ruht(runde) else OHNE_BEREICH)
+    ausgabe = erzaehlung_zustellen(
+        config, runde, kanal_id, ergebnis.text, ergebnis.von, ergebnis.bis
+    )
+    return ergebnis.message + (f" {ausgabe}" if ausgabe else "")
 
 
 def abschluss(config: Config, runde: Runde, session_id: int, *, passwort: str | None = None) -> str:

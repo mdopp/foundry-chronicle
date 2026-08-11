@@ -105,6 +105,25 @@ FERTIG = (
 
 LAEUFT_SCHON = "Ich bin schon dabei — ich melde mich hier, wenn die Chronik steht."
 
+# Der Bereich wird über **Sitzungen** benannt, nicht über einen Faden und nicht über eine
+# Figur: von welchem Abend bis zu welchem. Ein Datum genügt, ein Anfang davon auch.
+OHNE_SITZUNGEN = (
+    "Hier ist noch keine Sitzung geschrieben — nachzuerzählen gibt es nichts. "
+    "`/chronik start` beginnt die erste."
+)
+
+BEREICH_UNBEKANNT = (
+    "»{wert}« passt zu keiner Sitzung. Ich kenne welche vom {erste} bis zum {letzte} — "
+    "nimm ein Datum daraus oder lass das Feld leer, dann nehme ich den Rand."
+)
+
+ERZAEHLT = (
+    "Ich erzähle die Sitzungen vom {von} bis zum {bis} nach — Sitzung für Sitzung, entlang "
+    "des Registers. Das dauert seine Zeit; die Datei kommt hier in den Kanal."
+)
+
+ERZAEHLT_SCHON = "Ich erzähle schon nach — die Datei kommt hier in den Kanal."
+
 PASSWORT_TITEL = "Sitzung abschließen"
 PASSWORT_FELD = "Passwort für Foundry"
 PASSWORT_HINWEIS = "Nur für diesen einen Abgleich — es wird nirgends gespeichert."
@@ -343,25 +362,83 @@ def notiz_entfernen(runde: Runde, message_id: str) -> bool:
     return notes.remove_note(runde, message_id)
 
 
-def _mit_meldung(
-    config: Config,
-    runde: Runde,
-    session_id: int,
-    passwort: str | None,
-    melden: Callable[[str], None],
-) -> Callable[[], str]:
+def _mit_meldung(arbeit: Callable[[], str], melden: Callable[[str], None]) -> Callable[[], str]:
     def lauf() -> str:
         try:
-            ergebnis = jobs.abschluss(config, runde, session_id, passwort=passwort)
+            ergebnis = arbeit()
         except Exception as fehler:
-            # Der Lauf hängt an keinem Befehl mehr — ohne diese Zeile bliebe der Thread
-            # still, und niemand wüsste, dass die Chronik nicht kommt.
+            # Der Lauf hängt an keinem Befehl mehr — ohne diese Zeile bliebe der Kanal
+            # still, und niemand wüsste, dass nichts mehr kommt.
             melden(jobs.NICHT_DURCHGEKOMMEN.format(grund=fehler))
             raise
         melden(ergebnis)
         return ergebnis
 
     return lauf
+
+
+def _eckpunkt(geordnet: tuple[notes.Session, ...], wert: str, ende: bool) -> notes.Session:
+    """Welche Sitzung ein eingetipptes Datum meint — leer heißt: der Rand des Bestands."""
+    sauber = wert.strip()
+    if not sauber:
+        return geordnet[-1] if ende else geordnet[0]
+    passend = [sitzung for sitzung in geordnet if sitzung.played_on.startswith(sauber)]
+    if not passend:
+        raise ChronikFehler(
+            BEREICH_UNBEKANNT.format(
+                wert=sauber, erste=geordnet[0].played_on, letzte=geordnet[-1].played_on
+            )
+        )
+    return passend[-1] if ende else passend[0]
+
+
+def sitzungsbereich(runde: Runde, von: str, bis: str) -> tuple[notes.Session, notes.Session]:
+    """Die beiden Eckpunkte des Bereichs, in gespielter Reihenfolge.
+
+    Vertauschte Angaben werden geordnet statt abgewiesen: welcher Abend der frühere ist,
+    weiß die Datenbank besser als der, der es tippt — und die Antwort nennt beide Daten,
+    also sieht er, was er bekommt.
+    """
+    geordnet = tuple(
+        sorted(notes.sessions(runde), key=lambda sitzung: (sitzung.played_on, sitzung.id))
+    )
+    if not geordnet:
+        raise ChronikFehler(OHNE_SITZUNGEN)
+    erste = _eckpunkt(geordnet, von, ende=False)
+    letzte = _eckpunkt(geordnet, bis, ende=True)
+    if (letzte.played_on, letzte.id) < (erste.played_on, erste.id):
+        return letzte, erste
+    return erste, letzte
+
+
+def nacherzaehlung_starten(
+    config: Config,
+    runde: Runde,
+    von: str,
+    bis: str,
+    kanal_id: str,
+    *,
+    melden: Callable[[str], None],
+) -> str:
+    """Der Wunsch nach Prosa über mehrere Abende — ein Lauf, eine Datei im Kanal.
+
+    Ein eigener Lauf und kein Befehl, der wartet: über den Bereich fällt je Sitzung ein
+    Modellaufruf an, und Discord lässt einem Befehl keine Viertelstunde.
+    """
+    erste, letzte = sitzungsbereich(runde, von, bis)
+    if jobs.running(runde, jobs.NACHERZAEHLUNG):
+        return ERZAEHLT_SCHON
+    auftrag = jobs.start(
+        config,
+        runde,
+        jobs.NACHERZAEHLUNG,
+        _mit_meldung(
+            lambda: jobs.nacherzaehlung(config, runde, erste.id, letzte.id, kanal_id), melden
+        ),
+    )
+    if auftrag is None:
+        return jobs.BELEGT
+    return ERZAEHLT.format(von=erste.played_on, bis=letzte.played_on)
 
 
 def abschluss_starten(
@@ -396,7 +473,7 @@ def abschluss_starten(
         config,
         runde,
         jobs.CHRONIK,
-        _mit_meldung(config, runde, session_id, passwort, melden),
+        _mit_meldung(lambda: jobs.abschluss(config, runde, session_id, passwort=passwort), melden),
         session_id=session_id,
     )
     return FERTIG if auftrag is not None else jobs.BELEGT

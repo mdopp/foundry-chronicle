@@ -300,7 +300,12 @@ def notizen(runde, sitzung_id):
 
 
 def test_der_bot_bringt_die_chronik_befehle_mit(bot):
-    assert set(bot.gruppen[gateway.GRUPPE_CHRONIK].befehle) == {"start", "fertig", "loeschen"}
+    assert set(bot.gruppen[gateway.GRUPPE_CHRONIK].befehle) == {
+        "start",
+        "fertig",
+        "nacherzaehlung",
+        "loeschen",
+    }
     assert gateway.BEFEHL_SZENE in bot.befehle
     assert set(bot.ereignisse) >= {"on_message", "on_raw_message_edit", "on_raw_message_delete"}
 
@@ -1165,6 +1170,119 @@ def test_ein_stolpernder_abschluss_antwortet_trotzdem(stelle, bot, monkeypatch):
     (antwort,) = interaktion.followup.gesendet
     assert antwort.startswith("Das hat nicht geklappt:")
     assert "RuntimeError" in antwort
+
+
+# -- Nacherzählen über Sitzungsgrenzen ---------------------------------------------------
+
+# Was die Attrappe des Laufs meldet — ein echtes Ollama steht hier nicht dahinter.
+NACHERZAEHLT = "Nacherzählung über 2 Sitzungen — 2 davon erzählt."
+
+
+def sitzungen_anlegen(unsere, *daten):
+    return [notes.create_session(unsere, played_on=datum) for datum in daten]
+
+
+def nacherzaehlen_fahren(bot, unsere, *, von="", bis=""):
+    """``/chronik nacherzaehlung`` und das Warten auf den Lauf, den es anstößt."""
+    ctx = FakeCtx(kanal=FakeThread(910, "Runde"))
+
+    async def ablauf():
+        await chronikbefehl(bot, "nacherzaehlung")(ctx, von, bis)
+        ende = time.monotonic() + GRENZE
+        while time.monotonic() < ende and jobs.running(unsere, jobs.NACHERZAEHLUNG):
+            await asyncio.sleep(0.01)
+        # Der Lauf meldet sich aus seinem eigenen Faden; die Schleife muss ihn abholen.
+        await asyncio.sleep(0.05)
+
+    asyncio.run(ablauf())
+    return ctx
+
+
+def test_nacherzaehlung_stoesst_einen_lauf_an_und_blockiert_den_befehl_nicht(
+    stelle, bot, monkeypatch
+):
+    """Je Sitzung ein Modellaufruf — das ist ein Lauf des Servers, kein wartender Befehl."""
+    _config, unsere = stelle
+    ids = sitzungen_anlegen(unsere, "2026-05-01", "2026-05-02")
+    gesehen = []
+    monkeypatch.setattr(
+        jobs,
+        "nacherzaehlung",
+        lambda config, eine, von, bis, kanal_id: (
+            gesehen.append((von, bis, kanal_id)) or NACHERZAEHLT
+        ),
+    )
+
+    ctx = nacherzaehlen_fahren(bot, unsere)
+
+    assert ctx.aufgeschoben
+    assert ctx.antworten == [chronik.ERZAEHLT.format(von="2026-05-01", bis="2026-05-02")]
+    assert gesehen == [(ids[0], ids[1], "910")]
+    assert ctx.channel.gesendet == [NACHERZAEHLT]
+    assert jobs.latest(unsere, jobs.NACHERZAEHLUNG).result == NACHERZAEHLT
+
+
+def test_der_bereich_folgt_den_genannten_sitzungen(stelle, bot, monkeypatch):
+    _config, unsere = stelle
+    ids = sitzungen_anlegen(unsere, "2026-05-01", "2026-05-02", "2026-05-03")
+    gesehen = []
+    monkeypatch.setattr(
+        jobs,
+        "nacherzaehlung",
+        lambda config, eine, von, bis, kanal_id: gesehen.append((von, bis)) or NACHERZAEHLT,
+    )
+
+    ctx = nacherzaehlen_fahren(bot, unsere, von="2026-05-02", bis="2026-05-03")
+
+    assert gesehen == [(ids[1], ids[2])]
+    assert ctx.antworten == [chronik.ERZAEHLT.format(von="2026-05-02", bis="2026-05-03")]
+
+
+def test_ein_datum_ohne_sitzung_bekommt_eine_ehrliche_auskunft(stelle, bot):
+    _config, unsere = stelle
+    sitzungen_anlegen(unsere, "2026-05-01", "2026-05-02")
+
+    ctx = nacherzaehlen_fahren(bot, unsere, von="2026-09-30")
+
+    (antwort,) = ctx.antworten
+    assert "2026-09-30" in antwort
+    assert "2026-05-01" in antwort and "2026-05-02" in antwort
+    assert jobs.latest(unsere, jobs.NACHERZAEHLUNG) is None
+
+
+def test_ohne_geschriebene_sitzung_gibt_es_nichts_nachzuerzaehlen(stelle, bot):
+    _config, unsere = stelle
+
+    ctx = nacherzaehlen_fahren(bot, unsere)
+
+    (antwort,) = ctx.antworten
+    assert chronik.OHNE_SITZUNGEN in antwort
+    assert jobs.latest(unsere, jobs.NACHERZAEHLUNG) is None
+
+
+def test_ein_zweites_nacherzaehlen_stoesst_keinen_zweiten_lauf_an(stelle, bot, monkeypatch):
+    config, unsere = stelle
+    sitzungen_anlegen(unsere, "2026-05-01")
+    monkeypatch.setattr(jobs, "running", lambda eine, kind=None: True)
+
+    meldung = chronik.nacherzaehlung_starten(
+        config, unsere, "", "", "910", melden=lambda text: None
+    )
+
+    assert meldung == chronik.ERZAEHLT_SCHON
+
+
+def test_die_ruhende_runde_erzaehlt_nichts_mehr_nach(stelle, bot):
+    """Dieselbe Sperre wie vor jeder anderen Stufe — sie bekommt nichts und legt nichts ab."""
+    config, unsere = stelle
+    sitzungen_anlegen(unsere, "2026-05-01")
+    lebenszyklus.sperren(config.database_path, GILDE)
+
+    ctx = nacherzaehlen_fahren(bot, unsere)
+
+    (antwort,) = ctx.antworten
+    assert "Diese Runde ruht" in antwort
+    assert jobs.latest(unsere, jobs.NACHERZAEHLUNG) is None
 
 
 # -- Nutzersprache, auch für den Bot ----------------------------------------------------

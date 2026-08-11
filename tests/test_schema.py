@@ -202,6 +202,56 @@ def test_ein_protokoll_aus_schema_11_bekommt_die_zustellspalte_nachgetragen(tmp_
     assert db.current_schema_version(pfad) == db.SCHEMA_VERSION
 
 
+def test_eine_datenbank_ohne_die_neue_laufart_bekommt_sie_nachgetragen(tmp_path):
+    """``CHECK (kind IN …)`` steht im ``CREATE TABLE`` und wandert mit keinem ``ALTER`` mit.
+
+    Ohne diese Wanderung wiese eine bestehende Instanz die Nacherzählung beim Anlegen des
+    Laufs ab — und zwar erst im Befehl, nicht beim Start.
+    """
+    pfad = tmp_path / "chronicle.sqlite3"
+    zugang = db.scoped(runde(pfad))
+    with zugang:
+        zugang.execute(
+            "INSERT INTO job (runde_id, kind, state, started_at) VALUES (?, 'abgleich', ?, ?)",
+            (zugang.runde_id, "fertig", STAND),
+        )
+        # Die Fassung von vorher: dieselbe Tabelle, nur ohne die neue Art.
+        zugang.execute("PRAGMA legacy_alter_table = ON")
+        zugang.execute("ALTER TABLE job RENAME TO job__vorher")
+        zugang.execute(
+            "CREATE TABLE job (id INTEGER PRIMARY KEY, runde_id INTEGER NOT NULL "
+            "REFERENCES runde (id) ON DELETE CASCADE, kind TEXT NOT NULL "
+            "CHECK (kind IN ('abgleich', 'chronik', 'nachtlauf')), session_id INTEGER, "
+            "state TEXT NOT NULL CHECK (state IN ('laeuft', 'fertig', 'gescheitert')), "
+            "started_at TEXT NOT NULL, finished_at TEXT, result TEXT, error TEXT)"
+        )
+        zugang.execute(
+            "INSERT INTO job (id, runde_id, kind, session_id, state, started_at, finished_at, "
+            "result, error) SELECT id, runde_id, kind, session_id, state, started_at, "
+            "finished_at, result, error FROM job__vorher WHERE runde_id = ?",
+            (zugang.runde_id,),
+        )
+        zugang.execute("DROP TABLE job__vorher")
+    runde_id = zugang.runde_id
+    zugang.close()
+
+    db.init(pfad)
+
+    verbindung = db.connect(pfad)
+    try:
+        with verbindung:
+            verbindung.execute(
+                "INSERT INTO job (runde_id, kind, state, started_at) "
+                "VALUES (?, 'nacherzaehlung', 'laeuft', ?)",
+                (runde_id, STAND),
+            )
+        arten = [zeile["kind"] for zeile in verbindung.execute("SELECT kind FROM job ORDER BY id")]
+    finally:
+        verbindung.close()
+    assert arten == ["abgleich", "nacherzaehlung"]
+    assert db.current_schema_version(pfad) == db.SCHEMA_VERSION
+
+
 def test_ein_zweiter_lauf_des_schemas_laesst_die_daten_stehen(tmp_path):
     pfad = tmp_path / "chronicle.sqlite3"
     zugang = db.scoped(runde(pfad))

@@ -70,7 +70,7 @@ flowchart TB
         VIEW["Protokoll-Ansicht · #7<br/>Chronik und Rückblick · #13"]
         SEARCH["Volltextsuche · #17<br/>SQLite FTS5"]
         REGUI["Register bestätigen · #15<br/>Ja/Nein je Vorschlag"]
-        RETELL["Nacherzählung · #18<br/>auf Wunsch, über das Register"]
+        RETELL["Nacherzählung · #18<br/>auf Wunsch, über das Register<br/>Auswahl: von Sitzung bis Sitzung"]
         DELIVER["Zustellung · #16<br/>Bot postet den Rückblick"]
     end
 
@@ -99,6 +99,7 @@ flowchart TB
     DB <--> VIEW
     DB <--> SEARCH
     DB --> RETELL
+    RETELL -- "Markdown-Datei" --> DISCORD
     DB -- "Rückblick" --> DELIVER
     DELIVER --> DISCORD
 ```
@@ -133,7 +134,14 @@ passiert ist** — und Teile davon nacherzählen können.
   von Hand — dasselbe Muster wie die Personen-Zuordnung.
 - Die **Nacherzählung** (#18) kommt bewusst zuletzt: verdichtete Prosa über Wochen von
   Material ist die Stelle mit dem höchsten Erfindungsrisiko. Sie navigiert über das
-  Register; was das Register nicht kennt, kommt nicht vor.
+  Register; was das Register nicht kennt, kommt nicht vor. **Ausgewählt wird über einen
+  Sitzungsbereich** (Operator-Entscheidung 2026-08-11) — von welchem Abend bis zu welchem,
+  nicht über einen Handlungsfaden und nicht über eine Figur. Gearbeitet wird rollierend wie
+  in der Komposition: je Sitzung ein Aufruf, mitgeführt wird nur der zuletzt angenommene
+  Absatz. Eine Sitzung ohne bestätigten Registereintrag wird als **Lücke benannt** statt
+  überbrückt; die Zahlenschranke läuft gegen die Chroniken des Bereichs. Der Lauf gehört
+  dem Server, nicht dem Befehl, und das Ergebnis geht als Markdown-Datei in den Kanal, in
+  dem es angefordert wurde.
 
 ## Was die Kanten nicht zeigen
 

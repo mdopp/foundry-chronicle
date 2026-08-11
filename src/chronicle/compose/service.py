@@ -11,12 +11,19 @@ Rohmaterial — er ist der zweite Ausgang derselben Komposition.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import UTC, datetime
 
 from chronicle import db, lebenszyklus, settings
 from chronicle.compose import client
 from chronicle.compose.client import TextModel
 from chronicle.compose.composer import Composition, SceneMaterial, SessionMaterial, compose
+from chronicle.compose.nacherzaehlung import (
+    Abschnitt,
+    ErzaehlStoff,
+    Nacherzaehlung,
+    nacherzaehlen,
+)
 from chronicle.compose.recap import Recap, RecapMaterial, recap
 from chronicle.config import Config
 from chronicle.foundry import store
@@ -28,6 +35,18 @@ RUECKBLICK = "rueckblick"
 # So viele frühere Rückblicke gehen in den Aufruf: genug für den Faden über mehrere
 # Sitzungen, wenig genug für ein Kontextfenster.
 FRUEHERE = 3
+
+# Der Bereich läuft über die gespielte Reihenfolge, nicht über die Kennung: zwei Sitzungen
+# desselben Tages trennt erst die Id, und nachgetragene Abende bekämen sonst ihren Platz
+# danach, wo sie hingehören, aber im Bereich nicht mehr vorkämen.
+BEREICH = (
+    "SELECT s.id, s.played_on, s.title, p.text FROM session s "
+    "LEFT JOIN protocol p ON p.session_id = s.id AND p.runde_id = s.runde_id AND p.kind = ? "
+    "WHERE s.runde_id = ? "
+    "AND (s.played_on > ? OR (s.played_on = ? AND s.id >= ?)) "
+    "AND (s.played_on < ? OR (s.played_on = ? AND s.id <= ?)) "
+    "ORDER BY s.played_on, s.id"
+)
 
 
 def _now() -> str:
@@ -107,6 +126,43 @@ def recap_material(scope: db.Scope, session_id: int) -> RecapMaterial | None:
     )
 
 
+def erzaehl_material(
+    scope: db.Scope, von: int, bis: int, eintraege: Mapping[int, tuple[str, ...]]
+) -> ErzaehlStoff:
+    """Die Sitzungen zwischen zwei Eckpunkten, jede mit dem, was das Register zu ihr führt.
+
+    ``eintraege`` kommt von außen und nicht aus einer Abfrage hier: das Register ist die
+    Auswahl, und wer sie trifft, soll am Aufruf stehen. Die Chronik geht mit, aber nicht in
+    den Aufruf ans Modell — sie ist die Vorlage der Zahlenschranke.
+    """
+    ecken = [
+        scope.execute(
+            "SELECT played_on, id FROM session WHERE runde_id = ? AND id = ?",
+            (scope.runde_id, session_id),
+        ).fetchone()
+        for session_id in (von, bis)
+    ]
+    if any(ecke is None for ecke in ecken):
+        return ErzaehlStoff()
+    (erste, letzte) = sorted((ecke["played_on"], ecke["id"]) for ecke in ecken)
+    zeilen = scope.execute(
+        BEREICH,
+        (KIND, scope.runde_id, erste[0], erste[0], erste[1], letzte[0], letzte[0], letzte[1]),
+    ).fetchall()
+    return ErzaehlStoff(
+        abschnitte=tuple(
+            Abschnitt(
+                session_id=zeile["id"],
+                played_on=zeile["played_on"],
+                title=zeile["title"],
+                chronicle=zeile["text"] or "",
+                entries=tuple(eintraege.get(zeile["id"], ())),
+            )
+            for zeile in zeilen
+        )
+    )
+
+
 def save(scope: db.Scope, session_id: int, text: str, at: str, kind: str = KIND) -> None:
     with scope:
         scope.execute(
@@ -136,6 +192,37 @@ def compose_session(
         ergebnis = compose(stoff, gewaehlt)
         save(scope, session_id, ergebnis.text, _now())
         return ergebnis
+    finally:
+        scope.close()
+
+
+def erzaehlen(
+    config: Config,
+    runde: Runde,
+    von: int,
+    bis: int,
+    eintraege: Mapping[int, tuple[str, ...]],
+    *,
+    model: TextModel | None = None,
+) -> Nacherzaehlung | None:
+    """Einen Sitzungsbereich nacherzählen — abgelegt wird nichts.
+
+    Die Nacherzählung ist eine Ansicht auf Chroniken und Register, keine dritte Fassung der
+    Sitzung: sie entsteht auf Wunsch neu und geht als Datei hinaus. Eine Kopie in der
+    Datenbank veraltete beim nächsten bestätigten Registereintrag, ohne dass jemand es sähe.
+    """
+    db.init(config.database_path)
+    if lebenszyklus.ruht(runde):
+        return None
+    scope = db.scoped(runde)
+    try:
+        stoff = erzaehl_material(scope, von, bis, eintraege)
+        if not stoff.abschnitte:
+            return None
+        gewaehlt = (
+            model if model is not None else client.from_config(settings.effective(config, runde))
+        )
+        return nacherzaehlen(stoff, gewaehlt)
     finally:
         scope.close()
 
