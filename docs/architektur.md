@@ -10,8 +10,12 @@ Der Lebenszyklus einer Runde hängt an der Gilde (#68, `chronicle.lebenszyklus`)
 Betreten sagt der Bot einmal, was er tut und **dass der Betreiber der Box alles lesen
 kann**; `/setup` beansprucht die Runde für den Server oder legt sie an. Verlässt der Bot
 die Gilde, wird sie sofort gesperrt und nach 30 Tagen vollständig gelöscht — Dateien
-eingeschlossen. Eine Wiedereinladung innerhalb der Frist stellt sie her,
-`/chronik loeschen` zieht die Löschung nach Rückfrage vor.
+eingeschlossen. Gesperrt heißt in jedem Faden: der nächtliche Lauf überspringt sie,
+Verschriften, Komponieren und Foundry-Abgleich weigern sich (`lebenszyklus.ruht`), und das
+flüchtige Foundry-Passwort ist mit dem Rauswurf vergessen. Eine Wiedereinladung innerhalb
+der Frist stellt sie her, danach wird gelöscht statt wiederbelebt; `/chronik loeschen`
+zieht die Löschung nach Rückfrage vor. Beide Befehle verlangen ein Discord-Recht — `/setup`
+die Serververwaltung, das Löschen die Administration.
 
 Konfiguration: Foundry-Adresse und -Benutzer je Runde, Discord-Bot-Token für die Instanz —
 das ist unser Token und nicht das einer Gruppe. Das Foundry-Passwort wird **nirgends**
