@@ -17,7 +17,7 @@ import types
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from conftest import GRENZE, systemsprache
+from conftest import GM_FIGUR, GM_GEFLUESTER, GRENZE, UNSER_KONTO, WELT, systemsprache
 from conftest import runde as erste_runde
 from test_bot import (
     TOKEN,
@@ -2219,3 +2219,230 @@ def test_ein_zweiter_abschluss_loescht_das_eingelesene_nicht(stelle, bot):
     assert [text for text in texte if "Diktiert am Heimweg." in text] == [
         "memo: Diktiert am Heimweg."
     ]
+
+
+# -- Der Ereignisstrom aus Foundry ------------------------------------------------------
+
+
+class FoundryAttrappe:
+    """Das Foundry der Runde, ohne Netz — Welt und Erreichbarkeit ändern sich zwischen Blicken."""
+
+    def __init__(self, welt=None, fehler=None):
+        self.welt = welt
+        self.fehler = fehler
+        self.blicke = 0
+
+    def __call__(self, _wirksam, _geheim):
+        if self.fehler is not None:
+            raise self.fehler
+        return self
+
+    def fetch_world(self):
+        self.blicke += 1
+        return UNSER_KONTO, self.welt
+
+
+def ohne_wurf(welt):
+    """Dieselbe Welt, bevor gewürfelt wurde — sie stellt die Grundlinie des ersten Blicks."""
+    return dict(welt, messages=[n for n in welt["messages"] if n["_id"] != "m-wurf"])
+
+
+def buehne(stelle, bot, monkeypatch, welt=WELT, fehler=None):
+    """Eine laufende Sitzung mit hinterlegtem Passwort und einem Foundry dahinter."""
+    config, unsere = stelle
+    _fenster, thread = sitzung_starten(bot, passwort=PASSWORT)
+    foundry = FoundryAttrappe(welt, fehler)
+    monkeypatch.setattr(foundry_service, "FoundryClient", foundry)
+    sitzung = chronik.sitzung_des_threads(unsere, str(thread.id))
+    return types.SimpleNamespace(
+        config=config,
+        runde=unsere,
+        thread=thread,
+        sitzung=sitzung,
+        foundry=foundry,
+        strom=chronik.Strom(runde=unsere, session_id=sitzung),
+    )
+
+
+def blick(gestellt):
+    """Ein Durchlauf des Stroms — das, was ohne die Wartezeit dazwischen übrig bleibt."""
+    return chronik.ereignisse_abholen(gestellt.config, gestellt.strom)
+
+
+def fakten(gestellt):
+    """Die Foundry-Ereignisse der Sitzung, Szene für Szene — so, wie die Chronik sie liest."""
+    scope = db.scoped(gestellt.runde)
+    try:
+        stoff = compose_service.material(scope, gestellt.sitzung)
+    finally:
+        scope.close()
+    return [(szene.position, [fakt.id for fakt in szene.facts]) for szene in stoff.scenes]
+
+
+def test_der_erste_blick_stellt_nur_die_grundlinie(stelle, bot, monkeypatch):
+    """Sonst stünde beim Anfang das ganze Chat-Log der Welt im Thread.
+
+    Eine Runde, die seit Wochen nicht abgeglichen hat, brächte damit hunderte Würfe von
+    Abenden mit, die längst geschrieben sind.
+    """
+    gestellt = buehne(stelle, bot, monkeypatch)
+    assert blick(gestellt).text == ""
+    assert gestellt.foundry.blicke == 1
+
+
+def test_neue_wuerfe_landen_im_thread_mit_genau_den_zahlen_aus_dem_log(stelle, bot, monkeypatch):
+    gestellt = buehne(stelle, bot, monkeypatch, welt=ohne_wurf(WELT))
+    blick(gestellt)
+    gestellt.foundry.welt = WELT
+
+    gesagt = blick(gestellt).text
+
+    assert "Brok Eisenfaust" in gesagt
+    assert "Knowledge Roll" in gesagt
+    assert "**7**" in gesagt
+    assert "hope 3" in gesagt and "fear 1" in gesagt
+    # Was Foundry nicht liefert, steht auch nicht da: die Summe des blinden Wurfs ist 18,
+    # und sie hat in diesem Thread nichts verloren.
+    assert "18" not in gesagt
+
+
+def test_der_blinde_wurf_der_spielleitung_bleibt_draussen(stelle, bot, monkeypatch):
+    """Der Server filtert nicht — im Thread läse ihn sonst die ganze Gruppe."""
+    gestellt = buehne(stelle, bot, monkeypatch, welt=ohne_wurf(WELT))
+    blick(gestellt)
+    gestellt.foundry.welt = WELT
+
+    gesagt = blick(gestellt).text
+
+    assert "Verborgener Wurf" not in gesagt
+    assert GM_FIGUR not in gesagt and GM_GEFLUESTER not in gesagt
+
+
+def test_jedes_ereignis_genau_einmal(stelle, bot, monkeypatch):
+    gestellt = buehne(stelle, bot, monkeypatch, welt=ohne_wurf(WELT))
+    blick(gestellt)
+    gestellt.foundry.welt = WELT
+
+    assert "Knowledge Roll" in blick(gestellt).text
+    assert blick(gestellt).text == ""
+
+
+def test_der_wurf_haengt_an_der_szene_in_der_er_faellt(stelle, bot, monkeypatch):
+    """Das ist der Ursprungsvermerk: ein Fakt an der Szene, keine Notiz im Text.
+
+    Damit steht die Reihenfolge nicht mehr aus Zeitstempeln rekonstruiert da — und die
+    Komposition kann Belegtes weiter von Verbindungssätzen trennen.
+    """
+    gestellt = buehne(stelle, bot, monkeypatch, welt=ohne_wurf(WELT))
+    blick(gestellt)
+    chronik.szene_setzen(gestellt.runde, gestellt.sitzung, "Im Keller")
+    gestellt.foundry.welt = WELT
+
+    blick(gestellt)
+
+    assert fakten(gestellt) == [(1, []), (2, ["m-wurf"])]
+    assert notizen(gestellt.runde, gestellt.sitzung) == []
+
+
+def test_ein_ausfall_wird_einmal_gesagt_und_dann_still_weiter_versucht(stelle, bot, monkeypatch):
+    """Sonst bestünde der Thread einer Sitzung mit totem Server aus nichts anderem."""
+    gestellt = buehne(stelle, bot, monkeypatch, fehler=FoundryUnreachable("Verbindung abgelehnt"))
+
+    erste = blick(gestellt)
+    zweite = blick(gestellt)
+
+    assert erste.text.startswith("Ich komme gerade nicht an euer Foundry")
+    assert erste.weiter
+    assert zweite.text == "" and zweite.weiter
+
+
+def test_kommt_foundry_zurueck_wird_auch_das_gesagt(stelle, bot, monkeypatch):
+    gestellt = buehne(stelle, bot, monkeypatch, fehler=FoundryUnreachable("Verbindung abgelehnt"))
+    blick(gestellt)
+    gestellt.foundry.fehler = None
+    gestellt.foundry.welt = ohne_wurf(WELT)
+
+    zurueck = blick(gestellt)
+    gestellt.foundry.welt = WELT
+
+    assert zurueck.text == chronik.WIEDER_DA
+    assert "Knowledge Roll" in blick(gestellt).text, "was in der Zwischenzeit fiel, kommt nach"
+
+
+def test_ohne_passwort_endet_der_strom_mit_einem_satz(stelle, bot, monkeypatch):
+    """Nach dem Abschluss ist das Passwort eingelöst — dann hört der Beobachter auf."""
+    gestellt = buehne(stelle, bot, monkeypatch)
+    zugang.vergiss(gestellt.runde)
+
+    ende = blick(gestellt)
+
+    assert not ende.weiter
+    assert ende.text.startswith("Ich sehe von hier an nicht mehr nach Foundry")
+    assert gestellt.foundry.blicke == 0
+
+
+def test_eine_ruhende_runde_bekommt_keinen_strom_und_keinen_satz(stelle, bot, monkeypatch):
+    gestellt = buehne(stelle, bot, monkeypatch)
+    lebenszyklus.sperren(gestellt.config.database_path, GILDE)
+
+    ende = blick(gestellt)
+
+    assert not ende.weiter and ende.text == ""
+    assert gestellt.foundry.blicke == 0
+
+
+def test_der_strom_beginnt_mit_der_sitzung_und_endet_mit_ihr(stelle, bot, monkeypatch):
+    """Bestellt wird er beim Start mit Passwort und abbestellt beim Abschluss.
+
+    Der Abschluss holt die Zahlen selbst und verbraucht dabei das Passwort; ein Beobachter
+    daneben fände beim nächsten Blick keines mehr und sagte das in einen Thread, dessen
+    Sitzung gerade geschrieben wird.
+    """
+    _config, unsere = stelle
+    gestellt: list = []
+    abbestellt: list = []
+    monkeypatch.setattr(
+        gateway, "_strom_stellen", lambda _c, _b, _lauf, r, s: gestellt.append((r.id, s))
+    )
+    monkeypatch.setattr(gateway, "_strom_abbestellen", lambda _lauf, s: abbestellt.append(s))
+
+    _fenster, thread = sitzung_starten(bot, passwort=PASSWORT)
+    sitzung = chronik.sitzung_des_threads(unsere, str(thread.id))
+    asyncio.run(chronikbefehl(bot, "fertig")(FakeCtx(kanal=types.SimpleNamespace(id=thread.id))))
+
+    assert gestellt == [(unsere.id, sitzung)]
+    assert abbestellt == [sitzung]
+
+
+def test_ohne_passwort_wird_kein_beobachter_bestellt(stelle, bot, monkeypatch):
+    """Gegenprobe: ohne Passwort käme er an keinen Server und beendete sich sofort."""
+    gestellt: list = []
+    monkeypatch.setattr(
+        gateway, "_strom_stellen", lambda _c, _b, _lauf, r, s: gestellt.append((r.id, s))
+    )
+
+    sitzung_starten(bot, passwort="")
+
+    assert gestellt == []
+
+
+def test_der_beobachter_stellt_in_den_thread_bis_es_nichts_mehr_zu_sehen_gibt(
+    stelle, bot, monkeypatch
+):
+    """Der Faden selbst: warten, nachsehen, einstellen — und aufhören, wenn Schluss ist."""
+    config, unsere = stelle
+    _fenster, thread = sitzung_starten(bot, passwort=PASSWORT)
+    sitzung = chronik.sitzung_des_threads(unsere, str(thread.id))
+    bot.kanaele[thread.id] = thread
+    monkeypatch.setattr(chronik, "STROM_ABSTAND", 0)
+    meldungen = iter(
+        (chronik.Meldung(text="🎲 erster Wurf"), chronik.Meldung(text="Schluss", weiter=False))
+    )
+    monkeypatch.setattr(chronik, "ereignisse_abholen", lambda _config, _strom: next(meldungen))
+
+    lauf = gateway._Lauf()
+    strom = chronik.Strom(runde=unsere, session_id=sitzung)
+    asyncio.run(gateway._ereignisstrom(config, bot, lauf, strom))
+
+    assert thread.gesendet[-2:] == ["🎲 erster Wurf", "Schluss"]
+    assert lauf.stroeme == {}
