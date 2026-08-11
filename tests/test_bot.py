@@ -599,10 +599,16 @@ class FakeVoiceClient:
         self.schneidet = True
 
     def stop_recording(self):
+        # So verhält sich py-cord: der zweite Beender bekommt eine RecordingException.
+        if not self.schneidet:
+            raise RuntimeError("You are not recording")
         self.schneidet = False
         self.senke.cleanup()
 
     async def disconnect(self):
+        # Das echte Trennen geht ans Netz und damit an die Schleife ab — genau hier war
+        # die Lücke, durch die ein zweiter Beender kam.
+        await asyncio.sleep(0)
         self.getrennt = True
 
 
@@ -1010,10 +1016,32 @@ def zustand(kanal=None):
 
 
 async def ruhen():
-    """Bis der Faden durch ist, der die Frist des leeren Kanals abwartet."""
+    """Bis die Fäden durch sind, die die Frist des leeren Kanals abwarten."""
+    # ``return_exceptions``, weil ein abbestellter Wächter der Normalfall ist: wer den
+    # Mitschnitt beendet, bricht ihn ab, und ein abgebrochener Faden risse sonst dieses
+    # Warten mit sich.
     await asyncio.gather(
-        *(faden for faden in asyncio.all_tasks() if faden is not asyncio.current_task())
+        *(faden for faden in asyncio.all_tasks() if faden is not asyncio.current_task()),
+        return_exceptions=True,
     )
+
+
+# Eine echte, kurze Frist statt null: mit null prüfte kein Test je, dass die Frist
+# überhaupt gewartet und beim erneuten Gehen neu gestellt wird.
+FRIST = 0.2
+
+
+@pytest.fixture
+def kurze_frist(monkeypatch):
+    monkeypatch.setattr(gateway, "LEER_FRIST", FRIST)
+    return FRIST
+
+
+def nur_der_bot(kanal):
+    """Alle gehen — bis auf den Bot, den ``mitglieder`` ohnehin nicht mitzählt."""
+    anwesend = list(kanal.members)
+    kanal.members = [wer for wer in anwesend if wer.bot]
+    return anwesend
 
 
 def alle_gehen(bot, runde):
@@ -1022,7 +1050,7 @@ def alle_gehen(bot, runde):
     async def ablauf():
         await befehl(bot, "start")(FakeCtx(runde.mira))
         runde.kanal.verbindung.senke.write(sprachdaten(stille(480)), runde.mira)
-        runde.kanal.members = [wer for wer in runde.kanal.members if wer.bot]
+        nur_der_bot(runde.kanal)
         await bot.ereignisse["on_voice_state_update"](runde.mira, zustand(runde.kanal), zustand())
         await ruhen()
 
@@ -1030,10 +1058,9 @@ def alle_gehen(bot, runde):
 
 
 def test_ist_niemand_mehr_da_hoert_der_bot_von_selbst_auf(
-    konfiguration, sitzung_im_thread, ohne_espeak, runde, monkeypatch
+    konfiguration, sitzung_im_thread, ohne_espeak, runde, kurze_frist
 ):
     """Die Einwilligung galt dieser Runde, nicht dem, was danach im leeren Kanal fällt."""
-    monkeypatch.setattr(gateway, "LEER_FRIST", 0)
     bot = gateway.baue(konfiguration)
     thread = FakeTextkanal()
     bot.kanaele[THREAD] = thread
@@ -1050,14 +1077,13 @@ def test_ist_niemand_mehr_da_hoert_der_bot_von_selbst_auf(
 
 
 def test_der_leere_kanal_beendet_den_mitschnitt_und_nicht_die_sitzung(
-    konfiguration, sitzung_im_thread, ohne_espeak, runde, monkeypatch
+    konfiguration, sitzung_im_thread, ohne_espeak, runde, kurze_frist
 ):
     """Ausdrücklich offen gelassen und ausdrücklich entschieden: der Thread bleibt offen.
 
     ``/chronik fertig`` verlangt ein Passwort und ist damit eine Entscheidung von Hand —
     niemand gibt es ein, der schon gegangen ist.
     """
-    monkeypatch.setattr(gateway, "LEER_FRIST", 0)
     bot = gateway.baue(konfiguration)
     bot.kanaele[THREAD] = FakeTextkanal()
 
@@ -1070,9 +1096,9 @@ def test_der_leere_kanal_beendet_den_mitschnitt_und_nicht_die_sitzung(
 
 
 def test_wer_in_der_frist_wiederkommt_findet_seine_aufnahme_vor(
-    konfiguration, sitzung_im_thread, ohne_espeak, runde, monkeypatch
+    konfiguration, sitzung_im_thread, ohne_espeak, runde, kurze_frist
 ):
-    monkeypatch.setattr(gateway, "LEER_FRIST", 0)
+    """Der Verbindungsabriss dauert wirklich — hier vergeht Zeit, keine null Sekunden."""
     bot = gateway.baue(konfiguration)
     thread = FakeTextkanal()
     bot.kanaele[THREAD] = thread
@@ -1080,12 +1106,14 @@ def test_wer_in_der_frist_wiederkommt_findet_seine_aufnahme_vor(
 
     async def ablauf():
         await befehl(bot, "start")(FakeCtx(runde.mira))
-        anwesend = list(runde.kanal.members)
-        runde.kanal.members = [wer for wer in anwesend if wer.bot]
+        anwesend = nur_der_bot(runde.kanal)
         await dazu(runde.mira, zustand(runde.kanal), zustand())
         # Die Verbindung war weg, nicht die Runde — und das noch vor Ablauf der Frist.
+        await asyncio.sleep(FRIST / 2)
         runde.kanal.members = anwesend
         await dazu(runde.mira, zustand(), zustand(runde.kanal))
+        # Über die Weckzeit des alten Wächters hinaus: der darf nichts mehr abreißen.
+        await asyncio.sleep(FRIST)
         await ruhen()
 
     asyncio.run(ablauf())
@@ -1096,11 +1124,152 @@ def test_wer_in_der_frist_wiederkommt_findet_seine_aufnahme_vor(
     assert recordings.pending(unsere_runde(konfiguration)) == ()
 
 
+def test_wer_wieder_geht_bekommt_die_ganze_frist_noch_einmal(
+    konfiguration, sitzung_im_thread, ohne_espeak, runde, kurze_frist
+):
+    """Sonst wären aus neunzig Sekunden Karenz eine halbe geworden.
+
+    Der Wächter des ersten Gehens weckt zu seiner Zeit, nicht zu der des zweiten. Wird er
+    beim erneuten Gehen nicht ersetzt, zählt die Frist ab dem ersten — und wer bei T=89
+    zurückkommt und bei T=89,5 die Verbindung wieder verliert, findet die Sitzung
+    geschnitten vor.
+    """
+    bot = gateway.baue(konfiguration)
+    bot.kanaele[THREAD] = FakeTextkanal()
+    dazu = bot.ereignisse["on_voice_state_update"]
+
+    async def ablauf():
+        await befehl(bot, "start")(FakeCtx(runde.mira))
+        anwesend = nur_der_bot(runde.kanal)
+        await dazu(runde.mira, zustand(runde.kanal), zustand())
+        await asyncio.sleep(FRIST * 0.8)
+        runde.kanal.members = anwesend
+        await dazu(runde.mira, zustand(), zustand(runde.kanal))
+        nur_der_bot(runde.kanal)
+        await dazu(runde.mira, zustand(runde.kanal), zustand())
+        # Jetzt ist die Weckzeit des ersten Wächters lange vorbei, die des zweiten nicht.
+        await asyncio.sleep(FRIST * 0.5)
+        noch_dabei = runde.kanal.verbindung.schneidet
+        await ruhen()
+        return noch_dabei
+
+    assert asyncio.run(ablauf())
+    # Und danach greift das Netz trotzdem — neu gestellt heißt nicht abbestellt.
+    assert not runde.kanal.verbindung.schneidet
+    assert runde.kanal.verbindung.getrennt
+
+
+def test_der_waechter_der_alten_aufnahme_verdraengt_den_der_neuen_nicht(
+    konfiguration, sitzung_im_thread, ohne_espeak, runde, kurze_frist
+):
+    """Genau der Zustand, gegen den dieser Wächter gebaut ist: ein leerer Kanal läuft weiter.
+
+    Aufnahme X endet von Hand, während ihr Wächter noch schläft. Beginnt Y innerhalb der
+    Frist und leert sich auch, muss Y einen **eigenen** Wächter bekommen — sonst schneidet
+    Y unbegrenzt einen leeren Kanal mit, und ein zweites Ereignis kommt nicht mehr.
+    """
+    bot = gateway.baue(konfiguration)
+    thread = FakeTextkanal()
+    bot.kanaele[THREAD] = thread
+    dazu = bot.ereignisse["on_voice_state_update"]
+
+    async def ablauf():
+        await befehl(bot, "start")(FakeCtx(runde.mira))
+        anwesend = nur_der_bot(runde.kanal)
+        await dazu(runde.mira, zustand(runde.kanal), zustand())
+        await befehl(bot, "stop")(FakeCtx(runde.mira))
+        # Y beginnt innerhalb der Frist von X — deren Wächter schläft noch.
+        runde.kanal.members = anwesend
+        await befehl(bot, "start")(FakeCtx(runde.mira))
+        zweite = runde.kanal.verbindung
+        nur_der_bot(runde.kanal)
+        await dazu(runde.mira, zustand(runde.kanal), zustand())
+        await ruhen()
+        return zweite
+
+    zweite = asyncio.run(ablauf())
+
+    assert not zweite.schneidet
+    assert zweite.getrennt
+    assert thread.geschrieben[-1].startswith(gateway.LEER_BEENDET)
+
+
+def test_verschoben_zaehlt_weiter_der_kanal_der_aufnahme(
+    konfiguration, sitzung_im_thread, ohne_espeak, runde, kurze_frist
+):
+    """»Gegangen« und »leer« müssen denselben Kanal meinen.
+
+    py-cord führt ``VoiceClient.channel`` nach, wenn ein Admin den Bot verschiebt. Zählte
+    die Leere dort, entschiede sie über eine fremde Besetzung: der Ursprungskanal leert
+    sich, nebenan sitzen Leute, und das Netz griffe nie.
+    """
+    bot = gateway.baue(konfiguration)
+    bot.kanaele[THREAD] = FakeTextkanal()
+    dazu = bot.ereignisse["on_voice_state_update"]
+
+    async def ablauf():
+        await befehl(bot, "start")(FakeCtx(runde.mira))
+        nachbar = FakeSprachkanal(runde.gilde, runde.mira, runde.brok)
+        nachbar.id = 78
+        runde.kanal.verbindung.channel = nachbar
+        nur_der_bot(runde.kanal)
+        await dazu(runde.mira, zustand(runde.kanal), zustand())
+        await ruhen()
+
+    asyncio.run(ablauf())
+
+    assert not runde.kanal.verbindung.schneidet
+    assert runde.kanal.verbindung.getrennt
+
+
+def test_der_gescheiterte_abschied_sagt_es_statt_zu_verschwinden(
+    konfiguration, sitzung_im_thread, ohne_espeak, runde, kurze_frist, monkeypatch
+):
+    """Ein Faden nebenher hat niemanden, dem er antwortet — also sagt er es im Thread."""
+
+    async def stolpert(*args, **kwargs):
+        raise RuntimeError("You are not recording")
+
+    bot = gateway.baue(konfiguration)
+    thread = FakeTextkanal()
+    bot.kanaele[THREAD] = thread
+    monkeypatch.setattr(recorder, "stoppen", stolpert)
+
+    alle_gehen(bot, runde)
+
+    assert thread.geschrieben == [gateway.LEER_GESCHEITERT]
+
+
+def test_zwei_beender_zugleich_geben_dem_zweiten_keine_leere_antwort(
+    konfiguration, sitzung_im_thread, ohne_espeak, runde, kurze_frist
+):
+    """``recorder.stoppen`` gibt beim Trennen ab; in der Lücke kam bisher ein zweiter durch.
+
+    Der zweite bekam von py-cord »You are not recording« zu hören und die Runde ein »das
+    hat nicht geklappt« für einen Stopp, der geklappt hat.
+    """
+    bot = gateway.baue(konfiguration)
+    bot.kanaele[THREAD] = FakeTextkanal()
+
+    async def ablauf():
+        await befehl(bot, "start")(FakeCtx(runde.mira))
+        erster, zweiter = FakeCtx(runde.mira), FakeCtx(runde.mira)
+        await asyncio.gather(befehl(bot, "stop")(erster), befehl(bot, "stop")(zweiter))
+        return erster, zweiter
+
+    erster, zweiter = asyncio.run(ablauf())
+
+    antworten = erster.antworten + zweiter.antworten
+    assert len(antworten) == 2
+    assert not any(antwort.startswith("Das hat nicht geklappt") for antwort in antworten)
+    assert gateway.LAEUFT_NICHT in antworten
+    assert runde.kanal.verbindung.getrennt
+
+
 def test_ohne_thread_endet_der_mitschnitt_trotzdem(
-    konfiguration, sitzung_id, ohne_espeak, runde, monkeypatch
+    konfiguration, sitzung_id, ohne_espeak, runde, kurze_frist
 ):
     """Eine Sitzung aus der Zeit vor dem Thread hat keinen — gesagt wird es dann nirgends."""
-    monkeypatch.setattr(gateway, "LEER_FRIST", 0)
     bot = gateway.baue(konfiguration)
 
     alle_gehen(bot, runde)
