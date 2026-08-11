@@ -157,24 +157,34 @@ Wahl des Kanals, in den die fertige Chronik geht, und wahlweise Modell und Uhrze
 nächtlichen Laufs. Der Aufruf beansprucht die Runde für diesen Server oder legt sie an;
 ein leeres Feld lässt den bisherigen Wert stehen. **Nach dem Passwort fragt das Fenster
 nicht** — es kommt am Sitzungsende, wird einmal benutzt und vergessen (siehe
-*Zugangsdaten*).
+*Zugangsdaten*). Aufrufen darf ihn, **wer den Server verwaltet**: hier steht, welchem
+Foundry-Server der Bot später das Passwort der Spielleitung vorzeigt.
 
 **Der Rauswurf wirkt sofort.** Verlässt der Bot die Gilde, wird die Runde gesperrt: es
-wird nichts mehr abgelegt und nichts mehr herausgegeben. Nach **30 Tagen**
-(`lebenszyklus.FRIST_TAGE`) ist sie gelöscht; eine Wiedereinladung innerhalb der Frist
-bringt sie vollständig zurück, danach ist sie fort. Beides sagt der Bot vorher, in der
-Einladung und vor jeder Löschung. Die Frist prüft derselbe dauerhafte Prozess, der auch
-die Aufbewahrungsfrist der Aufnahmen durchsetzt — zwei Zusagen, zwei Läufe, damit ein
-Fehler in der einen die andere nicht mitnimmt.
+wird nichts mehr abgelegt und nichts mehr herausgegeben. Sofort heißt dabei in jedem
+Faden — der nächtliche Lauf überspringt sie, Verschriften, Komponieren und der
+Foundry-Abgleich weigern sich, und ein noch im Speicher liegendes Foundry-Passwort ist
+mit dem Rauswurf vergessen. Nach **30 Tagen** (`lebenszyklus.FRIST_TAGE`) ist sie
+gelöscht; eine Wiedereinladung innerhalb der Frist bringt sie vollständig zurück, danach
+ist sie fort — eine Gilde, die nach der Frist zurückkommt, wird begrüßt wie eine fremde,
+und der Rest wird dabei gelöscht. Beides sagt der Bot vorher, in der Einladung und vor
+jeder Löschung. Die Frist prüft derselbe dauerhafte Prozess, der auch die
+Aufbewahrungsfrist der Aufnahmen durchsetzt — zwei Zusagen, zwei Läufe, damit ein Fehler
+in der einen die andere nicht mitnimmt.
 
 **`/chronik loeschen` erzwingt es sofort**, nach einer Rückfrage mit Knopf und einer
-vollständigen Liste dessen, was verschwindet. Und das heißt vollständig: Sitzungen,
-Szenen, Notizen, Diktate, Transkripte, Aufnahmen **samt Tondateien**, Chroniken,
-Rückblicke, Register, Zuordnung, der Foundry-Zwischenspeicher, der Suchindex — und die
-**Einwilligungsprotokolle**. Die sind der heikle Fall, denn sie belegen, dass angesagt
-wurde; sie gehen trotzdem mit. Was sie belegen, ist *wer* dabei war — anonymisiert belegen
-sie nichts mehr und wären bloß noch ein personenbezogener Rest ohne Zweck. Und sie
-verteidigen gegen einen Vorwurf zu einer Aufnahme, die es dann nicht mehr gibt.
+vollständigen Liste dessen, was verschwindet; geben darf ihn die **Administration** des
+Servers, und auch eine hinausgeworfene Runde darf es, ohne den Bot dafür wieder
+einzuladen. Und das heißt vollständig: Sitzungen, Szenen, Notizen, Diktate, Transkripte,
+Aufnahmen **samt Tondateien** — auch denen, die nie eine Zeile bekommen haben —,
+Chroniken, Rückblicke, Register, Zuordnung, der Foundry-Zwischenspeicher, der Suchindex
+und die **Einwilligungsprotokolle**. Die sind der heikle Fall, denn sie belegen, dass
+angesagt wurde; sie gehen trotzdem mit. Was sie belegen, ist *wer* dabei war —
+anonymisiert belegen sie nichts mehr und wären bloß noch ein personenbezogener Rest ohne
+Zweck über Menschen, die mit dieser Instanz nichts mehr zu tun haben. Der Preis wird
+dabei nicht verschwiegen: eine ausgelieferte Chronik liegt in einem Discord-Kanal und
+bleibt dort, das Abgeleitete überdauert also den Beleg. Genau das steht in der
+Rückfrage, damit sich holen kann, wer den Beleg braucht.
 
 ## Erfassen per Discord: der Thread ist die Sitzung
 
