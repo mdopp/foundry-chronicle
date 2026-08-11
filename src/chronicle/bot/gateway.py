@@ -489,6 +489,9 @@ async def _mitschnitt_beenden(lauf: _Lauf, runde: Runde | None = None) -> tuple[
     # zweiter Beender in dieser Lücke bekäme von py-cord »You are not recording«.
     lauf.aufnahme = None
     lauf.stimme = None
+    # Der Vermerk ist eine Liste von Discord-Kennungen; ohne diese Zeile hielte der Prozess
+    # sie nach dem Ende der Aufnahme weiter vor, ohne dass ihn noch jemand liest.
+    allein, lauf.allein = lauf.allein, None
     _leerlauf_absagen(lauf)
     try:
         return tuple(await recorder.stoppen(stimme, aufnahme))
@@ -500,7 +503,7 @@ async def _mitschnitt_beenden(lauf: _Lauf, runde: Runde | None = None) -> tuple[
         # hieße, bei bleibendem Fehler alle neunzig Sekunden denselben Fehlschlag in den
         # Thread zu schreiben. Also sagt ``LEER_GESCHEITERT`` es stattdessen — von selbst
         # sieht erst wieder nach, wen ``on_voice_state_update`` neu bestellt.
-        lauf.aufnahme, lauf.stimme = aufnahme, stimme
+        lauf.aufnahme, lauf.stimme, lauf.allein = aufnahme, stimme, allein
         raise
 
 
@@ -579,6 +582,10 @@ async def _in_den_thread(bot, aufnahme: Aufnahme, text: str) -> bool:
 
     Zurück kommt, ob es einen Weg dorthin gab. Wo der Satz nur begleitet, ist das
     gleichgültig; wo er die Bedingung des Weitermachens ist, hängt daran die Entscheidung.
+    Ein **fortgeräumter** Thread ist dabei kein Weg, sondern ein fehlender: Discords 404
+    kommt beim nächsten Ereignis genauso wieder, und wer ihn wie ein Zucken behandelt,
+    schneidet ewig weiter, ohne dass je etwas gesagt wurde. Alles andere fliegt weiter —
+    ein zuckendes Discord ist beim nächsten Wechsel womöglich wieder da.
     """
     # Die Aufnahme hält ihre Runde seit Stunden. Ist sie inzwischen gelöscht und ihre
     # Kennung neu vergeben, führte die Frage nach dem Thread in eine fremde Kampagne.
@@ -590,17 +597,31 @@ async def _in_den_thread(bot, aufnahme: Aufnahme, text: str) -> bool:
         logger.info("Sitzung %s hat keinen Thread — es bleibt ungesagt.", aufnahme.session_id)
         return False
     kennung = int(thread_id)
-    thread = bot.get_channel(kennung) or await bot.fetch_channel(kennung)
-    await _zustellen(thread.send, text)
+    discord = _discord()
+    try:
+        thread = bot.get_channel(kennung) or await bot.fetch_channel(kennung)
+        await _zustellen(thread.send, text)
+    except discord.NotFound:
+        logger.info(
+            "Thread %s der Sitzung %s ist fort — es bleibt ungesagt.",
+            kennung,
+            aufnahme.session_id,
+        )
+        return False
     return True
 
 
 async def _allein_melden(bot, lauf: _Lauf, zurueck: consent.Member) -> None:
     """Der Zurückgebliebenen sagen, dass sie es ist — und sonst den Mitschnitt beenden.
 
-    Der Vermerk wird **nach** dem Sagen gesetzt: davor verbrennte ein einziges zuckendes
-    ``thread.send`` den Satz endgültig, denn nachgeholt wird er nirgends. Bleibt er aus,
-    kommt der nächste Zustandswechsel noch einmal hier vorbei.
+    Der Vermerk wird **vor** dem Sagen gesetzt und bei gescheiterter Zustellung wieder
+    zurückgenommen. Beides ist nötig und keines allein reicht: py-cord stellt jedes
+    Sprachereignis als eigenen Task zu und hat den Mitglieder-Zwischenspeicher schon
+    vorher aktualisiert — gehen zwei im selben Gateway-Schwung, sehen **beide** Handler
+    dieselbe eine Verbliebene, und ein Vermerk hinter dem ``await`` fände in beiden nichts
+    vor. Der Satz stünde zweimal im Thread. Nur davor zu vermerken verbrennte ihn dafür
+    beim ersten zuckenden ``thread.send``, denn nachgeholt wird er nirgends; genommen wird
+    er deshalb erst, wenn er ankam.
 
     Und erreicht er niemanden, weil die Sitzung keinen Thread hat oder die Runde fort ist,
     endet der Mitschnitt. Zugesagt war, dass sie es **erfährt** und widersprechen kann,
@@ -612,17 +633,19 @@ async def _allein_melden(bot, lauf: _Lauf, zurueck: consent.Member) -> None:
     vermerkt = lauf.allein[1] if lauf.allein is not None and lauf.allein[0] is aufnahme else set()
     if zurueck.id in vermerkt:
         return
+    vermerkt.add(zurueck.id)
+    lauf.allein = (aufnahme, vermerkt)
     try:
         angekommen = await _in_den_thread(bot, aufnahme, ALLEIN)
     except Exception:  # noqa: BLE001
+        vermerkt.discard(zurueck.id)
         logger.exception("Der Satz ans Alleinsein kam nicht durch — beim nächsten Wechsel neu")
         return
     if angekommen:
-        vermerkt.add(zurueck.id)
-        lauf.allein = (aufnahme, vermerkt)
         return
+    vermerkt.discard(zurueck.id)
     logger.warning(
-        "Sitzung %s hat keinen Thread — allein wird deshalb nicht weitergeschnitten.",
+        "Der Satz ans Alleinsein hat in Sitzung %s keinen Weg — es wird nicht weitergeschnitten.",
         aufnahme.session_id,
     )
     try:
