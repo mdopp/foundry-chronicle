@@ -117,3 +117,19 @@ class SyncState:
     message: str
     stale: bool = False
     snapshot: WorldSnapshot | None = None
+
+
+@dataclass(frozen=True)
+class Ereignisse:
+    """Was **ein** Blick in die laufende Welt hergibt — der Strom während der Sitzung.
+
+    ``neu`` sind die Ereignisse, die dieser Blick zum ersten Mal sieht, in der Reihenfolge,
+    in der sie passiert sind. ``grund`` steht da, wo keiner möglich war. ``weiter`` sagt, ob
+    ein nächster Blick überhaupt Sinn hat: eine ruhende Runde, eine fremde Welt und ein
+    abgelaufenes Passwort ändern sich nicht dadurch, dass man gleich noch einmal fragt —
+    ein Foundry, das gerade neu startet, sehr wohl.
+    """
+
+    neu: tuple[ChatMessage, ...] = ()
+    grund: str | None = None
+    weiter: bool = True
