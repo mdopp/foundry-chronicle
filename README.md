@@ -82,8 +82,8 @@ durchspielen will, findet den Weg dahin in
 und gehört nie ins Repo.
 
 **Das Foundry-Passwort wird nirgends gespeichert** — es gibt kein Feld dafür, keine
-Variable und keine Zeile in der SQLite. Der Abgleich fragt danach, verbraucht es und
-vergisst es; ein Rest im Arbeitsspeicher verfällt spätestens nach zwölf Stunden. Hashen
+Variable und keine Zeile in der SQLite. Gefragt wird beim Sitzungsstart, spätestens beim
+Abschluss; der Abgleich verbraucht es und vergisst es; ein Rest im Arbeitsspeicher verfällt spätestens nach zwölf Stunden. Hashen
 ginge nicht: Foundry will es vorgezeigt, nicht geprüft. Der Bot-Token bleibt gespeichert,
 wird aber nie angezeigt, nur *ob* er gesetzt ist; ein leer abgesendetes Feld heißt
 unverändert. Die Ollama-Adresse hat eine dritte Stufe: ist weder
@@ -177,7 +177,7 @@ Wahl des Kanals, in den die fertige Chronik geht, und wahlweise die Uhrzeit des
 nächtlichen Laufs. Das Ollama-Modell steht nicht darin: es gehört der Instanz und nicht
 der Runde (#87). Der Aufruf beansprucht die Runde für diesen Server oder legt sie an;
 ein leeres Feld lässt den bisherigen Wert stehen. **Nach dem Passwort fragt das Fenster
-nicht** — es kommt am Sitzungsende, wird einmal benutzt und vergessen (siehe
+nicht** — es kommt beim Sitzungsstart, wird einmal benutzt und vergessen (siehe
 *Zugangsdaten*). Aufrufen darf ihn, **wer den Server verwaltet**: hier steht, welchem
 Foundry-Server der Bot später das Passwort der Spielleitung vorzeigt.
 
@@ -210,8 +210,11 @@ Rückfrage, damit sich holen kann, wer den Beleg braucht.
 ## Erfassen per Discord: der Thread ist die Sitzung
 
 `/chronik start [Titel]` legt beides zugleich an — die Sitzung und den Thread, in dem sie
-geschrieben wird. Der Thread ist der natürliche Behälter: Anfang, Ende, Teilnehmerliste,
-Zeitachse, und die Runde tippt ohnehin dort. Darin gilt:
+geschrieben wird. Davor steht ein Fenster für das **Foundry-Passwort**: wer es gibt, hat
+Foundry die ganze Sitzung über offen; wer das Feld leer lässt, spielt ohne die Zahlen
+weiter und wird beim Abschluss noch einmal gefragt — **an einem fehlenden Passwort
+scheitert keine Sitzung.** Der Thread ist der natürliche Behälter: Anfang, Ende,
+Teilnehmerliste, Zeitachse, und die Runde tippt ohnehin dort. Darin gilt:
 
 - **Jede Nachricht ist eine Notiz** der laufenden Szene. Eingefügter Text — Log,
   Notizzettel, was auch immer — ist einfach eine Nachricht. Der Bot quittiert sie nicht:
@@ -220,9 +223,10 @@ Zeitachse, und die Runde tippt ohnehin dort. Darin gilt:
 - **Eine Sprachnachricht oder ein Audio-Anhang** ist ein Diktat und reiht sich in dieselbe
   Warteschlange ein wie ein Upload — quittiert wird er, weil er den Thread verlässt.
 - **`/chronik fertig`** schließt die Sitzung ab: Abgleich mit Foundry, Transkription der
-  wartenden Spuren, Komposition — **ein** Auftrag, mit Statusmeldung im Thread. Das
-  Foundry-Passwort wird dabei in einem Fenster erfragt, einmal verwendet und vergessen
-  (siehe *Zugangsdaten*); ein Befehls-Argument stünde als Klartext im Kanalverlauf.
+  wartenden Spuren, Komposition — **ein** Auftrag, mit Statusmeldung im Thread. Nach dem
+  Foundry-Passwort fragt ein Fenster nur, wenn beim Start keines kam; verwendet und
+  vergessen wird es so oder so (siehe *Zugangsdaten*). Ein Befehls-Argument gibt es dafür
+  nicht — es stünde als Klartext im Kanalverlauf.
 
 **Nachträgliches Erfassen geht.** Eine Nachricht Tage später im Thread gehört weiter zu
 dieser Sitzung, und in welche **Szene** sie fällt, entscheidet ihr eigener Zeitpunkt: die

@@ -124,8 +124,10 @@ er trägt dessen Berechtigungen — das Protokoll sieht damit genau so viel wie 
 Mensch. Ein eigenes Konto mit passenden Rechten ist sauberer als das eines Mitspielers.
 
 **Das Passwort wird nirgends gespeichert** (#64): nicht in der SQLite, nicht in einer
-Umgebungsvariable, nicht in einer Datei. Es wird gefragt, wenn der Abgleich es braucht,
-lebt bis dahin im Arbeitsspeicher (`chronicle.zugang`) und wird vom Abgleich verbraucht —
+Umgebungsvariable, nicht in einer Datei. Gefragt wird beim **Sitzungsstart**, damit
+Foundry den Abend über offen steht (#96) — freiwillig; ohne es läuft die Sitzung ohne
+Zahlen weiter, und der Abschluss fragt noch einmal. Es lebt bis dahin im Arbeitsspeicher
+(`chronicle.zugang`), verfällt dort nach zwölf Stunden und wird vom Abgleich verbraucht —
 auch vom gescheiterten. Hashen ginge nicht: wir müssen es vorzeigen, nicht prüfen. Und es
 steht in keinem Aufrufargument (landet sonst in der Shell-History) und in keiner Logzeile.
 
