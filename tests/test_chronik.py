@@ -36,7 +36,7 @@ from test_bot import (
 from test_bot import FakeCtx as FakeSprechCtx
 
 import chronicle.bot.__main__ as bot_eintritt
-from chronicle import db, jobs, notes, recordings, zugang
+from chronicle import db, jobs, lebenszyklus, notes, recordings, zugang
 from chronicle import runde as runden
 from chronicle.bot import ansage, chronik, einrichten, erinnern, gateway, recorder
 from chronicle.config import Config
@@ -586,6 +586,36 @@ def test_fertig_fragt_nach_dem_passwort_und_stoesst_den_einen_lauf_an(stelle, bo
     assert interaktion.response.gesendet == [chronik.FERTIG]
     assert thread.gesendet == [chronik.ANGELEGT, STEHT]
     assert jobs.latest(unsere, jobs.CHRONIK, sitzung_id).result == STEHT
+
+
+def test_ein_altes_passwortfenster_zeigt_das_passwort_keiner_fremden_runde(
+    stelle, bot, monkeypatch
+):
+    """Der stillste der fünf Wege: das Fenster lebt eine Viertelstunde und trägt seine Runde
+    mit. Wäre die Kennung inzwischen neu vergeben, ginge das Passwort dieser Gruppe an das
+    Foundry einer fremden — die Adresse dorthin steht in *ihrer* Runde."""
+    config, unsere = stelle
+    _ctx, thread = sitzung_starten(bot)
+    gesehen = []
+    monkeypatch.setattr(jobs, "abschluss", lambda config, eine, sid: gesehen.append(eine.id))
+
+    ctx = FakeCtx(kanal=types.SimpleNamespace(id=thread.id))
+    interaktion = FakeInteraction(thread)
+
+    async def ablauf():
+        await chronikbefehl(bot, "fertig")(ctx)
+        lebenszyklus.loeschen(config, unsere)
+        frisch = runden.anlegen(config.database_path, "Frisch", guild_id=GILDE)
+        ctx.modale[0].children[0].value = PASSWORT
+        await ctx.modale[0].callback(interaktion)
+        return frisch
+
+    frisch = asyncio.run(ablauf())
+
+    assert frisch.id == unsere.id
+    assert interaktion.response.gesendet == [chronik.VERALTET]
+    assert gesehen == []
+    assert not zugang.ist_gemerkt(frisch)
 
 
 def test_das_passwort_steht_in_keiner_antwort_und_liegt_danach_nicht_mehr(stelle, bot, monkeypatch):

@@ -683,6 +683,27 @@ def test_mehr_konten_als_in_ein_menue_passen(stelle, bot):
     assert hinweis in ctx.embeds[0].gebaut["footer"]["text"]
 
 
+def test_ein_altes_zuordnungsmenue_ordnet_nicht_in_die_frische_runde(stelle, bot):
+    """Wer wen spielt, ist eine Aussage über Personen — sie darf nicht in einer fremden
+    Gilde landen, bloß weil SQLite die Kennung wieder vergeben hat."""
+    config, unsere = stelle
+    sitzung = sitzung_mit_notiz(unsere)
+    aufgenommen(unsere, sitzung, (MIRA, "Mira"))
+    welt_ablegen(unsere)
+    ctx = FakeCtx()
+    asyncio.run(befehl(bot, gateway.BEFEHL_ZUORDNUNG)(ctx))
+    alte = ctx.ansichten[0]
+
+    lebenszyklus.loeschen(config, unsere)
+    frisch = runden.anlegen(config.database_path, "Frisch", guild_id=GILDE)
+    assert frisch.id == unsere.id
+
+    interaktion = waehlen(alte, MIRA, "u-mira")
+
+    assert interaktion.response.bearbeitet[0]["content"] == chronik.VERALTET
+    assert people.overview(frisch).personen == ()
+
+
 def test_die_zuordnung_der_fremden_runde_bleibt_unberuehrt(stelle, bot):
     config, unsere = stelle
     sitzung = sitzung_mit_notiz(unsere)
