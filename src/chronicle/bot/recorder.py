@@ -193,7 +193,7 @@ class Aufnahme:
             guild_id=self.kanal.guild_id,
             channel_id=self.kanal.id,
             channel_name=self.kanal.name,
-            text=ansage.TEXT,
+            text=ansage.PROTOKOLL,
             members=mitglieder,
         )
         if art == consent.ANSAGE:
@@ -324,7 +324,7 @@ async def starten(config: Config, stimme: Stimme, runde: Runde) -> Aufnahme:
     sitzung = notes.latest_session(runde)
     if sitzung is None:
         raise AufnahmeFehler(OHNE_SITZUNG)
-    gesprochen = ansage.datei(config.recordings_dir)
+    gesprochen = ansage.datei(config.recordings_dir, tts_url=config.tts_url)
 
     aufnahme = Aufnahme(config, runde, sitzung.id, stimme.kanal)
     await stimme.ansagen(gesprochen)
@@ -349,7 +349,7 @@ async def nachzuegler(
     —, entsteht keiner. Ein Protokoll, das eine Zustimmung behauptet, die niemand geben
     konnte, ist schlimmer als eine Lücke.
     """
-    await stimme.ansagen(ansage.datei(config.recordings_dir))
+    await stimme.ansagen(ansage.datei(config.recordings_dir, tts_url=config.tts_url))
     if not stimme.im_kanal():
         logger.warning("Die Ansage für einen Nachzügler lief woanders — kein Eintrag.")
         return None
