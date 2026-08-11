@@ -262,13 +262,6 @@ def _discord():
     return discord
 
 
-# ``davey`` fehlt bei uns mit Absicht: es meldet Discord DAVE-Fähigkeit, und dann kommt
-# der Ton Ende-zu-Ende verschlüsselt an, während py-cord erst dekodiert und danach
-# entschlüsselt — der Opus-Dekoder sieht Rauschen. Siehe pyproject.toml. Ein Fehlen darf
-# den Start also nicht aufhalten; PyNaCl muss dagegen da sein.
-ABSICHTLICH_OHNE = frozenset({"davey"})
-
-
 def _dave_abmelden(discord) -> None:
     """Discord die DAVE-Fassung **0** melden — sonst hört der Bot nichts.
 
@@ -278,20 +271,20 @@ def _dave_abmelden(discord) -> None:
     sieht Rauschen, wirft »corrupted stream«, der Empfänger stirbt und die Sitzung bekommt
     keine einzige Spur. Am 2026-08-11 genau so erlebt.
 
-    Die Abhängigkeiten holen ``davey`` deshalb nicht mehr (siehe ``pyproject.toml``).
-    Diese Zeile ist der zweite Riegel: ``py-cord[voice]`` zieht es mit, und ein
-    Nachbarpaket kann es jederzeit wieder hereinbringen. Steht die Fassung dann auf 0,
-    stuft Discord den Kanal auf die Transportverschlüsselung herunter, die PyNaCl liest.
+    ``davey`` einfach wegzulassen geht nicht: py-cord wirft dann schon beim Import von
+    ``discord.voice`` (``MissingVoiceDependenciesError``). Es bleibt also installiert, und
+    hier wird nur die **gemeldete** Fassung auf 0 gesetzt. Discord stuft den Kanal dann auf
+    die Transportverschlüsselung herunter, die PyNaCl liest.
 
-    Fällt DAVE eines Tages nicht mehr weg, weil Discord es erzwingt, hört der Bot auf zu
-    hören — dann hilft nur eine py-cord-Fassung, die vor dem Dekodieren entschlüsselt
-    (Pycord-Issue #3139).
+    Erzwingt Discord DAVE eines Tages, hört der Bot auf zu hören — dann hilft nur eine
+    py-cord-Fassung, die vor dem Dekodieren entschlüsselt (Pycord-Issue #3139).
     """
     zustand = getattr(getattr(discord, "voice", None), "state", None)
     if zustand is None or getattr(zustand, "DAVE_PROTOCOL_VERSION", 0) == 0:
         return
     logger.info(
-        "DAVE wird abgemeldet: gemeldet wird Fassung 0 statt %s.", zustand.DAVE_PROTOCOL_VERSION
+        "DAVE wird abgemeldet: gemeldet wird Fassung 0 statt %s.",
+        zustand.DAVE_PROTOCOL_VERSION,
     )
     zustand.DAVE_PROTOCOL_VERSION = 0
 
@@ -299,15 +292,11 @@ def _dave_abmelden(discord) -> None:
 def _sprache_pruefen(discord) -> None:
     """Beim Start prüfen, was sonst erst im Sprachkanal auffällt.
 
-    Fehlt PyNaCl, verbindet sich py-cord anstandslos und schreibt eine einzige Warnzeile
-    ins Log; scheitern würde erst ``/aufnahme start``, mitten im Befehl und für den
-    Aufrufer unsichtbar. Ein Bot, der nichts hören kann, soll das beim Start sagen.
+    Fehlt PyNaCl oder davey, verbindet sich py-cord anstandslos und schreibt eine einzige
+    Warnzeile ins Log; scheitern würde erst ``/aufnahme start``, mitten im Befehl und für
+    den Aufrufer unsichtbar. Ein Bot, der nichts hören kann, soll das beim Start sagen.
     """
-    fehlend = tuple(
-        name
-        for name in discord.utils.get_missing_voice_dependencies()
-        if name not in ABSICHTLICH_OHNE
-    )
+    fehlend = discord.utils.get_missing_voice_dependencies()
     if fehlend:
         raise BotFehler(SPRACHE_FEHLT.format(fehlend=", ".join(fehlend)))
 

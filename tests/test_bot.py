@@ -1239,33 +1239,13 @@ def test_ohne_sprach_abhaengigkeiten_startet_der_bot_gar_nicht(konfiguration, py
     # Genau der Fall, der auf der Box rot war: py-cord verbindet sich anstandslos und
     # schreibt eine Warnzeile, aber hören kann der Bot nichts. Das gehört an den Start,
     # nicht mitten in den Befehl.
-    pycord.utils.get_missing_voice_dependencies = lambda: ("PyNaCl",)
+    pycord.utils.get_missing_voice_dependencies = lambda: ("davey",)
 
     with pytest.raises(BotFehler) as fehler:
         gateway.baue(konfiguration)
 
-    assert "PyNaCl" in str(fehler.value)
+    assert "davey" in str(fehler.value)
     assert FakeBot.erzeugt == []
-
-
-def test_das_fehlende_davey_haelt_den_start_nicht_auf(konfiguration, pycord):
-    """``davey`` fehlt mit Absicht — es ist die Bedingung dafuer, dass der Bot etwas hoert.
-
-    Mit davey meldet py-cord Discord DAVE-Faehigkeit, der Ton kommt Ende-zu-Ende
-    verschluesselt an, und ``opus.py`` dekodiert **erst** und entschluesselt **danach**:
-    der Dekoder sieht Rauschen und wirft »corrupted stream«. Am 2026-08-11 hat die erste
-    echte Runde deshalb keine Spur bekommen. Ohne davey melden wir DAVE-Fassung 0 und
-    Discord stuft auf die Transportverschluesselung herunter, die PyNaCl lesen kann.
-
-    Ein Start, der ueber das absichtlich fehlende Paket stolpert, machte den Bot
-    unbrauchbar — deshalb steht das hier fest.
-    """
-    pycord.utils.get_missing_voice_dependencies = lambda: ("davey",)
-
-    bot = gateway.baue(konfiguration)
-
-    assert bot is not None
-    assert FakeBot.erzeugt != []
 
 
 def test_die_fehlende_inhalts_freigabe_wird_gesagt_statt_geworfen(
