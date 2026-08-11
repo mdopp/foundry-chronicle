@@ -329,6 +329,7 @@ ABFRAGEN = {
         people.overview(r).personen[0], people.overview(r).spieler
     ),
     "lebenszyklus.frist_datum": lambda c, r, i: lebenszyklus.frist_datum(r),
+    "lebenszyklus.ruht": lambda c, r, i: lebenszyklus.ruht(r),
 }
 
 # Schreibende Aufrufe. Sie werden nicht auf eine Antwort geprüft, sondern darauf, dass sie

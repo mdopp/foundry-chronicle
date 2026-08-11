@@ -14,7 +14,7 @@ from __future__ import annotations
 import logging
 from datetime import UTC, datetime
 
-from chronicle import db, settings, zugang
+from chronicle import db, lebenszyklus, settings, zugang
 from chronicle.config import Config
 from chronicle.foundry import store
 from chronicle.foundry.client import FoundryClient, FoundryError
@@ -133,6 +133,10 @@ def sync(
     zeitpunkt = _now()
     scope = _open(config, runde)
     try:
+        # Nach dem Rauswurf wird bei dieser Gruppe nichts mehr geholt — auch nicht mit
+        # einem Passwort, das noch im Speicher liegt.
+        if lebenszyklus.ruht(runde):
+            return SyncState(message=lebenszyklus.RUHT, stale=True)
         try:
             geheim = passwort or zugang.passwort(runde)
             wirksam = settings.effective(config, runde)

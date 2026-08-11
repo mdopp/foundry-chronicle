@@ -5,24 +5,41 @@ wem die Kiste gehört**, **ein Rauswurf wirkt sofort und nicht erst nach der Fri
 **gelöscht heißt vollständig**, bis hin zur Tondatei auf der Platte und der Zeile im
 Suchindex. Was innerhalb der Frist zurückkommt, kommt ganz zurück; danach ist es fort, und
 genau das steht vorher da.
+
+»Sofort« heißt dabei in jedem Faden und nicht nur in Discord, und »wer darf das« beantwortet
+Discord — beides wird hier geprüft, denn beides ist das, was ohne Prüfung still zurückfällt.
 """
 
 from __future__ import annotations
 
 import asyncio
+import logging
 import sys
 import types
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from test_bot import FakeBot, FakeIntents, FakePCMAudio, FakeSenke
+from test_bot import FakeBot, FakeIntents, FakePCMAudio, FakePermissions, FakeRechte, FakeSenke
 from test_chronik import FakeHTTPException, FakeInputText, FakeModal
 from test_erinnern import FakeButton, FakeEmbed, FakeSelect, FakeSelectOption, FakeView
 
-from chronicle import consent, db, lebenszyklus, notes, people, recordings, register, settings
+from chronicle import (
+    consent,
+    db,
+    lebenszyklus,
+    notes,
+    people,
+    recordings,
+    register,
+    settings,
+    zugang,
+)
 from chronicle import runde as runden
 from chronicle.bot import chronik, einrichten, gateway
+from chronicle.compose import service as compose_service
 from chronicle.config import Config
+from chronicle.foundry import service as foundry_service
+from chronicle.transcribe import service as transcribe_service
 
 GILDE = "1101"
 GILDENAME = "Der Krumme Ast"
@@ -69,15 +86,31 @@ class FakeAntwort:
         self.bearbeitet.append({"content": content, "view": view})
 
 
+class FakeMitglied:
+    """Ein Mitglied mit genau den Rechten, die Discord für diesen Server meldet."""
+
+    def __init__(self, kennung="4001", name="Mira", *, verwaltet=False, admin=False):
+        self.id = kennung
+        self.display_name = name
+        self.guild_permissions = FakeRechte(manage_guild=verwaltet, administrator=admin)
+
+
+LEITUNG = FakeMitglied("4000", "Spielleitung", verwaltet=True, admin=True)
+MITGLIED = FakeMitglied()
+
+
 class FakeInteraction:
-    def __init__(self):
+    def __init__(self, *, guild_id=GILDE, wer=LEITUNG):
         self.response = FakeAntwort()
+        self.guild_id = guild_id
+        self.user = wer
 
 
 class FakeCtx:
-    def __init__(self, *, guild_id=GILDE, gilde=None):
+    def __init__(self, *, guild_id=GILDE, gilde=None, autor=LEITUNG):
         self.guild_id = guild_id
         self.guild = gilde
+        self.author = autor
         self.channel_id = 900
         self.antworten: list[str | None] = []
         self.ansichten: list = []
@@ -102,6 +135,7 @@ def pycord(monkeypatch):
     modul = types.ModuleType("discord")
     modul.Intents = FakeIntents
     modul.Bot = FakeBot
+    modul.Permissions = FakePermissions
     modul.PCMAudio = FakePCMAudio
     modul.HTTPException = FakeHTTPException
     modul.Embed = FakeEmbed
@@ -209,6 +243,24 @@ def ausfuellen(fenster, adresse="", benutzer="", modell="", uhrzeit=""):
     interaktion = FakeInteraction()
     asyncio.run(fenster.callback(interaktion))
     return interaktion
+
+
+def loeschbefehl(bot, ctx):
+    asyncio.run(bot.gruppen[gateway.GRUPPE_CHRONIK].befehle["loeschen"](ctx))
+    return ctx
+
+
+def frist_setzen(config, runde, wann: str) -> None:
+    """Die zugesagte Frist von Hand — schneller als dreißig Tage zu warten."""
+    connection = db.connect(config.database_path)
+    try:
+        with connection:
+            connection.execute(
+                "UPDATE runde SET locked_at = ?, delete_after = ? WHERE id = ?",
+                ("2026-05-01T20:00:00+00:00", wann, runde.id),
+            )
+    finally:
+        connection.close()
 
 
 # -- Einladen ---------------------------------------------------------------------------
@@ -563,3 +615,267 @@ def test_das_register_der_geloeschten_runde_ist_nicht_mehr_zu_finden(konfigurati
     lebenszyklus.loeschen(konfiguration, unsere)
 
     assert runden.fuer_gilde(konfiguration.database_path, GILDE) is None
+
+
+# -- Wer darf das -----------------------------------------------------------------------
+
+
+def test_einrichten_ist_kein_befehl_fuer_jedes_mitglied(konfiguration, bot):
+    """Die Kette, die hier abgeschnitten wird: wer die Adresse setzt, bestimmt, welchem
+    Server das nächste ``/chronik fertig`` das Foundry-Passwort vorzeigt."""
+    ctx = FakeCtx(gilde=FakeGilde(), autor=MITGLIED)
+
+    asyncio.run(bot.befehle[gateway.BEFEHL_SETUP](ctx))
+
+    assert ctx.antworten == [einrichten.NUR_VERWALTUNG]
+    assert ctx.modale == []
+    assert runden.fuer_gilde(konfiguration.database_path, GILDE) is None
+
+
+def test_discord_kennt_die_schranke_vor_dem_einrichten(bot):
+    """Nicht nur wir rechnen sie aus — der Befehl trägt sie bei Discord."""
+    assert bot.rechte[gateway.BEFEHL_SETUP].rechte == {"manage_guild": True}
+
+
+def test_loeschen_ist_kein_befehl_fuer_jedes_mitglied(konfiguration, bot):
+    unsere = runden.anlegen(konfiguration.database_path, GILDENAME, guild_id=GILDE)
+    ids = fuellen(konfiguration, unsere, "alpha")
+
+    ctx = loeschbefehl(bot, FakeCtx(gilde=FakeGilde(), autor=MITGLIED))
+
+    assert ctx.antworten == [einrichten.NUR_ADMIN]
+    assert ctx.ansichten == [None]
+    assert ids["spur"].exists()
+
+
+def test_der_knopf_prueft_das_recht_noch_einmal(konfiguration, bot):
+    """Die Frage stellt die Leitung, klicken könnte jeder, der die Nachricht sieht."""
+    unsere = runden.anlegen(konfiguration.database_path, GILDENAME, guild_id=GILDE)
+    ctx = loeschbefehl(bot, FakeCtx(gilde=FakeGilde()))
+    ja, _nein = ctx.ansichten[0].items
+
+    klick = FakeInteraction(wer=MITGLIED)
+    asyncio.run(ja.callback(klick))
+
+    assert klick.response.bearbeitet[0]["content"] == einrichten.NUR_ADMIN
+    assert runden.get(konfiguration.database_path, unsere.id) is not None
+
+
+def test_die_loeschung_sagt_im_log_wer_sie_wollte(konfiguration, bot, caplog):
+    """Danach steht es nirgends mehr — die Runde, in der es stünde, ist ja fort."""
+    caplog.set_level(logging.INFO)
+    runden.anlegen(konfiguration.database_path, GILDENAME, guild_id=GILDE)
+    ctx = loeschbefehl(bot, FakeCtx(gilde=FakeGilde()))
+    ja, _nein = ctx.ansichten[0].items
+
+    asyncio.run(ja.callback(FakeInteraction()))
+
+    assert LEITUNG.display_name in caplog.text
+    assert str(LEITUNG.id) in caplog.text
+
+
+def test_ein_alter_knopf_loescht_die_frische_runde_nicht(konfiguration, bot):
+    """``runde.id`` wird nach einer Löschung neu vergeben — der Knopf lebt länger."""
+    unsere = runden.anlegen(konfiguration.database_path, GILDENAME, guild_id=GILDE)
+    ctx = loeschbefehl(bot, FakeCtx(gilde=FakeGilde()))
+    ja, _nein = ctx.ansichten[0].items
+
+    lebenszyklus.loeschen(konfiguration, unsere)
+    nachbar = runden.anlegen(konfiguration.database_path, "Nachbarn", guild_id=NACHBARGILDE)
+    assert nachbar.id == unsere.id
+    klick = FakeInteraction()
+    asyncio.run(ja.callback(klick))
+
+    assert klick.response.bearbeitet[0]["content"] == einrichten.LOESCHEN_VERALTET
+    assert runden.get(konfiguration.database_path, nachbar.id) is not None
+
+
+# -- Sofort still, und zwar überall ------------------------------------------------------
+
+
+def test_der_rauswurf_vergisst_das_foundry_passwort(konfiguration, bot):
+    """Sonst zöge ein Abgleich zwölf Stunden lang die Welt einer Gruppe, die widerrufen hat."""
+    unsere = runden.anlegen(konfiguration.database_path, GILDENAME, guild_id=GILDE)
+    zugang.merken(unsere, "passwort-nur-fuer-den-test")
+
+    austritt(bot, FakeGilde())
+
+    assert not zugang.ist_gemerkt(unsere)
+
+
+def test_die_ruhende_runde_holt_nichts_mehr_und_legt_nichts_mehr_ab(konfiguration, bot):
+    """Die Kernaussage des Umbaus, geprüft an den Stufen, die Daten erzeugen und holen."""
+    unsere = runden.anlegen(konfiguration.database_path, GILDENAME, guild_id=GILDE)
+    ids = fuellen(konfiguration, unsere, "alpha")
+
+    austritt(bot, FakeGilde())
+
+    # ``unsere`` ist der Stand von vor dem Rauswurf — genau den hält ein laufender Stapel.
+    assert transcribe_service.run_queue(konfiguration, unsere) == ()
+    assert compose_service.compose_session(konfiguration, unsere, ids["sitzung"]) is None
+    assert compose_service.recap_session(konfiguration, unsere, ids["sitzung"]) is None
+    zustand = foundry_service.sync(konfiguration, unsere, passwort="passwort-nur-fuer-den-test")
+    assert zustand.stale
+    assert zustand.message == lebenszyklus.RUHT
+
+
+# -- Die Frist ---------------------------------------------------------------------------
+
+
+def test_das_zugesagte_datum_steht_in_der_zone_der_runde(konfiguration):
+    """Der Container läuft in UTC; die Gruppe liest ihren Kalender nicht in UTC."""
+    unsere = runden.anlegen(konfiguration.database_path, GILDENAME, guild_id=GILDE)
+    settings.save_nightly_zone(unsere, "Pacific/Auckland")
+    frist_setzen(konfiguration, unsere, "2026-09-05T22:00:00+00:00")
+
+    gesperrt = runden.get(konfiguration.database_path, unsere.id)
+
+    assert lebenszyklus.frist_datum(gesperrt) == "06.09.2026"
+
+
+def test_nach_der_frist_bringt_die_wiedereinladung_nichts_zurueck(konfiguration, bot):
+    """Am vierzigsten Tag zurückzukommen holt nicht zurück, was als fort zugesagt war."""
+    unsere = runden.anlegen(konfiguration.database_path, GILDENAME, guild_id=GILDE)
+    ids = fuellen(konfiguration, unsere, "alpha")
+    frist_setzen(konfiguration, unsere, "2026-05-31T20:00:00+00:00")
+
+    kanal = FakeKanal("300", "allgemein")
+    eintritt(bot, FakeGilde(system=kanal))
+
+    assert runden.get(konfiguration.database_path, unsere.id) is None
+    assert not ids["spur"].exists()
+    assert kanal.gesendet == [einrichten.WILLKOMMEN]
+
+
+def test_nach_der_frist_richtet_setup_eine_frische_runde_ein(konfiguration, bot):
+    unsere = runden.anlegen(konfiguration.database_path, GILDENAME, guild_id=GILDE)
+    ids = fuellen(konfiguration, unsere, "alpha")
+    frist_setzen(konfiguration, unsere, "2026-05-31T20:00:00+00:00")
+
+    ausfuellen(einrichtungsfenster(bot, FakeCtx(gilde=FakeGilde())), benutzer="Chronist")
+
+    frisch = runden.fuer_gilde(konfiguration.database_path, GILDE)
+    assert frisch is not None and not frisch.gesperrt
+    assert notes.session(frisch, ids["sitzung"]) is None
+    assert not ids["spur"].exists()
+
+
+def test_ein_fehlschlag_beendet_die_taegliche_loeschung_nicht(konfiguration, monkeypatch, caplog):
+    """Ohne diese Zeile hörte das Löschen nach dem ersten Stolpern für **alle** Runden auf."""
+
+    class Schluss(Exception):
+        pass
+
+    laeufe = []
+
+    def stolpert(config, **rest):
+        laeufe.append(config)
+        raise PermissionError("die Datei gehört jemand anderem")
+
+    async def schlafen(_sekunden):
+        if len(laeufe) == 2:
+            raise Schluss
+
+    monkeypatch.setattr(lebenszyklus, "sweep", stolpert)
+
+    with pytest.raises(Schluss):
+        asyncio.run(lebenszyklus.taeglich(konfiguration, schlafen=schlafen))
+
+    assert len(laeufe) == 2
+    assert "jemand anderem" in caplog.text
+
+
+def test_ein_beendeter_faden_wird_beim_naechsten_anmelden_neu_gestartet(
+    konfiguration, bot, monkeypatch
+):
+    """Ein fertiger Task ist nicht ``None`` — sonst bliebe eine Zusage für immer liegen."""
+    gestartet = []
+
+    async def sofort_fertig(config, **rest):
+        gestartet.append(config)
+
+    monkeypatch.setattr(recordings, "taeglich", sofort_fertig)
+    monkeypatch.setattr(lebenszyklus, "taeglich", sofort_fertig)
+
+    async def zweimal_anmelden():
+        await bot.ereignisse["on_ready"]()
+        await asyncio.sleep(0)
+        await bot.ereignisse["on_ready"]()
+        await asyncio.sleep(0)
+
+    asyncio.run(zweimal_anmelden())
+
+    assert len(gestartet) == 4
+
+
+def test_eine_tonspur_ohne_zeile_verschwindet_mit(konfiguration):
+    """Eine Spur liegt die ganze Sitzung auf der Platte und wird erst am Ende eingereiht —
+    ein Rauswurf mittendrin hinterlässt sonst Aufnahmen, die niemand mehr findet."""
+    unsere = runden.anlegen(konfiguration.database_path, GILDENAME, guild_id=GILDE)
+    ids = fuellen(konfiguration, unsere, "alpha")
+    nachbar = runden.anlegen(konfiguration.database_path, "Nachbarn", guild_id=NACHBARGILDE)
+    daneben = fuellen(konfiguration, nachbar, "beta")
+    verwaist = konfiguration.recordings_dir / f"sitzung{ids['sitzung']}-20260501T200000-Mira.wav"
+    verwaist.write_bytes(b"ton")
+    fremd = konfiguration.recordings_dir / f"sitzung{daneben['sitzung']}-20260501T200000-Mira.wav"
+    fremd.write_bytes(b"ton")
+
+    lebenszyklus.loeschen(konfiguration, unsere)
+
+    assert not verwaist.exists()
+    assert fremd.exists()
+
+
+# -- Was das Löschen kostet --------------------------------------------------------------
+
+
+def test_die_loeschfrage_sagt_auch_was_bleibt(konfiguration, bot):
+    """Der Nachweis geht, das aus ihm Geschriebene bleibt in Discord — das wird gesagt."""
+    runden.anlegen(konfiguration.database_path, GILDENAME, guild_id=GILDE)
+
+    ctx = loeschbefehl(bot, FakeCtx(gilde=FakeGilde()))
+
+    (frage,) = ctx.antworten
+    assert "Das bleibt:" in frage
+    assert "liegt weiter in Discord" in frage
+    assert "Wer den Beleg braucht" in frage
+
+
+def test_die_hinausgeworfene_runde_darf_sofort_loeschen(konfiguration, bot):
+    """Vergessen darf keine Rückkehr verlangen — sonst muss man den Bot erst wiederholen."""
+    unsere = runden.anlegen(konfiguration.database_path, GILDENAME, guild_id=GILDE)
+    ids = fuellen(konfiguration, unsere, "alpha")
+    austritt(bot, FakeGilde())
+
+    ctx = loeschbefehl(bot, FakeCtx(gilde=FakeGilde()))
+    ja, _nein = ctx.ansichten[0].items
+    asyncio.run(ja.callback(FakeInteraction()))
+
+    assert runden.get(konfiguration.database_path, unsere.id) is None
+    assert not ids["spur"].exists()
+
+
+# -- Zurück in den Dienst ----------------------------------------------------------------
+
+
+def test_ohne_kanal_zum_reden_bleibt_die_runde_still(konfiguration, bot):
+    """Wieder im Dienst zu sein, ohne dass die Gruppe die Offenlegung gelesen hat, ist
+    genau der Zustand, für den es sie gibt."""
+    unsere = runden.anlegen(konfiguration.database_path, GILDENAME, guild_id=GILDE)
+    austritt(bot, FakeGilde())
+
+    eintritt(bot, FakeGilde(kanaele=(FakeKanal("300", "regeln", darf=False),)))
+
+    assert runden.get(konfiguration.database_path, unsere.id).gesperrt
+
+
+def test_setup_holt_die_offenlegung_nach(konfiguration, bot):
+    unsere = runden.anlegen(konfiguration.database_path, GILDENAME, guild_id=GILDE)
+    austritt(bot, FakeGilde())
+
+    interaktion = ausfuellen(
+        einrichtungsfenster(bot, FakeCtx(gilde=FakeGilde())), benutzer="Chronist"
+    )
+
+    assert einrichten.OFFENLEGUNG in interaktion.response.gesendet[0]["text"]
+    assert not runden.get(konfiguration.database_path, unsere.id).gesperrt

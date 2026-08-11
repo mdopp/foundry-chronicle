@@ -8,7 +8,8 @@ from zoneinfo import ZoneInfo
 import pytest
 from conftest import laufender_job, runde, warte_bis
 
-from chronicle import db, jobs, nightly, notes, settings, zugang
+from chronicle import db, jobs, lebenszyklus, nightly, notes, settings, zugang
+from chronicle import runde as runden
 from chronicle.app import create_app
 from chronicle.config import Config
 from chronicle.discord import service as diktat
@@ -273,6 +274,18 @@ def test_die_gespeicherte_uhrzeit_bestimmt_den_zeitpunkt(stelle, monkeypatch):
 
     assert nightly.tick(stelle, jetzt=uhr(4)) is None
     assert nightly.tick(stelle, jetzt=uhr(23, 30)) is not None
+
+
+def test_eine_verabschiedete_runde_bekommt_keine_nacht_mehr(stelle, monkeypatch):
+    """Dieser Faden läuft im Webdienst und sähe den Rauswurf sonst nie — er verschriftete
+    dreißig Tage lang weiter, was eine Gruppe längst widerrufen hat."""
+    monkeypatch.setattr(nightly, "lauf", lambda config, eine: "durch")
+    unsere = runden.anlegen(stelle.database_path, "Der Krumme Ast", guild_id="1101")
+    lebenszyklus.sperren(stelle.database_path, "1101")
+
+    nightly.tick(stelle, jetzt=uhr(4))
+
+    assert jobs.latest(unsere, jobs.NACHTLAUF) is None
 
 
 def test_der_faden_dreht_sich_weiter_auch_wenn_ein_blick_scheitert(stelle, monkeypatch):

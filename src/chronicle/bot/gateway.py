@@ -124,8 +124,10 @@ BEFEHLE = (
     "• `/wer <Name>` — was im Register über einen Namen steht.\n"
     "• `/register offen` — Vorschläge fürs Register bestätigen oder verwerfen.\n"
     "• `/zuordnung` — festhalten, wer von euch welchen Foundry-Spieler spielt.\n"
-    "• `/setup` — Foundry-Adresse, Benutzer, Zustellkanal und Uhrzeit ändern.\n"
-    "• `/chronik loeschen` — alles von dieser Runde löschen, nach Rückfrage.\n"
+    "• `/setup` — Foundry-Adresse, Benutzer, Zustellkanal und Uhrzeit ändern; "
+    "dafür braucht es das Recht, diesen Server zu verwalten.\n"
+    "• `/chronik loeschen` — alles von dieser Runde löschen, nach Rückfrage; nur für die "
+    "Administration dieses Servers.\n"
     "• `/aufnahme hilfe` — alles noch einmal in Ruhe.\n"
 )
 
@@ -334,6 +336,11 @@ async def _mitschnitt_beenden(lauf: _Lauf, runde: Runde | None = None) -> tuple[
     return tuple(meldungen)
 
 
+def _erledigt(faden) -> bool:
+    """Ob dieser dauerhafte Faden neu gestartet gehört — nie gelaufen zählt auch."""
+    return faden is None or faden.done()
+
+
 def _zeitpunkt(nachricht) -> str:
     """Der Zeitpunkt der Nachricht in der Form, in der die Szenen ihre Trennlinien tragen.
 
@@ -430,6 +437,34 @@ def _passwortfrage(config: Config, runde, session_id: int, lauf: _Lauf):
             await interaction.response.send_message(" ".join((*meldungen, meldung)), ephemeral=True)
 
     return Passwortfrage()
+
+
+def _rechte(wer):
+    """Was Discord diesem Mitglied auf diesem Server erlaubt — im Zwiegespräch nichts."""
+    return getattr(wer, "guild_permissions", None)
+
+
+def _darf_verwalten(wer) -> bool:
+    """``/setup`` ist die Schranke vor dem Foundry-Passwort.
+
+    Wer die Adresse setzt, bestimmt, welchem Server das nächste ``/chronik fertig`` das
+    Passwort der Spielleitung vorzeigt. Discords Vorgabe für einen Befehl ohne Angabe ist
+    »jedes Mitglied« — deshalb steht hier eine Angabe.
+    """
+    rechte = _rechte(wer)
+    return bool(getattr(rechte, "manage_guild", False) or getattr(rechte, "administrator", False))
+
+
+def _darf_loeschen(wer) -> bool:
+    """Und die zerstörerischste Handlung bekommt die strengere Schranke."""
+    return bool(getattr(_rechte(wer), "administrator", False))
+
+
+def _veranlasser(wer) -> str:
+    """Wer eine Löschung ausgelöst hat — danach steht es nirgends mehr, die Runde ist fort."""
+    if wer is None:
+        return UNBEKANNT
+    return f"{getattr(wer, 'display_name', None) or UNBEKANNT} [{getattr(wer, 'id', UNBEKANNT)}]"
 
 
 def _begruessungskanal(gilde):
@@ -548,7 +583,12 @@ def _einrichtungsfenster(config: Config, ctx):
 
 
 def _loeschansicht(config: Config, runde):
-    """Zwei Knöpfe und kein Befehl: eine Kampagne verschwindet nicht durch einen Vertipper."""
+    """Zwei Knöpfe und kein Befehl: eine Kampagne verschwindet nicht durch einen Vertipper.
+
+    Und keiner der beiden entscheidet gegen den Stand von vorhin: die Ansicht lebt eine
+    Viertelstunde, in der die Runde gelöscht und ihre Kennung neu vergeben sein kann.
+    Geprüft wird deshalb beim Klick — die Runde, das Recht und die Gilde.
+    """
     discord = _discord()
 
     ja = discord.ui.Button(
@@ -560,8 +600,17 @@ def _loeschansicht(config: Config, runde):
 
     @_geklickt
     async def bestaetigt(interaction) -> None:
+        wer = getattr(interaction, "user", None)
+        if not _darf_loeschen(wer):
+            await interaction.response.edit_message(content=einrichten.NUR_ADMIN, view=None)
+            return
+        gemeint = chronik.dieselbe_runde(config, interaction.guild_id, runde)
+        if gemeint is None:
+            await interaction.response.edit_message(content=einrichten.LOESCHEN_VERALTET, view=None)
+            return
         await interaction.response.edit_message(
-            content=einrichten.geloescht(config, runde), view=None
+            content=einrichten.geloescht(config, gemeint, veranlasst_von=_veranlasser(wer)),
+            view=None,
         )
 
     @_geklickt
@@ -721,6 +770,9 @@ def baue(config: Config):
         if lauf.aufnahme is not None:
             await ctx.respond(LAEUFT_SCHON, ephemeral=True)
             return
+        # Dieselbe Schranke wie vor ``/chronik start``, und vor dem Beitreten: eine Gilde
+        # ohne eigene Runde nimmt nicht auf, eine ruhende erst recht nicht.
+        runde = chronik.runde_verlangen(config, ctx.guild_id)
         kanal = getattr(getattr(ctx.author, "voice", None), "channel", None)
         if kanal is None:
             await ctx.respond(NICHT_IM_KANAL, ephemeral=True)
@@ -729,7 +781,7 @@ def baue(config: Config):
         stimme = Sprachverbindung(await kanal.connect())
         try:
             await _vorstellungsziel(ctx, kanal).send(VORSTELLUNG)
-            lauf.aufnahme = await recorder.starten(config, stimme)
+            lauf.aufnahme = await recorder.starten(config, stimme, runde)
         except BaseException:
             await stimme.trennen()
             raise
@@ -775,13 +827,21 @@ def baue(config: Config):
     )
     @antwortet
     async def chronik_loeschen(ctx) -> None:
-        runde = chronik.runde_verlangen(config, ctx.guild_id)
+        # Discord kennt ``default_member_permissions`` nur für den ganzen Befehl, und
+        # ``/chronik start`` soll jedes Mitglied geben dürfen. Für diesen Unterbefehl steht
+        # die Schranke deshalb hier — und noch einmal am Knopf, der wirklich löscht.
+        if not _darf_loeschen(getattr(ctx, "author", None)):
+            await ctx.respond(einrichten.NUR_ADMIN, ephemeral=True)
+            return
+        runde = chronik.runde_zum_loeschen(config, ctx.guild_id)
         await ctx.respond(
             einrichten.loeschfrage(), view=_loeschansicht(config, runde), ephemeral=True
         )
 
     @bot.slash_command(
-        name=BEFEHL_SETUP, description="Foundry, Zustellkanal und nächtlichen Lauf einrichten"
+        name=BEFEHL_SETUP,
+        description="Foundry, Zustellkanal und nächtlichen Lauf einrichten",
+        default_member_permissions=discord.Permissions(manage_guild=True),
     )
     @antwortet
     async def setup(ctx) -> None:
@@ -789,6 +849,11 @@ def baue(config: Config):
         # gehörte niemandem und stünde für immer da.
         if ctx.guild_id is None:
             await ctx.respond(einrichten.NUR_IM_SERVER, ephemeral=True)
+            return
+        # Die Angabe oben blendet den Befehl bei Discord aus; sie ist eine Vorgabe, die die
+        # Serververwaltung überschreiben kann. Gerechnet wird deshalb auch hier.
+        if not _darf_verwalten(getattr(ctx, "author", None)):
+            await ctx.respond(einrichten.NUR_VERWALTUNG, ephemeral=True)
             return
         await ctx.send_modal(_einrichtungsfenster(config, ctx))
 
@@ -868,14 +933,15 @@ def baue(config: Config):
 
     @bot.event
     async def on_guild_join(gilde) -> None:
-        # Eine Runde entsteht hier nicht — nur die verabschiedete kommt zurück. Der eine
-        # Satz muss trotzdem raus, und zwar dorthin, wo die Gruppe ihn liest.
-        text = einrichten.begruessung(config.database_path, str(gilde.id))
+        # Erst der Kanal, dann die Begrüßung: sie gibt eine verabschiedete Runde wieder
+        # frei, und wieder im Dienst zu sein, ohne dass die Gruppe die Offenlegung je
+        # gelesen hat, ist genau der Zustand, für den es sie gibt. Ohne Kanal bleibt die
+        # Runde still — ``/setup`` bringt sie zurück und sagt die Offenlegung dabei.
         kanal = _begruessungskanal(gilde)
         if kanal is None:
             logger.warning("Kein Kanal zum Begrüßen in %s", gilde.id)
             return
-        await kanal.send(text)
+        await kanal.send(einrichten.begruessung(config, str(gilde.id)))
 
     @bot.event
     async def on_guild_remove(gilde) -> None:
@@ -885,11 +951,14 @@ def baue(config: Config):
     async def on_ready() -> None:
         # Der Prozess läuft ohnehin durch — er ist damit der zuverlässigste Ort, die in
         # der Ansage zugesagte Frist einzuhalten, auch wenn der nächtliche Stapel steht.
-        if lauf.frist is None:
+        # Ein beendeter Faden ist nicht ``None``: ohne ``_erledigt`` bliebe eine Zusage
+        # nach dem ersten Fehlschlag für immer liegen, und ``on_ready`` kommt bei jeder
+        # Wiederverbindung noch einmal vorbei.
+        if _erledigt(lauf.frist):
             lauf.frist = asyncio.create_task(recordings.taeglich(config))
         # Zwei Fristen, zwei Läufe: die eine gilt jeder Audiospur auf dieser Box, die
         # andere einer verabschiedeten Runde.
-        if lauf.abschied is None:
+        if _erledigt(lauf.abschied):
             lauf.abschied = asyncio.create_task(lebenszyklus.taeglich(config))
 
     @bot.event

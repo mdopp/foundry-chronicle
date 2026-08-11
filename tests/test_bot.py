@@ -21,8 +21,9 @@ import pytest
 from conftest import runde as erste_runde
 
 import chronicle.bot.__main__ as entry
-from chronicle import consent, db, notes, recordings, settings
-from chronicle.bot import BotFehler, BotHaelt, ansage, gateway, recorder
+from chronicle import consent, db, lebenszyklus, notes, recordings, settings
+from chronicle import runde as runden
+from chronicle.bot import BotFehler, BotHaelt, ansage, chronik, gateway, recorder
 from chronicle.bot.ansage import AnsageFehlt
 from chronicle.bot.recorder import Aufnahme, Kanal, NichtAngesagt
 from chronicle.config import Config
@@ -65,10 +66,23 @@ def konfiguration(tmp_path):
     )
 
 
+def unsere_runde(konfiguration):
+    """Die Runde der Gilde, in der der Bot steht — angelegt beim ersten Blick.
+
+    Einen Rückfall auf »die erste Runde« gibt es nicht mehr (#68): eine Gilde ohne eigene
+    Runde nimmt nicht auf. Neben ihr steht in jeder dieser Datenbanken noch die erste
+    Runde, die das Schema anlegt — genau deshalb wäre ein Rückfall hier nicht harmlos.
+    """
+    db.init(konfiguration.database_path)
+    vorhanden = runden.fuer_gilde(konfiguration.database_path, KANAL.guild_id)
+    if vorhanden is not None:
+        return vorhanden
+    return runden.anlegen(konfiguration.database_path, "Der Krumme Ast", guild_id=KANAL.guild_id)
+
+
 @pytest.fixture
 def sitzung_id(konfiguration):
-    db.init(konfiguration.database_path)
-    return notes.create_session(erste_runde(konfiguration), played_on="2026-08-06")
+    return notes.create_session(unsere_runde(konfiguration), played_on="2026-08-06")
 
 
 @pytest.fixture
@@ -211,7 +225,7 @@ def test_erst_ist_die_ansage_zu_ende_dann_beginnt_der_mitschnitt(
 ):
     stimme = FakeStimme()
 
-    aufnahme = asyncio.run(recorder.starten(konfiguration, stimme))
+    aufnahme = asyncio.run(recorder.starten(konfiguration, stimme, unsere_runde(konfiguration)))
 
     assert stimme.ablauf == ["ansage", "mitschnitt"]
     assert stimme.aufnahme is aufnahme
@@ -221,9 +235,9 @@ def test_erst_ist_die_ansage_zu_ende_dann_beginnt_der_mitschnitt(
 def test_das_einwilligungsprotokoll_haelt_kanal_wortlaut_und_anwesende(
     konfiguration, sitzung_id, ohne_espeak
 ):
-    asyncio.run(recorder.starten(konfiguration, FakeStimme()))
+    asyncio.run(recorder.starten(konfiguration, FakeStimme(), unsere_runde(konfiguration)))
 
-    (eintrag,) = consent.for_session(erste_runde(konfiguration), sitzung_id)
+    (eintrag,) = consent.for_session(unsere_runde(konfiguration), sitzung_id)
     assert eintrag.kind == consent.ANSAGE
     assert (eintrag.guild_id, eintrag.channel_id, eintrag.channel_name) == (
         KANAL.guild_id,
@@ -239,13 +253,13 @@ def test_das_einwilligungsprotokoll_haelt_kanal_wortlaut_und_anwesende(
 
 
 def test_vor_der_ansage_wird_keine_spur_geschrieben(konfiguration, sitzung_id):
-    aufnahme = Aufnahme(konfiguration, erste_runde(konfiguration), sitzung_id, KANAL)
+    aufnahme = Aufnahme(konfiguration, unsere_runde(konfiguration), sitzung_id, KANAL)
 
     with pytest.raises(NichtAngesagt):
         aufnahme.schreiben(MIRA, stille(10))
 
     assert not konfiguration.recordings_dir.exists()
-    assert recordings.pending(erste_runde(konfiguration)) == ()
+    assert recordings.pending(unsere_runde(konfiguration)) == ()
 
 
 def test_ohne_sitzung_wird_nicht_einmal_angesagt(konfiguration, ohne_espeak):
@@ -253,20 +267,38 @@ def test_ohne_sitzung_wird_nicht_einmal_angesagt(konfiguration, ohne_espeak):
     stimme = FakeStimme()
 
     with pytest.raises(recorder.AufnahmeFehler):
-        asyncio.run(recorder.starten(konfiguration, stimme))
+        asyncio.run(recorder.starten(konfiguration, stimme, unsere_runde(konfiguration)))
 
     assert stimme.ablauf == []
 
 
+def test_die_runde_einer_fremden_gilde_schneidet_hier_nicht_mit(
+    konfiguration, sitzung_id, ohne_espeak
+):
+    """Es gibt keinen Rückfall auf »die erste Runde« mehr (#68): Ansage, Protokoll mit den
+    Anzeigenamen und die Spuren landeten sonst in einer fremden Kampagne."""
+    fremde = erste_runde(konfiguration)
+    stimme = FakeStimme()
+
+    with pytest.raises(recorder.AufnahmeFehler) as gefangen:
+        asyncio.run(recorder.starten(konfiguration, stimme, fremde))
+
+    assert recorder.FREMDE_RUNDE in str(gefangen.value)
+    assert stimme.ablauf == []
+    assert consent.for_session(fremde, sitzung_id) == ()
+
+
 def test_je_sprecher_eine_eigene_spur(konfiguration, sitzung_id, ohne_espeak):
-    aufnahme = asyncio.run(recorder.starten(konfiguration, FakeStimme()))
+    aufnahme = asyncio.run(
+        recorder.starten(konfiguration, FakeStimme(), unsere_runde(konfiguration))
+    )
 
     aufnahme.schreiben(MIRA, stille(480))
     aufnahme.schreiben(BROK, stille(960))
     aufnahme.schreiben(MIRA, stille(480))
     meldungen = aufnahme.beenden()
 
-    eingereiht = recordings.pending(erste_runde(konfiguration))
+    eingereiht = recordings.pending(unsere_runde(konfiguration))
     assert len(eingereiht) == 2
     assert len(meldungen) == 2
     nach_name = {}
@@ -278,43 +310,49 @@ def test_je_sprecher_eine_eigene_spur(konfiguration, sitzung_id, ohne_espeak):
 
 
 def test_die_spur_traegt_die_discord_id_ihres_sprechers(konfiguration, sitzung_id, ohne_espeak):
-    aufnahme = asyncio.run(recorder.starten(konfiguration, FakeStimme()))
+    aufnahme = asyncio.run(
+        recorder.starten(konfiguration, FakeStimme(), unsere_runde(konfiguration))
+    )
 
     aufnahme.schreiben(MIRA, stille(480))
     aufnahme.beenden()
 
-    (spur,) = recordings.pending(erste_runde(konfiguration))
+    (spur,) = recordings.pending(unsere_runde(konfiguration))
     assert spur.discord_user_id == MIRA.id
 
 
 def test_wer_nichts_gesagt_hat_hinterlaesst_keine_spur(konfiguration, sitzung_id, ohne_espeak):
-    aufnahme = asyncio.run(recorder.starten(konfiguration, FakeStimme()))
+    aufnahme = asyncio.run(
+        recorder.starten(konfiguration, FakeStimme(), unsere_runde(konfiguration))
+    )
 
     aufnahme.schreiben(MIRA, b"")
 
     assert aufnahme.beenden() == (recorder.NICHTS_GESPROCHEN,)
     assert list(konfiguration.recordings_dir.glob("sitzung*")) == []
-    assert recordings.pending(erste_runde(konfiguration)) == ()
+    assert recordings.pending(unsere_runde(konfiguration)) == ()
 
 
 def test_ein_namenloser_sprecher_bekommt_seine_kennung(konfiguration, sitzung_id, ohne_espeak):
-    aufnahme = asyncio.run(recorder.starten(konfiguration, FakeStimme()))
+    aufnahme = asyncio.run(
+        recorder.starten(konfiguration, FakeStimme(), unsere_runde(konfiguration))
+    )
 
     aufnahme.schreiben(consent.Member(id="4009", name="漢字"), stille(48))
     aufnahme.beenden()
 
-    (spur,) = recordings.pending(erste_runde(konfiguration))
+    (spur,) = recordings.pending(unsere_runde(konfiguration))
     assert spur.filename.endswith("sprecher-4009.wav")
 
 
 def test_der_nachzuegler_hoert_die_ansage_noch_einmal(konfiguration, sitzung_id, ohne_espeak):
     stimme = FakeStimme()
-    aufnahme = asyncio.run(recorder.starten(konfiguration, stimme))
+    aufnahme = asyncio.run(recorder.starten(konfiguration, stimme, unsere_runde(konfiguration)))
 
     asyncio.run(recorder.nachzuegler(konfiguration, stimme, aufnahme, SPAET))
 
     assert stimme.ablauf == ["ansage", "mitschnitt", "ansage"]
-    erste, spaet = consent.for_session(erste_runde(konfiguration), sitzung_id)
+    erste, spaet = consent.for_session(unsere_runde(konfiguration), sitzung_id)
     assert erste.kind == consent.ANSAGE
     assert spaet.kind == consent.NACHZUEGLER
     assert [wer.name for wer in spaet.members] == [SPAET.name]
@@ -325,21 +363,21 @@ def test_stoppen_beendet_den_mitschnitt_trennt_und_reiht_ein(
     konfiguration, sitzung_id, ohne_espeak
 ):
     stimme = FakeStimme()
-    aufnahme = asyncio.run(recorder.starten(konfiguration, stimme))
+    aufnahme = asyncio.run(recorder.starten(konfiguration, stimme, unsere_runde(konfiguration)))
     aufnahme.schreiben(MIRA, stille(480))
 
     meldungen = asyncio.run(recorder.stoppen(stimme, aufnahme))
 
     assert stimme.ablauf == ["ansage", "mitschnitt", "mitschnitt-ende", "getrennt"]
     assert not aufnahme.laeuft
-    assert len(recordings.pending(erste_runde(konfiguration))) == 1
+    assert len(recordings.pending(unsere_runde(konfiguration))) == 1
     assert "wartet auf den Stapel" in meldungen[0]
 
 
 def test_die_einwilligung_ueberlebt_das_loeschen_ihrer_sitzung(
     konfiguration, sitzung_id, ohne_espeak
 ):
-    asyncio.run(recorder.starten(konfiguration, FakeStimme()))
+    asyncio.run(recorder.starten(konfiguration, FakeStimme(), unsere_runde(konfiguration)))
 
     verbindung = db.connect(konfiguration.database_path)
     try:
@@ -418,6 +456,21 @@ class FakeIntents:
         self.message_content = False
 
 
+class FakePermissions:
+    """``discord.Permissions`` — hier nur der Merkzettel, welches Recht verlangt wird."""
+
+    def __init__(self, **rechte):
+        self.rechte = rechte
+
+
+class FakeRechte:
+    """Was Discord über ein Mitglied sagt: ``Member.guild_permissions``."""
+
+    def __init__(self, *, manage_guild=False, administrator=False):
+        self.manage_guild = manage_guild
+        self.administrator = administrator
+
+
 class FakeGruppe:
     def __init__(self, beschreibung):
         self.beschreibung = beschreibung
@@ -447,6 +500,7 @@ class FakeBot:
         self.intents = intents
         self.gruppen = {}
         self.befehle = {}
+        self.rechte = {}
         self.ereignisse = {}
         self.token = None
 
@@ -454,7 +508,9 @@ class FakeBot:
         self.gruppen[name] = FakeGruppe(description)
         return self.gruppen[name]
 
-    def slash_command(self, *, name, description=""):
+    def slash_command(self, *, name, description="", default_member_permissions=None):
+        self.rechte[name] = default_member_permissions
+
         def nimm(funktion):
             self.befehle[name] = funktion
             return funktion
@@ -556,9 +612,10 @@ class FakeTextkanal:
 
 
 class FakeCtx:
-    def __init__(self, autor, kanal=None):
+    def __init__(self, autor, kanal=None, *, guild_id=KANAL.guild_id):
         self.author = autor
         self.channel = kanal if kanal is not None else FakeTextkanal()
+        self.guild_id = guild_id
         self.antworten = []
         self.aufgeschoben = False
 
@@ -574,6 +631,7 @@ def pycord(monkeypatch):
     modul = types.ModuleType("discord")
     modul.Intents = FakeIntents
     modul.Bot = FakeBot
+    modul.Permissions = FakePermissions
     modul.PCMAudio = FakePCMAudio
     senken = types.ModuleType("discord.sinks")
     senken.Sink = FakeSenke
@@ -702,7 +760,7 @@ def test_start_tritt_bei_sagt_an_und_schneidet_dann_mit(
     assert len(verbindung.gespielt) == 1
     assert verbindung.schneidet
     assert ctx.antworten == [recorder.GESTARTET]
-    (eintrag,) = consent.for_session(erste_runde(konfiguration), sitzung_id)
+    (eintrag,) = consent.for_session(unsere_runde(konfiguration), sitzung_id)
     assert {wer.name for wer in eintrag.members} == {MIRA.name, BROK.name}
 
 
@@ -745,6 +803,31 @@ def test_ohne_kanal_chat_geht_die_vorstellung_dorthin_wo_der_befehl_kam(
     assert kanal.verbindung.schneidet
 
 
+def test_ohne_eigene_runde_nimmt_die_gilde_nicht_auf(konfiguration, ohne_espeak, runde):
+    """Dieselbe Absage wie vor ``/chronik start``, und vor dem Beitreten in den Kanal."""
+    db.init(konfiguration.database_path)
+    bot = gateway.baue(konfiguration)
+    ctx = FakeCtx(runde.mira)
+
+    asyncio.run(befehl(bot, "start")(ctx))
+
+    (antwort,) = ctx.antworten
+    assert chronik.KEINE_RUNDE in antwort
+    assert runde.kanal.verbindung is None
+
+
+def test_die_ruhende_runde_nimmt_nichts_mehr_auf(konfiguration, sitzung_id, ohne_espeak, runde):
+    lebenszyklus.sperren(konfiguration.database_path, KANAL.guild_id)
+    bot = gateway.baue(konfiguration)
+    ctx = FakeCtx(runde.mira)
+
+    asyncio.run(befehl(bot, "start")(ctx))
+
+    (antwort,) = ctx.antworten
+    assert "Diese Runde ruht" in antwort
+    assert runde.kanal.verbindung is None
+
+
 def test_start_ohne_sprachkanal_verbindet_nicht(konfiguration, sitzung_id, ohne_espeak, runde):
     bot = gateway.baue(konfiguration)
     ctx = FakeCtx(FakeMitglied(4100, "Ohne Kanal"))
@@ -767,7 +850,7 @@ def test_ein_zweiter_start_schneidet_nicht_doppelt(konfiguration, sitzung_id, oh
 
 
 def test_start_ohne_sitzung_trennt_wieder(konfiguration, ohne_espeak, runde):
-    db.init(konfiguration.database_path)
+    unsere_runde(konfiguration)
     bot = gateway.baue(konfiguration)
     ctx = FakeCtx(runde.mira)
 
@@ -792,7 +875,7 @@ def test_die_senke_schreibt_je_sprecher_eine_spur(konfiguration, sitzung_id, ohn
     assert runde.kanal.verbindung.getrennt
     assert senke.finished
     spuren = {
-        spur.filename.split("-")[-1] for spur in recordings.pending(erste_runde(konfiguration))
+        spur.filename.split("-")[-1] for spur in recordings.pending(unsere_runde(konfiguration))
     }
     assert spuren == {"Mira.wav", "Brok.wav"}
     assert "wartet auf den Stapel" in ctx.antworten[0]
@@ -824,7 +907,7 @@ def test_wer_spaeter_dazukommt_hoert_die_ansage_noch_einmal(
     )
 
     assert len(runde.kanal.verbindung.gespielt) == 2
-    _, nachzuegler = consent.for_session(erste_runde(konfiguration), sitzung_id)
+    _, nachzuegler = consent.for_session(unsere_runde(konfiguration), sitzung_id)
     assert nachzuegler.kind == consent.NACHZUEGLER
     assert [wer.name for wer in nachzuegler.members] == [SPAET.name]
 
@@ -845,7 +928,7 @@ def test_ein_ortswechsel_im_selben_kanal_sagt_nichts_noch_einmal(
     )
 
     assert len(runde.kanal.verbindung.gespielt) == 1
-    assert len(consent.for_session(erste_runde(konfiguration), sitzung_id)) == 1
+    assert len(consent.for_session(unsere_runde(konfiguration), sitzung_id)) == 1
 
 
 def test_der_bot_setzt_die_frist_selbst_durch(konfiguration, sitzung_id, runde, monkeypatch):
@@ -881,7 +964,7 @@ def test_ohne_laufende_aufnahme_bleibt_der_beitritt_folgenlos(konfiguration, sit
         )
     )
 
-    assert consent.for_session(erste_runde(konfiguration), sitzung_id) == ()
+    assert consent.for_session(unsere_runde(konfiguration), sitzung_id) == ()
 
 
 def test_ein_stolpernder_befehl_antwortet_trotzdem(
@@ -941,7 +1024,7 @@ class LeererReader:
 
 
 def echte_senke(konfiguration, sitzung_id):
-    aufnahme = Aufnahme(konfiguration, erste_runde(konfiguration), sitzung_id, KANAL)
+    aufnahme = Aufnahme(konfiguration, unsere_runde(konfiguration), sitzung_id, KANAL)
     aufnahme.ansage_protokollieren((MIRA,))
     return aufnahme, gateway._senke(aufnahme)
 
@@ -1003,7 +1086,7 @@ def test_pycords_datenform_landet_in_der_spur_des_sprechers(konfiguration, sitzu
     senke.write(daten, daten.source)
     aufnahme.beenden()
 
-    (spur,) = recordings.pending(erste_runde(konfiguration))
+    (spur,) = recordings.pending(unsere_runde(konfiguration))
     assert spur.filename.endswith(f"{MIRA.name}.wav")
 
 
@@ -1015,5 +1098,5 @@ def test_ein_sprecher_ohne_konto_bekommt_eine_ehrlich_benannte_spur(konfiguratio
     senke.write(VoiceData(packet=None, source=None, pcm=stille(480)), None)
     aufnahme.beenden()
 
-    (spur,) = recordings.pending(erste_runde(konfiguration))
+    (spur,) = recordings.pending(unsere_runde(konfiguration))
     assert spur.filename.endswith(f"{gateway.UNBEKANNT}.wav")

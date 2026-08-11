@@ -139,6 +139,34 @@ def runde_verlangen(config: Config, guild_id: str) -> Runde:
     return gefunden
 
 
+def runde_zum_loeschen(config: Config, guild_id: str) -> Runde:
+    """Wie ``runde_verlangen`` — nur dass eine ruhende Runde hier zugelassen ist.
+
+    Vergessen darf keine Rückkehr verlangen: wer den Bot hinausgeworfen hat und nicht
+    dreißig Tage warten will, soll löschen können, ohne ihn dafür erst wieder einzuladen.
+    """
+    gefunden = runden.fuer_gilde(config.database_path, str(guild_id))
+    if gefunden is None:
+        raise ChronikFehler(KEINE_RUNDE)
+    return gefunden
+
+
+def dieselbe_runde(config: Config, guild_id: str | None, runde: Runde) -> Runde | None:
+    """Die Runde von vorhin — aber nur, wenn sie es noch ist.
+
+    Ein Knopf lebt eine Viertelstunde und trägt die Runde mit, gegen die gefragt wurde.
+    Die Kennung allein trägt diese Zusage nicht: ``runde.id`` ist ein ``INTEGER PRIMARY
+    KEY`` ohne ``AUTOINCREMENT``, SQLite vergibt sie nach einer Löschung also wieder. Ohne
+    diesen Vergleich löschte ein alter Knopf die frische Runde einer fremden Gilde.
+    """
+    if guild_id is None:
+        return None
+    gefunden = runden.fuer_gilde(config.database_path, str(guild_id))
+    if gefunden is None or gefunden.id != runde.id or gefunden.created_at != runde.created_at:
+        return None
+    return gefunden
+
+
 def sitzung_des_threads(runde: Runde, thread_id: str) -> int | None:
     return notes.session_of_thread(runde, thread_id)
 
