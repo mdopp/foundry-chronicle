@@ -417,12 +417,21 @@ def create_app(config: Config | None = None, *, zeitplan: bool = False) -> Flask
         }
 
     def uebernehmen(namen: tuple[str, ...]) -> None:
-        """Der einzige Schreibweg für die gepflegten Werte — Formular wie Wizard."""
+        """Der einzige Schreibweg für die gepflegten Werte — Formular wie Wizard.
+
+        Ein gar nicht abgesendetes Feld heißt »unverändert«: sonst nähme ein POST ohne
+        dieses Feld der Runde still, was ihre Gilde über ``/setup`` in Discord gepflegt
+        hat. Ein abgesendetes leeres Feld heißt weiterhin »zurücknehmen« — daran hängen
+        »kein Zustellkanal« und »wieder das Ollama dieser Box«.
+
+        Beim Geheimnis heißt auch das leere Feld »unverändert«: es wird nie angezeigt,
+        ein Formular kann es also gar nicht gefüllt zurückschicken.
+        """
         werte = {
-            name: request.form.get(name, "") for name in namen if name not in settings.SECRET_KEYS
+            name: request.form[name]
+            for name in namen
+            if name in request.form and name not in settings.SECRET_KEYS
         }
-        # Ein leer abgesendetes Geheimnis heißt »unverändert«, nicht »löschen« — sonst
-        # wäre jedes Speichern der übrigen Werte ein Abmelden.
         for name in namen:
             if name in settings.SECRET_KEYS and request.form.get(name, "").strip():
                 werte[name] = request.form[name]
