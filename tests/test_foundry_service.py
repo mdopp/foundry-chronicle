@@ -15,7 +15,7 @@ from conftest import (
 )
 
 import chronicle.foundry.__main__ as batch
-from chronicle import db, zugang
+from chronicle import db, lebenszyklus, settings, zugang
 from chronicle import runde as runden
 from chronicle.foundry import service, store
 from chronicle.foundry.client import FoundryUnreachable
@@ -194,6 +194,30 @@ def test_ein_abgleich_verbraucht_das_passwort(config, welt):
     zugang.merken(runde(config), PASSWORT)
     service.sync(config, runde(config), client=Abgleich(fehler=FoundryUnreachable("aus")))
     assert not zugang.ist_gemerkt(runde(config))
+
+
+def test_auch_ein_abgleich_ohne_server_verbraucht_das_passwort(config):
+    """Testwelt und ruhende Runde brechen vor dem Handschlag ab — und ließen die Eingabe
+    sonst die vollen zwölf Stunden liegen, für einen Server, den es gar nicht gab."""
+    settings.save_foundry_quelle(runde(config), settings.TESTWELT)
+    zugang.merken(runde(config), PASSWORT)
+
+    service.sync(config, runde(config))
+
+    assert not zugang.ist_gemerkt(runde(config))
+
+
+def test_eine_ruhende_runde_laesst_kein_passwort_liegen(config):
+    """Der Rauswurf vergisst zwar selbst — die laufende Sitzung kann danach aber noch eines
+    hinterlegen, und der Abgleich bricht ab, bevor er es je vorzeigen könnte."""
+    runde(config)
+    unsere = runden.anlegen(config.database_path, "Ruhend", guild_id="gilde-ruht")
+    lebenszyklus.sperren(config.database_path, "gilde-ruht")
+    zugang.merken(unsere, PASSWORT)
+
+    service.sync(config, unsere)
+
+    assert not zugang.ist_gemerkt(unsere)
 
 
 def test_das_passwort_landet_in_keiner_zeile_der_datenbank(config, welt):

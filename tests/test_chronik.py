@@ -36,7 +36,7 @@ from test_bot import (
 from test_bot import FakeCtx as FakeSprechCtx
 
 import chronicle.bot.__main__ as bot_eintritt
-from chronicle import db, jobs, lebenszyklus, notes, recordings, zugang
+from chronicle import db, jobs, lebenszyklus, notes, recordings, settings, zugang
 from chronicle import runde as runden
 from chronicle.bot import ansage, chronik, einrichten, erinnern, gateway, recorder
 from chronicle.config import Config
@@ -45,7 +45,13 @@ from chronicle.discord import ausgabe, rueckblick
 GILDE = "1101"
 FREMDE_GILDE = "9909"
 
+# Zwei Mitglieder derselben Gilde: ``/chronik start`` steht jedem offen, und seit #96
+# entscheidet die Kennung, wessen Eingabe der Abschluss ungefragt weiterreicht.
+WER = 7001
+ZWEITES_MITGLIED = 7002
+
 PASSWORT = "passwort-nur-fuer-den-test"
+ANDERE_EINGABE = "was-das-zweite-mitglied-tippt"
 
 # Der Satz, den die Attrappe des Laufs zurückgibt — hier steht kein echtes Ollama dahinter.
 STEHT = "Chronik und Rückblick stehen bereit."
@@ -107,16 +113,14 @@ class FakeTextkanal:
 
 
 class FakeCtx:
-    def __init__(self, *, guild_id=GILDE, kanal=None):
+    def __init__(self, *, guild_id=GILDE, kanal=None, wer=WER):
         self.guild_id = guild_id
         self.channel = kanal if kanal is not None else FakeTextkanal()
         self.channel_id = self.channel.id
+        self.user = types.SimpleNamespace(id=wer)
         self.antworten: list[str] = []
         self.modale: list[FakeModal] = []
         self.aufgeschoben = False
-        # Ein Fenster antwortet über seine eigene Interaktion. Hier ist es dieselbe
-        # Attrappe, damit ein Test alles Gesagte an einer Stelle nachlesen kann.
-        self.response = types.SimpleNamespace(send_message=self.respond)
 
     async def defer(self, **rest):
         self.aufgeschoben = True
@@ -129,18 +133,40 @@ class FakeCtx:
 
 
 class FakeAntwort:
+    """Die *erste* Antwort auf eine Interaktion — oder der Aufschub, der sie vertagt."""
+
     def __init__(self):
         self.gesendet: list[str] = []
+        self.aufgeschoben = False
 
     async def send_message(self, text, **rest):
         self.gesendet.append(text)
 
+    async def defer(self, **rest):
+        self.aufgeschoben = True
+
+
+class FakeNachreichen:
+    """Was nach einem Aufschub kommt — getrennt geführt, damit der Weg prüfbar bleibt."""
+
+    def __init__(self):
+        self.gesendet: list[str] = []
+
+    async def send(self, text, **rest):
+        self.gesendet.append(text)
+
 
 class FakeInteraction:
-    def __init__(self, kanal, *, guild_id=GILDE):
+    def __init__(self, kanal, *, guild_id=GILDE, wer=WER):
         self.channel = kanal
         self.guild_id = guild_id
+        self.user = types.SimpleNamespace(id=wer)
         self.response = FakeAntwort()
+        self.followup = FakeNachreichen()
+
+    @property
+    def antworten(self) -> list[str]:
+        return self.response.gesendet + self.followup.gesendet
 
 
 class FakeNachricht:
@@ -195,6 +221,9 @@ def pycord(monkeypatch):
 def stelle(tmp_path):
     config = Config(
         discord_bot_token=TOKEN,
+        # Seit #96 fragt der Start nur, wo ein Foundry-Server im Spiel ist — eine Runde
+        # ohne Adresse bekäme gar kein Fenster mehr.
+        foundry_url="https://foundry.example",
         data_dir=tmp_path / "daten",
         recordings_dir=tmp_path / "aufnahmen",
     )
@@ -221,19 +250,26 @@ def chronikbefehl(bot, name):
     return bot.gruppen[gateway.GRUPPE_CHRONIK].befehle[name]
 
 
-def sitzung_starten(bot, ctx=None, titel="", *, passwort=""):
-    """``/chronik start`` samt dem Fenster, das seit #96 davor steht."""
-    ctx = ctx if ctx is not None else FakeCtx()
+def sitzung_starten(bot, ctx=None, titel="", *, passwort="", wer=WER):
+    """``/chronik start`` samt dem Fenster, das seit #96 davor steht.
+
+    Der Rumpf ist mit #96 aus dem Befehl in den Rückruf des Fensters gewandert und bekommt
+    dort eine **Interaktion**, keinen Befehlskontext. Genau diesen Unterschied bildet der
+    Helfer nach: der Befehl sieht ``ctx``, das Fenster eine eigene ``FakeInteraction``.
+    Zurück kommt sie, denn dort steht, was der Benutzer am Ende zu lesen bekommt.
+    """
+    ctx = ctx if ctx is not None else FakeCtx(wer=wer)
+    fenster_interaktion = FakeInteraction(ctx.channel, guild_id=ctx.guild_id, wer=wer)
 
     async def ablauf():
         await chronikbefehl(bot, "start")(ctx, titel)
         for fenster in ctx.modale:
             fenster.children[0].value = passwort
-            await fenster.callback(ctx)
+            await fenster.callback(fenster_interaktion)
 
     asyncio.run(ablauf())
     thread = ctx.channel.threads[-1] if ctx.channel.threads else None
-    return ctx, thread
+    return fenster_interaktion, thread
 
 
 def mitschnitt_starten(bot, gilde=GILDE):
@@ -272,14 +308,14 @@ def test_ohne_nachrichten_absicht_bliebe_der_thread_ein_leerer_behaelter(bot):
 def test_start_legt_sitzung_und_thread_an_und_sagt_wie_es_weitergeht(stelle, bot):
     _config, unsere = stelle
 
-    ctx, thread = sitzung_starten(bot, titel="Der Keller")
+    fenster, thread = sitzung_starten(bot, titel="Der Keller")
 
     sitzung_id = notes.session_of_thread(unsere, str(thread.id))
     assert sitzung_id is not None
     assert notes.session(unsere, sitzung_id).title == "Der Keller"
     assert thread.name == "Der Keller"
     assert thread.gesendet == [chronik.ANGELEGT]
-    (antwort,) = ctx.antworten
+    (antwort,) = fenster.antworten
     assert chronik.THREAD_STEHT.format(thread=thread.mention) in antwort
 
 
@@ -304,9 +340,9 @@ def test_ohne_thread_recht_bleibt_keine_halbe_sitzung_liegen(stelle, bot):
     _config, unsere = stelle
     ctx = FakeCtx(kanal=FakeTextkanal(darf=False))
 
-    sitzung_starten(bot, ctx, passwort=PASSWORT)
+    fenster, _thread = sitzung_starten(bot, ctx, passwort=PASSWORT)
 
-    (antwort,) = ctx.antworten
+    (antwort,) = fenster.antworten
     assert chronik.KEIN_THREAD in antwort
     assert notes.sessions(unsere) == ()
     # Kein Thread, keine Sitzung — und erst recht kein Passwort, das bis zur Frist läge.
@@ -318,24 +354,25 @@ def test_ohne_thread_recht_bleibt_keine_halbe_sitzung_liegen(stelle, bot):
 
 def test_start_fragt_das_passwort_im_fenster_und_haelt_es_die_sitzung_ueber(stelle, bot):
     _config, unsere = stelle
+    ctx = FakeCtx()
 
-    ctx, thread = sitzung_starten(bot, passwort=PASSWORT)
+    fenster, thread = sitzung_starten(bot, ctx, passwort=PASSWORT)
 
     assert ctx.modale[0].title == chronik.START_TITEL
     assert zugang.passwort(unsere) == PASSWORT
-    assert chronik.MIT_FOUNDRY in ctx.antworten[0]
+    assert chronik.MIT_FOUNDRY in fenster.antworten[0]
     # Gezeigt wird *ob*, nie *was* — auch nicht im Thread, den die ganze Runde liest.
-    assert PASSWORT not in " ".join(ctx.antworten + thread.gesendet)
+    assert PASSWORT not in " ".join(fenster.antworten + thread.gesendet)
 
 
 def test_ohne_passwort_laeuft_die_sitzung_trotzdem(stelle, bot):
     _config, unsere = stelle
 
-    ctx, thread = sitzung_starten(bot)
+    fenster, thread = sitzung_starten(bot)
 
     assert notes.session_of_thread(unsere, str(thread.id)) is not None
     assert not zugang.ist_gemerkt(unsere)
-    assert chronik.OHNE_FOUNDRY in ctx.antworten[0]
+    assert chronik.OHNE_FOUNDRY in fenster.antworten[0]
 
 
 def test_ein_leeres_feld_wirft_ein_liegendes_passwort_nicht_weg(stelle, bot):
@@ -354,21 +391,110 @@ def test_ein_altes_startfenster_merkt_das_passwort_keiner_fremden_runde(stelle, 
     und ein Fenster von vorhin darf nicht in die frische Runde hineinschreiben."""
     config, unsere = stelle
     ctx = FakeCtx()
+    fenster = FakeInteraction(ctx.channel)
 
     async def ablauf():
         await chronikbefehl(bot, "start")(ctx, "")
         lebenszyklus.loeschen(config, unsere)
         frisch = runden.anlegen(config.database_path, "Frisch", guild_id=GILDE)
         ctx.modale[0].children[0].value = PASSWORT
-        await ctx.modale[0].callback(ctx)
+        await ctx.modale[0].callback(fenster)
         return frisch
 
     frisch = asyncio.run(ablauf())
 
-    assert ctx.antworten == [chronik.VERALTET]
+    assert fenster.antworten == [chronik.VERALTET]
     assert ctx.channel.threads == []
     assert notes.sessions(frisch) == ()
     assert not zugang.ist_gemerkt(frisch)
+
+
+def test_das_startfenster_schiebt_auf_bevor_es_am_thread_arbeitet(stelle, bot):
+    """Zwei REST-Runden passen nicht verlässlich in die drei Sekunden der ersten Antwort.
+
+    Dass die Antwort **nachgereicht** kommt, ist der Beleg: der Aufschub stand davor.
+    """
+    _config, _unsere = stelle
+
+    fenster, _thread = sitzung_starten(bot, passwort=PASSWORT)
+
+    assert fenster.response.aufgeschoben
+    assert fenster.response.gesendet == []
+    assert len(fenster.followup.gesendet) == 1
+
+
+def test_ein_absturz_im_startfenster_laesst_niemanden_im_dunkeln(stelle, bot, monkeypatch):
+    """Ohne den breiten Fang entkäme die Ausnahme in py-cords ``Modal.on_error``, das die
+    Interaktion nie beantwortet — der Thread stünde, die Sitzung nicht, und niemand
+    erführe es."""
+    _config, unsere = stelle
+
+    def stolpert(*rest, **auch):
+        raise RuntimeError("die SQLite war weg")
+
+    monkeypatch.setattr(chronik, "sitzung_anlegen", stolpert)
+
+    fenster, _thread = sitzung_starten(bot, passwort=PASSWORT)
+
+    (antwort,) = fenster.antworten
+    assert gateway.UNERWARTET.format(typ="RuntimeError") in antwort
+    assert notes.sessions(unsere) == ()
+    # Der Absturz kam vor dem Merken: nichts liegt bis zur Frist herum.
+    assert not zugang.ist_gemerkt(unsere)
+
+
+def test_eine_nicht_zugestellte_begruessung_sagt_dass_die_sitzung_trotzdem_steht(
+    stelle, bot, monkeypatch
+):
+    """Thread und Sitzung stehen schon — »noch einmal versuchen« legte beides doppelt an."""
+    _config, unsere = stelle
+
+    async def stumm(self, text):
+        raise RuntimeError("Discord hat die Nachricht verweigert")
+
+    monkeypatch.setattr(FakeThread, "send", stumm)
+
+    fenster, thread = sitzung_starten(bot, passwort=PASSWORT)
+
+    (antwort,) = fenster.antworten
+    assert chronik.STUMM_ANGELEGT.format(thread=thread.mention) in antwort
+    assert notes.session_of_thread(unsere, str(thread.id)) is not None
+    assert zugang.ist_gemerkt(unsere)
+
+
+# -- Wo kein Foundry ist, wird auch nicht danach gefragt ---------------------------------
+
+
+def test_auf_der_testwelt_kommt_kein_passwortfenster(stelle, bot):
+    config, unsere = stelle
+    settings.save_foundry_quelle(unsere, settings.TESTWELT)
+    ctx = FakeCtx()
+
+    asyncio.run(chronikbefehl(bot, "start")(ctx, ""))
+
+    thread = ctx.channel.threads[-1]
+    assert ctx.modale == []
+    assert notes.session_of_thread(unsere, str(thread.id)) is not None
+    assert chronik.KEIN_FOUNDRY in ctx.antworten[0]
+    assert not chronik.foundry_im_spiel(config, unsere)
+
+
+def test_ohne_eingetragene_adresse_kommt_kein_passwortfenster(tmp_path, pycord):
+    """Eine Runde, die nie durch ``/setup`` ging, hat kein Foundry — und wird nicht gefragt."""
+    config = Config(
+        discord_bot_token=TOKEN,
+        data_dir=tmp_path / "daten",
+        recordings_dir=tmp_path / "aufnahmen",
+    )
+    db.init(config.database_path)
+    unsere = runden.anlegen(config.database_path, "Ohne Foundry", guild_id=GILDE)
+    ctx = FakeCtx()
+
+    asyncio.run(chronikbefehl(gateway.baue(config), "start")(ctx, ""))
+
+    assert ctx.modale == []
+    assert chronik.KEIN_FOUNDRY in ctx.antworten[0]
+    assert not zugang.ist_gemerkt(unsere)
 
 
 # -- Jede Nachricht ist eine Notiz ------------------------------------------------------
@@ -684,6 +810,67 @@ def test_nach_dem_passwort_beim_start_fragt_der_abschluss_nicht_noch_einmal(
     assert ctx.modale == []
     assert gesehen == [PASSWORT]
     assert ctx.antworten == [chronik.FERTIG]
+
+
+def test_ein_zweites_mitglied_schiebt_dem_abschluss_kein_fremdes_passwort_unter(
+    stelle, bot, monkeypatch
+):
+    """``/chronik start`` steht jedem Mitglied offen. Ohne diese Prüfung nähme der
+    Abschluss die Zeichenkette eines Zweiten und zeigte sie dem Foundry-Konto dieser Runde
+    vor, ausgelöst von jemandem, der sie nie gesehen hat."""
+    _config, unsere = stelle
+    _fenster, thread = sitzung_starten(bot, passwort=PASSWORT, wer=WER)
+    sitzung_starten(
+        bot, FakeCtx(wer=ZWEITES_MITGLIED), passwort=ANDERE_EINGABE, wer=ZWEITES_MITGLIED
+    )
+    gesehen = []
+    monkeypatch.setattr(
+        jobs, "abschluss", lambda config, eine, sid: gesehen.append(zugang.passwort(eine)) or STEHT
+    )
+    ctx = FakeCtx(kanal=types.SimpleNamespace(id=thread.id), wer=WER)
+    interaktion = FakeInteraction(thread, wer=WER)
+
+    async def ablauf():
+        await chronikbefehl(bot, "fertig")(ctx)
+        ctx.modale[0].children[0].value = PASSWORT
+        await ctx.modale[0].callback(interaktion)
+        await _bis_der_lauf_durch_ist(unsere)
+
+    asyncio.run(ablauf())
+
+    # Kein stiller Schnellweg: das Fenster kommt, und es sagt auch, warum.
+    assert ctx.modale[0].children[0].placeholder == chronik.FREMDES_HINWEIS
+    assert ctx.antworten == []
+    assert gesehen == [PASSWORT]
+
+
+def test_wer_selbst_hinterlegt_hat_wird_nicht_noch_einmal_gefragt(stelle, bot):
+    _config, unsere = stelle
+    sitzung_starten(bot, passwort=PASSWORT, wer=WER)
+
+    assert chronik.passwort_bereit(unsere, str(WER))
+    assert not chronik.passwort_bereit(unsere, str(ZWEITES_MITGLIED))
+    # Und ohne Kennung erst recht nicht — sonst wäre der Schnellweg wieder für alle offen.
+    assert not chronik.passwort_bereit(unsere, "")
+
+
+def test_ohne_foundry_fragt_auch_der_abschluss_nicht_nach_dem_passwort(stelle, bot, monkeypatch):
+    _config, unsere = stelle
+    settings.save_foundry_quelle(unsere, settings.TESTWELT)
+    ctx = FakeCtx()
+    asyncio.run(chronikbefehl(bot, "start")(ctx, ""))
+    thread = ctx.channel.threads[-1]
+    monkeypatch.setattr(jobs, "abschluss", lambda config, eine, sid: STEHT)
+    abschluss_ctx = FakeCtx(kanal=thread)
+
+    async def ablauf():
+        await chronikbefehl(bot, "fertig")(abschluss_ctx)
+        await _bis_der_lauf_durch_ist(unsere)
+
+    asyncio.run(ablauf())
+
+    assert abschluss_ctx.modale == []
+    assert abschluss_ctx.antworten == [chronik.FERTIG]
 
 
 def test_auch_mit_gemerktem_passwort_endet_die_aufnahme_vor_dem_lauf(

@@ -83,7 +83,9 @@ und gehört nie ins Repo.
 
 **Das Foundry-Passwort wird nirgends gespeichert** — es gibt kein Feld dafür, keine
 Variable und keine Zeile in der SQLite. Gefragt wird beim Sitzungsstart, spätestens beim
-Abschluss; der Abgleich verbraucht es und vergisst es; ein Rest im Arbeitsspeicher verfällt spätestens nach zwölf Stunden. Hashen
+Abschluss — und nur dort, wo überhaupt ein Foundry-Server im Spiel ist; der Abgleich
+verbraucht es und vergisst es, auch der, der auf der Testwelt oder an einer ruhenden Runde
+abbricht; ein Rest im Arbeitsspeicher verfällt spätestens nach zwölf Stunden. Hashen
 ginge nicht: Foundry will es vorgezeigt, nicht geprüft. Der Bot-Token bleibt gespeichert,
 wird aber nie angezeigt, nur *ob* er gesetzt ist; ein leer abgesendetes Feld heißt
 unverändert. Die Ollama-Adresse hat eine dritte Stufe: ist weder
@@ -213,7 +215,9 @@ Rückfrage, damit sich holen kann, wer den Beleg braucht.
 geschrieben wird. Davor steht ein Fenster für das **Foundry-Passwort**: wer es gibt, hat
 Foundry die ganze Sitzung über offen; wer das Feld leer lässt, spielt ohne die Zahlen
 weiter und wird beim Abschluss noch einmal gefragt — **an einem fehlenden Passwort
-scheitert keine Sitzung.** Der Thread ist der natürliche Behälter: Anfang, Ende,
+scheitert keine Sitzung.** Wo gar kein Foundry-Server eingetragen ist oder die Runde auf
+der Testwelt läuft, kommt das Fenster erst gar nicht. Der Thread ist der natürliche
+Behälter: Anfang, Ende,
 Teilnehmerliste, Zeitachse, und die Runde tippt ohnehin dort. Darin gilt:
 
 - **Jede Nachricht ist eine Notiz** der laufenden Szene. Eingefügter Text — Log,
@@ -224,9 +228,11 @@ Teilnehmerliste, Zeitachse, und die Runde tippt ohnehin dort. Darin gilt:
   Warteschlange ein wie ein Upload — quittiert wird er, weil er den Thread verlässt.
 - **`/chronik fertig`** schließt die Sitzung ab: Abgleich mit Foundry, Transkription der
   wartenden Spuren, Komposition — **ein** Auftrag, mit Statusmeldung im Thread. Nach dem
-  Foundry-Passwort fragt ein Fenster nur, wenn beim Start keines kam; verwendet und
-  vergessen wird es so oder so (siehe *Zugangsdaten*). Ein Befehls-Argument gibt es dafür
-  nicht — es stünde als Klartext im Kanalverlauf.
+  Foundry-Passwort fragt ein Fenster nur, wenn **du selbst** beim Start keines gegeben
+  hast: `/chronik start` steht jedem Mitglied offen, und die Eingabe eines anderen wird
+  nicht stillschweigend deinem Abschluss untergeschoben. Verwendet und vergessen wird es
+  so oder so (siehe *Zugangsdaten*). Ein Befehls-Argument gibt es dafür nicht — es stünde
+  als Klartext im Kanalverlauf.
 
 **Nachträgliches Erfassen geht.** Eine Nachricht Tage später im Thread gehört weiter zu
 dieser Sitzung, und in welche **Szene** sie fällt, entscheidet ihr eigener Zeitpunkt: die

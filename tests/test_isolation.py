@@ -215,7 +215,7 @@ def fuellen(config: Config, runde, marke: str) -> dict[str, int]:
     # Ollama trägt hier bewusst keine Marke: es gehört seit #87 der Instanz und ist damit
     # kein Kanarienvogel für ein Leck zwischen Runden, sondern ein geteilter Wert.
     settings.save(runde, {"foundry_url": f"https://{marke}.example"})
-    zugang.merken(runde, f"passwort-{marke}")
+    zugang.merken(runde, f"passwort-{marke}", wer=f"wer-{marke}")
     return {
         "sitzung": sitzung,
         "szene": szene.id,
@@ -293,6 +293,7 @@ ABFRAGEN = {
     "service.failed": lambda c, r, i: foundry_service.failed(c, r),
     "zugang.passwort": lambda c, r, i: zugang.passwort(r),
     "zugang.ist_gemerkt": lambda c, r, i: zugang.ist_gemerkt(r),
+    "zugang.gemerkt_von": lambda c, r, i: zugang.gemerkt_von(r),
     "store.load": lambda c, r, i: _mit_scope(r, foundry_store.load),
     "store.world": lambda c, r, i: _mit_scope(r, foundry_store.world),
     "store.last_failure": lambda c, r, i: _mit_scope(r, foundry_store.last_failure),
