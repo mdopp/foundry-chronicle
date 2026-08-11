@@ -11,7 +11,8 @@ from flask import request
 
 import chronicle.__main__ as entry
 from chronicle import db, instanz, jobs, notes, protocol, recordings, register, settings, zugang
-from chronicle.app import create_app
+from chronicle import runde as runden
+from chronicle.app import SCHRITTE, create_app
 from chronicle.compose import client as sprachmodell
 from chronicle.compose.client import ModelUnreachable
 from chronicle.compose.service import compose_session, recap_session
@@ -21,6 +22,17 @@ from chronicle.foundry.client import FoundryUnreachable
 
 PASSWORT = "passwort-taucht-nirgends-auf"
 BOT_TOKEN = "bot-token-taucht-nirgends-auf"
+
+# Was eine Gilde über ``/setup`` in Discord gepflegt hat, dazu die Werte der Instanz.
+# Diese Oberfläche zeigt das meiste davon gar nicht mehr — nehmen darf sie es deshalb
+# erst recht nicht.
+IN_DISCORD_GEPFLEGT = {
+    "foundry_url": "https://foundry.example",
+    "foundry_user": "chronist",
+    "discord_recap_channel": "chronik",
+    "ollama_url": "http://ollama.example:11434",
+    "ollama_model": "chronist-modell",
+}
 
 
 @pytest.fixture(autouse=True)
@@ -733,6 +745,44 @@ def test_ein_schritt_nimmt_den_anderen_schritten_ihre_werte_nicht_weg(tmp_path):
     assert aktuell.discord_recap_channel == "chronik"
 
 
+def test_ein_schritt_ohne_felder_laesst_die_werte_der_runde_stehen(tmp_path):
+    """Kein Feld heißt »unverändert« — nicht »weg mit dem, was in Discord steht«."""
+    config = Config(data_dir=tmp_path)
+    client = create_app(config).test_client()
+    gruppe = runde(config)
+
+    for schritt, _ in SCHRITTE:
+        settings.save(gruppe, IN_DISCORD_GEPFLEGT)
+        assert client.post(f"/einrichtung/{schritt}").status_code == 302
+        assert settings.stored(gruppe) == IN_DISCORD_GEPFLEGT, schritt
+
+
+def test_ein_leer_abgesendetes_feld_nimmt_den_wert_weiter_zurueck(tmp_path):
+    """»Feld leer heißt: keine Zustellung« steht im Formular — das bleibt wahr."""
+    config = Config(data_dir=tmp_path)
+    client = create_app(config).test_client()
+    gruppe = runde(config)
+    settings.save(gruppe, {"discord_recap_channel": "chronik"})
+
+    client.post("/einrichtung/discord", data={"discord_recap_channel": ""})
+
+    assert settings.effective(config, gruppe).discord_recap_channel is None
+
+
+def test_ein_schritt_ruehrt_die_werte_der_anderen_runde_nicht_an(tmp_path):
+    config = Config(data_dir=tmp_path)
+    client = create_app(config).test_client()
+    fremde = runden.anlegen(config.database_path, "Nebenan", guild_id="gilde-nebenan")
+    fremdes = {"foundry_url": "https://nebenan.example", "discord_recap_channel": "nebenkanal"}
+    settings.save(fremde, fremdes)
+
+    for schritt, _ in SCHRITTE:
+        assert client.post(f"/einrichtung/{schritt}").status_code == 302
+        assert client.post(f"/einrichtung/{schritt}", data={"foundry_url": ""}).status_code == 302
+
+    assert settings.stored(fremde) == fremdes
+
+
 def test_ueberspringen_schreibt_nichts_und_geht_weiter(tmp_path):
     config = Config(data_dir=tmp_path)
     client = create_app(config).test_client()
@@ -967,12 +1017,14 @@ def test_die_oberflaeche_stoesst_keinen_abgleich_mehr_an(config, welt):
 PLATZHALTER = {"sitzung_id": 1, "szene_id": 1, "aufnahme_id": 1, "schritt": "foundry"}
 
 
-def test_kein_knopf_hier_wirft_das_hinterlegte_passwort_weg(config):
-    """Seit #96 liegt es aus ``/chronik start`` bereit — kein Formular hier löscht es.
+def test_kein_knopf_hier_wirft_weg_was_woanders_gepflegt_wurde(config):
+    """Passwort **und** Einstellungen: ein Knopf ohne Feld nimmt beides nicht mit.
 
-    ``zugang.merken`` deutet ein leeres Feld als vergessen. Ein Knopf ohne Passwortfeld
-    nimmt der Spielleitung damit still, was sie in Discord eingegeben hat — deshalb der
-    Rundumschlag über alle POST-Wege statt einer Liste, die ein neuer Weg nicht kennt.
+    Das Passwort liegt seit #96 aus ``/chronik start`` bereit, und ``zugang.merken``
+    deutet ein leeres Feld als vergessen. Die Einstellungen kommen seit #89 aus
+    ``/setup`` in Discord, und ``settings.save`` deutet einen leeren Wert als
+    zurückgenommen. Beides trifft derselbe Fehler — ein POST ohne die Felder —, deshalb
+    prüft der Rundumschlag über alle POST-Wege beides statt nur das Auffälligere (#117).
 
     Ein Weg mit unbekanntem Platzhalter zählt dabei nicht als geprüft: er ließe sich nur
     zu einer Adresse bauen, die keine Regel trifft, und die Zusicherung ginge am 404 still
@@ -993,9 +1045,11 @@ def test_kein_knopf_hier_wirft_das_hinterlegte_passwort_weg(config):
                 regel.endpoint, {name: PLATZHALTER[name] for name in regel.arguments}
             )
             zugang.merken(gruppe, PASSWORT)
+            settings.save(gruppe, IN_DISCORD_GEPFLEGT)
             client.post(pfad)
             assert request.url_rule is regel, f"{regel.rule}: nicht beim Handler angekommen"
             assert zugang.ist_gemerkt(gruppe), regel.rule
+            assert settings.stored(gruppe) == IN_DISCORD_GEPFLEGT, regel.rule
 
 
 def test_waehrend_des_abgleichs_sagt_das_band_was_laeuft(config, welt):
