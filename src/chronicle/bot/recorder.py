@@ -42,6 +42,15 @@ FREMDE_RUNDE = (
     "schreiben soll — hier nehme ich nichts auf."
 )
 NICHT_ANGESAGT = "Es wurde noch nichts angesagt — ohne Ansage wird nichts geschrieben."
+
+# Die Ansage lief, aber nicht dort, wo sie gemeint war. Wer im Ursprungskanal saß, hat
+# nichts gehört; wer im neuen sitzt, wurde nie gefragt. Ein Eintrag daraus behauptete eine
+# Zustimmung, die niemand geben konnte — also entsteht keiner und es wird nicht gestartet.
+VERSCHOBEN_BEIM_START = (
+    "Während der Ansage hat mich jemand in einen anderen Sprachkanal gezogen — gehört hat "
+    "sie damit niemand, der gemeint war. Ich habe nichts protokolliert und schneide nicht "
+    "mit. Gebt `/aufnahme start` noch einmal, in dem Kanal, in dem aufgenommen werden soll."
+)
 GESTARTET = (
     "Die Ansage ist durch, ich schneide jetzt mit — je Sprecherin und Sprecher eine "
     "eigene Spur. Wer nicht aufgezeichnet werden möchte, verlässt den Sprachkanal; "
@@ -247,6 +256,12 @@ async def starten(config: Config, stimme: Stimme, runde: Runde) -> Aufnahme:
     nur noch nachgesehen, ob sie auch die des Sprachkanals ist. Einen Rückfall auf »die
     erste Runde« gibt es nicht mehr: er ließe Ansage, Einwilligungsprotokoll samt
     Anzeigenamen, Tonspuren und Transkripte in einer fremden Kampagne landen.
+
+    Zwischen Ansage und Eintrag wird nachgesehen, ob der Bot noch dort sitzt, wo er
+    angefangen hat — dieselbe Bedingung wie beim Nachzügler, und hier trägt sie alles:
+    der Eintrag nennt Kanal und Besetzung des Ursprungs, und beides wäre gelogen, hätte
+    die Ansage nebenan gespielt. Dann bricht der Start ab, statt einen Lauf zu
+    hinterlassen, der weder schreibt noch etwas sagt.
     """
     if runde.guild_id != stimme.kanal.guild_id:
         raise AufnahmeFehler(FREMDE_RUNDE)
@@ -257,6 +272,8 @@ async def starten(config: Config, stimme: Stimme, runde: Runde) -> Aufnahme:
 
     aufnahme = Aufnahme(config, runde, sitzung.id, stimme.kanal)
     await stimme.ansagen(gesprochen)
+    if not stimme.im_kanal():
+        raise AufnahmeFehler(VERSCHOBEN_BEIM_START)
     aufnahme.ansage_protokollieren(stimme.mitglieder())
     stimme.mitschneiden(aufnahme)
     return aufnahme

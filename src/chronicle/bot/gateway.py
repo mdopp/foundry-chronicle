@@ -244,6 +244,18 @@ class _WavStrom:
         return self._wave.readframes(anzahl // RAHMEN)
 
 
+def _wo_discord_uns_sieht(voice_client) -> str | None:
+    """Der Kanal aus Discords eigenem Zustand des Bots — ``None``, wenn keiner da ist.
+
+    Die zweite Quelle neben ``VoiceClient.channel``: ``state.parse_voice_state_update``
+    schreibt sie in den Zwischenspeicher der Gilde, bevor es das Ereignis ausliefert, und
+    unabhängig davon, in welchem Verbindungszustand der Voice-Client gerade steckt.
+    """
+    zustand = getattr(getattr(voice_client.guild, "me", None), "voice", None)
+    kanal = getattr(zustand, "channel", None)
+    return None if kanal is None else str(kanal.id)
+
+
 class Sprachverbindung:
     """Die py-cord-Seite der ``Stimme`` aus ``recorder``."""
 
@@ -269,13 +281,23 @@ class Sprachverbindung:
     def im_kanal(self) -> bool:
         """Ob der Bot noch dort sitzt, wo angesagt und eingewilligt wurde.
 
-        Verschiebt ein Administrator den Bot, trägt py-cord den neuen Kanal in
-        ``voice_client.channel`` ein, **bevor** das Ereignis bei uns ankommt — das ist
-        der früheste Zeitpunkt, zu dem der Wechsel überhaupt bekannt ist. Danach ist
-        jeder Rahmen einer, für den niemand zugestimmt hat.
+        Zwei Quellen, und keine allein. Verschiebt ein Administrator den Bot, trägt
+        py-cord den neuen Kanal in ``voice_client.channel`` ein, bevor das Ereignis bei
+        uns ankommt — aber nur, solange die Verbindung im Zustand ``connected`` steht.
+        Fällt die Verschiebung mit einer Voice-Server-Migration zusammen, lässt
+        ``voice/state.py`` den Kanal im Zustand ``got_voice_server_update`` unverändert,
+        und der Voice-Client zeigt weiter auf den alten. Discords eigenen Zustand des Bots
+        schreibt ``guild._update_voice_state`` dagegen immer, und zwar **vor** der
+        Auslieferung des Ereignisses. Was danach ankommt, ist ein Rahmen, für den niemand
+        zugestimmt hat.
         """
         jetzt = self._vc.channel
-        return jetzt is not None and str(jetzt.id) == self.kanal.id
+        if jetzt is None or str(jetzt.id) != self.kanal.id:
+            return False
+        gemeldet = _wo_discord_uns_sieht(self._vc)
+        # Kein zwischengespeicherter Zustand ist kein Beleg für einen Umzug — dann bleibt
+        # es bei dem, was der Voice-Client sagt.
+        return gemeldet is None or gemeldet == self.kanal.id
 
     async def ansagen(self, datei: Path) -> None:
         """Spielt die Ansage und kehrt erst zurück, wenn sie zu Ende ist."""
