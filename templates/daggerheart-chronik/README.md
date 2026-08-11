@@ -1,12 +1,15 @@
 # Daggerheart-Chronik
 
-Sitzungsprotokolle für die Tisch-Rollenspielgruppe: aus den Notizen, die während des
+Sitzungsprotokolle für Tisch-Rollenspielrunden: aus den Notizen, die während des
 Spiels entstehen, und dem Chat-Log aus Foundry VTT wird eine lesbare Chronik. Der Dienst
 ist serverseitig gerendertes HTML ohne eigenes Login — angemeldet wird an Authelia, der
 Proxy setzt `Remote-User`, und ein Request ohne diesen Header wird abgewiesen.
 
-**Eine Instanz pro Gruppe.** Die Subdomain trägt deshalb den Gruppennamen; Vorgabe ist
-`daggerheart`, die Domain kommt zur Installationszeit aus `PUBLIC_DOMAIN`.
+**Eine Instanz trägt mehrere Runden** (#62). Eine Runde ist eine Discord-Gilde mit eigenem
+Foundry-Zugang; für eine zweite Gruppe wird der Bot in ihren Server eingeladen, nicht der
+Dienst ein zweites Mal installiert. Die Subdomain benennt deshalb die Instanz und nicht
+eine Gruppe; Vorgabe ist `daggerheart`, die Domain kommt zur Installationszeit aus
+`PUBLIC_DOMAIN`.
 
 ## Variablen
 
