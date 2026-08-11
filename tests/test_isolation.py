@@ -253,6 +253,7 @@ ABFRAGEN = {
     "notes.latest_session": lambda c, r, i: notes.latest_session(r),
     "notes.session_of_scene": lambda c, r, i: notes.session_of_scene(r, i["szene"]),
     "notes.session_of_thread": lambda c, r, i: notes.session_of_thread(r, i["thread"]),
+    "notes.thread_of_session": lambda c, r, i: notes.thread_of_session(r, i["sitzung"]),
     "notes.scene_at": lambda c, r, i: notes.scene_at(r, i["sitzung"], "2026-05-01T20:00:00+00:00"),
     "notes.today": lambda c, r, i: notes.today(),
     "protocol.stored": lambda c, r, i: protocol.stored(r, i["sitzung"]),
@@ -501,6 +502,11 @@ def test_der_thread_der_fremden_runde_ist_keine_sitzung(zwei_runden):
     config, a, b, ids = zwei_runden
     assert notes.session_of_thread(a, ids[2]["thread"]) is None
     assert notes.session_of_thread(a, ids[1]["thread"]) == ids[1]["sitzung"]
+
+    # Und die Gegenrichtung ebenso: der Bot sagt einer Sitzung in ihren Thread, dass er
+    # den Mitschnitt beendet hat — ein Thread von nebenan wäre der falsche Server.
+    assert notes.thread_of_session(a, ids[2]["sitzung"]) is None
+    assert notes.thread_of_session(a, ids[1]["sitzung"]) == ids[1]["thread"]
 
     assert notes.update_note(a, ids[2]["nachricht"], "umgeschrieben") is False
     assert notes.remove_note(a, ids[2]["nachricht"]) is False

@@ -189,6 +189,19 @@ def session_of_thread(runde: Runde, thread_id: str) -> int | None:
     return None if row is None else int(row["id"])
 
 
+def thread_of_session(runde: Runde, session_id: int) -> str | None:
+    """Der Thread einer Sitzung — die Gegenrichtung, für wen ihr etwas zu sagen hat."""
+    scope = db.scoped(runde)
+    try:
+        row = scope.execute(
+            "SELECT thread_id FROM session WHERE runde_id = ? AND id = ?",
+            (scope.runde_id, session_id),
+        ).fetchone()
+    finally:
+        scope.close()
+    return None if row is None else row["thread_id"]
+
+
 def add_scene(runde: Runde, session_id: int, *, title: str = "", at: str = "") -> int | None:
     scope = db.scoped(runde)
     try:
