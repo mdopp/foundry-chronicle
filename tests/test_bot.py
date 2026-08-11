@@ -11,6 +11,7 @@ geschrieben**, und **was angesagt wurde, steht im Wortlaut im Protokoll.**
 from __future__ import annotations
 
 import asyncio
+import inspect
 import logging
 import sqlite3
 import sys
@@ -832,6 +833,10 @@ class FakeTokenAbgelehnt(Exception):
     """Steht für ``discord.errors.LoginFailure`` — der Token taugt nicht (mehr)."""
 
 
+class FakeNichtGefunden(Exception):
+    """Steht für ``discord.NotFound`` — 404, den Kanal gibt es nicht mehr."""
+
+
 class FakeBot:
     erzeugt: list[FakeBot] = []
 
@@ -975,10 +980,26 @@ class FakeTextkanal:
         self.stolpert = 0
 
     async def send(self, text):
+        # Echtes ``send`` geht ans Netz und gibt dabei an die Schleife ab. Ohne dieses
+        # Abgeben interleaven zwei Ereignis-Tasks im Test nie, und jeder Fehler, der nur
+        # zwischen zwei gleichzeitigen Handlern entsteht, bliebe unsichtbar.
+        await asyncio.sleep(0)
         if self.stolpert:
             self.stolpert -= 1
             raise RuntimeError("Discord hat abgelehnt")
         self.geschrieben.append(text)
+
+
+class FakeFortgeraeumterThread:
+    """Ein Thread, den es in Discord nicht mehr gibt — ``send`` bleibt bei 404."""
+
+    def __init__(self):
+        self.versuche = 0
+
+    async def send(self, text):
+        await asyncio.sleep(0)
+        self.versuche += 1
+        raise FakeNichtGefunden("404 Not Found (error code: 10003): Unknown Channel")
 
 
 class FakeCtx:
@@ -1012,7 +1033,9 @@ def pycord(monkeypatch):
     fehler = types.ModuleType("discord.errors")
     fehler.PrivilegedIntentsRequired = FakeRechteFehlen
     fehler.LoginFailure = FakeTokenAbgelehnt
+    fehler.NotFound = FakeNichtGefunden
     modul.errors = fehler
+    modul.NotFound = FakeNichtGefunden
     monkeypatch.setitem(sys.modules, "discord", modul)
     monkeypatch.setattr(FakeBot, "erzeugt", [])
     return modul
@@ -1574,6 +1597,19 @@ def einer_bleibt(kanal, wer):
     kanal.members = [jemand for jemand in kanal.members if jemand.bot or jemand is wer]
 
 
+def dritter_im_kanal(runde):
+    """Eine dritte Person im Sprachkanal — die Attrappe kennt von Haus aus zwei."""
+    wer = FakeMitglied(int(SPAET.id), SPAET.name, kanal=runde.kanal)
+    runde.gilde.mitglieder[wer.id] = wer
+    runde.kanal.members.append(wer)
+    return wer
+
+
+def der_lauf(bot):
+    """Der Zustand hinter den Ereignissen — er lebt in der Closure von ``baue``."""
+    return inspect.getclosurevars(bot.ereignisse["on_voice_state_update"]).nonlocals["lauf"]
+
+
 def test_der_satz_ans_alleinsein_zeigt_den_widerspruch_und_traegt_keinen_namen():
     """Ein Satz ohne Feld kann keinen Namen und keine Kennung tragen — auch nicht später."""
     assert "`/aufnahme stop`" in gateway.ALLEIN
@@ -1642,6 +1678,84 @@ def test_dass_sie_allein_ist_wird_genau_einmal_gesagt(
     asyncio.run(ablauf())
 
     assert thread.geschrieben == [gateway.ALLEIN]
+
+
+def test_gehen_zwei_im_selben_schwung_steht_der_satz_trotzdem_nur_einmal_da(
+    konfiguration, sitzung_im_thread, ohne_espeak, runde, kurze_frist
+):
+    """py-cord stellt jedes Sprachereignis als eigenen Task zu — und hat den Cache der
+    Mitglieder vorher aktualisiert. Beide Handler sehen deshalb dieselbe eine Verbliebene;
+    wer den Vermerk erst hinter dem ``await`` setzt, schreibt den Satz zweimal.
+    """
+    bot = gateway.baue(konfiguration)
+    thread = FakeTextkanal()
+    bot.kanaele[THREAD] = thread
+    dazu = bot.ereignisse["on_voice_state_update"]
+
+    async def ablauf():
+        aelin = dritter_im_kanal(runde)
+        await befehl(bot, "start")(FakeCtx(runde.mira))
+        einer_bleibt(runde.kanal, runde.mira)
+        await asyncio.gather(
+            dazu(runde.brok, zustand(runde.kanal), zustand()),
+            dazu(aelin, zustand(runde.kanal), zustand()),
+        )
+        await ruhen()
+
+    asyncio.run(ablauf())
+
+    assert thread.geschrieben == [gateway.ALLEIN]
+    assert runde.kanal.verbindung.schneidet
+
+
+def test_bleiben_zwei_zurueck_sagt_der_bot_nichts(
+    konfiguration, sitzung_im_thread, ohne_espeak, runde, kurze_frist
+):
+    """»Nur noch **eine** Person« ist eine Tatsachenbehauptung, an der die Einwilligung
+    hängt: sie soll aufhören können, weil sie allein ist. Zu zweit wäre sie falsch.
+    """
+    bot = gateway.baue(konfiguration)
+    thread = FakeTextkanal()
+    bot.kanaele[THREAD] = thread
+    dazu = bot.ereignisse["on_voice_state_update"]
+
+    async def ablauf():
+        aelin = dritter_im_kanal(runde)
+        await befehl(bot, "start")(FakeCtx(runde.mira))
+        runde.kanal.members.remove(aelin)
+        await dazu(aelin, zustand(runde.kanal), zustand())
+        await ruhen()
+
+    asyncio.run(ablauf())
+
+    assert thread.geschrieben == []
+    assert runde.kanal.verbindung.schneidet
+
+
+def test_ein_ortswechsel_im_selben_kanal_ist_gar_kein_gehen(
+    konfiguration, sitzung_im_thread, ohne_espeak, runde, kurze_frist
+):
+    """Stummschalten meldet Discord mit demselben Kanal auf beiden Seiten des Ereignisses.
+
+    Wer nur auf »war drin« sieht, hält das für ein Gehen — und sagt der, die von Anfang an
+    allein mitschneidet, beim ersten Stummschalten, es sei gerade jemand gegangen. Ohne
+    vorheriges Gehen fängt das auch kein Vermerk ab.
+    """
+    bot = gateway.baue(konfiguration)
+    thread = FakeTextkanal()
+    bot.kanaele[THREAD] = thread
+    dazu = bot.ereignisse["on_voice_state_update"]
+
+    async def ablauf():
+        einer_bleibt(runde.kanal, runde.mira)
+        await befehl(bot, "start")(FakeCtx(runde.mira))
+        await dazu(runde.mira, zustand(runde.kanal), zustand(runde.kanal))
+        await ruhen()
+
+    asyncio.run(ablauf())
+
+    assert thread.geschrieben == []
+    assert runde.kanal.verbindung.schneidet
 
 
 def test_ein_vermerk_von_vorhin_verschluckt_den_satz_der_naechsten_aufnahme_nicht(
@@ -1755,6 +1869,60 @@ def test_ohne_thread_wird_allein_nicht_weitergeschnitten(
     assert not runde.kanal.verbindung.schneidet
     assert runde.kanal.verbindung.getrennt
     assert len(recordings.pending(unsere_runde(konfiguration))) == 1
+
+
+def test_ein_fortgeraeumter_thread_beendet_den_mitschnitt_statt_ewig_weiterzuschneiden(
+    konfiguration, sitzung_im_thread, ohne_espeak, runde, kurze_frist
+):
+    """Fort ist nicht »zuckt«: der 404 käme bei jedem weiteren Wechsel genauso wieder.
+
+    Behandelte der Bot ihn wie ein Zucken, schnitte er dauerhaft weiter, ohne dass ihr je
+    gesagt wurde, dass sie allein ist — derselbe Zustand, gegen den die Zusage steht, nur
+    durch die andere Tür.
+    """
+    bot = gateway.baue(konfiguration)
+    fort = FakeFortgeraeumterThread()
+    bot.kanaele[THREAD] = fort
+    dazu = bot.ereignisse["on_voice_state_update"]
+
+    async def ablauf():
+        await befehl(bot, "start")(FakeCtx(runde.mira))
+        runde.kanal.verbindung.senke.write(sprachdaten(stille(480)), runde.mira)
+        einer_bleibt(runde.kanal, runde.mira)
+        await dazu(runde.brok, zustand(runde.kanal), zustand())
+        await ruhen()
+
+    asyncio.run(ablauf())
+
+    assert fort.versuche == 1
+    assert not runde.kanal.verbindung.schneidet
+    assert runde.kanal.verbindung.getrennt
+    assert len(recordings.pending(unsere_runde(konfiguration))) == 1
+
+
+def test_der_vermerk_ans_alleinsein_ueberlebt_das_ende_der_aufnahme_nicht(
+    konfiguration, sitzung_im_thread, ohne_espeak, runde, kurze_frist
+):
+    """Der Vermerk führt Discord-Kennungen. Nach dem Ende liest sie niemand mehr."""
+    bot = gateway.baue(konfiguration)
+    bot.kanaele[THREAD] = FakeTextkanal()
+    dazu = bot.ereignisse["on_voice_state_update"]
+
+    async def ablauf():
+        await befehl(bot, "start")(FakeCtx(runde.mira))
+        einer_bleibt(runde.kanal, runde.mira)
+        await dazu(runde.brok, zustand(runde.kanal), zustand())
+        gemerkt = der_lauf(bot).allein
+        await befehl(bot, "stop")(FakeCtx(runde.mira))
+        await ruhen()
+        return gemerkt
+
+    gemerkt = asyncio.run(ablauf())
+
+    # Erst dass überhaupt etwas dastand — sonst prüfte der zweite Satz nur eine Lücke.
+    assert gemerkt is not None
+    assert MIRA.id in gemerkt[1]
+    assert der_lauf(bot).allein is None
 
 
 def test_die_rueckkehr_setzt_dieselbe_aufnahme_fort(
