@@ -330,6 +330,36 @@ def session_of_scene(runde: Runde, scene_id: int) -> int | None:
     return None if row is None else int(row["session_id"])
 
 
+def link_foundry_message(runde: Runde, scene_id: int, message_id: str) -> bool:
+    """Ein Foundry-Ereignis an die Szene hängen, in der es passiert ist.
+
+    Das ist der Ursprungsvermerk des Ereignisstroms (#97): der Wurf selbst steht in
+    ``foundry_message``, hier steht nur, wohin er gehört. Er wird ausdrücklich **nicht**
+    als Notiz abgelegt — eine Notiz ist Text vom Tisch, und eine Zahl, die als Notiz
+    dasteht, hat ihren Beleg unterwegs verloren. Die Komposition liest beides getrennt und
+    kann deshalb weiter zwischen Belegtem und Verbindungssätzen unterscheiden.
+
+    Zweimal dasselbe Ereignis ist keine zweite Zuordnung: ein Blick, der eine Nachricht
+    erneut sieht, soll die Szene von damals nicht überschreiben.
+    """
+    scope = db.scoped(runde)
+    try:
+        bekannt = scope.execute(
+            "SELECT 1 FROM scene WHERE runde_id = ? AND id = ?", (scope.runde_id, scene_id)
+        ).fetchone()
+        if bekannt is None:
+            return False
+        with scope:
+            cursor = scope.execute(
+                "INSERT OR IGNORE INTO scene_foundry_message (runde_id, scene_id, message_id) "
+                "VALUES (?, ?, ?)",
+                (scope.runde_id, scene_id, str(message_id)),
+            )
+        return cursor.rowcount > 0
+    finally:
+        scope.close()
+
+
 def add_note(
     runde: Runde, scene_id: int, text: str, *, message_id: str = "", origin: str | None = None
 ) -> int | None:

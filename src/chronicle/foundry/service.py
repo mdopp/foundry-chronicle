@@ -18,9 +18,15 @@ from pathlib import Path
 
 from chronicle import db, lebenszyklus, settings, zugang
 from chronicle.config import Config
-from chronicle.foundry import store, testwelt
+from chronicle.foundry import store, systems, testwelt
 from chronicle.foundry.client import FoundryClient, FoundryError
-from chronicle.foundry.model import NICHT_MEHR_VORHANDEN, SyncState, World, WorldSnapshot
+from chronicle.foundry.model import (
+    NICHT_MEHR_VORHANDEN,
+    Ereignisse,
+    SyncState,
+    World,
+    WorldSnapshot,
+)
 from chronicle.foundry.world import identity, project
 from chronicle.runde import Runde
 
@@ -44,6 +50,11 @@ ABZUG_ZIEL = ABZUG_ORDNER / "welt-dump.json"
 # Zwei Formulierungen wären zwei Gelegenheiten, eine davon zu übersehen.
 TESTWELT_STAND = (
     "{hinweis} Eingespielt aus der mitgelieferten Fixture: {umfang}. Es war kein Server im Spiel."
+)
+
+STROM_OHNE_PASSWORT = (
+    "Für den Blick nach Foundry liegt kein Passwort mehr bereit — ich sehe ab jetzt nicht "
+    "mehr nach. Beim Abschluss werde ich noch einmal danach fragen."
 )
 
 ANDERE_WELT = (
@@ -192,6 +203,69 @@ def abzug(
     geschuetzt(ziel)
     ziel.write_text(json.dumps(raw, ensure_ascii=False), encoding="utf-8")
     return ABZUG_GESCHRIEBEN.format(ziel=ziel, groesse=ziel.stat().st_size // 1024)
+
+
+def beobachten(
+    config: Config,
+    runde: Runde,
+    *,
+    gesehen: frozenset[str] = frozenset(),
+    client: FoundryClient | None = None,
+) -> Ereignisse:
+    """Ein Blick in die laufende Welt — derselbe Weg wie der Abgleich, nur ohne Verbrauch.
+
+    Der eine Unterschied zu ``sync`` ist zugleich der Grund für diese zweite Funktion: ein
+    Strom, der das Passwort verbraucht, sieht genau **einmal** nach. Gemerkt wird deshalb
+    nichts Neues und nichts länger — gelesen wird der Zettel aus #96, und ist er abgelaufen
+    oder hat der Abschluss ihn eingelöst, endet der Strom von selbst. Nichts liegt dadurch
+    länger als die zwölf Stunden aus #64, und gespeichert wird nach wie vor nichts.
+
+    Gefiltert wird **vor** dem Speicher und damit vor dem Thread: ``project`` entscheidet
+    über die Berechtigungsstufe des angemeldeten Kontos, was überhaupt herauskommt. Ein
+    blinder Wurf und ein Geflüster der Spielleitung gehen hier nicht durch — im Thread
+    läsen sie alle mit, und das wäre der teuerste Fehler dieses Weges.
+
+    Der Fehlschlag wird **nicht** als Abgleichsfehler vermerkt: der Strom sieht zu, er
+    führt den Stand nicht. Wer den letzten Abgleich beurteilen will, liest den des
+    Abgleichs — ein Vermerk je Minute machte daraus ein Rauschen.
+    """
+    zeitpunkt = _now()
+    if lebenszyklus.ruht(runde):
+        return Ereignisse(grund=lebenszyklus.RUHT, weiter=False)
+    # Die eingebaute Testwelt ist ein Abzug und kein Server: dort passiert nichts, während
+    # gespielt wird, und ein Strom davor sähe für immer dasselbe.
+    if settings.foundry_quelle(runde) == settings.TESTWELT:
+        return Ereignisse(weiter=False)
+    geheim = zugang.passwort(runde)
+    if geheim is None:
+        return Ereignisse(grund=STROM_OHNE_PASSWORT, weiter=False)
+    wirksam = settings.effective(config, runde)
+    try:
+        user_id, raw = (client or FoundryClient(wirksam, geheim)).fetch_world()
+    except FoundryError as fehler:
+        logger.warning("Ereignisstrom: Foundry nicht erreichbar: %s", fehler)
+        return Ereignisse(grund=NICHT_ERREICHBAR.format(grund=fehler))
+    scope = _open(config, runde)
+    try:
+        gefunden = identity(raw)
+        gebunden = store.world(scope)
+        if _falsche_welt(gebunden, gefunden):
+            logger.warning("Ereignisstrom: Foundry zeigt eine andere Welt: %s", gefunden.id)
+            return Ereignisse(
+                grund=ANDERE_WELT.format(erwartet=gebunden.title, gefunden=gefunden.title),
+                weiter=False,
+            )
+        schnappschuss = project(raw, user_id, fetched_at=zeitpunkt)
+        store.save(scope, schnappschuss)
+        store.bind_world(scope, gefunden)
+    finally:
+        scope.close()
+    neu = sorted(
+        (n for n in schnappschuss.messages if systems.lohnt(n) and n.id not in gesehen),
+        key=lambda n: (n.timestamp, n.id),
+    )
+    logger.info("Ereignisstrom: %d neue Ereignisse", len(neu))
+    return Ereignisse(neu=tuple(neu))
 
 
 def sync(
