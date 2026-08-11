@@ -21,6 +21,7 @@ from chronicle import runde as runden
 from chronicle.bot import chronik, erinnern, gateway
 from chronicle.compose import service as compose_service
 from chronicle.config import Config
+from chronicle.discord import grenzen
 from chronicle.foundry import store as foundry_store
 from chronicle.foundry.model import Character, Player, WorldSnapshot
 
@@ -104,6 +105,10 @@ class FakeAntwort:
     def __init__(self):
         self.bearbeitet: list[dict] = []
         self.gesendet: list[str] = []
+
+    def is_done(self) -> bool:
+        # Ein Knopfklick schiebt nichts auf: die erste Antwort ist noch frei.
+        return bool(self.gesendet or self.bearbeitet)
 
     async def edit_message(self, *, content=None, embed=None, view=None):
         self.bearbeitet.append({"content": content, "embed": embed, "view": view})
@@ -202,6 +207,19 @@ def eintrag_anlegen(runde, sitzung, *, kind, name, satz, state=register.VORSCHLA
     finally:
         scope.close()
     return eintrag
+
+
+def erwaehnung_anlegen(runde, eintrag, sitzung):
+    scope = db.scoped(runde)
+    try:
+        with scope:
+            scope.execute(
+                "INSERT INTO register_mention (runde_id, entry_id, session_id, scene_id) "
+                "VALUES (?, ?, ?, NULL)",
+                (scope.runde_id, eintrag, sitzung),
+            )
+    finally:
+        scope.close()
 
 
 def welt_ablegen(runde, *, spielername="Mira", weitere=0):
@@ -364,6 +382,40 @@ def test_die_suche_verlaesst_die_runde_nicht(stelle, bot):
 
 
 # -- Nachschlagen ------------------------------------------------------------------------
+
+
+def test_ein_langes_embed_wird_gekappt_statt_abgewiesen(stelle, bot):
+    """Ein Embed lässt sich nicht auf zwei Nachrichten verteilen — hier wird gekürzt.
+
+    Und das muss es: ein **einziges** Feld über Discords Maß lässt die ganze Nachricht
+    fallen. Nach zwei Jahren Kampagne hat eine wiederkehrende Figur so viele Erwähnungen.
+    """
+    _config, unsere = stelle
+    sitzung = sitzung_mit_notiz(unsere)
+    eintrag = eintrag_anlegen(
+        unsere,
+        sitzung,
+        kind=register.FIGUR,
+        name="Joras",
+        satz="Ein Söldner aus dem Norden. " * 200,
+        state=register.BESTAETIGT,
+    )
+    for nummer in range(40):
+        weitere = notes.create_session(
+            unsere, played_on=f"2026-06-{nummer % 28 + 1:02d}", thread_id=f"60{nummer:02d}"
+        )
+        erwaehnung_anlegen(unsere, eintrag, weitere)
+    ctx = FakeCtx()
+
+    asyncio.run(befehl(bot, gateway.BEFEHL_WER)(ctx, "joras"))
+
+    (embed,) = ctx.embeds
+    erwaehnt = next(
+        feld["value"] for feld in embed.gebaut["fields"] if feld["name"] == erinnern.WER_ERWAEHNT
+    )
+    assert len(erwaehnt) == grenzen.EMBED_FELD
+    assert erwaehnt.endswith(erinnern.FELD_GEKUERZT)
+    assert len(embed.gebaut["description"]) == grenzen.EMBED_TEXT
 
 
 def test_wer_zeigt_den_eintrag_mit_art_satz_und_sitzung(stelle, bot):

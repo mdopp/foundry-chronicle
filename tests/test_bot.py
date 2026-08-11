@@ -28,6 +28,7 @@ from chronicle.bot import BotFehler, BotHaelt, ansage, chronik, gateway, recorde
 from chronicle.bot.ansage import AnsageFehlt
 from chronicle.bot.recorder import Aufnahme, Kanal, NichtAngesagt
 from chronicle.config import Config
+from chronicle.discord import grenzen
 
 TOKEN = "aufnahme-bot-token-nur-fuer-den-test"
 
@@ -1147,11 +1148,46 @@ def test_die_vorstellung_sagt_frist_und_befehle_aus_einer_quelle():
     # Ein Text, zwei Anlässe: die Liste steht nicht zweimal da.
     assert gateway.BEFEHLE in gateway.VORSTELLUNG
     assert gateway.BEFEHLE in gateway.HILFE
-    for satzteil in ("hörbare Ansage", "verlässt jetzt", "nichts auf"):
+    # Und der Ausweg ebenso wenig — er trägt rechtlich, also gibt es ihn genau einmal.
+    assert gateway.AUSWEG in gateway.VORSTELLUNG
+    assert gateway.AUSWEG in gateway.HILFE
+    for satzteil in ("hörbare Ansage", "Bis dahin ist Zeit"):
         assert satzteil in gateway.VORSTELLUNG
-    # Discord nimmt keine längere Nachricht an — und eine, die nicht ankommt, verhindert
-    # die Aufnahme, statt sie nur zu begleiten.
-    assert len(gateway.VORSTELLUNG) <= 2000
+
+
+def test_der_ausweg_steht_in_der_ersten_nachricht():
+    """Auch wenn die Befehlsliste dahinter noch zwei Nachrichten füllt.
+
+    Genau das war der Fehler aus #109: die Liste wuchs, die Nachricht riss Discords Grenze,
+    und mit ihr fiel der Satz aus, der den Ausweg aus der Aufnahme nennt.
+    """
+    assert gateway.AUSWEG in grenzen.teile(gateway.VORSTELLUNG)[0]
+
+    gewachsen = gateway.VORSTELLUNG.replace(gateway.BEFEHLE, gateway.BEFEHLE * 4)
+    stuecke = grenzen.teile(gewachsen)
+
+    assert len(stuecke) > 1
+    assert gateway.AUSWEG in stuecke[0]
+    assert "".join(stuecke) == gewachsen
+
+
+def test_eine_uebergrosse_vorstellung_kommt_vollstaendig_an(
+    konfiguration, sitzung_id, ohne_espeak, runde, monkeypatch
+):
+    """Gegenprobe zum Test darüber: die heutige Vorstellung bleibt **eine** Nachricht."""
+    lang = gateway.VORSTELLUNG.replace(gateway.BEFEHLE, gateway.BEFEHLE * 4)
+    monkeypatch.setattr(gateway, "VORSTELLUNG", lang)
+    bot = gateway.baue(konfiguration)
+
+    asyncio.run(befehl(bot, "start")(FakeCtx(runde.mira)))
+
+    gesagt = [text for text, _ in runde.kanal.geschrieben]
+    assert len(gesagt) > 1
+    assert all(len(text) <= grenzen.NACHRICHT for text in gesagt)
+    assert "".join(gesagt) == lang
+    # Vor der Ansage, alle Stücke: die Reihenfolge ist der Punkt, nicht nur der Anfang.
+    assert [gespielt for _, gespielt in runde.kanal.geschrieben] == [0] * len(gesagt)
+    assert gateway.AUSWEG in gesagt[0]
 
 
 def test_ohne_kanal_chat_geht_die_vorstellung_dorthin_wo_der_befehl_kam(
@@ -1404,6 +1440,53 @@ def test_ist_niemand_mehr_da_hoert_der_bot_von_selbst_auf(
     (gesagt,) = thread.geschrieben
     assert gesagt.startswith(gateway.LEER_BEENDET)
     assert "wartet auf den Stapel" in gesagt
+
+
+def test_viele_spurmeldungen_fallen_nicht_still_weg(
+    konfiguration, sitzung_im_thread, ohne_espeak, runde, kurze_frist, monkeypatch
+):
+    """Der Fall aus #120: dreißig Spuren ergaben einen Satz, den Discord nicht mehr annahm.
+
+    Gefangen wurde die Abweisung von einem ``except`` daneben — die Runde erfuhr nichts,
+    weder vom Ende des Mitschnitts noch davon, dass der Satz ausblieb.
+    """
+    meldungen = tuple(
+        f"Spur »2026-08-11-{nummer:02d}-Sprecherin.wav« eingereiht, wartet auf den Stapel."
+        for nummer in range(40)
+    )
+
+    echtes_stoppen = recorder.stoppen
+
+    async def viele(stimme, aufnahme):
+        await echtes_stoppen(stimme, aufnahme)
+        return meldungen
+
+    monkeypatch.setattr(gateway.recorder, "stoppen", viele)
+    bot = gateway.baue(konfiguration)
+    thread = FakeTextkanal()
+    bot.kanaele[THREAD] = thread
+
+    alle_gehen(bot, runde)
+
+    ganz = " ".join((gateway.LEER_BEENDET, *meldungen))
+    assert len(ganz) > grenzen.NACHRICHT
+    assert len(thread.geschrieben) > 1
+    assert all(len(gesagt) <= grenzen.NACHRICHT for gesagt in thread.geschrieben)
+    assert "".join(thread.geschrieben) == ganz
+    assert all(meldung in ganz for meldung in meldungen)
+
+
+def test_wenige_spurmeldungen_bleiben_eine_nachricht(
+    konfiguration, sitzung_im_thread, ohne_espeak, runde, kurze_frist
+):
+    """Gegenprobe: geteilt wird nur, was geteilt werden muss."""
+    bot = gateway.baue(konfiguration)
+    thread = FakeTextkanal()
+    bot.kanaele[THREAD] = thread
+
+    alle_gehen(bot, runde)
+
+    assert len(thread.geschrieben) == 1
 
 
 def test_der_leere_kanal_beendet_den_mitschnitt_und_nicht_die_sitzung(
@@ -2051,9 +2134,24 @@ def test_die_hilfe_erklaert_die_bedienung(konfiguration, runde):
 
     asyncio.run(befehl(bot, "hilfe")(ctx))
 
+    # Gegenprobe zum Test darunter: die heutige Hilfe ist **eine** Antwort.
     (antwort,) = ctx.antworten
     for satzteil in ("/aufnahme start", "/aufnahme stop", "Ansage", "verlässt"):
         assert satzteil in antwort
+
+
+def test_eine_zu_lange_hilfe_wird_nachgereicht_statt_abgewiesen(konfiguration, runde, monkeypatch):
+    """Auch die Antwort auf einen Befehl hängt an Discords 2000 Zeichen — sie wächst mit."""
+    lang = gateway.HILFE.replace(gateway.BEFEHLE, gateway.BEFEHLE * 4)
+    monkeypatch.setattr(gateway, "HILFE", lang)
+    bot = gateway.baue(konfiguration)
+    ctx = FakeCtx(runde.mira)
+
+    asyncio.run(befehl(bot, "hilfe")(ctx))
+
+    assert len(ctx.antworten) > 1
+    assert all(len(antwort) <= grenzen.NACHRICHT for antwort in ctx.antworten)
+    assert "".join(ctx.antworten) == lang
 
 
 def test_die_bestaetigung_sagt_das_wichtigste(konfiguration, sitzung_id, ohne_espeak, runde):
