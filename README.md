@@ -61,6 +61,26 @@ als Vorgabe beim ersten Start lesbar und ist beim Entwickeln der bequeme Weg; **
 Oberfläche gesetzter Wert gewinnt**, und der Abschnitt *Zustand* zeigt je Wert, woher er
 kommt. Das Box-Template setzt keine davon (siehe unten).
 
+**Woher die Spieldaten kommen, ist eine Auswahl je Runde:** *Echter Server* oder
+*Eingebaute Testwelt*. Die Testwelt ist eine Beispielwelt im Paket — 19 Konten, 91
+Figuren, 8 Chat-Nachrichten, 32 Szenen —, die der Abgleich durch dieselbe Strecke schickt
+wie eine Antwort vom Server: Berechtigungsfilter, System-Adapter, Zwischenspeicher. Kein
+Netz, kein Passwort, kein zweiter Prozess; damit lässt sich die Instanz auch dann prüfen,
+wenn der Foundry-Server aus ist. Solange sie aktiv ist, sagen das Band auf jeder Seite und
+die Foundry-Karte: *Testwelt aktiv — das sind keine echten Kampagnendaten.* Umschalten
+ersetzt den Zwischenspeicher im Ganzen.
+
+**Sie ist erzeugt, nicht abgegriffen.** `src/chronicle/foundry/testwelt.json` fällt
+Zeichen für Zeichen aus [`scripts/erzeuge_testwelt.py`](scripts/erzeuge_testwelt.py), und
+ein Test hält das fest. Kein Wert darin stammt aus einer echten Welt — keine Kennung, kein
+Zeitstempel, kein Name, kein Welttitel; geteilt wird nur die *Form* einer echten
+Daggerheart-Welt, damit Filter und Adapter dieselben Fälle zu sehen bekommen. Eine bloß
+pseudonymisierte Welt wäre hier falsch: Konten-Graph, Rechteverteilung und Uhrzeiten
+verraten weiterhin, wer wann wie lange mit wem spielt. Wer seine **eigene** Welt lokal
+durchspielen will, findet den Weg dahin in
+[`docs/foundry-zugriff.md`](docs/foundry-zugriff.md); der rohe Abzug ist personenbezogen
+und gehört nie ins Repo.
+
 **Das Foundry-Passwort wird nirgends gespeichert** — es gibt kein Feld dafür, keine
 Variable und keine Zeile in der SQLite. Der Abgleich fragt danach, verbraucht es und
 vergisst es; ein Rest im Arbeitsspeicher verfällt spätestens nach zwölf Stunden. Hashen

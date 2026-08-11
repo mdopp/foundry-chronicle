@@ -78,6 +78,20 @@ Die Zahlen stehen stattdessen fertig aufbereitet in `message.system.roll`:
 Wer stattdessen `rolls[]` auswertet, bekommt dieselben Zahlen roh in `terms[]`, verpackt
 in Würfel-Darstellungsdaten. Der `system`-Block ist der bessere Einstieg.
 
+> **Zurückgezogen — der Nachtrag vom 2026-08-07 galt nie.** Er hielt fest,
+> `message.system.roll` sei in einer beobachteten Welt »kein einziges Mal« vorgekommen,
+> und nannte `read_roll` deshalb eine offene Lücke. Beides stimmte nicht: die Welt, an
+> der das gemessen wurde, war eine nachgebaute Fixture, die den Block schlicht nicht
+> trug. In der Auszählung eines echten Abzugs tragen **sieben von acht** Nachrichten
+> einen vollständigen `system.roll`. Der Satz darüber gilt unverändert; der Adapter
+> braucht keinen zweiten Einstieg.
+>
+> Stehen bleibt eine Beobachtung daraus, weil sie unabhängig davon zutrifft: `rolls[0]`
+> ist ein JSON-**String** und trägt unter `options.roll` dieselben Felder noch einmal,
+> die Wurfklasse steht darin in `class` (`DualityRoll`, `D20Roll`, `DamageRoll`, …).
+> Die eingebaute Testwelt führt beide Ablagen, damit ein zweiter Einstieg — falls ihn
+> je eine Welt nötig macht — Material hätte.
+
 Wer die Nachricht einer Figur zuordnen will, nimmt `speaker.actor` und `speaker.alias` —
 nicht `author`, das ist der Benutzer hinter der Figur.
 
@@ -114,6 +128,105 @@ Umgebungsvariable, nicht in einer Datei. Es wird gefragt, wenn der Abgleich es b
 lebt bis dahin im Arbeitsspeicher (`chronicle.zugang`) und wird vom Abgleich verbraucht —
 auch vom gescheiterten. Hashen ginge nicht: wir müssen es vorzeigen, nicht prüfen. Und es
 steht in keinem Aufrufargument (landet sonst in der Shell-History) und in keiner Logzeile.
+
+## Die Testwelt: erzeugen, abgreifen, anonymisieren, abspielen
+
+Der Server gehört der Spielleitung und ist zwischen den Sitzungen meistens aus. Damit
+Filter, Adapter und Zwischenspeicher trotzdem gegen eine Welt in echtem Umfang geprüft
+werden können, liegt eine im Paket. Sie ist **erzeugt, nicht abgegriffen** — und daneben
+steht der Weg für eine eigene Welt, der nie im Repo endet.
+
+### 1. Die eingecheckte Testwelt erzeugen
+
+```
+python scripts/erzeuge_testwelt.py
+```
+
+`src/chronicle/foundry/testwelt.json` fällt Zeichen für Zeichen aus diesem Skript heraus,
+und `tests/test_testwelt.py` hält das als Dauergate fest. Kein Wert darin kommt aus einer
+echten Welt: keine Kennung, kein Zeitstempel, kein Name, kein Welttitel. Geteilt wird nur
+die **Form** — Schlüssel je Ebene, Figurentypen, die Verteilung der `ownership`-Stufen,
+die vier Rollenstufen, Nachrichten mit und ohne `system.roll`, eine geflüsterte und eine
+blinde, und Würfe mit Hoffnung, Furcht und Kritischem in beiden Ablagen.
+
+> **Warum nicht einfach eine echte Welt pseudonymisieren?** Weil auch eine
+> pseudonymisierte Welt die Welt einer echten, privaten Gruppe bleibt: Konten-Graph,
+> Berechtigungsverteilung, `users[].character` und die Zeitstempel sagen weiterhin, wer
+> wann wie lange mit wem spielt. Das ist pseudonymes Verhaltensdatum und gehört in kein
+> veröffentlichtes Image.
+
+### 2. Eine eigene Welt abgreifen
+
+```
+python -m chronicle.foundry --dump            # eine Instanz mit einer Runde
+python -m chronicle.foundry --runde 2 --dump  # eine Instanz mit mehreren
+```
+
+Derselbe Handschlag wie ein Abgleich, aber die **rohe** Antwort geht in eine Datei: kein
+Berechtigungsfilter, keine Feldauswahl, nichts in der SQLite. Das Ziel ist nicht wählbar
+— es ist `dumps/welt-dump.json`, mit Rechten `0600` in einem Ordner mit `0700`. Ein frei
+angegebener Pfad legte den Abzug bei einem Tippfehler neben den Quelltext, wo ihn keine
+Ignore-Regel mehr fängt.
+
+Der Lauf schreibt in seine erste Zeile, aus **welcher** Runde er zieht, und verlangt
+`--runde`, sobald die Instanz mehr als eine trägt. Stillschweigend die erste zu nehmen
+hieße auf einer Instanz mit mehreren Gruppen, den ungefilterten Abzug einer fremden
+Gruppe zu ziehen.
+
+> **Diese Datei ist personenbezogen.** Sie trägt die Klarnamen aller Konten der Welt,
+> dazu Journale, Charakterbiografien und den Wortlaut jeder Chat-Nachricht. Sie gehört
+> **nie** ins Repo, nie in ein Issue und nie in einen Anhang. `welt-dump*.json` und
+> `dumps/` stehen deshalb in `.gitignore` — das ist ein Netz, keine Erlaubnis.
+
+### 3. Sie anonymisieren — für den eigenen Rechner, nicht fürs Repo
+
+```
+python scripts/anonymisiere_welt.py dumps/welt-dump.json meine-testwelt.json
+```
+
+Wer seine eigene Welt lokal durchspielen will, macht daraus eine Fixture derselben Form.
+Eingecheckt wird sie trotzdem nicht — dafür ist Schritt 1 da. Das Skript trägt zwei
+Regeln, und beide sind nötig:
+
+- **Behalten wird nur, was es ausdrücklich aufzählt — bis ganz nach unten.** Kopfblöcke
+  `world`/`system` (ohne den frei vergebenen `title`), Ids, `ownership`, Rollen,
+  Sprecherbezüge und die Zahlen eines Wurfs, letztere über einen benannten Bauplan je
+  Ebene, auch im eingebetteten JSON von `rolls[]`. Journale, Ordner, Makros, Gegenstände,
+  Einstellungen, Module und Charakterbiografien fallen weg. Eine Ausschlussliste wäre nach
+  dem nächsten Foundry-Update unvollständig, ohne dass es jemandem auffällt.
+- **Was bleibt, wird nachgeprüft — auf Personendaten, nicht nur auf Namen.** Nach dem
+  Umschreiben läuft die Ausgabe noch einmal Zeichenkette für Zeichenkette durch. Findet
+  sie einen Namen aus der Eingabe, eine E-Mail, eine Adresse oder einen Rechnernamen, eine
+  IP, eine telefonnummernförmige Ziffernfolge oder einen Heimatverzeichnis-Pfad, bricht
+  der Lauf mit Exit 2 ab und schreibt **nichts**. Der Fund nennt den JSON-Pfad und die
+  Art, nie den Wert.
+
+Die Pseudonyme sind bewusst kein Namensvorrat, sondern erfundene Silben mit laufender
+Nummer (`Baba-001`). Der erste Anlauf nahm hübsche Fantasienamen — und die Selbstprüfung
+hat ihn überführt: hieß eine Figur wie ein Bestandteil eines Pseudonyms, brachte das
+Pseudonym sie zurück. Ein Pseudonymraum, der Bruchstücke der Eingabe enthalten *kann*, ist
+untauglich.
+
+### 4. Abspielen
+
+Die Quelle der Spieldaten ist eine Einstellung **je Runde**: „Echter Server" oder
+„Eingebaute Testwelt". Bei der Testwelt liest der Abgleich die mitgelieferte Fixture und
+schickt sie durch **dieselbe** Strecke — Berechtigungsfilter → System-Adapter →
+Zwischenspeicher. Kein Netz, kein zweiter Prozess, kein zweiter Weg; sonst prüfte die
+Testwelt etwas anderes als den Betrieb.
+
+Zwei Eigenschaften hängen daran:
+
+- **Unübersehbar ehrlich.** Solange die Testwelt aktiv ist, sagen das Band auf jeder
+  Seite und die Foundry-Karte: *Testwelt aktiv — das sind keine echten Kampagnendaten.*
+  Erfundene Zahlen für echte zu halten ist das Hauptrisiko dieses Schalters.
+- **Keine Weltbindung.** Die Runde wird an die Testwelt **nicht** gebunden. Sonst gälte
+  das Zurückschalten auf den echten Server als Weltwechsel und der Abgleich müsste sich
+  verweigern.
+
+Umschalten ersetzt beim nächsten Abgleich den Zwischenspeicher im Ganzen. Szenen, die auf
+Nachrichten der anderen Welt verweisen, laufen dann ins Leere — harmlos, und mit dem
+Rück-Abgleich wieder da.
 
 ## Was noch offen ist
 
