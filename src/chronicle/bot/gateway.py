@@ -140,27 +140,26 @@ GESCHEITERT = (
 UNERWARTET = "unerwarteter Fehler im Bot ({typ})."
 
 BEFEHLE = (
-    "• `/chronik start` — ich lege die Sitzung an und öffne den Thread dazu; ab dort wird "
-    "jede Nachricht eine Notiz. Im Fenster davor kannst du das Foundry-Passwort geben — "
-    "freiwillig.\n"
+    "• `/chronik start` — ich lege die Sitzung an und öffne ihren Thread; ab dort wird jede "
+    "Nachricht eine Notiz. Das Fenster davor nimmt freiwillig das Foundry-Passwort.\n"
     "• `/szene <Name>` — die Trennlinie zur nächsten Szene.\n"
     "• `/aufnahme start` — ich komme in deinen Sprachkanal, spiele eine hörbare Ansage "
-    "und schneide **erst danach** mit, je Sprecherin und Sprecher eine eigene Spur.\n"
-    "• `/aufnahme stop` — ich höre auf und gehe wieder; die Spuren wandern in den "
-    "nächtlichen Lauf und werden zu Text. Ist niemand außer mir mehr im Sprachkanal, "
-    "höre ich nach einer kurzen Frist von selbst auf und sage es im Thread.\n"
-    "• `/chronik fertig` — Sitzung abschließen: läuft noch eine Aufnahme, beende ich sie "
-    "zuerst und reihe die Spuren ein; danach Zahlen holen, verschriften, Chronik "
-    "schreiben. Nach dem Passwort frage ich nur, wenn **du** beim Start keines gabst.\n"
-    "• `/suche <Wort>` — ich sehe in Notizen, Diktaten, Chroniken und im Register nach; "
-    "jeder Treffer führt dorthin zurück, wo er steht.\n"
+    "und schneide **erst danach** mit, je Stimme eine eigene Spur.\n"
+    "• `/aufnahme stop` — ich höre auf und gehe wieder; die Spuren werden im nächtlichen "
+    "Lauf zu Text. Bin ich allein im Sprachkanal, höre ich nach kurzer Frist von selbst "
+    "auf und sage es im Thread.\n"
+    "• `/chronik fertig` — Sitzung abschließen: eine laufende Aufnahme beende ich zuerst "
+    "und reihe die Spuren ein; danach Zahlen holen, verschriften, Chronik schreiben. Nach "
+    "dem Passwort frage ich nur, wenn **du** beim Start keines gabst.\n"
+    "• `/suche <Wort>` — ich sehe in Notizen, Diktaten, Chroniken und Register nach; jeder "
+    "Treffer führt dorthin zurück, wo er steht.\n"
     "• `/wer <Name>` — was im Register über einen Namen steht.\n"
-    "• `/register offen` — Vorschläge fürs Register bestätigen oder verwerfen.\n"
-    "• `/zuordnung` — festhalten, wer von euch welchen Foundry-Spieler spielt.\n"
-    "• `/setup` — Foundry-Adresse, Benutzer, Zustellkanal und Uhrzeit ändern; "
-    "dafür braucht es das Recht, diesen Server zu verwalten.\n"
+    "• `/register offen` — Registervorschläge bestätigen oder verwerfen.\n"
+    "• `/zuordnung` — wer von euch welchen Foundry-Spieler spielt.\n"
+    "• `/setup` — Foundry-Adresse, Benutzer, Zustellkanal und Uhrzeit ändern; nur für die "
+    "Verwaltung dieses Servers.\n"
     "• `/chronik loeschen` — alles von dieser Runde löschen, nach Rückfrage; nur für die "
-    "Administration dieses Servers.\n"
+    "Administration.\n"
     "• `/aufnahme hilfe` — alles noch einmal in Ruhe.\n"
 )
 
@@ -412,8 +411,12 @@ def _menschen(lauf: _Lauf) -> tuple[consent.Member, ...]:
     return () if lauf.stimme is None else lauf.stimme.mitglieder()
 
 
-async def _sagen(bot, aufnahme: Aufnahme, text: str) -> None:
-    """Ein Satz in den Thread der Sitzung — dort liest die Runde ohnehin mit."""
+async def _in_den_thread(bot, aufnahme: Aufnahme, text: str) -> None:
+    """Ein Satz in den Thread der Sitzung — dort liest die Runde ohnehin mit.
+
+    Nicht ``_sagen``: das antwortet einem, der gerade etwas angeklickt hat. Hier gibt es
+    niemanden, der wartet — der Beobachter meldet sich von selbst, an die Runde.
+    """
     # Die Aufnahme hält ihre Runde seit Stunden. Ist sie inzwischen gelöscht und ihre
     # Kennung neu vergeben, führte die Frage nach dem Thread in eine fremde Kampagne.
     gemeint = lebenszyklus.dieselbe(aufnahme.runde)
@@ -447,14 +450,14 @@ async def _abschied_bei_leere(bot, lauf: _Lauf, aufnahme: Aufnahme) -> None:
         # obwohl offen ist, ob noch mitgeschnitten wird. Also wenigstens in den Thread.
         logger.exception("Abschied bei leerem Sprachkanal gescheitert")
         with contextlib.suppress(Exception):
-            await _sagen(bot, aufnahme, LEER_GESCHEITERT)
+            await _in_den_thread(bot, aufnahme, LEER_GESCHEITERT)
         return
     # Die Erfolgsmeldung steht außerhalb: umfasste ein ``try`` beides, machte ein zuckendes
     # ``thread.send`` aus einem gelungenen Ende einen gemeldeten Fehlschlag — und schickte
     # zu ``/aufnahme stop``, das dann »keine Aufnahme« antwortet. Bleibt sie ungesagt, ist
     # das ein fehlender Satz; ``LEER_GESCHEITERT`` wäre ein falscher.
     try:
-        await _sagen(bot, aufnahme, " ".join((LEER_BEENDET, *meldungen)))
+        await _in_den_thread(bot, aufnahme, " ".join((LEER_BEENDET, *meldungen)))
     except Exception:  # noqa: BLE001
         logger.exception("Der Abschied bei leerem Sprachkanal blieb ungesagt")
 
