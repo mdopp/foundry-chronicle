@@ -104,8 +104,10 @@ unverändert. Die Ollama-Adresse hat eine dritte Stufe: ist weder
 etwas gespeichert noch etwas in der Umgebung gesetzt, gilt `http://127.0.0.1:11434` — das
 Ollama der Box. Offen bleibt dann allein die Modellwahl. Rein aus der Umgebung kommen weiterhin
 `CHRONICLE_DATA_DIR` (Vorgabe `./data`), `CHRONICLE_RECORDINGS_DIR` (Vorgabe
-`./recordings`) sowie `CHRONICLE_WHISPER_MODEL` und `CHRONICLE_WHISPER_DEVICE` (beide
-leer = automatisch, siehe [Transkription](#transkription)). Fehlt die
+`./recordings`), `CHRONICLE_WHISPER_MODEL` und `CHRONICLE_WHISPER_DEVICE` (beide
+leer = automatisch, siehe [Transkription](#transkription)) sowie `TTS_URL` — die Adresse
+des Sprachdienstes, der die Ansage spricht (Vorgabe `http://127.0.0.1:8881`, siehe
+[Aufnahme per Discord](#aufnahme-per-discord)). Fehlt die
 Foundry-Konfiguration, startet der Dienst trotzdem und sagt es im Band auf jeder Seite.
 
 Ein eigenes Login gibt es nicht: angemeldet wird am Proxy (ServiceBay-ADR 0001), der
@@ -383,22 +385,32 @@ Das Aufzeichnen des nichtöffentlich gesprochenen Wortes ohne Einwilligung ist s
 wer er ist, dass gleich eine hörbare Ansage kommt und erst danach mitgeschnitten wird, wie
 lange die Spuren bleiben und wie man ihn bedient; hat der Sprachkanal keinen eigenen Chat,
 geht die Vorstellung dorthin, wo der Befehl kam. Der Beleg ist sie nicht — sie gibt nur
-Zeit zu lesen, bevor gesprochen wird. Der Bot spielt danach die hörbare deutsche Ansage — wer
-aufnimmt, wofür, und dass Verlassen des Kanals heißt: keine Aufnahme. **Der Mitschnitt
+Zeit zu lesen, bevor gesprochen wird. Die hörbare Ansage danach ist **kurz**: dass ab jetzt
+aufgezeichnet wird, dass Verlassen des Kanals heißt: keine Aufnahme, und dass die
+Einzelheiten im Kanal stehen — die Runde wartet, während sie läuft, und gelesen hat sie
+den langen Text schon. **Der Mitschnitt
 beginnt erst, wenn die Ansage zu Ende gespielt ist**; wer davor zu schreiben versucht,
 bekommt einen Fehler und keine Datei. Wer *nach* dem Start dazukommt, hört dieselbe Ansage
 noch einmal und wird eigens protokolliert — bloß zu vermerken, dass jemand sie verpasst
 hat, hielte fest, dass er nicht eingewilligt hat, statt ihn zu fragen.
 
 Protokolliert wird jede Ansage in der SQLite: Zeitpunkt, Server und Kanal, die Anwesenden
-mit Id und Anzeigename — und der **Wortlaut**. Nicht ein Verweis auf den Text im Code:
-ändert jemand die Ansage, darf sich das Protokoll vergangener Sitzungen nicht mitändern.
+mit Id und Anzeigename — und der **Wortlaut**: der gesprochene Satz *und* die Bedingungen,
+auf die er verweist. Nicht ein Verweis auf den Text im Code: ändert jemand die Ansage, darf
+sich das Protokoll vergangener Sitzungen nicht mitändern, und ein Eintrag, der auf einen
+Text zeigt, der später ein anderer sein kann, belegte nichts.
 Der Eintrag überlebt auch das Löschen seiner Sitzung.
 
-Gesprochen wird die Ansage von **espeak-ng**, erzeugt beim ersten Bedarf aus dem Text in
-`chronicle/bot/ansage.py` und unter dessen Fingerabdruck im Aufnahmeverzeichnis abgelegt.
-Damit können Ansage und Protokoll nicht auseinanderlaufen. Fehlt espeak-ng, wird **nicht**
-aufgenommen.
+Gesprochen wird die Ansage vom **Sprachdienst der Box** — Kokoro mit deutscher Stimme,
+OpenAI-kompatibel, per Vorgabe auf `http://127.0.0.1:8881` und über `TTS_URL` umzustellen.
+Antwortet er nicht innerhalb von zehn Sekunden, springt **espeak-ng** ein: eine Ansage, die
+gar nicht kommt, verhindert die Aufnahme, und das wiegt schwerer als eine hässliche Stimme.
+Fehlt am Ende auch espeak-ng, wird **nicht** aufgenommen. Erzeugt wird beim ersten Bedarf
+aus dem Text in `chronicle/bot/ansage.py`, abgelegt unter dessen Fingerabdruck im
+Aufnahmeverzeichnis — damit können Ansage und Protokoll nicht auseinanderlaufen.
+`TTS_URL` steht bewusst **nicht** auf der Betreiber-Seite: dorthin fließt kein Wort der
+Runde, sondern allein unser eigener Ansagetext, und ein falscher Wert ändert nur die
+Stimme, nicht das Ergebnis.
 
 ### Die zugesagte Frist wird auch eingehalten
 

@@ -5,7 +5,10 @@ Das Aufzeichnen des nichtöffentlich gesprochenen Wortes ohne Einwilligung ist s
 niemand belegen kann, nichts wert ist, entsteht hier ihr Nachweis.
 
 Abgelegt wird der **Wortlaut**, nicht ein Verweis auf die Konstante im Code: ändert
-jemand die Ansage, darf sich das Protokoll vergangener Sitzungen nicht mit ändern.
+jemand die Ansage, darf sich das Protokoll vergangener Sitzungen nicht mit ändern. Weil
+die Ansage kurz ist und für die Einzelheiten auf den Kanal verweist, steht im Eintrag
+beides — der gesprochene Satz und die Bedingungen, auf die er verweist (``ansage.PROTOKOLL``).
+Ein Eintrag, der auf einen Text zeigt, der später ein anderer sein kann, belegte nichts.
 
 Gelöscht wird hier nichts automatisch, auch nicht mit der Sitzung — der Nachweis
 überlebt sie (``ON DELETE SET NULL``).

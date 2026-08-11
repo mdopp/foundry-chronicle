@@ -12,15 +12,18 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import io
 import logging
 import sqlite3
 import sys
 import types
 import wave
 from array import array
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
+import requests
 from conftest import runde as erste_runde
 
 import chronicle.bot.__main__ as entry
@@ -29,7 +32,7 @@ from chronicle import runde as runden
 from chronicle.bot import BotFehler, BotHaelt, ansage, chronik, gateway, recorder
 from chronicle.bot.ansage import AnsageFehlt
 from chronicle.bot.recorder import Aufnahme, Kanal, NichtAngesagt
-from chronicle.config import Config
+from chronicle.config import DEFAULT_TTS_URL, Config
 from chronicle.discord import grenzen
 
 TOKEN = "aufnahme-bot-token-nur-fuer-den-test"
@@ -43,13 +46,57 @@ SPAET = consent.Member(id="4003", name="Aelin")
 # Eine Sekunde Ton in der Form, die espeak-ng liefert: 22050 Hz, Mono, 16 Bit.
 ESPEAK_RATE = 22050
 
+# Und in der Form, die der Sprachdienst der Box liefert — an ihm gemessen, nicht geraten.
+KOKORO_RATE = 24000
 
-def spricht(text: str, ziel: Path) -> None:
-    with wave.open(str(ziel), "wb") as datei:
+TTS_BASIS = "http://tts.test:8881"
+
+# Woran im fertigen Stereo zu erkennen ist, wer gesprochen hat.
+ESPEAK_WERT = 100
+KOKORO_WERT = 1234
+
+
+def _mono_wav(ziel, rate: int, wert: int) -> None:
+    with wave.open(ziel, "wb") as datei:
         datei.setnchannels(1)
         datei.setsampwidth(2)
-        datei.setframerate(ESPEAK_RATE)
-        datei.writeframes(array("h", [100, -100] * (ESPEAK_RATE // 2)).tobytes())
+        datei.setframerate(rate)
+        datei.writeframes(array("h", [wert, -wert] * (rate // 2)).tobytes())
+
+
+def spricht(text: str, ziel: Path) -> None:
+    _mono_wav(str(ziel), ESPEAK_RATE, ESPEAK_WERT)
+
+
+def verweigert(text: str, ziel: Path) -> None:
+    raise AssertionError("espeak-ng hätte hier nicht sprechen dürfen")
+
+
+def _erster_wert(ziel: Path) -> int:
+    with wave.open(str(ziel), "rb") as datei:
+        return array("h", datei.readframes(1))[0]
+
+
+class FakerSprachdienst:
+    """Der Sprachdienst der Box: ein POST, eine WAV-Datei — oder Schweigen."""
+
+    def __init__(self, *, antwort: bytes | None = None, fehler: Exception | None = None):
+        if antwort is None:
+            puffer = io.BytesIO()
+            _mono_wav(puffer, KOKORO_RATE, KOKORO_WERT)
+            antwort = puffer.getvalue()
+        self.antwort = antwort
+        self.fehler = fehler
+        self.aufrufe: list[types.SimpleNamespace] = []
+
+    def __call__(self):
+        return self
+
+    def post(self, url, *, json, timeout):
+        self.aufrufe.append(types.SimpleNamespace(url=url, json=json, timeout=timeout))
+        if self.fehler is not None:
+            raise self.fehler
+        return types.SimpleNamespace(content=self.antwort, raise_for_status=lambda: None)
 
 
 def stille(rahmen: int) -> bytes:
@@ -132,15 +179,30 @@ class FakeStimme:
 # -- Die Ansage ------------------------------------------------------------------------
 
 
-def test_die_ansage_nennt_aufnahme_zweck_und_den_ausweg():
-    for satzteil in ("aufgezeichnet", "Sitzungsprotokoll", "verlässt", "Sprachkanal"):
+def test_die_gesprochene_ansage_sagt_das_tragende_und_bleibt_kurz():
+    """Ab jetzt wird aufgezeichnet, so kommt man raus — der Rest steht im Kanal.
+
+    Die Länge ist hier kein Geschmack: die Runde wartet, während die Ansage läuft, und
+    den ausführlichen Text hat sie als ``gateway.VORSTELLUNG`` schon vor sich.
+    """
+    for satzteil in ("Ab jetzt wird dieses Gespräch aufgezeichnet", "verlässt", "Sprachkanal"):
         assert satzteil in ansage.TEXT
+    assert "im Kanal" in ansage.TEXT
+    assert len(ansage.TEXT.split()) <= 30
+
+
+def test_das_protokoll_belegt_worueber_eingewilligt_wurde():
+    """Der kurze Satz belegt *dass*, die Bedingungen daneben belegen *worüber*."""
+    assert ansage.TEXT in ansage.PROTOKOLL
+    assert ansage.BEDINGUNGEN in ansage.PROTOKOLL
+    for satzteil in ("Sitzungsprotokoll", "Server der Gruppe", "einverstanden", "Tonspur"):
+        assert satzteil in ansage.PROTOKOLL
 
 
 def test_die_zugesagte_frist_ist_die_frist_aus_dem_code():
     # Der Satz darf sich nicht von dem entfernen, was ``recordings.sweep`` durchsetzt.
-    assert f"{recordings.RETENTION_TAGE} Tage" in ansage.TEXT
-    assert "aufbewahrt und dann gelöscht" in ansage.TEXT
+    assert f"{recordings.RETENTION_TAGE} Tage" in ansage.PROTOKOLL
+    assert "aufbewahrt und dann gelöscht" in ansage.PROTOKOLL
 
 
 def test_die_frist_wird_beim_start_und_danach_taeglich_geprueft(konfiguration, sitzung_id):
@@ -188,6 +250,60 @@ def test_die_erzeugte_ansage_ist_was_discord_erwartet(tmp_path):
         assert datei.getnchannels() == ansage.KANAELE
         assert datei.getsampwidth() == ansage.BREITE
         assert datei.getnframes() == ansage.RATE
+
+
+def test_die_ansage_kommt_vom_sprachdienst_der_box(tmp_path, monkeypatch):
+    monkeypatch.setattr(ansage, "_espeak", verweigert)
+    dienst = FakerSprachdienst()
+
+    ziel = ansage.datei(tmp_path, sprecher=ansage.mit_rueckfall(TTS_BASIS, http=dienst))
+
+    (aufruf,) = dienst.aufrufe
+    assert aufruf.url == TTS_BASIS + ansage.TTS_PFAD
+    assert aufruf.json["input"] == ansage.TEXT
+    assert aufruf.timeout == ansage.TTS_TIMEOUT
+    assert _erster_wert(ziel) == KOKORO_WERT
+
+
+def test_die_ansage_vom_sprachdienst_ist_was_discord_erwartet(tmp_path):
+    ziel = ansage.datei(
+        tmp_path, sprecher=ansage.mit_rueckfall(TTS_BASIS, http=FakerSprachdienst())
+    )
+
+    with wave.open(str(ziel), "rb") as datei:
+        assert datei.getframerate() == ansage.RATE
+        assert datei.getnchannels() == ansage.KANAELE
+        assert datei.getsampwidth() == ansage.BREITE
+        assert datei.getnframes() == ansage.RATE
+
+
+@pytest.mark.parametrize(
+    "dienst",
+    [
+        FakerSprachdienst(fehler=requests.ConnectionError("kein Dienst")),
+        FakerSprachdienst(fehler=requests.Timeout("zu langsam")),
+        FakerSprachdienst(antwort=b"<html>Ich bin kein Sprachdienst</html>"),
+    ],
+)
+def test_schweigt_der_sprachdienst_spricht_espeak(tmp_path, monkeypatch, dienst):
+    """Eine Ansage, die gar nicht kommt, verhindert die Aufnahme — das wiegt schwerer."""
+    monkeypatch.setattr(ansage, "_espeak", spricht)
+
+    ziel = ansage.datei(tmp_path, sprecher=ansage.mit_rueckfall(TTS_BASIS, http=dienst))
+
+    assert _erster_wert(ziel) == ESPEAK_WERT
+
+
+def test_ohne_eigene_adresse_fragt_die_ansage_den_dienst_dieser_box(tmp_path, monkeypatch):
+    gefragt = []
+    monkeypatch.setattr(
+        ansage, "mit_rueckfall", lambda basis, **rest: gefragt.append(basis) or spricht
+    )
+
+    ansage.datei(tmp_path)
+    ansage.datei(tmp_path / "andere", tts_url="http://tts.test:9999")
+
+    assert gefragt == [DEFAULT_TTS_URL, "http://tts.test:9999"]
 
 
 def test_ohne_espeak_gibt_es_keine_ansage_und_damit_keine_aufnahme(tmp_path):
@@ -241,6 +357,28 @@ def test_erst_ist_die_ansage_zu_ende_dann_beginnt_der_mitschnitt(
     assert aufnahme.laeuft
 
 
+def test_der_start_reicht_die_konfigurierte_adresse_des_sprachdienstes_durch(
+    konfiguration, sitzung_id, monkeypatch
+):
+    gefragt = []
+    echt = ansage.datei
+    monkeypatch.setattr(
+        ansage,
+        "datei",
+        lambda ordner, **rest: (
+            gefragt.append(rest.get("tts_url")) or echt(ordner, sprecher=spricht)
+        ),
+    )
+
+    asyncio.run(
+        recorder.starten(
+            replace(konfiguration, tts_url=TTS_BASIS), FakeStimme(), unsere_runde(konfiguration)
+        )
+    )
+
+    assert gefragt == [TTS_BASIS]
+
+
 def test_das_einwilligungsprotokoll_haelt_kanal_wortlaut_und_anwesende(
     konfiguration, sitzung_id, ohne_espeak
 ):
@@ -253,7 +391,7 @@ def test_das_einwilligungsprotokoll_haelt_kanal_wortlaut_und_anwesende(
         KANAL.id,
         KANAL.name,
     )
-    assert eintrag.text == ansage.TEXT
+    assert eintrag.text == ansage.PROTOKOLL
     assert eintrag.announced_at
     assert [(wer.id, wer.name) for wer in eintrag.members] == [
         (MIRA.id, MIRA.name),
@@ -365,7 +503,7 @@ def test_der_nachzuegler_hoert_die_ansage_noch_einmal(konfiguration, sitzung_id,
     assert erste.kind == consent.ANSAGE
     assert spaet.kind == consent.NACHZUEGLER
     assert [wer.name for wer in spaet.members] == [SPAET.name]
-    assert spaet.text == ansage.TEXT
+    assert spaet.text == ansage.PROTOKOLL
 
 
 def test_eine_ansage_die_woanders_lief_belegt_keine_einwilligung(
@@ -730,7 +868,7 @@ def test_die_einwilligung_ueberlebt_das_loeschen_ihrer_sitzung(
         verbindung.close()
 
     assert zeile["session_id"] is None
-    assert zeile["text"] == ansage.TEXT
+    assert zeile["text"] == ansage.PROTOKOLL
     assert anwesend == 2
 
 

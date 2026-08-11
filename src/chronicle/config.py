@@ -37,6 +37,13 @@ REMOTE_USER_VARIABLE = "CHRONICLE_REQUIRE_REMOTE_USER"
 # sonst verspräche die Seite eine Adresse, gegen die der Lauf nicht redet.
 DEFAULT_OLLAMA_URL = "http://127.0.0.1:11434"
 
+# Derselbe Fall eine Tür weiter: der Sprachdienst der Box spricht die Einwilligungs-Ansage,
+# im Host-Netz auf 8881. Anders als Ollama steht er **nicht** auf der Betreiber-Seite: dort
+# hin fließt kein Wort der Runde, sondern allein unser eigener, feststehender Ansagetext,
+# und wer die Vorgabe nicht erreicht, bekommt espeak-ng statt einer Fehlermeldung. Ein Feld
+# für einen Wert, dessen falsche Belegung nur die Stimme ändert, wäre eine Frage zu viel.
+DEFAULT_TTS_URL = "http://127.0.0.1:8881"
+
 DEFAULT_DATA_DIR = "data"
 
 # Bewusst ein Geschwister von ``data`` und nicht darin: die SQLite geht ins Backup, die
@@ -71,6 +78,7 @@ class Config:
     discord_recap_channel: str | None = None
     ollama_url: str | None = None
     ollama_model: str | None = None
+    tts_url: str | None = None
     public_url: str | None = None
     data_dir: Path = Path(DEFAULT_DATA_DIR)
     recordings_dir: Path = Path(DEFAULT_RECORDINGS_DIR)
@@ -88,6 +96,7 @@ class Config:
             discord_recap_channel=_value(env, "DISCORD_RECAP_CHANNEL"),
             ollama_url=_value(env, "OLLAMA_URL"),
             ollama_model=_value(env, "OLLAMA_MODEL"),
+            tts_url=_value(env, "TTS_URL"),
             public_url=_value(env, "CHRONICLE_PUBLIC_URL"),
             data_dir=Path(_value(env, "CHRONICLE_DATA_DIR") or DEFAULT_DATA_DIR),
             recordings_dir=Path(_value(env, "CHRONICLE_RECORDINGS_DIR") or DEFAULT_RECORDINGS_DIR),
@@ -137,6 +146,7 @@ class Config:
             f"discord_recap_channel={self.discord_recap_channel!r}, "
             f"ollama_url={self.ollama_url!r}, "
             f"ollama_model={self.ollama_model!r}, "
+            f"tts_url={self.tts_url!r}, "
             f"public_url={self.public_url!r}, "
             f"data_dir={str(self.data_dir)!r}, "
             f"recordings_dir={str(self.recordings_dir)!r}, "

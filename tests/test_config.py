@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from chronicle.config import FOUNDRY_VARIABLES, Config
+from chronicle.config import DEFAULT_TTS_URL, FOUNDRY_VARIABLES, Config
 
 VOLLSTAENDIG = {
     "FOUNDRY_URL": "https://foundry.example",
@@ -81,6 +81,17 @@ def test_ollama_kommt_aus_der_umgebung():
     assert config.ollama_url == "http://ollama.example:11434"
     assert config.ollama_model == "chronist-modell"
     assert config.ollama_configured
+
+
+def test_die_adresse_des_sprachdienstes_kommt_aus_der_umgebung():
+    config = Config.from_env(dict(VOLLSTAENDIG, TTS_URL="http://tts.example:8881"))
+    assert config.tts_url == "http://tts.example:8881"
+
+
+def test_ohne_gesetzte_adresse_gilt_der_sprachdienst_dieser_box():
+    """Kein Wert heißt nicht »keine Ansage« — ``ansage.datei`` nimmt dann die Vorgabe."""
+    assert Config.from_env({}).tts_url is None
+    assert DEFAULT_TTS_URL == "http://127.0.0.1:8881"
 
 
 def test_ollama_darf_fehlen():
