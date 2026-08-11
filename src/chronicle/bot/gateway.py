@@ -126,6 +126,24 @@ LEER_GESCHEITERT = (
     "nach. Der Grund steht im Log des Bots."
 )
 
+# Verschieben ist kein Umzug der Einwilligung: die Ansage lief in **einem** Kanal, und nur
+# dort hat jemand zugestimmt. Wer im neuen Kanal sitzt, hat sie nie gehört.
+VERSCHOBEN = (
+    "Jemand hat mich aus #{kanal} in einen anderen Sprachkanal gezogen — deshalb ist der "
+    "Mitschnitt beendet. Angesagt und eingewilligt wurde in #{kanal}; im neuen Kanal hat "
+    "das niemand gehört, also nehme ich dort nicht auf. Was nach dem Wechsel noch ankam, "
+    "steht in keiner Spur. Die Sitzung bleibt offen: hier weiterzuschreiben geht, und "
+    "`/chronik fertig` bleibt eure Entscheidung. Soll im neuen Kanal mitgeschnitten "
+    "werden, gebt dort `/aufnahme start` — die Ansage läuft dann dort."
+)
+
+VERSCHOBEN_GESCHEITERT = (
+    "Jemand hat mich aus #{kanal} in einen anderen Sprachkanal gezogen, aber das Beenden "
+    "ist schiefgegangen — die Aufnahme gilt weiter als laufend, und ich bin womöglich noch "
+    "im falschen Kanal. Geschrieben wird dort nichts. Bitte einmal `/aufnahme stop` geben: "
+    "das nimmt genau diesen Lauf und reiht die Spuren nach. Der Grund steht im Log des Bots."
+)
+
 UNBEKANNT = "unbekannt"
 
 # Ein Befehl, der nicht antwortet, lässt Discord ewig »denkt nach …« anzeigen. Das ist
@@ -248,6 +266,17 @@ class Sprachverbindung:
             if not wer.bot
         )
 
+    def im_kanal(self) -> bool:
+        """Ob der Bot noch dort sitzt, wo angesagt und eingewilligt wurde.
+
+        Verschiebt ein Administrator den Bot, trägt py-cord den neuen Kanal in
+        ``voice_client.channel`` ein, **bevor** das Ereignis bei uns ankommt — das ist
+        der früheste Zeitpunkt, zu dem der Wechsel überhaupt bekannt ist. Danach ist
+        jeder Rahmen einer, für den niemand zugestimmt hat.
+        """
+        jetzt = self._vc.channel
+        return jetzt is not None and str(jetzt.id) == self.kanal.id
+
     async def ansagen(self, datei: Path) -> None:
         """Spielt die Ansage und kehrt erst zurück, wenn sie zu Ende ist."""
         discord = _discord()
@@ -262,7 +291,7 @@ class Sprachverbindung:
         await fertig.wait()
 
     def mitschneiden(self, aufnahme: Aufnahme) -> None:
-        self._vc.start_recording(_senke(aufnahme), _abgeschlossen)
+        self._vc.start_recording(_senke(self, aufnahme), _abgeschlossen)
 
     def mitschnitt_beenden(self) -> None:
         # Der zweite Anlauf nach einem gescheiterten Trennen soll das Trennen nachholen und
@@ -293,7 +322,7 @@ def _mitglied(quelle) -> consent.Member:
     )
 
 
-def _senke(aufnahme: Aufnahme):
+def _senke(stimme: Sprachverbindung, aufnahme: Aufnahme):
     discord = _discord()
 
     class SpurSenke(discord.sinks.Sink):
@@ -322,6 +351,12 @@ def _senke(aufnahme: Aufnahme):
             return False
 
         def write(self, data, source) -> None:
+            # Der Rahmen, nicht der Lauf, ist die Einheit der Zustimmung: was ankommt,
+            # nachdem der Bot aus seinem Kanal gezogen wurde, fällt weg statt in die Spur.
+            # Das Ereignis, das den Mitschnitt beendet, kommt erst danach — bis dahin
+            # wäre sonst genau das aufgezeichnet, wofür niemand gefragt wurde.
+            if not stimme.im_kanal():
+                return
             aufnahme.schreiben(_mitglied(source), data.pcm)
 
         def cleanup(self) -> None:
@@ -431,6 +466,33 @@ async def _in_den_thread(bot, aufnahme: Aufnahme, text: str) -> None:
     await thread.send(text)
 
 
+async def _beenden_und_sagen(
+    bot, lauf: _Lauf, aufnahme: Aufnahme, beendet: str, gescheitert: str
+) -> None:
+    """Von selbst beenden und es im Thread begründen — der Weg beider Sicherheitsnetze."""
+    try:
+        meldungen = await _mitschnitt_beenden(lauf)
+    except Exception:  # noqa: BLE001
+        # Ein Faden nebenher hat niemanden, dem er den Fehlschlag antworten könnte. Ihn
+        # als unabgeholte Ausnahme verfallen zu lassen hieße: die Runde erfährt nichts,
+        # obwohl offen ist, ob noch mitgeschnitten wird. Also wenigstens in den Thread.
+        logger.exception("Das Beenden von selbst ist gescheitert")
+        with contextlib.suppress(Exception):
+            await _in_den_thread(bot, aufnahme, gescheitert)
+        return
+    if not meldungen:
+        # Leer heißt: ein anderer war schneller. Dann gehört ihm auch der Satz dazu.
+        return
+    # Die Erfolgsmeldung steht außerhalb: umfasste ein ``try`` beides, machte ein zuckendes
+    # ``thread.send`` aus einem gelungenen Ende einen gemeldeten Fehlschlag — und schickte
+    # zu ``/aufnahme stop``, das dann »keine Aufnahme« antwortet. Bleibt sie ungesagt, ist
+    # das ein fehlender Satz; die Fehlermeldung wäre ein falscher.
+    try:
+        await _in_den_thread(bot, aufnahme, " ".join((beendet, *meldungen)))
+    except Exception:  # noqa: BLE001
+        logger.exception("Das Ende des Mitschnitts blieb ungesagt")
+
+
 async def _abschied_bei_leere(bot, lauf: _Lauf, aufnahme: Aufnahme) -> None:
     """Nach der Frist noch einmal nachsehen — und dann Schluss.
 
@@ -442,24 +504,19 @@ async def _abschied_bei_leere(bot, lauf: _Lauf, aufnahme: Aufnahme) -> None:
     if lauf.aufnahme is not aufnahme or _menschen(lauf):
         return
     logger.info("Sprachkanal #%s leer — der Mitschnitt endet.", aufnahme.kanal.name)
-    try:
-        meldungen = await _mitschnitt_beenden(lauf)
-    except Exception:  # noqa: BLE001
-        # Ein Faden nebenher hat niemanden, dem er den Fehlschlag antworten könnte. Ihn
-        # als unabgeholte Ausnahme verfallen zu lassen hieße: die Runde erfährt nichts,
-        # obwohl offen ist, ob noch mitgeschnitten wird. Also wenigstens in den Thread.
-        logger.exception("Abschied bei leerem Sprachkanal gescheitert")
-        with contextlib.suppress(Exception):
-            await _in_den_thread(bot, aufnahme, LEER_GESCHEITERT)
-        return
-    # Die Erfolgsmeldung steht außerhalb: umfasste ein ``try`` beides, machte ein zuckendes
-    # ``thread.send`` aus einem gelungenen Ende einen gemeldeten Fehlschlag — und schickte
-    # zu ``/aufnahme stop``, das dann »keine Aufnahme« antwortet. Bleibt sie ungesagt, ist
-    # das ein fehlender Satz; ``LEER_GESCHEITERT`` wäre ein falscher.
-    try:
-        await _in_den_thread(bot, aufnahme, " ".join((LEER_BEENDET, *meldungen)))
-    except Exception:  # noqa: BLE001
-        logger.exception("Der Abschied bei leerem Sprachkanal blieb ungesagt")
+    await _beenden_und_sagen(bot, lauf, aufnahme, LEER_BEENDET, LEER_GESCHEITERT)
+
+
+async def _abschied_beim_verschieben(bot, lauf: _Lauf, aufnahme: Aufnahme) -> None:
+    """Wer aus seinem Kanal gezogen wird, hört auf: dort drüben hat niemand zugestimmt."""
+    logger.warning("Der Bot wurde aus #%s verschoben — der Mitschnitt endet.", aufnahme.kanal.name)
+    await _beenden_und_sagen(
+        bot,
+        lauf,
+        aufnahme,
+        VERSCHOBEN.format(kanal=aufnahme.kanal.name),
+        VERSCHOBEN_GESCHEITERT.format(kanal=aufnahme.kanal.name),
+    )
 
 
 def _erledigt(faden) -> bool:
@@ -1355,9 +1412,20 @@ def baue(config: Config):
 
     @bot.event
     async def on_voice_state_update(member, before, after) -> None:
-        if lauf.aufnahme is None or member.bot:
+        aufnahme = lauf.aufnahme
+        if aufnahme is None:
             return
-        unserer = lauf.aufnahme.kanal.id
+        # Vor allem anderen und noch vor dem Blick auf das Mitglied: sitzt der Bot
+        # überhaupt noch in dem Kanal, dem Ansage und Einwilligung gehören? Wurde er
+        # gezogen, endet die Aufnahme — und der Nachzügler unten bekäme sonst einen
+        # Protokolleintrag, dessen Ansage in einem Kanal lief, den er nie betreten hat.
+        # Sein eigenes Verschieben meldet Discord dem Bot als Ereignis wie jedes andere.
+        if lauf.stimme is not None and not lauf.stimme.im_kanal():
+            await _abschied_beim_verschieben(bot, lauf, aufnahme)
+            return
+        if member.bot:
+            return
+        unserer = aufnahme.kanal.id
         gekommen = after.channel is not None and str(after.channel.id) == unserer
         gegangen = before.channel is not None and str(before.channel.id) == unserer
         # Beides zugleich heißt: derselbe Kanal, nur stummgeschaltet oder verschoben.
@@ -1366,7 +1434,7 @@ def baue(config: Config):
             await recorder.nachzuegler(
                 config,
                 lauf.stimme,
-                lauf.aufnahme,
+                aufnahme,
                 consent.Member(id=str(member.id), name=member.display_name),
             )
         elif gegangen and not gekommen and not _menschen(lauf):
@@ -1374,7 +1442,7 @@ def baue(config: Config):
             # ersten Gehen, und wer bei T=89 zurückkommt und bei T=89,5 wieder geht, hat
             # eine halbe Sekunde Karenz statt der zugesagten neunzig Sekunden.
             _leerlauf_absagen(lauf)
-            lauf.leer = asyncio.create_task(_abschied_bei_leere(bot, lauf, lauf.aufnahme))
+            lauf.leer = asyncio.create_task(_abschied_bei_leere(bot, lauf, aufnahme))
 
     return bot
 
