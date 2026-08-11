@@ -867,6 +867,32 @@ def _begruessungskanal(gilde):
     return None
 
 
+async def _verwaiste_runde_uebernehmen(config: Config, bot) -> None:
+    """Eine Runde aus der Zeit vor den Gilden zurückholen — und es der Gruppe sagen.
+
+    Hier und nirgends sonst, weil nur hier bekannt ist, in wie vielen Gilden der Bot
+    steht: ein Befehl kennt immer nur seine eigene. py-cord trägt die Gilden aus dem
+    READY-Rahmen in den Zwischenspeicher und hält dieses Ereignis zurück, bis die
+    GUILD_CREATEs durch sind — beim **ersten** ``on_ready`` steht die Liste also schon.
+
+    Der Satz an die Gilde hängt hinten: kommt er nicht durch, ist die Runde trotzdem
+    übernommen und die Übernahme steht im Log. Sie deswegen wieder zu lösen hieße, die
+    Gruppe erneut vor eine leere Runde zu setzen — genau das, wogegen es die Übernahme
+    gibt.
+    """
+    gilden = tuple(lebenszyklus.Gilde(id=str(gilde.id), name=gilde.name) for gilde in bot.guilds)
+    if lebenszyklus.verwaiste_uebernehmen(config, gilden) is None:
+        return
+    kanal = _begruessungskanal(bot.guilds[0])
+    if kanal is None:
+        logger.warning("Kein Kanal, um die Übernahme zu sagen — sie steht nur im Log.")
+        return
+    try:
+        await kanal.send(lebenszyklus.UEBERNOMMEN_GESAGT)
+    except Exception:  # noqa: BLE001
+        logger.exception("Die Übernahme blieb in der Gilde ungesagt")
+
+
 def _gildenname(ctx) -> str:
     return getattr(getattr(ctx, "guild", None), "name", None) or einrichten.RUNDE_OHNE_NAMEN
 
@@ -1420,6 +1446,8 @@ def baue(config: Config):
 
     @bot.event
     async def on_ready() -> None:
+        # Vor den Fristen: eine Runde, die niemand mehr erreicht, ist der dringendere Fall.
+        await _verwaiste_runde_uebernehmen(config, bot)
         # Der Prozess läuft ohnehin durch — er ist damit der zuverlässigste Ort, die in
         # der Ansage zugesagte Frist einzuhalten, auch wenn der nächtliche Stapel steht.
         # Ein beendeter Faden ist nicht ``None``: ohne ``_erledigt`` bliebe eine Zusage

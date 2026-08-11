@@ -681,6 +681,9 @@ class FakeBot:
         self.ereignisse = {}
         self.kanaele = {}
         self.token = None
+        # Was py-cord beim Anmelden aus dem READY-Rahmen zwischenspeichert. Leer heißt
+        # hier: in keiner Gilde — nicht »noch nicht bekannt«.
+        self.guilds = ()
 
     def get_channel(self, kennung):
         return self.kanaele.get(kennung)

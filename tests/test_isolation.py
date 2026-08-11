@@ -574,6 +574,22 @@ def test_keine_runde_kommt_ohne_kennung_in_die_datenbank(zwei_runden):
         connection.close()
 
 
+def test_die_runde_ohne_gilde_faellt_nicht_der_naechstbesten_zu(zwei_runden):
+    """Die Übernahme aus #121 greift nur, wo es keine zweite Deutung gibt.
+
+    Runde A trägt keine Gilde — so sieht eine Runde aus der Zeit vor dem Runden-Modell aus.
+    Neben ihr steht B. Sie jetzt der Gilde zuzuschlagen, die den Bot gerade eingeladen hat,
+    gäbe fremde Klarnamen, Einwilligungsprotokolle und Foundry-Daten an eine beliebige
+    Gruppe — und zwar dauerhaft, denn danach ist es *ihre* Runde.
+    """
+    config, a, _b, _ids = zwei_runden
+    assert a.guild_id is None
+
+    fremde = (lebenszyklus.Gilde(id="gilde-c", name="Fremde"),)
+    assert lebenszyklus.verwaiste_uebernehmen(config, fremde) is None
+    assert runden.get(config.database_path, a.id).guild_id is None
+
+
 def test_knopf_und_menue_wirken_nur_in_der_eigenen_runde(zwei_runden):
     """Ein Klick trägt die Kennung seiner Ansicht — entschieden wird trotzdem in *seiner* Runde."""
     config, a, b, ids = zwei_runden
