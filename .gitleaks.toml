@@ -1,0 +1,28 @@
+# Gitleaks-Konfiguration. Die eingebauten Regeln bleiben vollständig in Kraft —
+# `useDefault` erweitert sie, es ersetzt sie nicht.
+[extend]
+useDefault = true
+
+# Foundry vergibt jedem Dokument eine 16-stellige Zufallskennung. In einem Weltabzug
+# heißt eines dieser Felder ``token`` — das ist die **Spielfigur auf der Karte**, die
+# gesprochen hat (``messages[].speaker.token``), kein Zugangsdatum. Für einen
+# Geheimnis-Scanner sieht ``"token": "Y1q8WuGFL6cW50St"`` trotzdem nach einem
+# API-Schlüssel aus, und genau daran ist der Lauf hängengeblieben.
+#
+# Nachgemessen mit gitleaks 8.28.0 gegen die eingecheckte Datei: es meldet genau eine
+# Regel, `generic-api-key`, und genau die fünf `speaker.token`-Zeilen. Ausgenommen wird
+# deshalb **nur diese Regel für diese eine Datei** — eine globale `[allowlist]` hätte die
+# Datei von jeder Regel befreit, auch von jeder künftigen, und ausgerechnet diese Datei
+# soll weiter durchsucht werden. Der Rest der Regeln greift hier unverändert; ein echter
+# Schlüssel, der irgendwo hereinrutscht, fällt weiter auf.
+#
+# Die Datei selbst ist erzeugt und nicht abgegriffen (siehe scripts/erzeuge_testwelt.py):
+# die Kennungen stammen aus einem festen Saatgut und stehen für nichts.
+[[rules]]
+id = "generic-api-key"
+
+  [[rules.allowlists]]
+  description = "Foundry-Dokumentkennungen in der erzeugten Testwelt sind keine Geheimnisse"
+  paths = [
+    '''^src/chronicle/foundry/testwelt\.json$''',
+  ]
