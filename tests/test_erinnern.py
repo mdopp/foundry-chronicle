@@ -16,7 +16,7 @@ from conftest import runde as erste_runde
 from test_bot import TOKEN, FakeBot, FakeIntents, FakePCMAudio, FakePermissions, FakeSenke
 from test_chronik import FakeHTTPException, FakeInputText, FakeModal
 
-from chronicle import consent, db, notes, people, register
+from chronicle import consent, db, lebenszyklus, notes, people, register
 from chronicle import runde as runden
 from chronicle.bot import chronik, erinnern, gateway
 from chronicle.compose import service as compose_service
@@ -519,6 +519,29 @@ def test_eine_alte_ansicht_entscheidet_nicht_neu(stelle, bot):
     assert erinnern.SCHON_ENTSCHIEDEN in interaktion.response.bearbeitet[0]["content"]
     (gruppe,) = register.overview(unsere)
     assert gruppe.kind == register.FADEN
+
+
+def test_eine_ansicht_ueberlebt_ihre_runde_nicht(stelle, bot):
+    """Knopf und Menü leben eine Viertelstunde, und SQLite vergibt die Kennung einer
+    gelöschten Runde wieder. Entschieden wird deshalb in der Runde, die *jetzt* zu dieser
+    Gilde gehört — oder gar nicht."""
+    config, unsere = stelle
+    sitzung = sitzung_mit_notiz(unsere)
+    eintrag = eintrag_anlegen(
+        unsere, sitzung, kind=register.FIGUR, name="Joras", satz="Ein Söldner."
+    )
+    ctx = FakeCtx()
+    asyncio.run(registerbefehl(bot, "offen")(ctx))
+    alte = ctx.ansichten[0]
+
+    lebenszyklus.loeschen(config, unsere)
+    frisch = runden.anlegen(config.database_path, "Frisch", guild_id=GILDE)
+    assert frisch.id == unsere.id
+
+    interaktion = klicken(alte, eintrag, register.ORT)
+
+    assert interaktion.response.bearbeitet[0]["content"] == chronik.VERALTET
+    assert register.overview(frisch) == ()
 
 
 def test_mehr_vorschlaege_als_auf_eine_ansicht_passen(stelle, bot):
