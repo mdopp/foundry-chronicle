@@ -21,8 +21,10 @@ Diese Regeln gelten für jede Sitzung, Mensch oder Agent.
   Die Weboberfläche wird abgeschaltet — **bis auf eine kleine Betreiber-Seite**
   (Operator-Entscheidung 2026-08-10, #69). Was die spielende Gruppe betrifft, gehört
   nach Discord; was der **Betreiber** einstellt, kann dort nicht hin, weil es keiner
-  Gilde gehört: Bot-Token, Ollama-Adresse und -Modell (#87), und wer verwalten darf
-  (#90). Alles andere fällt. Wer eine neue Fähigkeit baut, baut sie **in Discord**,
+  Gilde gehört: Bot-Token, Ollama-Adresse und -Modell (#87) — und sonst nichts; »wer
+  verwalten darf« steht nicht darauf, siehe unten (#90). Die frühere Fassung zählte es
+  mit auf; das ist mit der Entscheidung vom 2026-08-11 erledigt.
+  Alles andere fällt. Wer eine neue Fähigkeit baut, baut sie **in Discord**,
   nicht in einer Seite — die Betreiber-Seite ist kein Ort für Spielinhalte. Bis #69
   besteht die alte Oberfläche daneben weiter; das ist Übergang, kein zweiter Weg.
 - **Eine Instanz trägt mehrere Runden** (#62/#63). Eine Runde ist eine Discord-Gilde
@@ -147,6 +149,19 @@ SQLite-Datei ist klein und enthält alles Unersetzliche.
   Verwalten (#51, `chronicle.roles`) — abgelöst mit #62: wer was darf, entscheidet
   Discord über seine eigenen Kanal- und Rollenrechte. Kein eigenes Rollenmodell mehr;
   `chronicle.roles` verschwindet mit #69.
+- **Über der Runde steht niemand — der Betreiber löscht keine fremde Runde**
+  (Operator-Entscheidung 2026-08-11, #90). Eine Runde verschwindet auf genau zwei Wegen:
+  die **Gruppe selbst** löscht sie (`/chronik loeschen`, Administrator-Recht in ihrer
+  Gilde), oder die **Frist** läuft ab — dreißig Tage nach dem Rauswurf. Eine Instanz-Ebene
+  daneben gibt es nicht, und sie wird auch nicht nachgerüstet: der Bot sagt jeder Gruppe
+  im ersten Satz, dass der Betreiber der Box alles **lesen** kann; ein Löschknopf für ihn
+  machte daraus die zweite Zusage, dass er ihre Chronik auch **fortnehmen** kann, ohne
+  dass sie es merkt. Wer sie nicht braucht, soll sie nicht bekommen — und wer sie nicht
+  hat, kann sie nicht missbrauchen. An SQLite und Dateisystem steht dem Betreiber ohnehin
+  alles offen; der Unterschied ist, dass es dafür **kein Bedienelement** gibt: keine
+  Route, keinen Befehl, keinen Knopf. Wer so etwas tut, tut es an der Datenbank und weiß,
+  dass er die Regel verlässt. `tests/test_lebenszyklus.py` hält den Zustand fest — ein
+  neuer Aufrufer von `lebenszyklus.loeschen`/`sperren` fällt durch.
 
 ## Kommentare
 
@@ -172,8 +187,8 @@ Assists (`get_assist`) lesen. Dieser Abschnitt ist der Extrakt, nicht der Ersatz
   Authelia-Forward-Auth. Die App baut **kein eigenes Login**; sobald echte Inhalte
   angezeigt werden (#5/#7), erzwingt sie den `Remote-User`-Header und testet, dass
   ohne ihn abgelehnt wird — kein LAN-Bypass. „Keine Zugriffskontrolle" weiter unten
-  meint Mandantentrennung zwischen Gruppen — nicht die Haustür und nicht die
-  Verwaltungsrolle innerhalb der Instanz.
+  meint Mandantentrennung zwischen Gruppen — nicht die Haustür vor der Betreiber-Seite.
+  Was hinter ihr liegt, sind Instanz-Werte und keine Rechte über fremde Runden (#90).
 - **`/healthz` → 200** ist Test-Seam und Install-Gate der Box.
 - **SQLite läuft im WAL-Modus** — Plattform-Lektion gegen „database is locked".
 - **CI gatet den Image-Publish auf grüne Tests** (`needs: test`); eine CI, die nur
