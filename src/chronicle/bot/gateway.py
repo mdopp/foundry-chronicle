@@ -270,8 +270,14 @@ def _wo_discord_uns_sieht(voice_client) -> str | None:
     Die zweite Quelle neben ``VoiceClient.channel``: ``state.parse_voice_state_update``
     schreibt sie in den Zwischenspeicher der Gilde, bevor es das Ereignis ausliefert, und
     unabhängig davon, in welchem Verbindungszustand der Voice-Client gerade steckt.
+
+    ``VoiceClient.guild`` ist keine Eigenschaft des Clients, sondern eine Property über
+    ``self.channel.guild`` — sie wirft, sobald py-cord den Kanal auf ``None`` gesetzt hat.
+    Der Aufrufer hat ``channel`` da schon einmal gelesen, aber ``SpurSenke.write`` läuft im
+    Empfangs-Thread, und dazwischen kann das Trennen liegen.
     """
-    zustand = getattr(getattr(voice_client.guild, "me", None), "voice", None)
+    gilde = getattr(voice_client, "guild", None)
+    zustand = getattr(getattr(gilde, "me", None), "voice", None)
     kanal = getattr(zustand, "channel", None)
     return None if kanal is None else str(kanal.id)
 
@@ -316,7 +322,12 @@ class Sprachverbindung:
             return False
         gemeldet = _wo_discord_uns_sieht(self._vc)
         # Kein zwischengespeicherter Zustand ist kein Beleg für einen Umzug — dann bleibt
-        # es bei dem, was der Voice-Client sagt.
+        # es bei dem, was der Voice-Client sagt. Erreichbar ist das nicht über ein
+        # fehlendes ``guild.me`` — py-cord legt das Selbst-Mitglied bedingungslos ab —,
+        # sondern über den **Zielkanal**: kennt ``guild._channels`` ihn nicht, wirft
+        # ``_update_voice_state`` den Zustand ganz hinaus, statt ihn umzuschreiben. Fällt
+        # das mit dem Zustand ``got_voice_server_update`` zusammen, bleibt die Lücke —
+        # beides zugleich, keins allein.
         return gemeldet is None or gemeldet == self.kanal.id
 
     async def ansagen(self, datei: Path) -> None:
