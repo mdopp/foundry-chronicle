@@ -31,16 +31,17 @@ from chronicle import db, settings
 from chronicle.compose.service import RUECKBLICK
 from chronicle.config import Config
 from chronicle.discord.client import DiscordClient, DiscordError
+from chronicle.discord.grenzen import EMBED_TEXT, EMBED_TITEL, gekappt
 from chronicle.runde import Runde
 
 logger = logging.getLogger(__name__)
 
-# Discords Maße für ein Embed. Ein Rückblick liegt weit darunter — er ist auf zehn bis
-# fünfzehn Sätze angelegt. Wird er trotzdem länger, ist das ein Fehler des Rückblicks und
-# kein Grund, ihn auf mehrere Nachrichten zu verteilen: gekürzt wird er, und der Hinweis
-# sagt, wo er ganz steht.
-TITEL_GRENZE = 256
-TEXT_GRENZE = 4096
+# Discords Maße für ein Embed stehen in ``chronicle.discord.grenzen``. Ein Rückblick liegt
+# weit darunter — er ist auf zehn bis fünfzehn Sätze angelegt. Wird er trotzdem länger, ist
+# das ein Fehler des Rückblicks und kein Grund, ihn auf mehrere Nachrichten zu verteilen:
+# gekürzt wird er, und der Hinweis sagt, wo er ganz steht.
+TITEL_GRENZE = EMBED_TITEL
+TEXT_GRENZE = EMBED_TEXT
 
 NICHT_EINGERICHTET = "Kein Bot-Token — der Rückblick bleibt in der Chronik."
 KEIN_ZUSTELLKANAL = "Kein Zustellkanal eingetragen — der Rückblick bleibt in der Chronik."
@@ -83,12 +84,6 @@ def _merken(runde: Runde, session_id: int, at: str) -> None:
         scope.close()
 
 
-def _gekuerzt(text: str, grenze: int, hinweis: str = "") -> str:
-    if len(text) <= grenze:
-        return text
-    return text[: grenze - len(hinweis)].rstrip() + hinweis
-
-
 def embed(text: str) -> dict[str, str]:
     """Der abgelegte Rückblick als Embed: die Titelzeile als Titel, der Rest darunter.
 
@@ -108,9 +103,9 @@ def embed(text: str) -> dict[str, str]:
             len(rumpf),
             TEXT_GRENZE,
         )
-    gebaut = {"description": _gekuerzt(rumpf, TEXT_GRENZE, GEKUERZT)}
+    gebaut = {"description": gekappt(rumpf, TEXT_GRENZE, GEKUERZT)}
     if titel:
-        gebaut["title"] = _gekuerzt(titel, TITEL_GRENZE)
+        gebaut["title"] = gekappt(titel, TITEL_GRENZE)
     return gebaut
 
 

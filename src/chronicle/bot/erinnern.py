@@ -28,6 +28,7 @@ from dataclasses import dataclass
 from difflib import get_close_matches
 
 from chronicle import people, register, search
+from chronicle.discord import grenzen
 from chronicle.runde import Runde
 
 # Gesucht wird breit, gezeigt wird schmal: die Gruppen sollen nebeneinander lesbar bleiben.
@@ -51,6 +52,11 @@ FRIST = 900
 KNOPF_GRENZE = 80
 PLATZHALTER_GRENZE = 150
 ZEILEN_GRENZE = 300
+
+# Und der Wert eines Embed-Feldes ebenso: dreißig Erwähnungen sind eine Kampagne von zwei
+# Jahren, und ein Feld darüber lässt Discord die **ganze** Nachricht fallen. Geteilt werden
+# kann ein Embed nicht, also wird hier gekappt — das Register selbst bleibt vollständig.
+FELD_GEKUERZT = "\n… und weitere."
 
 # Ab hier ist ein Name nah genug an einem Registereintrag, um ihn als Rückfrage anzubieten.
 NAEHE = 0.6
@@ -212,7 +218,11 @@ def suche(runde: Runde, begriff: str) -> Antwort:
         felder.append(
             {
                 "name": gruppe.label,
-                "value": "\n".join(_trefferzeile(runde, hit) for hit in gezeigt),
+                "value": grenzen.gekappt(
+                    "\n".join(_trefferzeile(runde, hit) for hit in gezeigt),
+                    grenzen.EMBED_FELD,
+                    FELD_GEKUERZT,
+                ),
             }
         )
     gebaut: dict = {"title": SUCHE_TITEL.format(begriff=ergebnis.query), "fields": felder}
@@ -227,7 +237,9 @@ def _erwaehnungen(runde: Runde, eintrag: register.Entry) -> str:
         ziel = _sprung(runde, erwaehnung.thread_id)
         name = erwaehnung.title or WER_SITZUNG.format(datum=erwaehnung.played_on)
         zeilen.append(f"[{name}]({ziel})" if ziel else name)
-    return "\n".join(zeilen) if zeilen else WER_OHNE_ERWAEHNUNG
+    if not zeilen:
+        return WER_OHNE_ERWAEHNUNG
+    return grenzen.gekappt("\n".join(zeilen), grenzen.EMBED_FELD, FELD_GEKUERZT)
 
 
 def wer(runde: Runde, name: str) -> Antwort:
@@ -243,7 +255,11 @@ def wer(runde: Runde, name: str) -> Antwort:
             if eintrag.actor_name:
                 felder.insert(1, {"name": WER_FIGUR, "value": eintrag.actor_name, "inline": True})
             return Antwort(
-                embed={"title": eintrag.name, "description": eintrag.description, "fields": felder}
+                embed={
+                    "title": grenzen.gekappt(eintrag.name, grenzen.EMBED_TITEL),
+                    "description": grenzen.gekappt(eintrag.description, grenzen.EMBED_TEXT),
+                    "fields": felder,
+                }
             )
     nach_name = {eintrag.name.casefold(): eintrag.name for eintrag in eintraege}
     nah = get_close_matches(gesucht, list(nach_name), n=3, cutoff=NAEHE)

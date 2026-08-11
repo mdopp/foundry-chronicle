@@ -38,6 +38,7 @@ from chronicle.bot import (
 )
 from chronicle.bot.recorder import Aufnahme, Kanal
 from chronicle.config import Config
+from chronicle.discord import grenzen
 from chronicle.runde import Runde
 
 logger = logging.getLogger(__name__)
@@ -181,11 +182,19 @@ BEFEHLE = (
     "• `/aufnahme hilfe` — alles noch einmal in Ruhe.\n"
 )
 
+# Der eine Satz, der rechtlich trägt (§201 StGB): ohne ihn ist die Vorstellung nur noch
+# eine Ankündigung. Er steht deshalb als Konstante da und nicht als Halbsatz mitten im
+# Absatz — was geteilt zugestellt wird, muss ihn nachweislich im **ersten** Stück haben,
+# und das prüft ein Test gegen genau diese Konstante.
+AUSWEG = (
+    "Wer nicht aufgezeichnet werden möchte, verlässt den Sprachkanal — außerhalb nehme "
+    "ich nichts auf."
+)
+
 HILFE = (
     "**So schneide ich eine Sitzung mit**\n"
     f"{BEFEHLE}"
-    "Wer nicht aufgezeichnet werden möchte, verlässt den Sprachkanal — außerhalb nehme "
-    "ich nichts auf. Wer später dazukommt, hört die Ansage noch einmal. "
+    f"{AUSWEG} Wer später dazukommt, hört die Ansage noch einmal. "
     f"Die Aufnahmen werden nach {recordings.RETENTION_TAGE} Tagen gelöscht.\n"
     "Meine Antworten sieht nur, wer den Befehl gegeben hat."
 )
@@ -195,14 +204,17 @@ HILFE = (
 # Frist und Befehlsliste stehen deshalb nicht als zweite Kopie hier, sondern kommen aus
 # derselben Quelle wie `/aufnahme hilfe` und die Ansage — eine Kopie driftet, und eine
 # Zusage, die vom Verhalten abweicht, ist schlimmer als keine.
+#
+# Die Reihenfolge ist keine Geschmacksfrage: der Ausweg steht **vor** der Befehlsliste,
+# weil die Liste mit jedem neuen Befehl wächst und die Zustellung sie irgendwann in eine
+# zweite Nachricht schiebt. Was vor ihr steht, kommt zuerst — und damit sicher an.
 VORSTELLUNG = (
     "**Ich bin die Chronik dieser Runde.**\n"
     "Aus dem, was ihr sprecht, was ihr schreibt und was in eurem Foundry gewürfelt wird, "
     "mache ich nach dem Abend ein lesbares Sitzungsprotokoll — Zahlen kommen dabei "
     "ausschließlich aus dem Foundry-Log, erfinden kann ich sie nicht.\n"
     "**Gleich kommt eine hörbare Ansage. Erst danach schneide ich mit**, je Sprecherin "
-    "und Sprecher eine eigene Spur. Wer nicht aufgezeichnet werden möchte, verlässt jetzt "
-    "den Sprachkanal — außerhalb nehme ich nichts auf. "
+    f"und Sprecher eine eigene Spur. Bis dahin ist Zeit: {AUSWEG} "
     f"Die Tonspuren werden nach {recordings.RETENTION_TAGE} Tagen gelöscht.\n"
     "**So bedient ihr mich:**\n"
     f"{BEFEHLE}"
@@ -400,11 +412,11 @@ def antwortet(befehl):
             return await befehl(ctx, *args, **kwargs)
         except BotFehler as fehler:
             logger.warning("Befehl %s abgebrochen: %s", befehl.__name__, fehler)
-            await ctx.respond(GESCHEITERT.format(grund=str(fehler)), ephemeral=True)
+            await _zustellen(ctx.respond, GESCHEITERT.format(grund=str(fehler)), ephemeral=True)
         except Exception as fehler:  # noqa: BLE001
             logger.exception("Befehl %s gescheitert", befehl.__name__)
             grund = UNERWARTET.format(typ=type(fehler).__name__)
-            await ctx.respond(GESCHEITERT.format(grund=grund), ephemeral=True)
+            await _zustellen(ctx.respond, GESCHEITERT.format(grund=grund), ephemeral=True)
         return None
 
     return gefasst
@@ -468,6 +480,24 @@ def _menschen(lauf: _Lauf) -> tuple[consent.Member, ...]:
     return () if lauf.stimme is None else lauf.stimme.mitglieder()
 
 
+async def _zustellen(hinaus, text: str | None, *, zuletzt: dict | None = None, **jedes) -> None:
+    """Ein Text nach Discord — in so vielen Nachrichten, wie seine Länge verlangt.
+
+    Der eine Weg für alles, was hier hinausgeht: Kanal, Thread, Antwort auf einen Befehl,
+    Erwiderung auf eine Notiz. Discord nimmt 2000 Zeichen und weist eine längere Nachricht
+    ganz ab — ein Text, der mit jedem neuen Befehl wächst, darf daran nicht hängen (#109).
+    Geteilt wird in der Reihenfolge des Textes: was zuerst dasteht, geht zuerst hinaus.
+
+    ``zuletzt`` hängt Embed oder Ansicht an das **letzte** Stück — ein Knopf gehört unter
+    den ganzen Text und nicht mitten hinein. Ohne Text bleibt genau ein Aufruf übrig; für
+    ein Embed ohne Begleitsatz ist das der Normalfall.
+    """
+    stuecke: tuple[str | None, ...] = grenzen.teile(text or "") or (None,)
+    for stueck in stuecke[:-1]:
+        await hinaus(stueck, **jedes)
+    await hinaus(stuecke[-1], **jedes, **(zuletzt or {}))
+
+
 async def _in_den_thread(bot, aufnahme: Aufnahme, text: str) -> None:
     """Ein Satz in den Thread der Sitzung — dort liest die Runde ohnehin mit.
 
@@ -485,7 +515,7 @@ async def _in_den_thread(bot, aufnahme: Aufnahme, text: str) -> None:
         return
     kennung = int(thread_id)
     thread = bot.get_channel(kennung) or await bot.fetch_channel(kennung)
-    await thread.send(text)
+    await _zustellen(thread.send, text)
 
 
 async def _beenden_und_sagen(
@@ -509,6 +539,11 @@ async def _beenden_und_sagen(
     # ``thread.send`` aus einem gelungenen Ende einen gemeldeten Fehlschlag — und schickte
     # zu ``/aufnahme stop``, das dann »keine Aufnahme« antwortet. Bleibt sie ungesagt, ist
     # das ein fehlender Satz; die Fehlermeldung wäre ein falscher.
+    #
+    # Was dieser Fang **nicht** mehr verdeckt, ist die eigene Überlänge: eine Runde mit
+    # dreißig Spuren reihte hier dreißig Meldungen aneinander, Discord wies die Nachricht
+    # ab, und der Satz fiel still weg (#120). Seit ``_zustellen`` teilt, kann hier nur noch
+    # ein Discord scheitern, das gerade nicht antwortet — und dem ist nichts zu sagen.
     try:
         await _in_den_thread(bot, aufnahme, " ".join((beendet, *meldungen)))
     except Exception:  # noqa: BLE001
@@ -601,7 +636,7 @@ def _melder(ziel) -> Callable[[str], None]:
     schleife = asyncio.get_running_loop()
 
     def melden(text: str) -> None:
-        asyncio.run_coroutine_threadsafe(ziel.send(text), schleife)
+        asyncio.run_coroutine_threadsafe(_zustellen(ziel.send, text), schleife)
 
     return melden
 
@@ -630,16 +665,22 @@ def _wer(quelle) -> str:
     return str(getattr(person, "id", "") or "")
 
 
-async def _sagen(interaction, text: str) -> None:
+async def _eines(interaction, text: str | None, **weiteres) -> None:
     """Antworten, ohne zu wissen, wie weit der Rückruf schon war.
 
     Nach einem ``defer`` weist Discord eine zweite *erste* Antwort ab; davor gibt es noch
-    keine, die man nachreichen könnte. Wer beides fangen will, muss beides können.
+    keine, die man nachreichen könnte. Wer beides fangen will, muss beides können. Ab dem
+    zweiten Stück gilt ohnehin der nachgereichte Weg — die erste Antwort ist dann vergeben.
     """
     if interaction.response.is_done():
-        await interaction.followup.send(text, ephemeral=True)
+        await interaction.followup.send(text, ephemeral=True, **weiteres)
         return
-    await interaction.response.send_message(text, ephemeral=True)
+    await interaction.response.send_message(text, ephemeral=True, **weiteres)
+
+
+async def _sagen(interaction, text: str, **zuletzt) -> None:
+    """Wie ``_eines``, und lang genug für Discords Grenze geteilt."""
+    await _zustellen(functools.partial(_eines, interaction), text, zuletzt=zuletzt)
 
 
 def _gefenstert(rueckruf):
@@ -693,7 +734,7 @@ async def _sitzung_eroeffnen(
         return GESCHEITERT.format(grund=UNERWARTET.format(typ=type(fehler).__name__))
     hinweis = chronik.starthinweis(config, runde, gemerkt)
     try:
-        await thread.send(chronik.ANGELEGT)
+        await _zustellen(thread.send, chronik.ANGELEGT)
     except Exception:  # noqa: BLE001
         logger.exception("Begrüßung im neuen Thread nicht zugestellt")
         return f"{chronik.STUMM_ANGELEGT.format(thread=thread.mention)} {hinweis}"
@@ -730,12 +771,12 @@ def _startfenster(config: Config, runde, titel: str):
             # kann eine fremde geworden sein, und ihr ginge sonst das Passwort dieser Gruppe.
             gemeint = _dieselbe(config, interaction, runde)
             if gemeint is None:
-                await interaction.followup.send(chronik.VERALTET, ephemeral=True)
+                await _sagen(interaction, chronik.VERALTET)
                 return
             antwort = await _sitzung_eroeffnen(
                 config, interaction, gemeint, titel, self.children[0].value or "", _wer(interaction)
             )
-            await interaction.followup.send(antwort, ephemeral=True)
+            await _sagen(interaction, antwort)
 
     return Startfenster()
 
@@ -796,7 +837,7 @@ def _passwortfrage(config: Config, runde, session_id: int, lauf: _Lauf, hinweis:
             # steht in *ihrer* Runde.
             gemeint = _dieselbe(config, interaction, runde)
             if gemeint is None:
-                await interaction.followup.send(chronik.VERALTET, ephemeral=True)
+                await _sagen(interaction, chronik.VERALTET)
                 return
             antwort = await _abschliessen(
                 config,
@@ -807,7 +848,7 @@ def _passwortfrage(config: Config, runde, session_id: int, lauf: _Lauf, hinweis:
                 interaction.channel,
                 _wer(interaction),
             )
-            await interaction.followup.send(antwort, ephemeral=True)
+            await _sagen(interaction, antwort)
 
     return Passwortfrage()
 
@@ -949,7 +990,7 @@ async def _offenlegen(interaction) -> bool:
     if kanal is None:
         return False
     try:
-        await kanal.send(einrichten.OFFENLEGUNG)
+        await _zustellen(kanal.send, einrichten.OFFENLEGUNG)
     except Exception:  # noqa: BLE001
         logger.exception("Offenlegung nicht zugestellt")
         return False
@@ -1023,10 +1064,10 @@ def _einrichtungsfenster(config: Config, ctx):
                     meldung = f"{meldung} {einrichten.STILL_GEBLIEBEN}"
             # Nachgereicht, nicht erstmalig: der Aufschub oben **war** die erste Antwort,
             # und eine zweite weist Discord ab.
-            await interaction.followup.send(
+            await _sagen(
+                interaction,
                 f"{meldung} {einrichten.KANAL_FRAGE}",
                 view=_kanalansicht(config, fertig.runde, gilde),
-                ephemeral=True,
             )
 
     return Einrichtungsfenster()
@@ -1092,17 +1133,20 @@ async def _antworten(ctx, antwort: erinnern.Antwort, view=None) -> None:
         weiteres["embed"] = _embed(antwort.embed)
     if view is not None:
         weiteres["view"] = view
-    await ctx.respond(antwort.text or None, ephemeral=True, **weiteres)
+    await _zustellen(ctx.respond, antwort.text, zuletzt=weiteres, ephemeral=True)
 
 
 async def _ersetzen(interaction, antwort: erinnern.Antwort, view) -> None:
     """Der Knopf ändert die Nachricht, in der er steckt — die Antwort steht mit darin.
 
     Nicht zusätzlich: eine zweite Nachricht je Klick wäre nach fünf Entscheidungen ein
-    Stapel, und die Liste daneben zeigte weiter, was es nicht mehr gibt.
+    Stapel, und die Liste daneben zeigte weiter, was es nicht mehr gibt. Genau deshalb
+    wird hier gekürzt statt geteilt: es gibt nur diese eine Nachricht.
     """
     await interaction.response.edit_message(
-        content=antwort.text or None, embed=_embed(antwort.embed), view=view
+        content=grenzen.gekappt(antwort.text, grenzen.NACHRICHT) or None,
+        embed=_embed(antwort.embed),
+        view=view,
     )
 
 
@@ -1115,7 +1159,7 @@ def _geklickt(arbeit):
         except Exception as fehler:  # noqa: BLE001
             logger.exception("Klick in einer Ansicht gescheitert")
             grund = UNERWARTET.format(typ=type(fehler).__name__)
-            await interaction.response.send_message(GESCHEITERT.format(grund=grund), ephemeral=True)
+            await _sagen(interaction, GESCHEITERT.format(grund=grund))
 
     return gefasst
 
@@ -1230,42 +1274,42 @@ def baue(config: Config):
     @antwortet
     async def start(ctx) -> None:
         if lauf.aufnahme is not None:
-            await ctx.respond(LAEUFT_SCHON, ephemeral=True)
+            await _zustellen(ctx.respond, LAEUFT_SCHON, ephemeral=True)
             return
         # Dieselbe Schranke wie vor ``/chronik start``, und vor dem Beitreten: eine Gilde
         # ohne eigene Runde nimmt nicht auf, eine ruhende erst recht nicht.
         runde = chronik.runde_verlangen(config, ctx.guild_id)
         kanal = getattr(getattr(ctx.author, "voice", None), "channel", None)
         if kanal is None:
-            await ctx.respond(NICHT_IM_KANAL, ephemeral=True)
+            await _zustellen(ctx.respond, NICHT_IM_KANAL, ephemeral=True)
             return
         await ctx.defer(ephemeral=True)
         stimme = Sprachverbindung(await kanal.connect())
         try:
-            await _vorstellungsziel(ctx, kanal).send(VORSTELLUNG)
+            await _zustellen(_vorstellungsziel(ctx, kanal).send, VORSTELLUNG)
             lauf.aufnahme = await recorder.starten(config, stimme, runde)
         except BaseException:
             await stimme.trennen()
             raise
         lauf.stimme = stimme
-        await ctx.respond(recorder.GESTARTET, ephemeral=True)
+        await _zustellen(ctx.respond, recorder.GESTARTET, ephemeral=True)
 
     @gruppe.command(name="stop", description="Aufnahme beenden und die Spuren einreihen")
     @antwortet
     async def stop(ctx) -> None:
         if lauf.aufnahme is None:
-            await ctx.respond(LAEUFT_NICHT, ephemeral=True)
+            await _zustellen(ctx.respond, LAEUFT_NICHT, ephemeral=True)
             return
         await ctx.defer(ephemeral=True)
         meldungen = await _mitschnitt_beenden(lauf)
         # Leer heißt: in der Zwischenzeit war ein anderer schneller — der leere Kanal etwa.
         # Das ist kein Fehlschlag, und so ausgesprochen zu werden verdient er auch nicht.
-        await ctx.respond(" ".join(meldungen) or LAEUFT_NICHT, ephemeral=True)
+        await _zustellen(ctx.respond, " ".join(meldungen) or LAEUFT_NICHT, ephemeral=True)
 
     @gruppe.command(name="hilfe", description="Was der Bot tut und wie man ihn bedient")
     @antwortet
     async def hilfe(ctx) -> None:
-        await ctx.respond(HILFE, ephemeral=True)
+        await _zustellen(ctx.respond, HILFE, ephemeral=True)
 
     @chronikgruppe.command(name="start", description="Sitzung anlegen und den Thread öffnen")
     @antwortet
@@ -1275,8 +1319,10 @@ def baue(config: Config):
             # Ohne Server gäbe es nichts, wo das Passwort vorgezeigt würde — es läge nur
             # bis zur Frist herum. Ohne Fenster kann der Befehl selbst aufschieben.
             await ctx.defer(ephemeral=True)
-            await ctx.respond(
-                await _sitzung_eroeffnen(config, ctx, runde, titel, "", _wer(ctx)), ephemeral=True
+            await _zustellen(
+                ctx.respond,
+                await _sitzung_eroeffnen(config, ctx, runde, titel, "", _wer(ctx)),
+                ephemeral=True,
             )
             return
         # Kein ``defer`` davor: ein Fenster geht nur als *erste* Antwort auf den Befehl.
@@ -1300,7 +1346,8 @@ def baue(config: Config):
         geheim = chronik.passwort_fuer(runde, wer)
         if geheim is not None or not chronik.foundry_im_spiel(config, runde):
             await ctx.defer(ephemeral=True)
-            await ctx.respond(
+            await _zustellen(
+                ctx.respond,
                 # ``merken=False``: ``geheim`` kam gerade aus dem Merkzettel. Es dort
                 # erneut abzulegen stellte die Frist aus #64 zurück — und bei belegter
                 # Maschine verbraucht es niemand, sodass jeder Versuch sie weiterschöbe.
@@ -1323,11 +1370,14 @@ def baue(config: Config):
         # ``/chronik start`` soll jedes Mitglied geben dürfen. Für diesen Unterbefehl steht
         # die Schranke deshalb hier — und noch einmal am Knopf, der wirklich löscht.
         if not _darf_loeschen(getattr(ctx, "author", None)):
-            await ctx.respond(einrichten.NUR_ADMIN, ephemeral=True)
+            await _zustellen(ctx.respond, einrichten.NUR_ADMIN, ephemeral=True)
             return
         runde = chronik.runde_zum_loeschen(config, ctx.guild_id)
-        await ctx.respond(
-            einrichten.loeschfrage(), view=_loeschansicht(config, runde), ephemeral=True
+        await _zustellen(
+            ctx.respond,
+            einrichten.loeschfrage(),
+            zuletzt={"view": _loeschansicht(config, runde)},
+            ephemeral=True,
         )
 
     @bot.slash_command(
@@ -1340,12 +1390,12 @@ def baue(config: Config):
         # Ohne Gilde gibt es keine Runde zu beanspruchen — eine im Zwiegespräch angelegte
         # gehörte niemandem und stünde für immer da.
         if ctx.guild_id is None:
-            await ctx.respond(einrichten.NUR_IM_SERVER, ephemeral=True)
+            await _zustellen(ctx.respond, einrichten.NUR_IM_SERVER, ephemeral=True)
             return
         # Die Angabe oben blendet den Befehl bei Discord aus; sie ist eine Vorgabe, die die
         # Serververwaltung überschreiben kann. Gerechnet wird deshalb auch hier.
         if not _darf_verwalten(getattr(ctx, "author", None)):
-            await ctx.respond(einrichten.NUR_VERWALTUNG, ephemeral=True)
+            await _zustellen(ctx.respond, einrichten.NUR_VERWALTUNG, ephemeral=True)
             return
         await ctx.send_modal(_einrichtungsfenster(config, ctx))
 
@@ -1386,7 +1436,7 @@ def baue(config: Config):
         sitzung = chronik.sitzung_verlangen(runde, str(ctx.channel_id))
         # Sichtbar für alle: die Trennlinie gehört in den Thread, nicht nur zu dem, der
         # sie gezogen hat.
-        await ctx.respond(chronik.szene_setzen(runde, sitzung, name), ephemeral=False)
+        await _zustellen(ctx.respond, chronik.szene_setzen(runde, sitzung, name), ephemeral=False)
 
     @bot.event
     async def on_message(nachricht) -> None:
@@ -1403,10 +1453,10 @@ def baue(config: Config):
         except Exception as fehler:  # noqa: BLE001
             logger.exception("Nachricht im Sitzungs-Thread nicht abgelegt")
             grund = UNERWARTET.format(typ=type(fehler).__name__)
-            await nachricht.reply(chronik.NICHT_ABGELEGT.format(grund=grund))
+            await _zustellen(nachricht.reply, chronik.NICHT_ABGELEGT.format(grund=grund))
             return
         for meldung in meldungen:
-            await nachricht.reply(meldung)
+            await _zustellen(nachricht.reply, meldung)
 
     @bot.event
     async def on_raw_message_edit(payload) -> None:
@@ -1436,7 +1486,7 @@ def baue(config: Config):
         # Eine abgelaufene Runde wird hier gelöscht, mit Dateien und Zeilen: nicht auf der
         # Ereignisschleife, sonst steht der ganze Bot währenddessen.
         zurueck = await asyncio.to_thread(einrichten.begruessung, config, str(gilde.id))
-        await kanal.send(zurueck.text)
+        await _zustellen(kanal.send, zurueck.text)
         if zurueck.wartet is not None:
             einrichten.wieder_im_dienst(config, zurueck.wartet)
 
