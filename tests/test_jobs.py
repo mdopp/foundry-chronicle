@@ -158,7 +158,9 @@ def test_der_abgleich_meldet_den_umfang(stelle, welt, monkeypatch):
 def test_ein_ausgefallenes_foundry_beendet_den_abgleich_als_gescheitert(stelle, monkeypatch):
     ausfall = Abgleich(fehler=FoundryUnreachable("keine Antwort"))
     monkeypatch.setattr(
-        jobs, "sync", lambda config, eine: foundry.sync(config, eine, client=ausfall)
+        jobs,
+        "sync",
+        lambda config, eine, passwort=None: foundry.sync(config, eine, client=ausfall),
     )
     with pytest.raises(jobs.JobError) as fehler:
         jobs.abgleich(stelle, runde(stelle))
@@ -213,7 +215,9 @@ def eine_sitzung_mit_notiz(stelle):
 
 def test_der_abschluss_holt_erst_die_zahlen_und_schreibt_dann(stelle, welt, monkeypatch):
     monkeypatch.setattr(
-        jobs, "sync", lambda config, eine: foundry.sync(config, eine, client=Abgleich(welt))
+        jobs,
+        "sync",
+        lambda config, eine, passwort=None: foundry.sync(config, eine, client=Abgleich(welt)),
     )
     sitzung_id = eine_sitzung_mit_notiz(stelle)
 
@@ -227,7 +231,9 @@ def test_ein_ausgefallenes_foundry_kostet_nicht_die_ganze_chronik(stelle, monkey
     """Notizen und Aufnahmen ergeben auch ohne die Zahlen eine Chronik — mit Hinweis."""
     ausfall = Abgleich(fehler=FoundryUnreachable("keine Antwort"))
     monkeypatch.setattr(
-        jobs, "sync", lambda config, eine: foundry.sync(config, eine, client=ausfall)
+        jobs,
+        "sync",
+        lambda config, eine, passwort=None: foundry.sync(config, eine, client=ausfall),
     )
     sitzung_id = eine_sitzung_mit_notiz(stelle)
 

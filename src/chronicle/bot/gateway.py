@@ -548,6 +548,46 @@ def _wer(quelle) -> str:
     return str(getattr(person, "id", "") or "")
 
 
+async def _sagen(interaction, text: str) -> None:
+    """Antworten, ohne zu wissen, wie weit der Rückruf schon war.
+
+    Nach einem ``defer`` weist Discord eine zweite *erste* Antwort ab; davor gibt es noch
+    keine, die man nachreichen könnte. Wer beides fangen will, muss beides können.
+    """
+    if interaction.response.is_done():
+        await interaction.followup.send(text, ephemeral=True)
+        return
+    await interaction.response.send_message(text, ephemeral=True)
+
+
+def _gefenstert(rueckruf):
+    """Auch ein Fenster antwortet immer — py-cords ``Modal.on_error`` tut es nicht.
+
+    Der Fang liegt um den **ganzen** Rückruf und nicht nur um seinen Rumpf: auch der
+    Vorspann — das Aufschieben, das Auflösen der Runde — geht auf Discord und auf die
+    SQLite. Bleibt eine Ausnahme von dort ungefangen, sieht der Absender »This interaction
+    failed« und weiß nicht, ob etwas entstanden ist.
+
+    Ein einziges Schweigen bleibt und ist keines dieser Fälle: ein Fenster, das ohne
+    Absenden geschlossen wird, ruft gar nichts auf. Und wenn schon das Antworten selbst
+    nicht durchkommt, ist der Weg zu Discord zu, nicht der Fang zu eng.
+    """
+
+    @functools.wraps(rueckruf)
+    async def gefasst(self, interaction) -> None:
+        try:
+            await rueckruf(self, interaction)
+        except BotFehler as fehler:
+            logger.warning("Rückruf eines Fensters abgebrochen: %s", fehler)
+            await _sagen(interaction, GESCHEITERT.format(grund=str(fehler)))
+        except Exception as fehler:  # noqa: BLE001
+            logger.exception("Rückruf eines Fensters gescheitert")
+            grund = UNERWARTET.format(typ=type(fehler).__name__)
+            await _sagen(interaction, GESCHEITERT.format(grund=grund))
+
+    return gefasst
+
+
 async def _sitzung_eroeffnen(
     config: Config, ziel, runde, titel: str, eingabe: str, wer: str
 ) -> str:
@@ -598,6 +638,7 @@ def _startfenster(config: Config, runde, titel: str):
                 title=chronik.START_TITEL,
             )
 
+        @_gefenstert
         async def callback(self, interaction) -> None:
             # Aufgeschoben wird als Erstes: darunter liegen zwei REST-Runden, und die drei
             # Sekunden, die Discord der ersten Antwort lässt, reichen dafür nicht
@@ -660,13 +701,18 @@ def _passwortfrage(config: Config, runde, session_id: int, lauf: _Lauf, hinweis:
                 title=chronik.PASSWORT_TITEL,
             )
 
+        @_gefenstert
         async def callback(self, interaction) -> None:
+            # Wie am Startfenster, und hier mit mehr Grund: darunter liegen das Beenden des
+            # Mitschnitts und das Anstoßen des Laufs. Die drei Sekunden, die Discord der
+            # ersten Antwort lässt, reichen dafür nicht verlässlich.
+            await interaction.response.defer(ephemeral=True)
             # Das Fenster trägt die Runde von vorhin mit. Ist es nicht mehr dieselbe, ginge
             # das Passwort dieser Gruppe an das Foundry einer fremden — die Adresse dorthin
             # steht in *ihrer* Runde.
             gemeint = _dieselbe(config, interaction, runde)
             if gemeint is None:
-                await interaction.response.send_message(chronik.VERALTET, ephemeral=True)
+                await interaction.followup.send(chronik.VERALTET, ephemeral=True)
                 return
             antwort = await _abschliessen(
                 config,
@@ -677,7 +723,7 @@ def _passwortfrage(config: Config, runde, session_id: int, lauf: _Lauf, hinweis:
                 interaction.channel,
                 _wer(interaction),
             )
-            await interaction.response.send_message(antwort, ephemeral=True)
+            await interaction.followup.send(antwort, ephemeral=True)
 
     return Passwortfrage()
 
@@ -827,6 +873,7 @@ def _einrichtungsfenster(config: Config, ctx):
                 title=einrichten.SETUP_TITEL,
             )
 
+        @_gefenstert
         async def callback(self, interaction) -> None:
             adresse, benutzer, uhrzeit = (feld.value for feld in self.children)
             # Eine abgelaufene Runde wird hier gelöscht, mit Dateien und Zeilen — derselbe
@@ -1121,10 +1168,15 @@ def baue(config: Config):
         wer = _wer(ctx)
         # Ohne Fenster nur zweierlei: wer selbst hinterlegt hat, und wo es gar keinen
         # Server gibt. Eine fremde Eingabe wird **nicht** stillschweigend übernommen.
-        if chronik.passwort_bereit(runde, wer) or not chronik.foundry_im_spiel(config, runde):
+        # Gelesen wird hier und nicht erst im Auftragsfaden: dazwischen liegen ein
+        # ``defer`` und das Beenden des Mitschnitts, und in dieser Lücke kann ein zweites
+        # Fenster den Merkzettel überschreiben — geprüft wäre dann das eine, vorgezeigt
+        # das andere.
+        geheim = chronik.passwort_fuer(runde, wer)
+        if geheim is not None or not chronik.foundry_im_spiel(config, runde):
             await ctx.defer(ephemeral=True)
             await ctx.respond(
-                await _abschliessen(config, runde, sitzung, None, lauf, ctx.channel, wer),
+                await _abschliessen(config, runde, sitzung, geheim, lauf, ctx.channel, wer),
                 ephemeral=True,
             )
             return

@@ -125,7 +125,8 @@ OHNE_FOUNDRY = (
 
 KEIN_FOUNDRY = (
     "Nach dem Foundry-Passwort frage ich nicht: für diese Runde ist gerade kein "
-    "Foundry-Server im Spiel. `/setup` trägt eine Adresse ein, wenn doch einer dazukommt."
+    "Foundry-Server im Spiel. `/setup` trägt Adresse und Benutzer ein, wenn doch einer "
+    "dazukommt."
 )
 
 # Der Platzhalter des Abschlussfensters, wenn ein anderes Mitglied etwas hinterlegt hat.
@@ -245,16 +246,21 @@ def passwort_merken(runde: Runde, eingabe: str, wer: str) -> bool:
     return True
 
 
-def passwort_bereit(runde: Runde, wer: str) -> bool:
-    """Ob **für diese Person** eines bereitliegt — *ob*, nie *was*.
+def passwort_fuer(runde: Runde, wer: str) -> str | None:
+    """Das bereitliegende Passwort **dieser Person** — sonst ``None``.
 
     Nicht bloß »es liegt eines da«: ``/chronik start`` steht jedem Mitglied offen, und
     eine fremde Eingabe würde sonst ohne Rückfrage dem Foundry-Konto dieser Runde
     vorgezeigt, ausgelöst von jemandem, der sie nie gesehen hat. Wer nicht selbst
     hinterlegt hat, bekommt darum das Fenster — und damit den Weg zum eigenen Passwort,
     ohne die zwölf Stunden abzuwarten.
+
+    Zurück kommt der **Wert** und nicht nur ein Ja: der Abschluss reicht ihn bis zum
+    Abgleich durch, statt ihn dort noch einmal aus dem Merkzettel zu holen. Zwischen
+    Prüfen und Benutzen liegt sonst eine Fadengrenze, über die ein zweites Fenster genau
+    die Zeichenkette schieben kann, die hier gerade abgelehnt wurde.
     """
-    return bool(wer) and zugang.gemerkt_von(runde) == wer
+    return zugang.passwort_von(runde, wer)
 
 
 def passwort_gehalten(runde: Runde) -> bool:
@@ -265,13 +271,18 @@ def passwort_gehalten(runde: Runde) -> bool:
 def foundry_im_spiel(config: Config, runde: Runde) -> bool:
     """Ob ein eingegebenes Passwort überhaupt irgendwo vorgezeigt würde.
 
-    Auf der Testwelt und ohne eingetragene Adresse redet der Abgleich mit keinem Server.
+    Auf der Testwelt und ohne eingetragenen Zugang redet der Abgleich mit keinem Server.
     Danach zu fragen hieße, ein Geheimnis für nichts einzusammeln — und es läge dann bis
     zur harten Frist herum.
+
+    Gefragt wird nach ``foundry_configured`` und nicht nach der Adresse allein: dieselbe
+    Bedingung prüft ``FoundryClient``, bevor er überhaupt einen Handschlag versucht. Eine
+    Adresse ohne Konto ergäbe sonst ein Fenster, dessen Eingabe ein ``FoundryError``
+    verbraucht, ohne sie je irgendwem vorgezeigt zu haben.
     """
     if settings.foundry_quelle(runde) == settings.TESTWELT:
         return False
-    return bool(settings.effective(config, runde).foundry_url)
+    return settings.effective(config, runde).foundry_configured
 
 
 def starthinweis(config: Config, runde: Runde, gemerkt: bool) -> str:
@@ -333,11 +344,15 @@ def notiz_entfernen(runde: Runde, message_id: str) -> bool:
 
 
 def _mit_meldung(
-    config: Config, runde: Runde, session_id: int, melden: Callable[[str], None]
+    config: Config,
+    runde: Runde,
+    session_id: int,
+    passwort: str | None,
+    melden: Callable[[str], None],
 ) -> Callable[[], str]:
     def lauf() -> str:
         try:
-            ergebnis = jobs.abschluss(config, runde, session_id)
+            ergebnis = jobs.abschluss(config, runde, session_id, passwort=passwort)
         except Exception as fehler:
             # Der Lauf hängt an keinem Befehl mehr — ohne diese Zeile bliebe der Thread
             # still, und niemand wüsste, dass die Chronik nicht kommt.
@@ -360,10 +375,12 @@ def abschluss_starten(
 ) -> str:
     """Abgleich, Verschriften, Komponieren — ein Auftrag, eine Meldung im Thread.
 
-    Das Passwort wird gemerkt und vom Abgleich verbraucht; liegen bleibt es nicht.
-    ``None`` heißt: es wurde beim Start gegeben und liegt schon bereit — dann wird das
-    Gemerkte nicht überschrieben. Ein leerer Text bleibt dagegen ein leeres Feld und
-    vergisst, was da war.
+    Das Passwort **reist mit dem Auftrag** und wird vom Abgleich verbraucht; liegen bleibt
+    es nicht. Der Auftrag holt es sich nicht selbst aus dem Merkzettel: er läuft in einem
+    eigenen Faden, und was dort gelesen würde, muss nicht mehr das sein, was der Aufrufer
+    geprüft hat. ``None`` heißt: keines gegeben — dann bleibt es beim Merkzettel, den der
+    Abgleich als Rückfall liest, und das Gemerkte wird nicht überschrieben. Ein leerer
+    Text bleibt dagegen ein leeres Feld und vergisst, was da war.
     """
     if jobs.running(runde, jobs.CHRONIK):
         return LAEUFT_SCHON
@@ -373,7 +390,7 @@ def abschluss_starten(
         config,
         runde,
         jobs.CHRONIK,
-        _mit_meldung(config, runde, session_id, melden),
+        _mit_meldung(config, runde, session_id, passwort, melden),
         session_id=session_id,
     )
     return FERTIG if auftrag is not None else jobs.BELEGT

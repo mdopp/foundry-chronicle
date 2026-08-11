@@ -145,6 +145,9 @@ class FakeAntwort:
     async def defer(self, **rest):
         self.aufgeschoben = True
 
+    def is_done(self) -> bool:
+        return self.aufgeschoben or bool(self.gesendet)
+
 
 class FakeNachreichen:
     """Was nach einem Aufschub kommt — getrennt geführt, damit der Weg prüfbar bleibt."""
@@ -221,9 +224,11 @@ def pycord(monkeypatch):
 def stelle(tmp_path):
     config = Config(
         discord_bot_token=TOKEN,
-        # Seit #96 fragt der Start nur, wo ein Foundry-Server im Spiel ist — eine Runde
-        # ohne Adresse bekäme gar kein Fenster mehr.
+        # Seit #96 fragt der Start nur, wo ein Foundry-Server im Spiel ist — und das ist
+        # dieselbe Bedingung, die der Client stellt: Adresse **und** Konto. Ohne beides
+        # bekäme diese Runde gar kein Fenster mehr.
         foundry_url="https://foundry.example",
+        foundry_user="chronik-bot",
         data_dir=tmp_path / "daten",
         recordings_dir=tmp_path / "aufnahmen",
     )
@@ -462,6 +467,47 @@ def test_eine_nicht_zugestellte_begruessung_sagt_dass_die_sitzung_trotzdem_steht
     assert zugang.ist_gemerkt(unsere)
 
 
+def test_auch_ein_absturz_im_vorspann_des_fensters_antwortet(stelle, bot, monkeypatch):
+    """Der Fang liegt um den ganzen Rückruf, nicht nur um seinen Rumpf.
+
+    Das Auflösen der Runde geht auf die SQLite und liegt **vor** dem Rumpf. Fiele es
+    heraus, bliebe der Absender bei »This interaction failed« stehen.
+    """
+    _config, unsere = stelle
+
+    def stolpert(*rest, **auch):
+        raise RuntimeError("die SQLite war weg")
+
+    monkeypatch.setattr(chronik, "dieselbe_runde", stolpert)
+
+    fenster, thread = sitzung_starten(bot, passwort=PASSWORT)
+
+    (antwort,) = fenster.followup.gesendet
+    assert gateway.UNERWARTET.format(typ="RuntimeError") in antwort
+    assert thread is None
+    assert not zugang.ist_gemerkt(unsere)
+
+
+def test_auch_ein_gescheiterter_aufschub_antwortet_noch(stelle, bot, monkeypatch):
+    """Und was vor dem Aufschub scheitert, wird als *erste* Antwort gesagt.
+
+    Vorher gab es keine Antwort, also ist auch keine nachzureichen — ``_sagen`` muss
+    beides können, sonst wäre der Fang selbst die zweite Fehlerquelle.
+    """
+    _config, _unsere = stelle
+
+    async def stolpert(self, **rest):
+        raise RuntimeError("Discord hat den Aufschub verweigert")
+
+    monkeypatch.setattr(FakeAntwort, "defer", stolpert)
+
+    fenster, _thread = sitzung_starten(bot, passwort=PASSWORT)
+
+    (antwort,) = fenster.response.gesendet
+    assert gateway.UNERWARTET.format(typ="RuntimeError") in antwort
+    assert fenster.followup.gesendet == []
+
+
 # -- Wo kein Foundry ist, wird auch nicht danach gefragt ---------------------------------
 
 
@@ -492,6 +538,30 @@ def test_ohne_eingetragene_adresse_kommt_kein_passwortfenster(tmp_path, pycord):
 
     asyncio.run(chronikbefehl(gateway.baue(config), "start")(ctx, ""))
 
+    assert ctx.modale == []
+    assert chronik.KEIN_FOUNDRY in ctx.antworten[0]
+    assert not zugang.ist_gemerkt(unsere)
+
+
+def test_eine_adresse_ohne_konto_ist_noch_kein_foundry(tmp_path, pycord):
+    """Dieselbe Bedingung wie im Client: ohne Konto kommt kein Handschlag zustande.
+
+    Sonst würde ein Passwort eingesammelt, das nie jemandem vorgezeigt wird — ein
+    ``FoundryError`` verbraucht es, bevor der erste Byte über die Leitung geht.
+    """
+    config = Config(
+        discord_bot_token=TOKEN,
+        foundry_url="https://foundry.example",
+        data_dir=tmp_path / "daten",
+        recordings_dir=tmp_path / "aufnahmen",
+    )
+    db.init(config.database_path)
+    unsere = runden.anlegen(config.database_path, "Halb eingerichtet", guild_id=GILDE)
+    ctx = FakeCtx()
+
+    asyncio.run(chronikbefehl(gateway.baue(config), "start")(ctx, ""))
+
+    assert not chronik.foundry_im_spiel(config, unsere)
     assert ctx.modale == []
     assert chronik.KEIN_FOUNDRY in ctx.antworten[0]
     assert not zugang.ist_gemerkt(unsere)
@@ -771,8 +841,8 @@ def test_fertig_fragt_nach_dem_passwort_und_stoesst_den_einen_lauf_an(stelle, bo
     _ctx, thread = sitzung_starten(bot)
     gesehen = []
 
-    def abschluss(config, eine, session_id):
-        gesehen.append((zugang.passwort(eine), session_id))
+    def abschluss(config, eine, session_id, *, passwort=None):
+        gesehen.append((passwort, session_id))
         return STEHT
 
     monkeypatch.setattr(jobs, "abschluss", abschluss)
@@ -782,7 +852,7 @@ def test_fertig_fragt_nach_dem_passwort_und_stoesst_den_einen_lauf_an(stelle, bo
     sitzung_id = notes.session_of_thread(unsere, str(thread.id))
     assert ctx.modale[0].title == chronik.PASSWORT_TITEL
     assert gesehen == [(PASSWORT, sitzung_id)]
-    assert interaktion.response.gesendet == [chronik.FERTIG]
+    assert interaktion.followup.gesendet == [chronik.FERTIG]
     assert thread.gesendet == [chronik.ANGELEGT, STEHT]
     assert jobs.latest(unsere, jobs.CHRONIK, sitzung_id).result == STEHT
 
@@ -794,8 +864,8 @@ def test_nach_dem_passwort_beim_start_fragt_der_abschluss_nicht_noch_einmal(
     _ctx, thread = sitzung_starten(bot, passwort=PASSWORT)
     gesehen = []
 
-    def abschluss(config, eine, session_id):
-        gesehen.append(zugang.passwort(eine))
+    def abschluss(config, eine, session_id, *, passwort=None):
+        gesehen.append(passwort)
         return STEHT
 
     monkeypatch.setattr(jobs, "abschluss", abschluss)
@@ -825,7 +895,9 @@ def test_ein_zweites_mitglied_schiebt_dem_abschluss_kein_fremdes_passwort_unter(
     )
     gesehen = []
     monkeypatch.setattr(
-        jobs, "abschluss", lambda config, eine, sid: gesehen.append(zugang.passwort(eine)) or STEHT
+        jobs,
+        "abschluss",
+        lambda config, eine, sid, *, passwort=None: gesehen.append(passwort) or STEHT,
     )
     ctx = FakeCtx(kanal=types.SimpleNamespace(id=thread.id), wer=WER)
     interaktion = FakeInteraction(thread, wer=WER)
@@ -844,14 +916,72 @@ def test_ein_zweites_mitglied_schiebt_dem_abschluss_kein_fremdes_passwort_unter(
     assert gesehen == [PASSWORT]
 
 
+def test_ein_fenster_in_der_luecke_schiebt_dem_lauf_kein_fremdes_passwort_unter(
+    stelle, bot, monkeypatch
+):
+    """Der Schnellweg prüft in der Koroutine und lief bis #96 im Auftragsfaden nach.
+
+    Dazwischen liegen der Aufschub und das Beenden des Mitschnitts. Wer in dieser Lücke
+    ein vorher geöffnetes Startfenster absendet, ersetzte den Merkzettel — geprüft wäre
+    das eine gewesen, vorgezeigt das andere. Gelesen wird deshalb im Befehl, und der
+    gelesene Wert reist mit dem Auftrag.
+    """
+    _config, unsere = stelle
+    _fenster, thread = sitzung_starten(bot, passwort=PASSWORT, wer=WER)
+    gesehen = []
+
+    def abschluss(config, eine, session_id, *, passwort=None):
+        # Derselbe Rückfall wie im echten Abgleich — daran zeigt sich der Unterschied
+        # zwischen »mitgebracht« und »im fremden Faden nachgesehen«.
+        gesehen.append(passwort or zugang.passwort(eine))
+        return STEHT
+
+    monkeypatch.setattr(jobs, "abschluss", abschluss)
+
+    async def dazwischenfunken(lauf, eine=None):
+        zugang.merken(unsere, ANDERE_EINGABE, wer=str(ZWEITES_MITGLIED))
+        return ()
+
+    monkeypatch.setattr(gateway, "_mitschnitt_beenden", dazwischenfunken)
+    ctx = FakeCtx(kanal=thread, wer=WER)
+
+    async def ablauf():
+        await chronikbefehl(bot, "fertig")(ctx)
+        await _bis_der_lauf_durch_ist(unsere)
+
+    asyncio.run(ablauf())
+
+    assert ctx.modale == []
+    assert gesehen == [PASSWORT]
+
+
+def test_das_passwortfenster_schiebt_auf_bevor_es_die_aufnahme_beendet(
+    stelle, bot, monkeypatch, ohne_espeak
+):
+    """Mehr Arbeit als am Startfenster: erst der Mitschnitt, dann der Lauf.
+
+    Auch hier ist der Beleg, dass die Antwort **nachgereicht** kommt.
+    """
+    _config, unsere = stelle
+    _ctx, thread = sitzung_starten(bot)
+    mitschnitt_starten(bot)
+    monkeypatch.setattr(jobs, "abschluss", lambda config, eine, sid, *, passwort=None: STEHT)
+
+    _ctx2, interaktion = abschluss_fahren(bot, unsere, thread)
+
+    assert interaktion.response.aufgeschoben
+    assert interaktion.response.gesendet == []
+    assert len(interaktion.followup.gesendet) == 1
+
+
 def test_wer_selbst_hinterlegt_hat_wird_nicht_noch_einmal_gefragt(stelle, bot):
     _config, unsere = stelle
     sitzung_starten(bot, passwort=PASSWORT, wer=WER)
 
-    assert chronik.passwort_bereit(unsere, str(WER))
-    assert not chronik.passwort_bereit(unsere, str(ZWEITES_MITGLIED))
+    assert chronik.passwort_fuer(unsere, str(WER)) == PASSWORT
+    assert chronik.passwort_fuer(unsere, str(ZWEITES_MITGLIED)) is None
     # Und ohne Kennung erst recht nicht — sonst wäre der Schnellweg wieder für alle offen.
-    assert not chronik.passwort_bereit(unsere, "")
+    assert chronik.passwort_fuer(unsere, "") is None
 
 
 def test_ohne_foundry_fragt_auch_der_abschluss_nicht_nach_dem_passwort(stelle, bot, monkeypatch):
@@ -860,7 +990,7 @@ def test_ohne_foundry_fragt_auch_der_abschluss_nicht_nach_dem_passwort(stelle, b
     ctx = FakeCtx()
     asyncio.run(chronikbefehl(bot, "start")(ctx, ""))
     thread = ctx.channel.threads[-1]
-    monkeypatch.setattr(jobs, "abschluss", lambda config, eine, sid: STEHT)
+    monkeypatch.setattr(jobs, "abschluss", lambda config, eine, sid, *, passwort=None: STEHT)
     abschluss_ctx = FakeCtx(kanal=thread)
 
     async def ablauf():
@@ -879,7 +1009,7 @@ def test_auch_mit_gemerktem_passwort_endet_die_aufnahme_vor_dem_lauf(
     _config, unsere = stelle
     _ctx, thread = sitzung_starten(bot, passwort=PASSWORT)
     mitschnitt = mitschnitt_starten(bot)
-    monkeypatch.setattr(jobs, "abschluss", lambda config, eine, sid: STEHT)
+    monkeypatch.setattr(jobs, "abschluss", lambda config, eine, sid, *, passwort=None: STEHT)
     ctx = FakeCtx(kanal=thread)
 
     async def ablauf():
@@ -903,7 +1033,9 @@ def test_ein_altes_passwortfenster_zeigt_das_passwort_keiner_fremden_runde(
     config, unsere = stelle
     _ctx, thread = sitzung_starten(bot)
     gesehen = []
-    monkeypatch.setattr(jobs, "abschluss", lambda config, eine, sid: gesehen.append(eine.id))
+    monkeypatch.setattr(
+        jobs, "abschluss", lambda config, eine, sid, *, passwort=None: gesehen.append(eine.id)
+    )
 
     ctx = FakeCtx(kanal=types.SimpleNamespace(id=thread.id))
     interaktion = FakeInteraction(thread)
@@ -919,7 +1051,7 @@ def test_ein_altes_passwortfenster_zeigt_das_passwort_keiner_fremden_runde(
     frisch = asyncio.run(ablauf())
 
     assert frisch.id == unsere.id
-    assert interaktion.response.gesendet == [chronik.VERALTET]
+    assert interaktion.followup.gesendet == [chronik.VERALTET]
     assert gesehen == []
     assert not zugang.ist_gemerkt(frisch)
 
@@ -927,11 +1059,11 @@ def test_ein_altes_passwortfenster_zeigt_das_passwort_keiner_fremden_runde(
 def test_das_passwort_steht_in_keiner_antwort_und_liegt_danach_nicht_mehr(stelle, bot, monkeypatch):
     _config, unsere = stelle
     _ctx, thread = sitzung_starten(bot)
-    monkeypatch.setattr(jobs, "abschluss", lambda config, eine, sid: STEHT)
+    monkeypatch.setattr(jobs, "abschluss", lambda config, eine, sid, *, passwort=None: STEHT)
 
     ctx, interaktion = abschluss_fahren(bot, unsere, thread)
 
-    gesagt = " ".join(ctx.antworten + interaktion.response.gesendet + thread.gesendet)
+    gesagt = " ".join(ctx.antworten + interaktion.antworten + thread.gesendet)
     assert PASSWORT not in gesagt
     # Der Abgleich verbraucht es; hier tut das die Attrappe nicht — die harte Regel ist,
     # dass keine Antwort es zeigt.
@@ -943,7 +1075,7 @@ def test_ein_gescheiterter_lauf_meldet_sich_trotzdem_im_thread(stelle, bot, monk
     _config, unsere = stelle
     _ctx, thread = sitzung_starten(bot)
 
-    def stolpert(config, eine, session_id):
+    def stolpert(config, eine, session_id, *, passwort=None):
         raise RuntimeError("Ollama war aus")
 
     monkeypatch.setattr(jobs, "abschluss", stolpert)
@@ -975,14 +1107,14 @@ def test_fertig_beendet_die_laufende_aufnahme_und_reiht_die_spuren_ein(
     _config, unsere = stelle
     _ctx, thread = sitzung_starten(bot)
     mitschnitt = mitschnitt_starten(bot)
-    monkeypatch.setattr(jobs, "abschluss", lambda config, eine, sid: STEHT)
+    monkeypatch.setattr(jobs, "abschluss", lambda config, eine, sid, *, passwort=None: STEHT)
 
     _ctx2, interaktion = abschluss_fahren(bot, unsere, thread)
 
     assert mitschnitt.kanal.verbindung.getrennt
     assert not mitschnitt.kanal.verbindung.schneidet
     assert [spur.filename.split("-")[-1] for spur in recordings.pending(unsere)] == ["Mira.wav"]
-    (antwort,) = interaktion.response.gesendet
+    (antwort,) = interaktion.followup.gesendet
     assert "wartet auf den Stapel" in antwort and chronik.FERTIG in antwort
     sitzung_id = notes.session_of_thread(unsere, str(thread.id))
     assert jobs.latest(unsere, jobs.CHRONIK, sitzung_id).result == STEHT
@@ -1000,13 +1132,13 @@ def test_ein_abschluss_reisst_den_mitschnitt_einer_fremden_runde_nicht_ab(
     notes.create_session(fremde, played_on="2026-08-07")
     mitschnitt = mitschnitt_starten(bot, gilde=FREMDE_GILDE)
     _ctx, thread = sitzung_starten(bot)
-    monkeypatch.setattr(jobs, "abschluss", lambda config, eine, sid: STEHT)
+    monkeypatch.setattr(jobs, "abschluss", lambda config, eine, sid, *, passwort=None: STEHT)
 
     _ctx2, interaktion = abschluss_fahren(bot, unsere, thread)
 
     assert not mitschnitt.kanal.verbindung.getrennt
     assert recordings.pending(fremde) == ()
-    assert interaktion.response.gesendet == [chronik.FERTIG]
+    assert interaktion.followup.gesendet == [chronik.FERTIG]
 
 
 def test_fertig_ausserhalb_eines_sitzungs_threads_sagt_es(stelle, bot):
@@ -1030,7 +1162,7 @@ def test_ein_stolpernder_abschluss_antwortet_trotzdem(stelle, bot, monkeypatch):
 
     _ctx2, interaktion = abschluss_fahren(bot, unsere, thread)
 
-    (antwort,) = interaktion.response.gesendet
+    (antwort,) = interaktion.followup.gesendet
     assert antwort.startswith("Das hat nicht geklappt:")
     assert "RuntimeError" in antwort
 

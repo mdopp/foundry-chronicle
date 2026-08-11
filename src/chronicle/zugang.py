@@ -96,6 +96,20 @@ def gemerkt_von(runde: Runde) -> str:
     return "" if zettel is None else zettel.wer
 
 
+def passwort_von(runde: Runde, wer: str) -> str | None:
+    """Das Passwort, aber nur wenn ``wer`` es hinterlegt hat — geprüft und gelesen in einem Zug.
+
+    Nicht ``gemerkt_von`` und dann ``passwort``: zwischen zwei Griffen ans Schloss kann ein
+    zweites Fenster den Zettel ersetzt haben, und dann wäre die Kennung des einen geprüft
+    und die Zeichenkette des anderen zurückgegeben.
+    """
+    with _schloss:
+        zettel = _gueltig(runde.id, monotonic())
+        if zettel is None or not wer or zettel.wer != wer:
+            return None
+        return zettel.passwort
+
+
 def vergiss(runde: Runde) -> None:
     with _schloss:
         _gemerkt.pop(runde.id, None)

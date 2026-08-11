@@ -133,9 +133,12 @@ abbricht, bevor er einen Server sieht. Hashen ginge nicht: wir müssen es vorzei
 prüfen. Und es steht in keinem Aufrufargument (landet sonst in der Shell-History) und in
 keiner Logzeile.
 
-**Gefragt wird nur, wo es auch vorgezeigt würde.** Eine Runde ohne eingetragene Adresse
-oder auf der Testwelt bekommt kein Fenster: ein Geheimnis einzusammeln, das nirgends
-hingeht, ist der schlechteste Tausch — es läge nur bis zur Frist im Speicher.
+**Gefragt wird nur, wo es auch vorgezeigt würde.** Eine Runde auf der Testwelt oder ohne
+eingetragenen Zugang bekommt kein Fenster: ein Geheimnis einzusammeln, das nirgends
+hingeht, ist der schlechteste Tausch — es läge nur bis zur Frist im Speicher. »Zugang«
+heißt dabei dasselbe wie im Client (`config.foundry_configured`): **Adresse und Konto**.
+Eine Adresse ohne Konto ergäbe sonst ein Fenster, dessen Eingabe ein `FoundryError`
+verbraucht, bevor der erste Byte über die Leitung geht.
 
 **Und nur, wer es hinterlegt hat, überspringt die Frage.** Seit das Passwort beim Start
 kommt, sind Hinterlegen und Verbrauchen zwei Handlungen, und `/chronik start` steht jedem
@@ -145,6 +148,13 @@ Jeder andere bekommt das Fenster — und damit sofort den Weg zum eigenen Passwo
 zwölf Stunden abzuwarten. Verworfen wird nichts: eine spätere Eingabe überschreibt die
 frühere, sie wird nur nie *ungefragt* dem Foundry-Konto der Runde vorgezeigt. Eine
 Discord-Kennung ist im Kanal ohnehin sichtbar und damit selbst kein Geheimnis.
+
+**Und geprüft wird, was auch benutzt wird.** Der Befehl liest das Passwort in einem Zug
+mit der Kennung (`zugang.passwort_von`) und reicht den gelesenen Wert bis zum Abgleich
+durch. Der Auftrag läuft in einem eigenen Faden; sähe er dort selbst im Merkzettel nach,
+könnte zwischen Prüfen und Benutzen ein zweites Fenster genau die Zeichenkette
+hineingeschoben haben, die der Befehl gerade abgelehnt hat. Nur wo nichts mitgebracht
+wurde, liest der Abgleich den Merkzettel wie eh und je — der nächtliche Lauf etwa.
 
 ## Die Testwelt: erzeugen, abgreifen, anonymisieren, abspielen
 
