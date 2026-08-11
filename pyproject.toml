@@ -26,19 +26,11 @@ transcribe = ["faster-whisper>=1.1"]
 # eine Datei begrenzt. py-cord belegt das Paket ``discord``; ein daneben installiertes
 # discord.py schlägt sich mit ihm.
 #
-# **``davey`` muss installiert sein — py-cord wirft sonst beim Import von
-# ``discord.voice``** (``MissingVoiceDependenciesError: davey is required for voice
-# support``). Es abzuwählen ist also kein Weg, obwohl genau davon der kaputte Empfang
-# kommt: mit davey meldet py-cord DAVE-Fähigkeit, der Ton kommt Ende-zu-Ende
-# verschlüsselt an, und ``opus.py`` dekodiert **erst** Opus und entschlüsselt **danach** —
-# der Dekoder sieht Rauschen und wirft »corrupted stream«. Am 2026-08-11 hat die erste
-# echte Runde deshalb keine Spur bekommen.
-#
-# Abgemeldet wird DAVE deshalb zur Laufzeit: ``gateway._dave_abmelden`` setzt die
-# gemeldete Fassung auf 0, dann stuft Discord den Kanal auf die Transportverschlüsselung
-# herunter, die PyNaCl liest. Erzwingt Discord DAVE eines Tages, hört der Bot auf zu
-# hören — dann hilft nur eine py-cord-Fassung, die vor dem Dekodieren entschlüsselt
-# (Pycord-Issue #3139).
+# **Das Extra ``[voice]`` wird von py-cord abgeholt, nicht von Hand nachgebaut.** Genau
+# das war der Fehler davor: PyNaCl war abgeschrieben, ``davey`` fehlte — und ohne davey
+# spricht py-cord Discords DAVE-Verschlüsselung nicht, meldet »voice will NOT be
+# supported« und der Bot verbindet sich, ohne je etwas zu hören. ``davey`` steht daneben
+# trotzdem namentlich, damit die Zeile sagt, worauf es ankommt.
 discord = ["py-cord[voice]>=2.8.1", "davey>=0.1.6"]
 # py-cord gehört hier dazu, obwohl nur der Bot es braucht: der Regressionstest
 # registriert unsere Senke gegen py-cords **echten** Empfangs-Router. Genau das haben die
