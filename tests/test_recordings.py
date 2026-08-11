@@ -8,6 +8,7 @@ tot. Kein Test lädt ein Spracherkennungsmodell; an dessen Stelle steht ein erfu
 from __future__ import annotations
 
 import io
+import sqlite3
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -158,6 +159,29 @@ def test_zwei_gleich_benannte_spuren_ueberschreiben_einander_nicht(config, sitzu
     zweite = recordings.target_path(config.recordings_dir, sitzung_id, "memo.m4a")
 
     assert zweite != erste
+
+
+def test_eine_schon_eingereihte_spur_wird_als_solche_gemeldet(config, sitzung_id):
+    """Ein zweiter Anlauf über mehrere Spuren muss die durchgekommenen überspringen können.
+
+    Ohne diesen Unterschied bliebe er an der ersten hängen, und die Spuren dahinter kämen
+    nie in die Warteschlange (#104).
+    """
+    recordings.enqueue(runde(config), sitzung_id, "sitzung1-Mira.wav")
+
+    with pytest.raises(recordings.BereitsEingereiht):
+        recordings.enqueue(runde(config), sitzung_id, "sitzung1-Mira.wav")
+
+    assert len(recordings.pending(runde(config))) == 1
+
+
+def test_ein_anderer_verstoss_bleibt_ein_fehlschlag(config, sitzung_id):
+    """»Übersprungen« gilt nur der doppelten Datei — sonst verschwände ein echter Fehler."""
+    with pytest.raises(sqlite3.IntegrityError) as gefangen:
+        recordings.enqueue(runde(config), 4711, "sitzung4711-Brok.wav")
+
+    assert not isinstance(gefangen.value, recordings.BereitsEingereiht)
+    assert recordings.pending(runde(config)) == ()
 
 
 # --- Die Quittung: ehrlich, ohne geratenen Fortschritt -------------------------------

@@ -49,6 +49,15 @@ GESTARTET = (
     "`/aufnahme hilfe` sagt den Rest."
 )
 NICHTS_GESPROCHEN = "Es hat niemand gesprochen — keine Spur abgelegt."
+EINGEREIHT = "Spur »{spur}« → Sitzung {sitzung}, wartet auf den Stapel."
+
+# Eine Spur ohne Zeile in der Warteschlange ist für jeden Aufräumweg unsichtbar: sie wird
+# weder verschriftet noch nach der zugesagten Frist gelöscht. Deshalb wird gesagt, welche
+# es traf — eine Stimme, die nur im Log fehlt, fehlt niemandem auf.
+NICHT_EINGEREIHT = (
+    "Diese Spuren sind nicht eingereiht: {spuren}. Sie liegen noch da — bitte einmal "
+    "`/aufnahme stop` geben, das holt genau sie nach; die übrigen sind schon durch."
+)
 
 # Eine Aufnahme läuft Stunden; in der Zeit kann ihre Runde gelöscht und ihre Kennung an
 # eine fremde Gilde neu vergeben worden sein. Was dann geschrieben würde, wären
@@ -68,7 +77,7 @@ class Kanal:
 
 
 class AufnahmeFehler(BotFehler):
-    """Was den Start verhindert — eine fehlende Sitzung etwa."""
+    """Was Start oder Abschluss verhindert — eine fehlende Sitzung etwa."""
 
 
 class NichtAngesagt(BotFehler):
@@ -183,6 +192,11 @@ class Aufnahme:
         Runde einzureihen, die inzwischen unter derselben Kennung steht, hieße die Stimmen
         dieser Gruppe in eine fremde Kampagne zu legen. Liegen bleiben dürfen sie auch
         nicht — es gäbe keinen Eintrag mehr, der sie je aufräumt.
+
+        Jede Spur steht dabei für sich: was scheitert, hält die übrigen nicht auf, und was
+        ein voriger Anlauf schon eingereiht hat, wird übersprungen statt erneut versucht.
+        Bleibt eine liegen, wird sie beim Namen genannt und die Aufnahme behält alle Spuren
+        — ein zweites ``/aufnahme stop`` holt dann genau die fehlende nach.
         """
         gemeint = lebenszyklus.dieselbe(self.runde)
         if gemeint is None:
@@ -194,20 +208,31 @@ class Aufnahme:
             self._angesagt = False
             return (RUNDE_FORT,)
         meldungen = []
+        liegengeblieben = []
         for user_id, spur in self._spuren.items():
             spur.schliessen()
             if not spur.bytes:
-                spur.pfad.unlink()
+                spur.pfad.unlink(missing_ok=True)
                 continue
-            recordings.enqueue(
-                gemeint,
-                self.session_id,
-                spur.pfad.name,
-                discord_user_id=user_id,
-            )
-            meldungen.append(
-                f"Spur »{spur.pfad.stem}« → Sitzung {self.session_id}, wartet auf den Stapel."
-            )
+            try:
+                recordings.enqueue(
+                    gemeint,
+                    self.session_id,
+                    spur.pfad.name,
+                    discord_user_id=user_id,
+                )
+            except recordings.BereitsEingereiht:
+                pass
+            except Exception:
+                # Ohne den Dateinamen: er trägt den Anzeigenamen des Sprechers, und für den
+                # Grund braucht ihn der Traceback nicht. Welche Spur es traf, sagt die
+                # Meldung an die Runde.
+                logger.exception("Eine Spur ließ sich nicht einreihen")
+                liegengeblieben.append(spur.pfad.stem)
+                continue
+            meldungen.append(EINGEREIHT.format(spur=spur.pfad.stem, sitzung=self.session_id))
+        if liegengeblieben:
+            raise AufnahmeFehler(NICHT_EINGEREIHT.format(spuren=", ".join(liegengeblieben)))
         self._spuren.clear()
         self._angesagt = False
         return tuple(meldungen) or (NICHTS_GESPROCHEN,)

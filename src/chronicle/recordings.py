@@ -80,6 +80,16 @@ class Rejected(ValueError):
     """Was nicht angenommen wird, wird gesagt — still verschluckt wird nichts."""
 
 
+class BereitsEingereiht(Exception):
+    """Diese Datei liegt schon in der Warteschlange — ein zweiter Versuch wäre keiner."""
+
+
+# ``recording.filename`` ist die einzige UNIQUE-Bedingung dieser Tabelle; an ihrem Namen
+# hängt der Unterschied zwischen »liegt schon da« und einem echten Fehlschlag. Am Text der
+# Meldung hinge er nicht: der gehört SQLite und darf sich mit jeder Fassung ändern.
+DOPPELT = "SQLITE_CONSTRAINT_UNIQUE"
+
+
 @dataclass(frozen=True)
 class Recording:
     id: int
@@ -163,6 +173,10 @@ def enqueue(
     die Audiodaten je Client, wer gesprochen hat ist also bekannt und muss nicht später
     aus dem Dateinamen geraten werden — geraten stünde irgendwann der falsche Name über
     einem Absatz.
+
+    Liegt die Datei schon in der Warteschlange, kommt ``BereitsEingereiht`` — ein zweiter
+    Anlauf über mehrere Spuren soll die schon eingereihten überspringen können, statt an
+    ihnen hängenzubleiben.
     """
     zeitpunkt = _now()
     scope = db.scoped(runde)
@@ -182,17 +196,21 @@ def enqueue(
                     discord_user_id,
                 ),
             )
-        return Recording(
-            id=int(cursor.lastrowid),
-            session_id=session_id,
-            filename=filename,
-            source=Path(filename).stem,
-            uploaded_at=zeitpunkt,
-            status=WARTET,
-            discord_user_id=discord_user_id,
-        )
+    except sqlite3.IntegrityError as fehler:
+        if fehler.sqlite_errorname != DOPPELT:
+            raise
+        raise BereitsEingereiht(filename) from fehler
     finally:
         scope.close()
+    return Recording(
+        id=int(cursor.lastrowid),
+        session_id=session_id,
+        filename=filename,
+        source=Path(filename).stem,
+        uploaded_at=zeitpunkt,
+        status=WARTET,
+        discord_user_id=discord_user_id,
+    )
 
 
 def _text(scope: db.Scope, transcript_id: int) -> str:
