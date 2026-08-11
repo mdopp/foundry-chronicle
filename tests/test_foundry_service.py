@@ -15,8 +15,8 @@ from conftest import (
 )
 
 import chronicle.foundry.__main__ as batch
+from chronicle import db, zugang
 from chronicle import runde as runden
-from chronicle import zugang
 from chronicle.foundry import service, store
 from chronicle.foundry.client import FoundryUnreachable
 from chronicle.foundry.model import NICHT_MEHR_VORHANDEN, World
@@ -354,6 +354,20 @@ def test_der_stapellauf_verlangt_die_runde_sobald_es_mehrere_gibt(config, monkey
 
     assert batch.main([f"--runde={zweite.id + 99}"]) == 1
     assert "Keine Runde mit der Kennung" in capsys.readouterr().err
+
+
+def test_eine_unbekannte_kennung_legt_keine_runde_an(config, monkeypatch, capsys):
+    """``erste`` legt bei leerer Tabelle eine an — der Fehlweg darf nichts hinterlassen."""
+    monkeypatch.setattr(batch.Config, "from_env", classmethod(lambda cls: config))
+    db.init(config.database_path)
+    vorher = runden.alle(config.database_path)
+
+    assert batch.main(["--runde=999", "--dump"]) == 1
+
+    assert "Keine Runde mit der Kennung" in capsys.readouterr().err
+    assert [runde.id for runde in runden.alle(config.database_path)] == [
+        runde.id for runde in vorher
+    ]
 
 
 def test_der_stapellauf_sagt_welche_runde_er_nimmt(config, welt, tmp_path, monkeypatch, capsys):
