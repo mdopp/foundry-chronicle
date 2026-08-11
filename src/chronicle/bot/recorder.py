@@ -30,7 +30,6 @@ from typing import Protocol
 from werkzeug.utils import secure_filename
 
 from chronicle import consent, notes, recordings
-from chronicle import runde as runden
 from chronicle.bot import BotFehler, ansage
 from chronicle.config import Config
 from chronicle.runde import Runde
@@ -38,6 +37,10 @@ from chronicle.runde import Runde
 logger = logging.getLogger(__name__)
 
 OHNE_SITZUNG = "Noch keine Sitzung angelegt — leg eine an, dann schneide ich mit."
+FREMDE_RUNDE = (
+    "Dieser Sprachkanal gehört zu einem anderen Server als die Runde, für die ich "
+    "schreiben soll — hier nehme ich nichts auf."
+)
 NICHT_ANGESAGT = "Es wurde noch nichts angesagt — ohne Ansage wird nichts geschrieben."
 GESTARTET = (
     "Die Ansage ist durch, ich schneide jetzt mit — je Sprecherin und Sprecher eine "
@@ -180,19 +183,16 @@ class Aufnahme:
         return tuple(meldungen) or (NICHTS_GESPROCHEN,)
 
 
-def runde_des_kanals(config: Config, kanal: Kanal) -> Runde:
-    """Die Runde hinter der Gilde — solange keine sie beansprucht hat, die erste.
+async def starten(config: Config, stimme: Stimme, runde: Runde) -> Aufnahme:
+    """Ansage spielen, Einwilligung protokollieren, dann erst mitschneiden.
 
-    Beansprucht wird eine Gilde beim Einladen (#68). Bis dahin trägt diese Instanz genau
-    eine Runde, und der Bot spielt in ihr.
+    Die Runde kommt vom Befehl und gehört der Gilde, in der er gegeben wurde; hier wird
+    nur noch nachgesehen, ob sie auch die des Sprachkanals ist. Einen Rückfall auf »die
+    erste Runde« gibt es nicht mehr: er ließe Ansage, Einwilligungsprotokoll samt
+    Anzeigenamen, Tonspuren und Transkripte in einer fremden Kampagne landen.
     """
-    beansprucht = runden.fuer_gilde(config.database_path, kanal.guild_id)
-    return beansprucht if beansprucht is not None else runden.erste(config.database_path)
-
-
-async def starten(config: Config, stimme: Stimme) -> Aufnahme:
-    """Ansage spielen, Einwilligung protokollieren, dann erst mitschneiden."""
-    runde = runde_des_kanals(config, stimme.kanal)
+    if runde.guild_id != stimme.kanal.guild_id:
+        raise AufnahmeFehler(FREMDE_RUNDE)
     sitzung = notes.latest_session(runde)
     if sitzung is None:
         raise AufnahmeFehler(OHNE_SITZUNG)

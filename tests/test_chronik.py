@@ -26,6 +26,7 @@ from test_bot import (
     FakeIntents,
     FakeMitglied,
     FakePCMAudio,
+    FakePermissions,
     FakeSenke,
     FakeSprachkanal,
     sprachdaten,
@@ -168,6 +169,7 @@ def pycord(monkeypatch):
     modul = types.ModuleType("discord")
     modul.Intents = FakeIntents
     modul.Bot = FakeBot
+    modul.Permissions = FakePermissions
     modul.PCMAudio = FakePCMAudio
     modul.HTTPException = FakeHTTPException
     senken = types.ModuleType("discord.sinks")

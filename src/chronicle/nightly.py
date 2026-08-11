@@ -262,6 +262,11 @@ def tick(config: Config, *, jetzt: datetime | None = None) -> jobs.Job | None:
     """
     jetzt = datetime.now().astimezone() if jetzt is None else jetzt
     for eine in runden.alle(config.database_path):
+        # Eine verabschiedete Runde bekommt keine Nacht mehr. Dieser Faden läuft im
+        # Webdienst und weiß vom Rauswurf nur hier: ohne diese Zeile verschriftete er
+        # dreißig Tage lang weiter, was eine Gruppe längst widerrufen hat.
+        if eine.gesperrt:
+            continue
         angestossen = _tick_runde(config, eine, jetzt)
         if angestossen is not None:
             return angestossen

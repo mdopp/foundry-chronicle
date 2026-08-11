@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from chronicle import db, recordings
+from chronicle import db, lebenszyklus, recordings
 from chronicle import runde as runden
 from chronicle.config import Config
 from chronicle.runde import Runde
@@ -203,6 +203,11 @@ def run_queue(
     Lauf, denn zugesagt ist sie unabhängig davon, ob heute etwas zu tun war.
     """
     db.init(config.database_path)
+    # Eine ruhende Runde verschriftet nicht mehr: die eingereihten Spuren würden sonst
+    # nach dem Rauswurf noch wochenlang zu neuem Text. Die Aufbewahrungsfrist der Dateien
+    # setzt ``recordings.sweep_alle`` durch, die gilt ihr weiter.
+    if lebenszyklus.ruht(runde):
+        return ()
     wartend = recordings.pending(runde)
     meldungen = []
     if wartend:

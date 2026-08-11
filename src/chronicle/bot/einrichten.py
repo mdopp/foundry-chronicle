@@ -11,7 +11,13 @@ Drei Sätze tragen diese Datei:
   kommt hier nicht vor: es wird beim Abschluss der Sitzung erfragt, verbraucht und
   vergessen. Ein Feld dafür gäbe es nur, wenn wir es behalten wollten.
 * **Löschen wird gesagt, bevor es passiert.** Was verschwindet, steht vollständig da, und
-  danach kommt ein Knopf — kein Befehl, der beim Vertippen eine Kampagne mitnimmt.
+  danach kommt ein Knopf — kein Befehl, der beim Vertippen eine Kampagne mitnimmt. Und was
+  *nicht* verschwindet, steht ebenso da: eine ausgelieferte Chronik liegt in einem
+  Discord-Kanal, und dorthin reicht kein Löschlauf dieser Box.
+* **Einrichten und Löschen sind keine Handlungen für jedes Mitglied.** Wer was darf,
+  entscheidet Discord (#62) — aber nur, wenn der Code eine Berechtigung verlangt. Diese
+  beiden tun es: die Adresse entscheidet, wohin das Foundry-Passwort der Spielleitung
+  geht, und das Löschen nimmt der Runde alles.
 
 Diese Datei kennt Discord nicht. Sie bekommt eine Gilde-Kennung und vier Texte und gibt
 Sätze zurück; wer daraus Fenster, Menüs und Knöpfe baut, entscheidet ``gateway.py``.
@@ -67,6 +73,20 @@ RUNDE_OHNE_NAMEN = "Neue Runde"
 NUR_IM_SERVER = (
     "Das geht nur auf dem Server, für den ich schreiben soll — hier im Zwiegespräch weiß "
     "ich nicht, welche Runde du meinst."
+)
+
+# Die beiden Absagen an ein Mitglied ohne Recht. Sie sagen den Grund, nicht bloß »nein«:
+# hinter beiden steht eine Gefahr, die man kennen sollte, auch wenn man sie nicht auslösen
+# darf.
+NUR_VERWALTUNG = (
+    "Einrichten darf, wer diesen Server verwaltet. Hier steht, wo euer Foundry läuft — und "
+    "dorthin zeige ich später das Passwort eurer Spielleitung vor. Bitte jemanden mit dem "
+    "Recht »Server verwalten«, das zu tun."
+)
+
+NUR_ADMIN = (
+    "Löschen darf, wer diesen Server als Administrator führt. Es gibt keine Sicherung, aus "
+    "der ich eine Chronik zurückhole; deshalb liegt das nicht bei jedem Mitglied."
 )
 
 # -- Einrichten -------------------------------------------------------------------------
@@ -125,6 +145,12 @@ LOESCHEN_FRAGE = (
     "• die Nachweise über die Ansagen im Sprachkanal\n"
     "• die Zahlen, die ich aus eurem Foundry geholt habe\n"
     "\n"
+    "**Das bleibt:** was ich euch schon zugestellt habe — Chroniken und Rückblicke in "
+    "euren Kanälen und Threads — liegt weiter in Discord; dorthin reicht mein Löschen "
+    "nicht. Mit den Nachweisen geht also der Beleg, dass im Sprachkanal angesagt wurde, "
+    "während das daraus Geschriebene bei euch stehen bleibt. Wer den Beleg braucht, holt "
+    "ihn sich vorher.\n"
+    "\n"
     "Es gibt keine Sicherung, aus der ich das zurückhole. Was ihr behalten wollt, ladet "
     "vorher herunter."
 )
@@ -134,6 +160,13 @@ LOESCHEN_NEIN = "Abbrechen"
 
 LOESCHEN_FERTIG = "Fort. Von dieser Runde liegt hier nichts mehr."
 LOESCHEN_ABGEBROCHEN = "Nichts gelöscht. Es bleibt alles, wie es war."
+
+# Ein Knopf lebt eine Viertelstunde; in der Zeit kann die Runde gelöscht und die Kennung
+# neu vergeben worden sein. Dann wird nicht gelöscht, sondern gefragt.
+LOESCHEN_VERALTET = (
+    "Diese Frage ist von vorhin, und seither hat sich hier etwas geändert. Ich habe nichts "
+    "gelöscht — ruf `/chronik loeschen` noch einmal auf, wenn du es immer noch willst."
+)
 
 # Was beim Rauswurf passiert — gesagt wird es vorher, in der Einladung und beim Löschen,
 # denn danach ist der Bot nicht mehr da, um es zu sagen.
@@ -179,9 +212,10 @@ def einrichten(
     Einstellungen lesen einen leeren Wert sonst als »wieder wegnehmen«, und ein zweiter
     Aufruf, der bloß den Kanal ändern soll, nähme die Adresse mit.
     """
-    database_path = config.database_path
-    neu = runden.fuer_gilde(database_path, str(guild_id)) is None
-    runde = lebenszyklus.beanspruchen(database_path, guild_id, gildenname)
+    vorher = runden.fuer_gilde(config.database_path, str(guild_id))
+    ruhte = vorher is not None and vorher.gesperrt
+    runde = lebenszyklus.beanspruchen(config, guild_id, gildenname)
+    neu = vorher is None or vorher.id != runde.id
     werte = {
         "foundry_url": adresse.strip(),
         "foundry_user": benutzer.strip(),
@@ -193,6 +227,11 @@ def einrichten(
         if neu
         else [UEBERNOMMEN.format(name=runde.name), LEER_BLEIBT]
     )
+    # Hier geht eine ruhende Runde wieder in Dienst, und das ist der eine Weg zurück, auf
+    # dem keine Begrüßung steht — fehlt dem Bot in der Gilde jeder beschreibbare Kanal,
+    # hat die Gruppe die Offenlegung sonst nie gelesen.
+    if ruhte:
+        saetze.append(OFFENLEGUNG)
     stolperte = _uhrzeit(runde, uhrzeit)
     if stolperte:
         saetze.append(stolperte)
@@ -220,14 +259,15 @@ def kanal_setzen(runde: Runde, kanal_id: str) -> str:
     return KANAL_GESETZT.format(kanal=f"<#{kanal_id}>")
 
 
-def begruessung(database_path: Path, guild_id: str) -> str:
+def begruessung(config: Config, guild_id: str) -> str:
     """Der eine Satz beim Betreten — und die Rückkehr, wenn die Frist noch läuft.
 
     Angelegt wird hier nichts: eine Runde entsteht erst, wenn jemand sie einrichtet. Eine
     verabschiedete dagegen wird sofort wieder freigegeben — sonst stünde der Bot in der
-    Gilde und die Chronik bliebe stumm.
+    Gilde und die Chronik bliebe stumm. Eine abgelaufene wird gelöscht und dann begrüßt
+    wie eine fremde Gilde: was als fort zugesagt war, kommt nicht als Überraschung zurück.
     """
-    zurueck = lebenszyklus.wiedereinladung(database_path, str(guild_id))
+    zurueck = lebenszyklus.wiedereinladung(config, str(guild_id))
     if zurueck is None:
         return WILLKOMMEN
     return WILLKOMMEN_ZURUECK.format(name=zurueck.name)
@@ -237,8 +277,8 @@ def loeschfrage() -> str:
     return f"{LOESCHEN_FRAGE}\n\n{ABSCHIED.format(tage=lebenszyklus.FRIST_TAGE)}"
 
 
-def geloescht(config: Config, runde: Runde) -> str:
-    lebenszyklus.loeschen(config, runde)
+def geloescht(config: Config, runde: Runde, *, veranlasst_von: str | None = None) -> str:
+    lebenszyklus.loeschen(config, runde, veranlasst_von=veranlasst_von)
     return LOESCHEN_FERTIG
 
 

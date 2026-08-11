@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from chronicle import db, settings
+from chronicle import db, lebenszyklus, settings
 from chronicle.compose import client
 from chronicle.compose.client import TextModel
 from chronicle.compose.composer import Composition, SceneMaterial, SessionMaterial, compose
@@ -122,6 +122,9 @@ def compose_session(
     config: Config, runde: Runde, session_id: int, *, model: TextModel | None = None
 ) -> Composition | None:
     db.init(config.database_path)
+    # Eine ruhende Runde bekommt keinen neuen Text mehr — auch nicht aus altem Material.
+    if lebenszyklus.ruht(runde):
+        return None
     scope = db.scoped(runde)
     try:
         stoff = material(scope, session_id)
@@ -141,6 +144,8 @@ def recap_session(
     config: Config, runde: Runde, session_id: int, *, model: TextModel | None = None
 ) -> Recap | None:
     db.init(config.database_path)
+    if lebenszyklus.ruht(runde):
+        return None
     scope = db.scoped(runde)
     try:
         stoff = recap_material(scope, session_id)

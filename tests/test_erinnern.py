@@ -13,7 +13,7 @@ import types
 
 import pytest
 from conftest import runde as erste_runde
-from test_bot import TOKEN, FakeBot, FakeIntents, FakePCMAudio, FakeSenke
+from test_bot import TOKEN, FakeBot, FakeIntents, FakePCMAudio, FakePermissions, FakeSenke
 from test_chronik import FakeHTTPException, FakeInputText, FakeModal
 
 from chronicle import consent, db, notes, people, register
@@ -125,6 +125,7 @@ def pycord(monkeypatch):
     modul = types.ModuleType("discord")
     modul.Intents = FakeIntents
     modul.Bot = FakeBot
+    modul.Permissions = FakePermissions
     modul.PCMAudio = FakePCMAudio
     modul.HTTPException = FakeHTTPException
     modul.Embed = FakeEmbed
