@@ -971,8 +971,13 @@ class FakeSprachkanal(FakeSprachkanalOhneChat):
 class FakeTextkanal:
     def __init__(self):
         self.geschrieben = []
+        # Wie oft das Senden noch scheitert, bevor es durchgeht — Discord zuckt.
+        self.stolpert = 0
 
     async def send(self, text):
+        if self.stolpert:
+            self.stolpert -= 1
+            raise RuntimeError("Discord hat abgelehnt")
         self.geschrieben.append(text)
 
 
@@ -1562,6 +1567,279 @@ def test_der_leere_kanal_beendet_den_mitschnitt_und_nicht_die_sitzung(
     assert chronik.sitzung_des_threads(unsere, str(THREAD)) == sitzung_im_thread
     assert jobs.latest(unsere, jobs.CHRONIK) is None
     assert "`/chronik fertig`" in bot.kanaele[THREAD].geschrieben[0]
+
+
+def einer_bleibt(kanal, wer):
+    """Alle gehen bis auf einen — der Bot bleibt, er zählt ohnehin nicht mit."""
+    kanal.members = [jemand for jemand in kanal.members if jemand.bot or jemand is wer]
+
+
+def test_der_satz_ans_alleinsein_zeigt_den_widerspruch_und_traegt_keinen_namen():
+    """Ein Satz ohne Feld kann keinen Namen und keine Kennung tragen — auch nicht später."""
+    assert "`/aufnahme stop`" in gateway.ALLEIN
+    assert "{" not in gateway.ALLEIN
+    # Und die Hilfe sagt es vorab — die Vorstellung nicht, sie steht schon an Discords
+    # Grenze, und eine Vorstellung, die nicht ankommt, verhindert die Aufnahme. Geprüft
+    # wird der Satz und nicht »allein im Sprachkanal«: das steht auch im Punkt zu
+    # ``/aufnahme stop`` und meint dort die Gegenlage, den leeren Kanal.
+    hinweis = "Bleibt eine Person allein im Sprachkanal zurück, schneide ich weiter mit"
+    assert hinweis in gateway.HILFE
+    assert hinweis not in gateway.BEFEHLE
+    assert hinweis not in gateway.VORSTELLUNG
+    assert len(gateway.HILFE) <= 2000
+    assert len(gateway.VORSTELLUNG) <= 2000
+
+
+def test_bleibt_eine_person_allein_wird_es_ihr_gesagt_und_weiter_geschnitten(
+    konfiguration, sitzung_im_thread, ohne_espeak, runde, kurze_frist
+):
+    """Entscheidung des Betreibers: nachfragen statt anhalten — niemand verliert ungefragt.
+
+    Die Ansage lief für eine Gruppe, die es nicht mehr gibt; deshalb erfährt die
+    Zurückgebliebene, dass sie allein ist. Angehalten wird darunter nichts.
+    """
+    bot = gateway.baue(konfiguration)
+    thread = FakeTextkanal()
+    bot.kanaele[THREAD] = thread
+    dazu = bot.ereignisse["on_voice_state_update"]
+
+    async def ablauf():
+        await befehl(bot, "start")(FakeCtx(runde.mira))
+        einer_bleibt(runde.kanal, runde.mira)
+        await dazu(runde.brok, zustand(runde.kanal), zustand())
+        await ruhen()
+
+    asyncio.run(ablauf())
+
+    assert thread.geschrieben == [gateway.ALLEIN]
+    assert runde.kanal.verbindung.schneidet
+    assert not runde.kanal.verbindung.getrennt
+    assert recordings.pending(unsere_runde(konfiguration)) == ()
+
+
+def test_dass_sie_allein_ist_wird_genau_einmal_gesagt(
+    konfiguration, sitzung_im_thread, ohne_espeak, runde, kurze_frist
+):
+    """Sonst stünde bei jedem Stummschalten derselbe Satz noch einmal im Thread."""
+    bot = gateway.baue(konfiguration)
+    thread = FakeTextkanal()
+    bot.kanaele[THREAD] = thread
+    dazu = bot.ereignisse["on_voice_state_update"]
+
+    async def ablauf():
+        await befehl(bot, "start")(FakeCtx(runde.mira))
+        einer_bleibt(runde.kanal, runde.mira)
+        await dazu(runde.brok, zustand(runde.kanal), zustand())
+        # Ein Nachzügler, der gleich wieder geht: die Lage ist danach dieselbe.
+        runde.kanal.members.append(runde.brok)
+        await dazu(runde.brok, zustand(), zustand(runde.kanal))
+        einer_bleibt(runde.kanal, runde.mira)
+        await dazu(runde.brok, zustand(runde.kanal), zustand())
+        # Und ein Ortswechsel im selben Kanal ist gar kein Gehen.
+        await dazu(runde.mira, zustand(runde.kanal), zustand(runde.kanal))
+        await ruhen()
+
+    asyncio.run(ablauf())
+
+    assert thread.geschrieben == [gateway.ALLEIN]
+
+
+def test_ein_vermerk_von_vorhin_verschluckt_den_satz_der_naechsten_aufnahme_nicht(
+    konfiguration, sitzung_im_thread, ohne_espeak, runde, kurze_frist
+):
+    """Dieselbe Falle wie beim Wächter des leeren Kanals: gemerkt wird die Aufnahme."""
+    bot = gateway.baue(konfiguration)
+    thread = FakeTextkanal()
+    bot.kanaele[THREAD] = thread
+    dazu = bot.ereignisse["on_voice_state_update"]
+
+    async def ablauf():
+        await befehl(bot, "start")(FakeCtx(runde.mira))
+        anwesend = list(runde.kanal.members)
+        einer_bleibt(runde.kanal, runde.mira)
+        await dazu(runde.brok, zustand(runde.kanal), zustand())
+        await befehl(bot, "stop")(FakeCtx(runde.mira))
+        runde.kanal.members = anwesend
+        await befehl(bot, "start")(FakeCtx(runde.mira))
+        einer_bleibt(runde.kanal, runde.mira)
+        await dazu(runde.brok, zustand(runde.kanal), zustand())
+        await ruhen()
+
+    asyncio.run(ablauf())
+
+    assert thread.geschrieben == [gateway.ALLEIN, gateway.ALLEIN]
+
+
+def test_auch_die_zweite_zurueckgebliebene_erfaehrt_es(
+    konfiguration, sitzung_im_thread, ohne_espeak, runde, kurze_frist
+):
+    """Genau der Fall aus dem Issue: nacheinander bleiben zwei verschiedene allein zurück.
+
+    Hinge der Vermerk an der Aufnahme, hätte ihn die erste verbraucht — die zweite säße
+    allein im Kanal und erführe es nie. Er hängt deshalb an der Person.
+    """
+    bot = gateway.baue(konfiguration)
+    thread = FakeTextkanal()
+    bot.kanaele[THREAD] = thread
+    dazu = bot.ereignisse["on_voice_state_update"]
+
+    async def ablauf():
+        await befehl(bot, "start")(FakeCtx(runde.mira))
+        einer_bleibt(runde.kanal, runde.mira)
+        await dazu(runde.brok, zustand(runde.kanal), zustand())
+        runde.kanal.members.append(runde.brok)
+        await dazu(runde.brok, zustand(), zustand(runde.kanal))
+        einer_bleibt(runde.kanal, runde.brok)
+        await dazu(runde.mira, zustand(runde.kanal), zustand())
+        await ruhen()
+
+    asyncio.run(ablauf())
+
+    assert thread.geschrieben == [gateway.ALLEIN, gateway.ALLEIN]
+    assert runde.kanal.verbindung.schneidet
+
+
+def test_ein_zuckender_thread_verbrennt_den_satz_nicht(
+    konfiguration, sitzung_im_thread, ohne_espeak, runde, kurze_frist
+):
+    """Vermerkt wird erst, was ankam — sonst bliebe der Satz nach einem Fehlschlag aus.
+
+    Nachgeholt wird er nirgends: käme der Vermerk vor dem Senden, wäre eine einmal
+    gescheiterte Zustellung das Ende, und sie erführe es auch bei jedem weiteren Wechsel
+    nicht mehr.
+    """
+    bot = gateway.baue(konfiguration)
+    thread = FakeTextkanal()
+    thread.stolpert = 1
+    bot.kanaele[THREAD] = thread
+    dazu = bot.ereignisse["on_voice_state_update"]
+
+    async def ablauf():
+        await befehl(bot, "start")(FakeCtx(runde.mira))
+        einer_bleibt(runde.kanal, runde.mira)
+        await dazu(runde.brok, zustand(runde.kanal), zustand())
+        runde.kanal.members.append(runde.brok)
+        await dazu(runde.brok, zustand(), zustand(runde.kanal))
+        einer_bleibt(runde.kanal, runde.mira)
+        await dazu(runde.brok, zustand(runde.kanal), zustand())
+        await ruhen()
+
+    asyncio.run(ablauf())
+
+    assert thread.geschrieben == [gateway.ALLEIN]
+    assert runde.kanal.verbindung.schneidet
+    assert not runde.kanal.verbindung.getrennt
+
+
+def test_ohne_thread_wird_allein_nicht_weitergeschnitten(
+    konfiguration, sitzung_id, ohne_espeak, runde, kurze_frist
+):
+    """Zugesagt war, dass sie es erfährt — nicht, dass wir es versuchen.
+
+    Eine Sitzung ohne Thread hat keinen Weg für den Satz. Still weiterzuschneiden wäre
+    genau der Zustand, gegen den die Zusage steht; also endet der Mitschnitt, und die
+    Spuren gehen nicht verloren.
+    """
+    bot = gateway.baue(konfiguration)
+    dazu = bot.ereignisse["on_voice_state_update"]
+
+    async def ablauf():
+        await befehl(bot, "start")(FakeCtx(runde.mira))
+        runde.kanal.verbindung.senke.write(sprachdaten(stille(480)), runde.mira)
+        einer_bleibt(runde.kanal, runde.mira)
+        await dazu(runde.brok, zustand(runde.kanal), zustand())
+        await ruhen()
+
+    asyncio.run(ablauf())
+
+    assert not runde.kanal.verbindung.schneidet
+    assert runde.kanal.verbindung.getrennt
+    assert len(recordings.pending(unsere_runde(konfiguration))) == 1
+
+
+def test_die_rueckkehr_setzt_dieselbe_aufnahme_fort(
+    konfiguration, sitzung_im_thread, ohne_espeak, runde, kurze_frist
+):
+    """Entscheidung des Betreibers: kein Bruch, keine neue Sitzung, keine zweite Ansage.
+
+    Die Spur läuft durch — dieselbe Senke, dieselbe Verbindung, dieselbe Sitzung.
+    """
+    bot = gateway.baue(konfiguration)
+    bot.kanaele[THREAD] = FakeTextkanal()
+    dazu = bot.ereignisse["on_voice_state_update"]
+
+    async def ablauf():
+        await befehl(bot, "start")(FakeCtx(runde.mira))
+        senke = runde.kanal.verbindung.senke
+        einer_bleibt(runde.kanal, runde.mira)
+        await dazu(runde.brok, zustand(runde.kanal), zustand())
+        runde.kanal.members.append(runde.brok)
+        await dazu(runde.brok, zustand(), zustand(runde.kanal))
+        await ruhen()
+        return senke
+
+    senke = asyncio.run(ablauf())
+
+    unsere = unsere_runde(konfiguration)
+    assert runde.kanal.verbindung.senke is senke
+    assert runde.kanal.verbindung.schneidet
+    assert not runde.kanal.verbindung.getrennt
+    assert notes.latest_session(unsere).id == sitzung_im_thread
+    angesagt = [ereignis for ereignis in consent.for_session(unsere, sitzung_im_thread)]
+    assert [ereignis.kind for ereignis in angesagt] == [consent.ANSAGE, consent.NACHZUEGLER]
+
+
+def test_wer_zurueckkommt_ist_ein_nachzuegler_und_hoert_die_ansage(
+    konfiguration, sitzung_im_thread, ohne_espeak, runde, kurze_frist
+):
+    """Die zweite Hälfte derselben Entscheidung: fortsetzen heißt nicht ungefragt.
+
+    Für den Kanal läuft keine zweite Ansage — für den Zurückkehrenden schon, und seine
+    Einwilligung steht danach im Protokoll.
+    """
+    bot = gateway.baue(konfiguration)
+    bot.kanaele[THREAD] = FakeTextkanal()
+    dazu = bot.ereignisse["on_voice_state_update"]
+
+    async def ablauf():
+        await befehl(bot, "start")(FakeCtx(runde.mira))
+        einer_bleibt(runde.kanal, runde.mira)
+        await dazu(runde.brok, zustand(runde.kanal), zustand())
+        runde.kanal.members.append(runde.brok)
+        await dazu(runde.brok, zustand(), zustand(runde.kanal))
+        await ruhen()
+
+    asyncio.run(ablauf())
+
+    assert len(runde.kanal.verbindung.gespielt) == 2
+    _, zurueck = consent.for_session(unsere_runde(konfiguration), sitzung_im_thread)
+    assert zurueck.kind == consent.NACHZUEGLER
+    assert [wer.name for wer in zurueck.members] == [BROK.name]
+
+
+def test_wer_allein_widerspricht_beendet_damit_den_mitschnitt(
+    konfiguration, sitzung_im_thread, ohne_espeak, runde, kurze_frist
+):
+    """»Bis sie widerspricht« braucht einen benannten Weg — und der ist der vorhandene."""
+    bot = gateway.baue(konfiguration)
+    bot.kanaele[THREAD] = FakeTextkanal()
+    dazu = bot.ereignisse["on_voice_state_update"]
+
+    async def ablauf():
+        await befehl(bot, "start")(FakeCtx(runde.mira))
+        runde.kanal.verbindung.senke.write(sprachdaten(stille(480)), runde.mira)
+        einer_bleibt(runde.kanal, runde.mira)
+        await dazu(runde.brok, zustand(runde.kanal), zustand())
+        ctx = FakeCtx(runde.mira)
+        await befehl(bot, "stop")(ctx)
+        await ruhen()
+        return ctx
+
+    ctx = asyncio.run(ablauf())
+
+    assert not runde.kanal.verbindung.schneidet
+    assert runde.kanal.verbindung.getrennt
+    assert "wartet auf den Stapel" in ctx.antworten[0]
 
 
 def test_wer_in_der_frist_wiederkommt_findet_seine_aufnahme_vor(
