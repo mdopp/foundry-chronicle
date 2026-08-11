@@ -14,14 +14,23 @@ from chronicle.compose.composer import (
     SessionMaterial,
     compose,
 )
+from chronicle.compose.nacherzaehlung import (
+    Abschnitt,
+    ErzaehlStoff,
+    Nacherzaehlung,
+    nacherzaehlen,
+)
 from chronicle.compose.recap import Recap, RecapMaterial
-from chronicle.compose.service import compose_session, recap_session
+from chronicle.compose.service import compose_session, erzaehlen, recap_session
 
 __all__ = [
+    "Abschnitt",
     "Composition",
+    "ErzaehlStoff",
     "ModelError",
     "ModelNotConfigured",
     "ModelUnreachable",
+    "Nacherzaehlung",
     "OllamaClient",
     "Recap",
     "RecapMaterial",
@@ -30,5 +39,7 @@ __all__ = [
     "TextModel",
     "compose",
     "compose_session",
+    "erzaehlen",
+    "nacherzaehlen",
     "recap_session",
 ]

@@ -168,23 +168,23 @@ ABGERISSEN = (
 
 BEFEHLE = (
     "• `/chronik start` — ich lege die Sitzung an und öffne ihren Thread; ab dort wird jede "
-    "Nachricht eine Notiz. Das Fenster davor nimmt freiwillig das Foundry-Passwort.\n"
+    "Nachricht eine Notiz. Das Fenster davor nimmt das Foundry-Passwort.\n"
     "• `/szene <Name>` — die Trennlinie zur nächsten Szene.\n"
     "• `/aufnahme start` — ich komme in deinen Sprachkanal, spiele eine hörbare Ansage "
     "und schneide **erst danach** mit, je Stimme eine eigene Spur.\n"
-    "• `/aufnahme stop` — ich höre auf und gehe wieder; die Spuren werden im nächtlichen "
-    "Lauf zu Text. Bin ich allein im Sprachkanal, höre ich nach kurzer Frist von selbst "
-    "auf und sage es im Thread.\n"
-    "• `/chronik fertig` — Sitzung abschließen: eine laufende Aufnahme beende ich zuerst "
-    "und reihe die Spuren ein; danach Zahlen holen, verschriften, Chronik schreiben. Nach "
-    "dem Passwort frage ich nur, wenn **du** beim Start keines gabst.\n"
+    "• `/aufnahme stop` — ich höre auf und gehe wieder; die Spuren werden nachts zu Text. "
+    "Bin ich allein im Kanal, höre ich von selbst auf und sage es im Thread.\n"
+    "• `/chronik fertig` — Sitzung abschließen: eine laufende Aufnahme beende ich zuerst; "
+    "danach Zahlen holen, verschriften, Chronik schreiben. Nach dem Passwort frage ich "
+    "nur, wenn **du** beim Start keines gabst.\n"
+    "• `/chronik nacherzaehlung` — mehrere Sitzungen als Prosa; belegt und erzählt bleiben "
+    "getrennt.\n"
     "• `/suche <Wort>` — ich sehe in Notizen, Diktaten, Chroniken und Register nach; jeder "
-    "Treffer führt dorthin zurück, wo er steht.\n"
+    "Treffer führt zurück an seine Stelle.\n"
     "• `/wer <Name>` — was im Register über einen Namen steht.\n"
     "• `/register offen` — Registervorschläge bestätigen oder verwerfen.\n"
     "• `/zuordnung` — wer von euch welchen Foundry-Spieler spielt.\n"
-    "• `/setup` — Foundry-Adresse, Benutzer, Zustellkanal und Uhrzeit ändern; nur für die "
-    "Verwaltung dieses Servers.\n"
+    "• `/setup` — Foundry, Zustellkanal und Uhrzeit ändern; nur für die Verwaltung.\n"
     "• `/chronik loeschen` — alles von dieser Runde löschen, nach Rückfrage; nur für die "
     "Administration.\n"
     "• `/aufnahme hilfe` — alles noch einmal in Ruhe.\n"
@@ -1401,6 +1401,23 @@ def baue(config: Config):
         fremd = chronik.passwort_gehalten(runde)
         hinweis = chronik.FREMDES_HINWEIS if fremd else chronik.PASSWORT_HINWEIS
         await ctx.send_modal(_passwortfrage(config, runde, sitzung, lauf, hinweis))
+
+    @chronikgruppe.command(
+        name="nacherzaehlung", description="Einen Sitzungsbereich als Prosa nacherzählen"
+    )
+    @antwortet
+    async def chronik_nacherzaehlung(ctx, von: str = "", bis: str = "") -> None:
+        runde = chronik.runde_verlangen(config, ctx.guild_id)
+        # Der Melder wird **hier** gebaut, in der Ereignisschleife: der Lauf trägt sich in
+        # einem eigenen Faden zu und hätte dort keine, an die er sich hängen könnte.
+        melden = _melder(ctx.channel)
+        await ctx.defer(ephemeral=True)
+        await ctx.respond(
+            chronik.nacherzaehlung_starten(
+                config, runde, von, bis, str(ctx.channel_id), melden=melden
+            ),
+            ephemeral=True,
+        )
 
     @chronikgruppe.command(
         name="loeschen", description="Alles von dieser Runde löschen, nach Rückfrage"

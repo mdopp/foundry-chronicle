@@ -270,6 +270,7 @@ ABFRAGEN = {
     "register.overview": lambda c, r, i: register.overview(r),
     "register.pending": lambda c, r, i: register.pending(r),
     "register.parse": lambda c, r, i: register.parse("figur | Mira | Eine Kundschafterin"),
+    "register.nach_sitzung": lambda c, r, i: register.nach_sitzung(r),
     "people.overview": lambda c, r, i: people.overview(r),
     "people.speakers": lambda c, r, i: people.speakers(r),
     "people.suggest": lambda c, r, i: people.suggest("Mira", ()),
@@ -310,6 +311,17 @@ ABFRAGEN = {
     ),
     "service.recap_material": lambda c, r, i: _mit_scope(
         r, lambda s: compose_service.recap_material(s, i["sitzung"])
+    ),
+    # Die Nacherzählung läuft über einen Sitzungsbereich und das Register — zwei Wege in
+    # eine fremde Kampagne, wenn einer davon die Runde vergisst.
+    "service.erzaehl_material": lambda c, r, i: _mit_scope(
+        r,
+        lambda s: compose_service.erzaehl_material(
+            s, i["sitzung"], i["sitzung"], register.nach_sitzung(r)
+        ),
+    ),
+    "service.erzaehlen": lambda c, r, i: compose_service.erzaehlen(
+        c, r, i["sitzung"], i["sitzung"], register.nach_sitzung(r)
     ),
     "service.names": lambda c, r, i: _mit_scope(
         r, lambda s: transcribe_service.names(s, i["sitzung"])
@@ -360,6 +372,7 @@ SCHREIBER = frozenset(
         "jobs.abgleich",
         "jobs.abschluss",
         "jobs.chronik",
+        "jobs.nacherzaehlung",
         "nightly.lauf",
         "settings.save",
         "settings.save_nightly_time",
@@ -381,6 +394,7 @@ SCHREIBER = frozenset(
         "service.run",
         "rueckblick.deliver",
         "ausgabe.anhaengen",
+        "ausgabe.erzaehlung_zustellen",
         "erinnern.entscheiden",
         "erinnern.zuordnen",
         "lebenszyklus.loeschen",

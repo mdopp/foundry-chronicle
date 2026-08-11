@@ -67,6 +67,26 @@ GESCHEITERT = (
     "Die Chronik konnte ich hier nicht anhängen: {grund} Beim nächsten Lauf versuche ich es wieder."
 )
 
+# Die Nacherzählung geht denselben Weg und aus demselben Grund: sie ist lang, und ihre
+# Überschriften tragen die Trennung zwischen Belegtem und Verbundenem. Nur der Ort ist ein
+# anderer — sie gehört keiner Sitzung, also liegt sie dort, wo jemand nach ihr gefragt hat.
+ERZAEHLUNG_DATEI = "nacherzaehlung-{von}-bis-{bis}.md"
+
+ERZAEHLUNG_BEGLEITUNG = (
+    "Die Nacherzählung dieses Sitzungsbereichs — als Datei, damit kein Zeichenlimit sie "
+    "beschneidet. Unter »Belegt aus dem Register« steht, was bestätigt ist; die Absätze "
+    "darüber hat das Sprachmodell verbunden, und Lücken sind als Lücken benannt."
+)
+
+ERZAEHLUNG_GESCHEITERT = (
+    "Die Nacherzählung konnte ich hier nicht anhängen: {grund} Ruf den Befehl noch einmal auf."
+)
+
+ERZAEHLUNG_ZU_GROSS = (
+    "Die Nacherzählung ist größer als {grenze} MB und passt hier nicht als Anhang. "
+    "Nimm einen kürzeren Bereich, dann passt sie."
+)
+
 
 @dataclass(frozen=True)
 class Stand:
@@ -138,6 +158,41 @@ def datei(text: str, stand: str, vorher: str | None = None) -> str:
 
 def begleitung(vorher: str | None) -> str:
     return ERSTE if vorher is None else NEUE.format(vorher=_lesbar(vorher))
+
+
+def erzaehlung_zustellen(
+    config: Config,
+    runde: Runde,
+    kanal_id: str,
+    text: str,
+    von: str,
+    bis: str,
+    *,
+    client: DiscordClient | None = None,
+) -> str:
+    """Die Nacherzählung als Markdown-Datei dorthin, wo der Befehl kam.
+
+    Gemerkt wird nichts: sie hängt an keiner Sitzung, und ein zweiter Aufruf ist ein
+    zweiter Wunsch und keine zweite Fassung. Zurück kommt nur, was gesagt werden muss.
+    """
+    zugang = settings.effective(config, runde)
+    if not zugang.discord_configured:
+        return ""
+    inhalt = f"{text.strip()}\n".encode()
+    if len(inhalt) > MAX_BYTES:
+        logger.warning("Nacherzählung ist %s Bytes groß.", len(inhalt))
+        return ERZAEHLUNG_ZU_GROSS.format(grenze=MAX_BYTES // (1024 * 1024))
+    bot = client if client is not None else DiscordClient(zugang)
+    try:
+        bot.post_file(
+            kanal_id,
+            ERZAEHLUNG_DATEI.format(von=von, bis=bis),
+            inhalt,
+            ERZAEHLUNG_BEGLEITUNG,
+        )
+    except DiscordError as fehler:
+        return ERZAEHLUNG_GESCHEITERT.format(grund=fehler)
+    return ""
 
 
 def anhaengen(

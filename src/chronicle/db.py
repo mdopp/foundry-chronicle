@@ -25,7 +25,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:  # pragma: no cover - nur für die Typprüfung
     from chronicle.runde import Runde
 
-SCHEMA_VERSION = 19
+SCHEMA_VERSION = 20
 
 # Der Name der ersten Runde: die Bestände der Entwicklungs-Instanz wandern hier hinein,
 # und eine frische Datenbank bekommt sie ebenfalls — die Oberfläche braucht bis zu ihrer
@@ -99,6 +99,9 @@ NACHGETRAGEN = (
     ("runde", "delete_after", "TEXT"),
     ("runde", "token", "TEXT"),
 )
+
+# Woran erkannt wird, ob die Prüfbedingung von ``job`` die jüngste Art Lauf schon kennt.
+NEUE_LAUFART = "nacherzaehlung"
 
 _TABELLENWORT = re.compile(r"\b(?:from|join|into|update)\s+([a-z_][a-z0-9_]*)", re.IGNORECASE)
 
@@ -225,6 +228,31 @@ def _kennung_nachtragen(connection: sqlite3.Connection) -> None:
     connection.execute("PRAGMA legacy_alter_table = OFF")
 
 
+def _laufarten_nachtragen(connection: sqlite3.Connection) -> None:
+    """Eine neue Art Lauf braucht die Prüfbedingung der Tabelle — SQLite ändert die nicht.
+
+    ``CHECK (kind IN …)`` steht im ``CREATE TABLE`` und wandert mit keinem ``ALTER`` mit;
+    eine Datenbank aus der Zeit davor wiese den neuen Lauf beim Anlegen ab. Die Tabelle
+    wird deshalb umbenannt, neu gebaut und umgefüllt — wie bei der Wanderung, und ein
+    zweiter Durchlauf findet nichts mehr zu tun.
+    """
+    zeile = connection.execute(
+        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'job'"
+    ).fetchone()
+    if zeile is None or NEUE_LAUFART in str(zeile["sql"]):
+        return
+    connection.commit()
+    connection.execute("PRAGMA legacy_alter_table = ON")
+    connection.execute("PRAGMA foreign_keys = OFF")
+    connection.execute("ALTER TABLE job RENAME TO job__alt")
+    connection.executescript(schema_sql())
+    liste = ", ".join(_spalten(connection, "job__alt"))
+    connection.execute(f"INSERT INTO job ({liste}) SELECT {liste} FROM job__alt")
+    connection.execute("DROP TABLE job__alt")
+    connection.execute("PRAGMA foreign_keys = ON")
+    connection.execute("PRAGMA legacy_alter_table = OFF")
+
+
 def erste_runde_id(connection: sqlite3.Connection) -> int:
     """Die Runde mit der kleinsten Id — angelegt, falls es noch keine gibt.
 
@@ -340,6 +368,10 @@ def init(database_path: Path) -> None:
     try:
         _index_verwerfen(connection)
         _wandern(connection)
+        # Vor dem Schema-Skript und aus demselben Grund wie die Wanderung: der benannte
+        # Index wandert beim Umbenennen mit und fällt mit der alten Tabelle; der Durchlauf
+        # gleich darunter legt ihn wieder an.
+        _laufarten_nachtragen(connection)
         # Ein benannter Index wandert beim Umbenennen mit und fällt mit der alten Tabelle;
         # dieser Durchlauf legt ihn an der neuen wieder an — und auf einer frischen
         # Datenbank legt er überhaupt erst alles an.

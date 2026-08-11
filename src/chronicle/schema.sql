@@ -256,7 +256,8 @@ CREATE INDEX IF NOT EXISTS recording_sitzung ON recording (session_id);
 CREATE TABLE IF NOT EXISTS job (
     id          INTEGER PRIMARY KEY,
     runde_id    INTEGER NOT NULL REFERENCES runde (id) ON DELETE CASCADE,
-    kind        TEXT NOT NULL CHECK (kind IN ('abgleich', 'chronik', 'nachtlauf')),
+    kind        TEXT NOT NULL CHECK (kind IN ('abgleich', 'chronik', 'nachtlauf',
+                                              'nacherzaehlung')),
     session_id  INTEGER,
     state       TEXT NOT NULL CHECK (state IN ('laeuft', 'fertig', 'gescheitert')),
     started_at  TEXT NOT NULL,
