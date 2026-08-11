@@ -364,7 +364,16 @@ class Sprachverbindung:
         await fertig.wait()
 
     def mitschneiden(self, aufnahme: Aufnahme) -> None:
-        self._vc.start_recording(_senke(self, aufnahme), _abgeschlossen)
+        senke = _senke(self, aufnahme)
+        self._vc.start_recording(senke, _abgeschlossen)
+        # py-cord 2.8.1 hängt die Senke nie an ihren Sprachclient: in
+        # ``voice/receive/reader.py`` steht ``sink._client = self.client`` **auskommentiert**.
+        # ``Sink.client`` liest aber ``self.vc``, und ``opus.py`` prüft es mit einem
+        # ``assert``, sobald das erste Paket kommt. Ohne diese Zeile stirbt der Empfänger
+        # nach wenigen Sekunden mit einem nackten ``AssertionError``, beendet den Mitschnitt
+        # von sich aus — und die Sitzung hat keine einzige Spur. Genau so ist es am
+        # 2026-08-11 in der ersten echten Runde passiert.
+        senke.init(self._vc)
 
     def mitschnitt_beenden(self) -> None:
         # Der zweite Anlauf nach einem gescheiterten Trennen soll das Trennen nachholen und

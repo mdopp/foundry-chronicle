@@ -878,8 +878,23 @@ class FakeBot:
 
 
 class FakeSenke:
+    """Die Senke, so weit die Doppel sie brauchen — samt der Verdrahtung, die zaehlt.
+
+    Das echte ``discord.sinks.Sink`` liest ``client`` aus ``self.vc``, gesetzt wird es von
+    ``Sink.init``. py-cord 2.8.1 ruft das im Empfangspfad nie, ``opus.py`` prueft es aber
+    beim ersten Paket mit einem ``assert``. Die Attrappe haelt es deshalb genauso.
+    """
+
     def __init__(self, **rest):
         self.finished = False
+        self.vc = None
+
+    @property
+    def client(self):
+        return self.vc
+
+    def init(self, vc) -> None:
+        self.vc = vc
 
 
 class FakePCMAudio:
@@ -2882,3 +2897,26 @@ def test_jedes_feld_der_slash_befehle_traegt_eine_klasse_und_keine_zeichenkette(
             assert not isinstance(feld._raw_type, str)
 
     assert geprueft, "kein einziges Feld gefunden — die Prüfung liefe ins Leere"
+
+
+def test_die_senke_haengt_an_ihrem_sprachclient(konfiguration, sitzung_id, ohne_espeak, runde):
+    """Ohne diese Verdrahtung stirbt der Empfaenger beim ersten Paket.
+
+    ``discord.sinks.Sink.client`` liest ``self.vc``, gesetzt wird es von ``Sink.init``.
+    py-cord 2.8.1 ruft das im Empfangspfad **nie** — die Zeile ``sink._client =
+    self.client`` steht in ``voice/receive/reader.py`` auskommentiert. ``opus.py`` prueft
+    es aber mit einem ``assert``, sobald das erste Paket ankommt.
+
+    Am 2026-08-11 hat die erste echte Runde deshalb keine einzige Spur bekommen: der
+    Empfaenger fiel nach 25 Sekunden mit einem nackten ``AssertionError`` um und beendete
+    den Mitschnitt von sich aus.
+    """
+    bot = gateway.baue(konfiguration)
+    asyncio.run(befehl(bot, "start")(FakeCtx(runde.mira)))
+    verbindung = runde.kanal.verbindung
+
+    assert verbindung.schneidet, "es wird gar nicht mitgeschnitten — der Test liefe ins Leere"
+    assert verbindung.senke is not None
+    assert verbindung.senke.client is verbindung, (
+        "die Senke kennt ihren Sprachclient nicht — py-cord stirbt damit beim ersten Paket"
+    )
