@@ -77,6 +77,15 @@ RUNDE_FORT = (
     "gelöscht, und abgelegt wurde nichts."
 )
 
+# Hier bleiben die Namen weg, anders als bei NICHT_EINGEREIHT: die Runde ist fort, ihre
+# Kennung kann längst an eine fremde Gilde vergeben sein — die Anzeigenamen dieser Gruppe
+# gingen dann an eine andere.
+RUNDE_FORT_REST = (
+    "Die Runde, für die ich mitgeschnitten habe, gibt es nicht mehr — abgelegt wurde "
+    "nichts. Einige Spuren ließen sich aber nicht löschen und liegen noch da; bitte "
+    "einmal `/aufnahme stop` geben, das versucht es erneut."
+)
+
 
 @dataclass(frozen=True)
 class Kanal:
@@ -132,6 +141,21 @@ class _Spur:
 
     def schliessen(self) -> None:
         self._datei.close()
+
+
+def _loeschen(spur: _Spur) -> bool:
+    """Löscht die Spur und sagt, ob es gelang — der Fehlschlag kommt ohne Traceback ins Log.
+
+    ``unlink`` hängt den Pfad an seinen ``OSError``, und der Pfad trägt den Anzeigenamen des
+    Sprechers. Ein ``logger.exception`` schriebe ihn mitsamt Traceback ins Log; ``strerror``
+    nennt allein den Grund.
+    """
+    try:
+        spur.pfad.unlink(missing_ok=True)
+    except OSError as fehler:
+        logger.warning("Eine Spur ließ sich nicht löschen: %s", fehler.strerror)
+        return False
+    return True
 
 
 def _spurname(sprecher: consent.Member) -> str:
@@ -202,46 +226,78 @@ class Aufnahme:
         Ist die Runde fort, werden die Spuren geschlossen und **gelöscht**: sie in die
         Runde einzureihen, die inzwischen unter derselben Kennung steht, hieße die Stimmen
         dieser Gruppe in eine fremde Kampagne zu legen. Liegen bleiben dürfen sie auch
-        nicht — es gäbe keinen Eintrag mehr, der sie je aufräumt.
+        nicht — es gäbe keinen Eintrag mehr, der sie je aufräumt. Auch dort steht jede Spur
+        für sich: was sich nicht schließen lässt, wird trotzdem gelöscht, und was sich nicht
+        löschen lässt, hält die übrigen nicht auf. Bleibt eine liegen, wird das gesagt statt
+        »die Spuren sind gelöscht« zu behaupten, und die Aufnahme behält alle Spuren — ein
+        zweites ``/aufnahme stop`` versucht es erneut.
 
-        Jede Spur steht dabei für sich: was scheitert, hält die übrigen nicht auf, und was
-        ein voriger Anlauf schon eingereiht hat, wird übersprungen statt erneut versucht.
-        Bleibt eine liegen, wird sie beim Namen genannt und die Aufnahme behält alle Spuren
-        — ein zweites ``/aufnahme stop`` holt dann genau die fehlende nach.
+        Jede Spur steht dabei für sich, vom Schließen an: was scheitert, hält die übrigen
+        nicht auf, und was ein voriger Anlauf schon eingereiht hat, wird übersprungen statt
+        erneut versucht. Bleibt eine liegen, wird sie beim Namen genannt und die Aufnahme
+        behält alle Spuren — ein zweites ``/aufnahme stop`` holt dann genau die fehlende
+        nach.
+
+        Scheitert das **Schließen**, wird die Spur im selben Durchgang nicht eingereiht:
+        was ``close`` nachträgt — das Auffüllbyte bei ungerader Länge und die endgültigen
+        Längen im Kopf — fehlt dann, und eine womöglich unvollständige Spur in die
+        Verschriftung zu geben, verdeckt den Fehler. Gelöscht wird sie deshalb aber nicht —
+        es ist die Stimme eines Menschen, und was zu retten ist, entscheidet nicht diese
+        Zeile. Sie wird genannt, und der zweite Anlauf reiht sie ein: ``close`` gibt die
+        Datei auch im Fehlerfall frei, ist beim zweiten Mal also still erfolgreich. Damit
+        steht sie in der Warteschlange und ist für ``recordings.sweep`` sichtbar — eine
+        Spur, deren Verschriftung scheitern mag, ist besser als eine, die niemand findet
+        und niemand löscht.
         """
         gemeint = lebenszyklus.dieselbe(self.runde)
         if gemeint is None:
+            geblieben = 0
             for spur in self._spuren.values():
-                spur.schliessen()
-                spur.pfad.unlink(missing_ok=True)
-            logger.warning("Aufnahme ohne Runde beendet: %s Spuren gelöscht", len(self._spuren))
+                try:
+                    spur.schliessen()
+                except Exception:
+                    logger.exception("Eine Spur ließ sich nicht abschließen")
+                # Auch die nicht geschlossene Spur wird gelöscht: ``close`` gibt die Datei
+                # im ``finally`` frei, und hier ist Löschen das Ziel, nicht Einreihen.
+                if not _loeschen(spur):
+                    geblieben += 1
+            logger.warning(
+                "Aufnahme ohne Runde beendet: %s Spuren gelöscht, %s liegengeblieben",
+                len(self._spuren) - geblieben,
+                geblieben,
+            )
+            if geblieben:
+                raise AufnahmeFehler(RUNDE_FORT_REST)
             self._spuren.clear()
             self._angesagt = False
             return (RUNDE_FORT,)
         meldungen = []
         liegengeblieben = []
         for user_id, spur in self._spuren.items():
-            spur.schliessen()
-            if not spur.bytes:
-                spur.pfad.unlink(missing_ok=True)
-                continue
             try:
-                recordings.enqueue(
-                    gemeint,
-                    self.session_id,
-                    spur.pfad.name,
-                    discord_user_id=user_id,
-                )
-            except recordings.BereitsEingereiht:
-                pass
+                spur.schliessen()
+                if not spur.bytes:
+                    # Ein Fehlschlag wird hier nicht der Runde gemeldet: eine leere Spur
+                    # wird nie eingereiht, ein zweiter Anlauf scheiterte identisch weiter —
+                    # die Zusage aus NICHT_EINGEREIHT wäre eine falsche.
+                    _loeschen(spur)
+                    continue
+                try:
+                    recordings.enqueue(
+                        gemeint,
+                        self.session_id,
+                        spur.pfad.name,
+                        discord_user_id=user_id,
+                    )
+                except recordings.BereitsEingereiht:
+                    pass
+                meldungen.append(EINGEREIHT.format(spur=spur.pfad.stem, sitzung=self.session_id))
             except Exception:
                 # Ohne den Dateinamen: er trägt den Anzeigenamen des Sprechers, und für den
                 # Grund braucht ihn der Traceback nicht. Welche Spur es traf, sagt die
                 # Meldung an die Runde.
-                logger.exception("Eine Spur ließ sich nicht einreihen")
+                logger.exception("Eine Spur ließ sich nicht abschließen oder einreihen")
                 liegengeblieben.append(spur.pfad.stem)
-                continue
-            meldungen.append(EINGEREIHT.format(spur=spur.pfad.stem, sitzung=self.session_id))
         if liegengeblieben:
             raise AufnahmeFehler(NICHT_EINGEREIHT.format(spuren=", ".join(liegengeblieben)))
         self._spuren.clear()

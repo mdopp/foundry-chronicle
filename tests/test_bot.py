@@ -526,6 +526,167 @@ def test_eine_stumme_spur_laesst_den_zweiten_anlauf_nicht_auflaufen(
     assert list(konfiguration.recordings_dir.glob("*Brok.wav")) == []
 
 
+def stolpert_beim_schliessen(nummer: int):
+    """``_Spur.schliessen``, das bei der n-ten Spur einmal ausfällt — und dann nicht mehr.
+
+    Geschlossen wird trotzdem, und zwar zuerst: die volle Platte reißt beim WAV-Kopf ab,
+    nachdem ``wave`` die Datei im ``finally`` längst freigegeben hat. Der zweite Anlauf
+    trifft deshalb auf ein stilles, erfolgreiches ``close`` — genau wie im Betrieb.
+    """
+    echt = recorder._Spur.schliessen
+    versuche = []
+
+    def schliessen(spur) -> None:
+        echt(spur)
+        versuche.append(spur)
+        if len(versuche) == nummer:
+            raise OSError(28, "No space left on device")
+
+    return schliessen
+
+
+def test_ein_gescheitertes_schliessen_haelt_die_uebrigen_nicht_auf(
+    konfiguration, sitzung_id, ohne_espeak, monkeypatch
+):
+    """#115: das Schließen stand außerhalb der Absicherung — ein ``OSError`` riss alles ab.
+
+    Die übrigen Spuren waren weder eingereiht noch benannt: Stimmen als Dateien ohne Zeile,
+    für ``sweep`` unsichtbar. Die Zusage aus #104 gilt auch auf diesem Weg.
+    """
+    aufnahme = asyncio.run(
+        recorder.starten(konfiguration, FakeStimme(MIRA, BROK, SPAET), unsere_runde(konfiguration))
+    )
+    for wer in (MIRA, BROK, SPAET):
+        aufnahme.schreiben(wer, stille(480))
+    monkeypatch.setattr(recorder._Spur, "schliessen", stolpert_beim_schliessen(2))
+
+    with pytest.raises(recorder.AufnahmeFehler) as gefangen:
+        aufnahme.beenden()
+
+    assert not isinstance(gefangen.value, OSError)
+    assert sorted(sprecher(spur) for spur in recordings.pending(unsere_runde(konfiguration))) == [
+        "Aelin",
+        "Mira",
+    ]
+    assert "Brok" in str(gefangen.value)
+    assert list(konfiguration.recordings_dir.glob("*Brok.wav")) != []
+
+
+def test_der_zweite_anlauf_holt_die_nicht_geschlossene_spur_nach(
+    konfiguration, sitzung_id, ohne_espeak, monkeypatch
+):
+    """Die halb geschriebene Spur wird nicht gelöscht, sondern beim zweiten Mal eingereiht.
+
+    Eine womöglich kaputte Spur, die in der Warteschlange steht, kann scheitern und wird
+    nach Frist gelöscht; eine Datei ohne Zeile bleibt für immer liegen.
+    """
+    aufnahme = asyncio.run(
+        recorder.starten(konfiguration, FakeStimme(MIRA, BROK, SPAET), unsere_runde(konfiguration))
+    )
+    for wer in (MIRA, BROK, SPAET):
+        aufnahme.schreiben(wer, stille(480))
+    monkeypatch.setattr(recorder._Spur, "schliessen", stolpert_beim_schliessen(2))
+    with pytest.raises(recorder.AufnahmeFehler):
+        aufnahme.beenden()
+
+    meldungen = aufnahme.beenden()
+
+    assert sorted(sprecher(spur) for spur in recordings.pending(unsere_runde(konfiguration))) == [
+        "Aelin",
+        "Brok",
+        "Mira",
+    ]
+    assert len(meldungen) == 3
+    assert all("wartet auf den Stapel" in meldung for meldung in meldungen)
+
+
+@pytest.fixture
+def kein_loeschen(konfiguration):
+    """Sperrt das Aufnahmeverzeichnis fürs Schreiben — ``unlink`` scheitert dann.
+
+    Der ``OSError`` von ``unlink`` trägt den vollen Pfad und damit den Anzeigenamen des
+    Sprechers; genau daran hängt, ob ein Klarname ins Log gerät.
+    """
+    yield lambda: konfiguration.recordings_dir.chmod(0o500)
+    if konfiguration.recordings_dir.exists():
+        konfiguration.recordings_dir.chmod(0o700)
+
+
+def test_eine_unloeschbare_stumme_spur_nennt_weder_namen_noch_falsche_zusage(
+    konfiguration, sitzung_id, ohne_espeak, caplog, kein_loeschen
+):
+    """Scheitert das Löschen der leeren Spur, bleibt der Anzeigename aus dem Log.
+
+    Und die Runde bekommt keine Meldung darüber: eine leere Spur wird nie eingereiht, ein
+    zweiter Anlauf scheiterte identisch weiter — »das holt genau sie nach« wäre gelogen.
+    """
+    aufnahme = asyncio.run(
+        recorder.starten(konfiguration, FakeStimme(MIRA, BROK), unsere_runde(konfiguration))
+    )
+    aufnahme.schreiben(MIRA, stille(480))
+    aufnahme.schreiben(BROK, b"")
+    kein_loeschen()
+    caplog.clear()
+
+    meldungen = aufnahme.beenden()
+
+    assert "Brok" not in caplog.text
+    assert [sprecher(spur) for spur in recordings.pending(unsere_runde(konfiguration))] == ["Mira"]
+    assert len(meldungen) == 1
+    assert list(konfiguration.recordings_dir.glob("*Brok.wav")) != []
+
+
+def test_ohne_runde_haelt_ein_gescheitertes_schliessen_das_loeschen_nicht_auf(
+    konfiguration, sitzung_id, ohne_espeak, monkeypatch
+):
+    """#115 auf dem zweiten Weg: dort stand ``schliessen`` ganz ohne Absicherung.
+
+    Ein roher ``OSError`` riss den Durchgang ab, und die übrigen Spuren blieben liegen —
+    hier ohne jede Rettung, denn ohne Runde entsteht nie eine Zeile, die ``sweep`` fände.
+    Geschlossen oder nicht: gelöscht wird trotzdem, ``close`` gibt die Datei ohnehin frei.
+    """
+    aufnahme = asyncio.run(
+        recorder.starten(konfiguration, FakeStimme(MIRA, BROK), unsere_runde(konfiguration))
+    )
+    for wer in (MIRA, BROK):
+        aufnahme.schreiben(wer, stille(480))
+    # Die Runde verschwindet erst jetzt: ``lebenszyklus.loeschen`` nähme die Dateien gleich
+    # mit, und dann prüfte dieser Test nichts mehr.
+    monkeypatch.setattr(lebenszyklus, "dieselbe", lambda runde: None)
+    monkeypatch.setattr(recorder._Spur, "schliessen", stolpert_beim_schliessen(1))
+
+    meldungen = aufnahme.beenden()
+
+    assert meldungen == (recorder.RUNDE_FORT,)
+    assert list(konfiguration.recordings_dir.glob("*Mira.wav")) == []
+    assert list(konfiguration.recordings_dir.glob("*Brok.wav")) == []
+
+
+def test_ohne_runde_bleibt_eine_unloeschbare_spur_nicht_stillschweigend_liegen(
+    konfiguration, sitzung_id, ohne_espeak, kein_loeschen, monkeypatch
+):
+    """»Die Spuren sind gelöscht« wird nicht behauptet, wenn eine noch daliegt.
+
+    Genannt wird sie ohne Namen: die Runde ist fort, ihre Kennung kann längst einer fremden
+    Gilde gehören. Der zweite Anlauf versucht es erneut.
+    """
+    aufnahme = asyncio.run(
+        recorder.starten(konfiguration, FakeStimme(MIRA), unsere_runde(konfiguration))
+    )
+    aufnahme.schreiben(MIRA, stille(480))
+    monkeypatch.setattr(lebenszyklus, "dieselbe", lambda runde: None)
+    kein_loeschen()
+
+    with pytest.raises(recorder.AufnahmeFehler) as gefangen:
+        aufnahme.beenden()
+
+    assert "Mira" not in str(gefangen.value)
+    assert list(konfiguration.recordings_dir.glob("*Mira.wav")) != []
+    konfiguration.recordings_dir.chmod(0o700)
+    assert aufnahme.beenden() == (recorder.RUNDE_FORT,)
+    assert list(konfiguration.recordings_dir.glob("*Mira.wav")) == []
+
+
 def test_eine_aufnahme_schreibt_nicht_in_die_runde_von_nachher(
     konfiguration, sitzung_id, ohne_espeak
 ):
