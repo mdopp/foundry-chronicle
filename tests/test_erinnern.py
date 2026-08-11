@@ -127,9 +127,27 @@ class FakeInteraction:
 # -- Die Bühne --------------------------------------------------------------------------
 
 
+class FakeOption:
+    """Das Feld eines Slash-Befehls, so weit die Doppel es brauchen.
+
+    Es hält seinen ``input_type`` wie das echte: dort muss eine **Klasse** stehen. Eine
+    Zeichenkette ist der Fehler, an dem py-cord beim ersten echten Aufruf stirbt.
+    """
+
+    def __init__(self, input_type, description="", default=None, required=True, **rest):
+        self.input_type = input_type
+        self.description = description
+        self.default = default
+        self.required = required
+
+    def __repr__(self) -> str:
+        return f"FakeOption({self.input_type!r}, default={self.default!r})"
+
+
 @pytest.fixture
 def pycord(monkeypatch):
     modul = types.ModuleType("discord")
+    modul.Option = FakeOption
     modul.Intents = FakeIntents
     modul.Bot = FakeBot
     modul.Permissions = FakePermissions
