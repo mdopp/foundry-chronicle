@@ -94,12 +94,10 @@ SETUP_TITEL = "Runde einrichten"
 
 FELD_ADRESSE = "Adresse eures Foundry"
 FELD_BENUTZER = "Name, unter dem ich mich anmelde"
-FELD_MODELL = "Modell für die Chronik"
 FELD_UHRZEIT = "Uhrzeit des nächtlichen Laufs"
 
 HINWEIS_ADRESSE = "z. B. https://foundry.example"
 HINWEIS_BENUTZER = "ein eigenes Konto genügt, ohne Spielleitungsrechte"
-HINWEIS_MODELL = "leer lassen, wenn du nicht weißt, was hier hingehört"
 HINWEIS_UHRZEIT = "leer lassen für 04:00"
 
 # Ein leeres Feld heißt hier dasselbe wie überall sonst: unverändert. Sonst löschte ein
@@ -222,7 +220,6 @@ def einrichten(
     *,
     adresse: str = "",
     benutzer: str = "",
-    modell: str = "",
     uhrzeit: str = "",
 ) -> Eingerichtet:
     """Beansprucht die Runde dieser Gilde — oder legt sie an — und übernimmt die Werte.
@@ -241,7 +238,6 @@ def einrichten(
     werte = {
         "foundry_url": adresse.strip(),
         "foundry_user": benutzer.strip(),
-        "ollama_model": modell.strip(),
     }
     settings.save(runde, {name: wert for name, wert in werte.items() if wert})
     saetze = (

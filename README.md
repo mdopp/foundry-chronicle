@@ -153,8 +153,9 @@ Sitzungsprotokolle, ohne zu wissen, worüber sie entscheidet. Angelegt wird beim
 noch nichts.
 
 **`/setup` richtet ein.** Ein Fenster für die Foundry-Adresse und den Benutzer, dazu die
-Wahl des Kanals, in den die fertige Chronik geht, und wahlweise Modell und Uhrzeit des
-nächtlichen Laufs. Der Aufruf beansprucht die Runde für diesen Server oder legt sie an;
+Wahl des Kanals, in den die fertige Chronik geht, und wahlweise die Uhrzeit des
+nächtlichen Laufs. Das Ollama-Modell steht nicht darin: es gehört der Instanz und nicht
+der Runde (#87). Der Aufruf beansprucht die Runde für diesen Server oder legt sie an;
 ein leeres Feld lässt den bisherigen Wert stehen. **Nach dem Passwort fragt das Fenster
 nicht** — es kommt am Sitzungsende, wird einmal benutzt und vergessen (siehe
 *Zugangsdaten*). Aufrufen darf ihn, **wer den Server verwaltet**: hier steht, welchem
