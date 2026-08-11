@@ -411,6 +411,38 @@ def test_kein_kanal_ist_eine_gueltige_wahl(konfiguration, bot):
 # -- Verabschieden ----------------------------------------------------------------------
 
 
+def test_ein_lauf_von_vorhin_haelt_die_frische_runde_fuer_ruhend(konfiguration):
+    """``ruht`` ist die Schranke jedes langen Laufs — Abgleich, Verschriften, Komponieren.
+
+    Sie liest neu, aber die Kennung allein trägt das nicht: nach einer Löschung gehört sie
+    einer fremden Gilde. Ein Lauf, dessen Runde fort ist, schweigt.
+    """
+    unsere = runden.anlegen(konfiguration.database_path, GILDENAME, guild_id=GILDE)
+    assert not lebenszyklus.ruht(unsere)
+
+    lebenszyklus.loeschen(konfiguration, unsere)
+    frisch = runden.anlegen(konfiguration.database_path, "Fremde", guild_id=NACHBARGILDE)
+
+    assert frisch.id == unsere.id
+    assert lebenszyklus.ruht(unsere)
+    assert not lebenszyklus.ruht(frisch)
+
+
+def test_die_freigabe_entsperrt_die_frische_runde_nicht(konfiguration):
+    """Zwischen Offenlegung und Freigabe liegt ein ``await``. Was danach dort steht, hat den
+    Satz nie gelesen — und wird deshalb auch nicht entsperrt."""
+    unsere = runden.anlegen(konfiguration.database_path, GILDENAME, guild_id=GILDE)
+    frist_setzen(konfiguration, unsere, "2026-06-30T20:00:00+00:00")
+    gesperrt = runden.get(konfiguration.database_path, unsere.id)
+
+    lebenszyklus.loeschen(konfiguration, unsere)
+    frisch = runden.anlegen(konfiguration.database_path, "Fremde", guild_id=NACHBARGILDE)
+    lebenszyklus.sperren(konfiguration.database_path, NACHBARGILDE)
+
+    assert einrichten.wieder_im_dienst(konfiguration, gesperrt) is None
+    assert runden.get(konfiguration.database_path, frisch.id).gesperrt
+
+
 def test_der_rauswurf_sperrt_die_runde_sofort(konfiguration, bot):
     unsere = runden.anlegen(konfiguration.database_path, GILDENAME, guild_id=GILDE)
     fuellen(konfiguration, unsere, "alpha")

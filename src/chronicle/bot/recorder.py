@@ -29,7 +29,7 @@ from typing import Protocol
 
 from werkzeug.utils import secure_filename
 
-from chronicle import consent, notes, recordings
+from chronicle import consent, lebenszyklus, notes, recordings
 from chronicle.bot import BotFehler, ansage
 from chronicle.config import Config
 from chronicle.runde import Runde
@@ -49,6 +49,15 @@ GESTARTET = (
     "`/aufnahme hilfe` sagt den Rest."
 )
 NICHTS_GESPROCHEN = "Es hat niemand gesprochen — keine Spur abgelegt."
+
+# Eine Aufnahme läuft Stunden; in der Zeit kann ihre Runde gelöscht und ihre Kennung an
+# eine fremde Gilde neu vergeben worden sein. Was dann geschrieben würde, wären
+# Einwilligungsprotokolle mit den Anzeigenamen dieser Gruppe und ihre Tonspuren — in der
+# Kampagne einer anderen. Deshalb wird vor jedem Schreiben nachgesehen.
+RUNDE_FORT = (
+    "Die Runde, für die ich mitgeschnitten habe, gibt es nicht mehr — die Spuren sind "
+    "gelöscht, und abgelegt wurde nichts."
+)
 
 
 @dataclass(frozen=True)
@@ -124,11 +133,17 @@ class Aufnahme:
     def laeuft(self) -> bool:
         return self._angesagt
 
+    def _gemeint(self) -> Runde:
+        gemeint = lebenszyklus.dieselbe(self.runde)
+        if gemeint is None:
+            raise AufnahmeFehler(RUNDE_FORT)
+        return gemeint
+
     def ansage_protokollieren(
         self, mitglieder: tuple[consent.Member, ...], *, art: str = consent.ANSAGE
     ) -> int:
         kennung = consent.record(
-            self.runde,
+            self._gemeint(),
             session_id=self.session_id,
             kind=art,
             guild_id=self.kanal.guild_id,
@@ -162,7 +177,22 @@ class Aufnahme:
         spur.schreiben(pcm)
 
     def beenden(self) -> tuple[str, ...]:
-        """Schließt die Spuren und reiht sie ein; leere Spuren bleiben nicht liegen."""
+        """Schließt die Spuren und reiht sie ein; leere Spuren bleiben nicht liegen.
+
+        Ist die Runde fort, werden die Spuren geschlossen und **gelöscht**: sie in die
+        Runde einzureihen, die inzwischen unter derselben Kennung steht, hieße die Stimmen
+        dieser Gruppe in eine fremde Kampagne zu legen. Liegen bleiben dürfen sie auch
+        nicht — es gäbe keinen Eintrag mehr, der sie je aufräumt.
+        """
+        gemeint = lebenszyklus.dieselbe(self.runde)
+        if gemeint is None:
+            for spur in self._spuren.values():
+                spur.schliessen()
+                spur.pfad.unlink(missing_ok=True)
+            logger.warning("Aufnahme ohne Runde beendet: %s Spuren gelöscht", len(self._spuren))
+            self._spuren.clear()
+            self._angesagt = False
+            return (RUNDE_FORT,)
         meldungen = []
         for user_id, spur in self._spuren.items():
             spur.schliessen()
@@ -170,7 +200,7 @@ class Aufnahme:
                 spur.pfad.unlink()
                 continue
             recordings.enqueue(
-                self.runde,
+                gemeint,
                 self.session_id,
                 spur.pfad.name,
                 discord_user_id=user_id,
