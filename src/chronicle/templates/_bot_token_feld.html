@@ -1,0 +1,15 @@
+{# Der Token gehört der Instanz: dasselbe Feld im Wizard und auf der Betreiber-Seite. #}
+{% if not bot_token_gesetzt %}{% include "_discord_einrichtung.html" %}{% endif %}
+
+<div class="feld">
+  <label for="discord_bot_token">Bot-Token</label>
+  <input id="discord_bot_token" name="discord_bot_token" type="password" value=""
+         autocomplete="new-password"
+         placeholder="{{ 'gesetzt' if bot_token_gesetzt else 'nicht gesetzt' }}">
+  {% if bot_token_gesetzt %}
+    <p class="gedaempft">Der Token ist <span class="steht">gesetzt</span> und wird nie
+      angezeigt. Feld leer lassen heißt: unverändert.</p>
+  {% else %}
+    <p class="gedaempft">Noch kein Bot-Token gesetzt.</p>
+  {% endif %}
+</div>

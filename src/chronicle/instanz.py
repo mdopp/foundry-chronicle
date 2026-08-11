@@ -11,11 +11,14 @@ Fast alles in diesem System gehört einer Runde. Diese Werte nicht:
   ein Name, den das Ollama dort nicht kennt, ist keine Wahl, sondern ein Lauf, der
   scheitert.
 - **Die Verwaltungsgruppe.** Sie stammt aus der Benutzerverwaltung der Box und gilt für
-  die Weboberfläche dieser Instanz — und nur für sie: Rechte über eine fremde Runde
+  die Betreiber-Seite dieser Instanz — und nur für sie: Rechte über eine fremde Runde
   trägt sie nicht und bekommt sie auch nicht (#90).
 - **Der abgeschlossene Erststart.** Er gilt der Oberfläche, nicht dem Spiel.
 
-Die beiden letzten verschwinden mit der Oberfläche (#69); Token und Ollama bleiben.
+Genau diese Werte sind der Grund, warum **eine kleine Betreiber-Seite bestehen bleibt**,
+wenn #69 die übrige Oberfläche abräumt (Owner-Entscheidung 2026-08-11, #89): sie gehören
+keiner Gilde und haben deshalb in Discord keinen Ort. ``/einstellungen`` ist auf sie
+eingedampft — der Erststart fällt als Einziges mit dem Wizard.
 
 Abgelegt wird in ``meta`` — der Schlüsselraum ohne Runde. ``settings`` daneben ist die
 Tabelle **einer** Runde, und dass diese Werte dort nicht liegen, ist keine

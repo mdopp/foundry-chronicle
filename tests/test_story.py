@@ -121,10 +121,10 @@ def station_1_aufsetzen(tmp_path):
     schritt = hole(client, "/einrichtung", folgen=True).get_data(as_text=True)
     assert "Schritt 1 von 3" in schritt
 
-    # Der alte Status-Pfad steht in Lesezeichen; er landet bei der Foundry-Karte.
+    # Der alte Status-Pfad steht in Lesezeichen; er landet auf der Betreiber-Seite.
     assert hole(client, "/status").status_code == 301
     seite = hole(client, "/status", folgen=True).get_data(as_text=True)
-    assert "Noch kein Zugang zu Foundry" in seite
+    assert "Noch kein Bot-Token gesetzt" in seite
     assert "dann wird nur geordnet, nicht formuliert" in seite
     return config, client
 
@@ -157,13 +157,10 @@ def station_2_konfigurieren(client, mock_foundry, mock_ollama):
 
     formular = hole(client, "/einstellungen").get_data(as_text=True)
     assert foundry_mock.PASSWORT not in formular
-    assert "das Passwort wird nirgends gespeichert" in formular
     assert ollama_mock.MODELL in formular
     assert ollama_mock.EINBETTUNG not in formular
-
-    status = hole(client, "/status", folgen=True).get_data(as_text=True)
-    assert "Zugang steht" in status
-    assert foundry_mock.PASSWORT not in status
+    # Der Foundry-Zugang gehört der Runde: er steht auf der Betreiber-Seite nicht mehr.
+    assert foundry_mock.BENUTZER not in formular
 
 
 def station_3_erster_abgleich(config, client):
@@ -197,7 +194,7 @@ def station_3_erster_abgleich(config, client):
         ("fear", foundry_mock.STURZ_FURCHT),
     ]
 
-    assert "daggerheart" in hole(client, "/status", folgen=True).get_data(as_text=True)
+    assert foundry.current(config, runde(config)).snapshot.system == "daggerheart"
 
     # Die Runde hängt jetzt an dieser Welt. Zeigt der Server eine andere, wird nichts
     # übernommen — sonst stünde die falsche Kampagne in dieser Chronik.
@@ -284,8 +281,8 @@ def test_dieselben_stationen_gegen_die_eingebaute_testwelt(tmp_path):
     Zahlen stammen.
     """
     config, client = station_1_aufsetzen(tmp_path)
-    umstellen = sende(client, "/einstellungen", **{settings.QUELLE_KEY: settings.TESTWELT})
-    assert umstellen.status_code == 302
+    # Die Quelle gehört der Runde; die Betreiber-Seite stellt sie seit #89 nicht mehr um.
+    assert settings.save_foundry_quelle(runde(config), settings.TESTWELT)
 
     stand = foundry.sync(config, runde(config))
     assert not stand.stale, stand.message

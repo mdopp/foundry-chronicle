@@ -45,6 +45,7 @@ from chronicle import (
 )
 from chronicle import runde as runden
 from chronicle.bot import chronik as bot_chronik
+from chronicle.bot import einrichten as bot_einrichten
 from chronicle.bot import erinnern
 from chronicle.compose import service as compose_service
 from chronicle.config import Config
@@ -591,6 +592,41 @@ def test_einstellungen_gehoeren_der_runde(zwei_runden):
     settings.save(a, {"foundry_url": ""})
     assert settings.effective(config, a).foundry_url is None
     assert settings.effective(config, b).foundry_url == f"https://{MARKE[2]}.example"
+
+
+TOKEN = "token-nur-in-diesem-test"
+
+
+def test_der_bot_token_gehoert_der_instanz_und_keiner_runde(zwei_runden):
+    """Unser Token: keine Gruppe liest ihn aus ihrer Runde, keine schreibt ihn dort um."""
+    config, a, b, _ids = zwei_runden
+    instanz.save(config.database_path, {"discord_bot_token": TOKEN})
+
+    # Er steht in ``meta`` und in keiner runden-eigenen Zeile — sonst läge er im Zugriff
+    # einer Gruppe, sobald sie ihre eigenen Einstellungen liest.
+    for gruppe in (a, b):
+        assert "discord_bot_token" not in _gepflegte_zeilen(gruppe)
+
+    # Und die Wege, die einer Gilde offenstehen, kommen an ihn nicht heran: ``/setup``
+    # und die Kanalwahl kennen nur Werte der Runde und nennen ihn in keinem Satz.
+    eingerichtet = bot_einrichten.einrichten(
+        config, "gilde-b", "Zweite", adresse="https://b.example", benutzer="chronist"
+    )
+    kanal = bot_einrichten.kanal_setzen(b, "4711")
+
+    assert TOKEN not in eingerichtet.meldung + kanal
+    assert instanz.stored(config.database_path)["discord_bot_token"] == TOKEN
+
+
+def _gepflegte_zeilen(runde) -> set[str]:
+    scope = db.scoped(runde)
+    try:
+        zeilen = scope.execute(
+            "SELECT key FROM settings WHERE runde_id = ?", (scope.runde_id,)
+        ).fetchall()
+    finally:
+        scope.close()
+    return {zeile["key"] for zeile in zeilen}
 
 
 def test_ollama_gehoert_der_instanz_und_nicht_der_runde(zwei_runden):

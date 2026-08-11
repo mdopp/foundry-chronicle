@@ -270,21 +270,21 @@ def test_ohne_testwelt_steht_der_hinweis_nirgends(config):
     client = create_app(config).test_client()
     seite = client.get("/einstellungen", headers=KOPF).get_data(as_text=True)
     assert testwelt.HINWEIS not in seite
-    assert "Foundry-Passwort für diesen Abgleich" in seite
 
 
-def test_die_quelle_laesst_sich_im_formular_umstellen(config):
+def test_die_betreiberseite_stellt_die_quelle_nicht_mehr_um(config):
+    """Sie gehört der Runde — ein Speichern dort lässt sie, wie sie ist (#89)."""
     client = create_app(config).test_client()
+    settings.save_foundry_quelle(runde(config), settings.TESTWELT)
+
     antwort = client.post(
-        "/einstellungen",
-        data={settings.QUELLE_KEY: settings.TESTWELT, "foundry_url": "", "foundry_user": ""},
-        headers=KOPF,
+        "/einstellungen", data={settings.QUELLE_KEY: settings.SERVER}, headers=KOPF
     )
+
     assert antwort.status_code == 302
     assert settings.foundry_quelle(runde(config)) == settings.TESTWELT
     seite = client.get("/einstellungen", headers=KOPF).get_data(as_text=True)
-    assert "Die Testwelt braucht kein Passwort" in seite
-    assert "laufen dann ins Leere" in seite
+    assert f'name="{settings.QUELLE_KEY}"' not in seite
 
 
 def test_mit_testwelt_fuehrt_die_startseite_nicht_in_die_einrichtung(auf_testwelt):

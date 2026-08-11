@@ -8,122 +8,31 @@
 <p class="hinweis">Niemand ist angemeldet — wer diese Adresse erreicht, sieht alles.</p>
 {% endif %}
 
+<p class="gedaempft">Hier steht, was <strong>dieser Instanz</strong> gehört und deshalb in
+  keiner Discord-Gilde gepflegt werden kann: der Bot-Token, das Sprachmodell und wer
+  verwalten darf. Alles, was einer <strong>Runde</strong> gehört — Foundry-Zugang,
+  Zustellkanal, Uhrzeit des nächtlichen Laufs —, richtet die Gruppe selbst mit
+  <code>/setup</code> in Discord ein.</p>
+
 <form method="post" action="{{ url_for('einstellungen_speichern') }}">
-
-  <section class="karte" id="zustand">
-    <h2>Woher kommen die Spieldaten?</h2>
-    <p class="gedaempft">Würfe, Schaden und Beute holt die Chronik aus Foundry — erfunden
-      wird keine Zahl. Ohne Zugang wird trotzdem mitgeschrieben, die Chronik bleibt dann
-      ohne diese Zahlen.</p>
-
-    <fieldset class="wahl">
-      <legend>Quelle</legend>
-      <label class="zeile">
-        <input type="radio" name="{{ quelle_feld }}" value="{{ quelle_server }}"
-               {% if quelle != quelle_testwelt %}checked{% endif %}>
-        <span>Echter Server — Adresse, Benutzer und Passwort weiter unten.</span>
-      </label>
-      <label class="zeile">
-        <input type="radio" name="{{ quelle_feld }}" value="{{ quelle_testwelt }}"
-               {% if quelle == quelle_testwelt %}checked{% endif %}>
-        <span>Eingebaute Testwelt — eine erfundene Beispielwelt aus dem Paket, ohne
-          Netz und ohne Passwort. <strong>Das sind keine echten Kampagnendaten.</strong></span>
-      </label>
-      <p class="gedaempft">Umschalten ersetzt beim nächsten Abgleich den ganzen
-        Zwischenspeicher mit der jeweils anderen Welt. Szenen, die auf Nachrichten der
-        anderen Welt verweisen, laufen dann ins Leere — das ist harmlos und mit dem
-        Rück-Abgleich wieder da.</p>
-    </fieldset>
-
-    {% if quelle == quelle_testwelt %}
-      <p class="hinweis"><strong>{{ testwelt_hinweis }}</strong> Was unten als letzter
-        Abgleich steht, stammt aus der mitgelieferten Fixture — nicht von eurem Server.</p>
-    {% elif config.foundry_configured %}
-      <p class="steht">Zugang steht: <code>{{ config.foundry_user }}</code> auf
-        <code>{{ config.foundry_url }}</code>. Das Passwort wird nicht gespeichert.</p>
-    {% else %}
-      <p class="fehlt">Noch kein Zugang zu Foundry. Trag Adresse und Benutzer ein und
-        speichere — das Passwort kommt beim Abgleich dazu.</p>
-    {% endif %}
-
-    {% include "_foundry_felder.html" %}
-
-    <h3>Letzter Abgleich</h3>
-    <p class="{{ 'fehlt' if abgleich.stale else 'steht' }}">{{ abgleich.message }}</p>
-    {% if abgleich.snapshot %}
-    <dl>
-      <dt>Regelwerk</dt><dd><code>{{ abgleich.snapshot.system }}</code></dd>
-      <dt>Spieler</dt><dd>{{ abgleich.snapshot.players | length }}</dd>
-      <dt>Charaktere</dt><dd>{{ abgleich.snapshot.characters | length }}</dd>
-      <dt>Chat-Nachrichten</dt><dd>{{ abgleich.snapshot.messages | length }}</dd>
-    </dl>
-    {% endif %}
-    {% if abgleich_job and abgleich_job.laeuft %}
-    <p class="hinweis">Die Zahlen aus Foundry werden gerade geholt. Diese Seite neu laden
-      zeigt, wann es durch ist.</p>
-    <div class="absenden"><button type="button" class="leise" disabled>Jetzt abgleichen</button></div>
-    {% else %}
-    {% if abgleich_job and abgleich_job.gescheitert %}<p class="fehlt">{{ abgleich_job.error }}</p>{% endif %}
-    <p class="gedaempft">Geänderte Felder vorher speichern — der Abgleich nimmt den zuletzt
-      gespeicherten Zugang.</p>
-    {# Das Feld gehört zum Abgleich-Formular unten, nicht zum Speichern-Formular: das
-       Passwort geht in diesen einen Lauf und in keine Einstellung. #}
-    {% if quelle == quelle_testwelt %}
-    <p class="gedaempft">Die Testwelt braucht kein Passwort — sie liegt als Datei im Paket.</p>
-    {% else %}
-    <div class="feld">
-      <label for="foundry_password">Foundry-Passwort für diesen Abgleich</label>
-      <input id="foundry_password" name="foundry_password" type="password" form="abgleich"
-             value="" autocomplete="off">
-      <p class="gedaempft">Wird nicht gespeichert: es gilt für diesen Abgleich und ist
-        danach vergessen — beim nächsten Mal fragt die Seite wieder.</p>
-    </div>
-    {% endif %}
-    <div class="absenden">
-      <button type="submit" class="leise" form="abgleich">Jetzt abgleichen</button>
-    </div>
-    {% endif %}
-
-    {% if nachtlauf and nachtlauf.abgleich %}
-    <p class="{{ 'steht' if nachtlauf.abgleich.gelungen else 'fehlt' }}">Nachts am
-      {{ nachtlauf.zeitpunkt }}: {{ nachtlauf.abgleich.text }}</p>
-    {% endif %}
-  </section>
 
   <section class="karte">
     <h2>Wie kommt Gesprochenes herein?</h2>
     <p class="gedaempft">Über Discord: eine Sprachnachricht im Kanal <code>#diktat</code>
       landet in derselben Warteschlange wie ein Upload, eine Textnachricht wird zur Notiz
-      der zuletzt angelegten Sitzung. Wer dort schreiben darf, darf diktieren.</p>
+      der zuletzt angelegten Sitzung. Der Token gehört <strong>dieser Instanz</strong>:
+      es ist unser Bot, der in fremde Gilden eingeladen wird — keine Gruppe pflegt ihn,
+      und keine kann ihn den übrigen wegnehmen.</p>
 
     {% if config.discord_configured %}
       <p class="steht">Bot-Token gesetzt — der Bot liest <code>#diktat</code> mit. Was dort
         ankommt, findest du bei der zuletzt angelegten Sitzung. Der Token wird nie angezeigt.</p>
     {% else %}
-      <p>Kein Bot-Token — das ist in Ordnung. Wer nur vor Ort spielt, braucht ihn nie; ohne
-        ihn bleiben Diktat-Kanal, Aufnahme und Zustellung zu, alles andere läuft weiter.</p>
-    {% endif %}
-    {% if config.discord_recap_channel %}
-      <p class="steht">Der Rückblick geht nach
-        <code>#{{ config.discord_recap_channel }}</code> — einmal je Sitzung.</p>
-    {% else %}
-      <p>Kein Zustellkanal — der Rückblick bleibt in der Chronik und wird nirgends gepostet.</p>
+      <p>Kein Bot-Token — dann bleibt der Bot aus, und mit ihm Diktat-Kanal, Aufnahme und
+        Zustellung. Alles andere läuft weiter.</p>
     {% endif %}
 
-    {% include "_discord_felder.html" %}
-
-    <p class="gedaempft">Wessen Stimme über welchem Absatz steht, entscheidest du in der
-      <a href="{{ url_for('zuordnung') }}">Personen-Zuordnung</a> — vorgeschlagen wird,
-      bestätigt wird von Hand.</p>
-
-    {% if nachtlauf and nachtlauf.diktat %}
-    <p class="{{ 'steht' if nachtlauf.diktat.gelungen else 'fehlt' }}">Nachts am
-      {{ nachtlauf.zeitpunkt }}, Briefkasten: {{ nachtlauf.diktat.text }}</p>
-    {% endif %}
-    {% if nachtlauf and nachtlauf.transkript %}
-    <p class="{{ 'steht' if nachtlauf.transkript.gelungen else 'fehlt' }}">Nachts am
-      {{ nachtlauf.zeitpunkt }}, Aufnahmen: {{ nachtlauf.transkript.text }}</p>
-    {% endif %}
+    {% include "_bot_token_feld.html" %}
   </section>
 
   <section class="karte">
@@ -147,62 +56,12 @@
     {% endif %}
 
     {% include "_modell_felder.html" %}
-
-    {% if nachtlauf and nachtlauf.chronik %}
-    <p class="{{ 'steht' if nachtlauf.chronik.gelungen else 'fehlt' }}">Nachts am
-      {{ nachtlauf.zeitpunkt }}: {{ nachtlauf.chronik.text }}</p>
-    {% endif %}
-  </section>
-
-  <section class="karte" id="nachts">
-    <h2>Wann läuft das alles von allein?</h2>
-    <p class="gedaempft">Einmal in der Nacht holt die Chronik von selbst, was im
-      Diktat-Kanal liegt, verschriftet die wartenden Aufnahmen, holt die Zahlen aus Foundry
-      und schreibt Chronik und Rückblick für jede Sitzung, zu der etwas Neues dazugekommen
-      ist. Was nicht eingerichtet ist, wird dabei übersprungen. Die Knöpfe hier und auf der
-      Sitzung bleiben für den Fall, dass du nicht bis morgen früh warten willst.</p>
-
-    <div class="feld">
-      <label for="nightly_time">Uhrzeit</label>
-      <input id="nightly_time" name="nightly_time" type="time" value="{{ nightly_time }}"
-             required>
-      <p class="gedaempft">Ortszeit in der Zeitzone unten, nicht nach der Uhr des Servers —
-        die läuft in UTC. War der Server zu dieser Zeit aus, wird nichts nachgeholt; dann
-        kommt der Lauf in der nächsten Nacht.</p>
-    </div>
-
-    <div class="feld">
-      <label for="nightly_zone">Zeitzone dieser Runde</label>
-      <select id="nightly_zone" name="nightly_zone">
-        {% for name in zonen %}
-        <option value="{{ name }}"{% if name == nightly_zone %} selected{% endif %}>{{ name }}</option>
-        {% endfor %}
-      </select>
-      <p class="gedaempft">Die Uhr, nach der eure Runde lebt. Sommer- und Winterzeit rechnet
-        die Chronik selbst um. Eine andere Runde auf derselben Instanz darf hier etwas
-        anderes stehen haben.</p>
-    </div>
-
-    {% if nachtlauf and nachtlauf.laeuft %}
-      <p class="hinweis">Der Lauf vom {{ nachtlauf.zeitpunkt }} ist noch unterwegs. Diese
-        Seite neu laden zeigt, wann er durch ist.</p>
-    {% elif nachtlauf and nachtlauf.fehler %}
-      <p class="fehlt">{{ nachtlauf.fehler }}</p>
-    {% elif nachtlauf %}
-      <p class="steht">Zuletzt gelaufen am {{ nachtlauf.zeitpunkt }} — was dabei
-        herauskam, steht oben bei der jeweiligen Frage.</p>
-    {% else %}
-      <p>Noch keine Nacht gelaufen. Der erste Lauf kommt um {{ nightly_time }} Ortszeit in
-        {{ nightly_zone }}.</p>
-    {% endif %}
   </section>
 
   <section class="karte" id="verwaltung">
     <h2>Wer darf verwalten?</h2>
-    <p class="gedaempft">Mitspielen darf jeder, den die Anmeldung hereinlässt: Sitzungen,
-      Szenen, Notizen, Diktate, Protokolle, Suche. Verwalten — diese Seite, die Einrichtung,
-      die Personen-Zuordnung und die Knöpfe, die einen Lauf sofort anstoßen — darf, wer in
-      der hier genannten Gruppe steht.</p>
+    <p class="gedaempft">Diese Seite gehört dem Betrieb dieser Box, nicht dem Spiel: hier
+      liegt der Bot-Token. Wer sie öffnen darf, steht in der hier genannten Gruppe.</p>
 
     <div class="feld">
       <label for="admin_group">Gruppe für die Verwaltung</label>
@@ -234,12 +93,6 @@
   <div class="absenden"><button type="submit">Speichern</button></div>
 </form>
 
-{# Ein Formular im Formular ist kein gültiges HTML: der Knopf steht über »form« oben in der
-   Foundry-Karte, das Formular dazu hier unten. #}
-<form id="abgleich" method="post" action="{{ url_for('abgleich_anstossen') }}" hidden>
-  <input type="hidden" name="zurueck" value="{{ request.path }}">
-</form>
-
 <details class="karte">
   <summary>Technikdetails</summary>
   <dl>
@@ -249,11 +102,7 @@
   <p class="gedaempft">Woher jeder Wert gerade stammt — was hier gespeichert ist, schlägt
     die Umgebung:</p>
   <dl>
-    <dt>Quelle der Spieldaten</dt><dd>{{ quelle }}</dd>
-    <dt>Foundry-Adresse</dt><dd>{{ quellen.foundry_url }}</dd>
-    <dt>Foundry-Benutzer</dt><dd>{{ quellen.foundry_user }}</dd>
     <dt>Discord-Bot-Token</dt><dd>{{ quellen.discord_bot_token }}</dd>
-    <dt>Discord-Kanal für den Rückblick</dt><dd>{{ quellen.discord_recap_channel }}</dd>
     <dt>Ollama-Adresse</dt><dd>{{ quellen.ollama_url }}</dd>
     <dt>Modell</dt><dd>{{ quellen.ollama_model }}</dd>
   </dl>

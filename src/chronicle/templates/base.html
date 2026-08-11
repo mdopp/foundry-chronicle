@@ -332,8 +332,7 @@
       {% if testwelt %}
       <div class="band testwelt"><p><strong>{{ testwelt_hinweis }}</strong> Diese Instanz
         zeigt gerade die eingebaute, erfundene Beispielwelt. Namen, Würfe und
-        Nachrichten stammen aus keiner Sitzung — hier so wenig wie anderswo.
-        {% if verwalter %}<a href="{{ url_for('einstellungen', _anchor='zustand') }}">Quelle umstellen</a>{% endif %}</p></div>
+        Nachrichten stammen aus keiner Sitzung — hier so wenig wie anderswo.</p></div>
       {% endif %}
       {% if verbindung == "unkonfiguriert" %}
       <div class="band"><p>Foundry ist nicht eingerichtet — mitgeschrieben wird trotzdem, die
@@ -344,8 +343,7 @@
         laden zeigt, wann es durch ist.</p></div>
       {% elif verbindung == "veraltet" %}
       <div class="band"><p>Der letzte Abgleich mit Foundry ist gescheitert — was hier steht,
-        stammt aus dem Zwischenspeicher.
-        {% if verwalter %}<a href="{{ url_for('einstellungen', _anchor='zustand') }}">Woran es lag</a>{% endif %}</p>
+        stammt aus dem Zwischenspeicher.</p>
         {% if verwalter %}{% include "_abgleich_knopf.html" %}{% endif %}</div>
       {% endif %}
       <main>{% block inhalt %}{% endblock %}</main>

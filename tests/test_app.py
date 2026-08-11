@@ -41,13 +41,53 @@ def zustand(client, **kwargs):
     return client.get("/status", follow_redirects=True, **kwargs)
 
 
-def test_startet_ohne_foundry_und_erklaert_was_fehlt(tmp_path):
-    antwort = seite(Config(data_dir=tmp_path))
-    assert antwort.status_code == 200
-    html = antwort.get_data(as_text=True)
-    assert "Noch kein Zugang zu Foundry" in html
-    for feld in ("Foundry-Adresse", "Foundry-Benutzer", "Foundry-Passwort"):
-        assert feld in html
+# Was seit #89 nicht mehr auf die Betreiber-Seite gehört: alles, was einer Runde gehört
+# und in Discord gepflegt wird.
+RUNDEN_FELDER = (
+    "foundry_url",
+    "foundry_user",
+    "foundry_password",
+    "discord_recap_channel",
+    "nightly_time",
+    "nightly_zone",
+    settings.QUELLE_KEY,
+)
+
+
+def test_die_betreiberseite_traegt_kein_runden_eigenes_feld_mehr(tmp_path):
+    """Sie bleibt für das, was der Instanz gehört — der Rest wird in Discord gepflegt."""
+    html = gelesen(Config(data_dir=tmp_path), "/einstellungen")
+    for feld in RUNDEN_FELDER:
+        assert f'name="{feld}"' not in html, feld
+    for feld in settings.INSTANZ_KEYS:
+        assert f'name="{feld}"' in html, feld
+
+
+def test_die_betreiberseite_sagt_warum_es_sie_weiter_gibt(tmp_path):
+    html = gelesen(Config(data_dir=tmp_path), "/einstellungen")
+    assert "dieser Instanz" in html
+    assert "<code>/setup</code> in Discord" in html
+
+
+def test_ein_speichern_nimmt_der_runde_ihre_werte_nicht_weg(tmp_path):
+    """Die Felder sind weg, die Werte bleiben — sonst löschte jedes Speichern die Runde leer."""
+    config = Config(data_dir=tmp_path)
+    client = create_app(config).test_client()
+    gruppe = runde(config)
+    settings.save(gruppe, {"foundry_url": "https://foundry.example", "foundry_user": "chronist"})
+    settings.save(gruppe, {"discord_recap_channel": "chronik"})
+    settings.save_nightly_time(gruppe, "02:45")
+    settings.save_foundry_quelle(gruppe, settings.TESTWELT)
+
+    assert client.post("/einstellungen", data={"ollama_model": "gemma4:12b"}).status_code == 302
+
+    aktuell = settings.effective(config, gruppe)
+    assert aktuell.foundry_url == "https://foundry.example"
+    assert aktuell.foundry_user == "chronist"
+    assert aktuell.discord_recap_channel == "chronik"
+    assert settings.nightly_time(gruppe) == "02:45"
+    assert settings.foundry_quelle(gruppe) == settings.TESTWELT
+    assert aktuell.ollama_model == "gemma4:12b"
 
 
 def test_ohne_discord_ist_das_kein_fehler(tmp_path):
@@ -55,17 +95,19 @@ def test_ohne_discord_ist_das_kein_fehler(tmp_path):
     assert "Kein Bot-Token" in html
 
 
-def test_konfiguriert_zeigt_url_und_benutzer_aber_kein_geheimnis(tmp_path):
+def test_konfiguriert_zeigt_die_instanz_werte_aber_kein_geheimnis(tmp_path):
     config = Config(
         foundry_url="https://foundry.example",
         foundry_user="chronist",
+        ollama_url="http://ollama.example:11434",
         discord_bot_token=BOT_TOKEN,
         data_dir=tmp_path,
     )
     html = seite(config).get_data(as_text=True)
-    assert "https://foundry.example" in html
-    assert "chronist" in html
+    assert "http://ollama.example:11434" in html
     assert BOT_TOKEN not in html
+    assert "https://foundry.example" not in html
+    assert "chronist" not in html
 
 
 def test_healthz_meldet_ok(tmp_path):
@@ -114,25 +156,13 @@ class Abgleich:
         return UNSER_KONTO, self._welt
 
 
-def test_ohne_abgleich_steht_da_warum_nichts_zu_sehen_ist(tmp_path):
-    html = seite(Config(data_dir=tmp_path)).get_data(as_text=True)
-    assert "Noch kein Abgleich" in html
-
-
-def test_zeigt_den_umfang_des_letzten_abgleichs(config, welt):
+def test_der_stand_des_abgleichs_steht_nicht_mehr_auf_der_betreiberseite(config, welt):
+    """Er gehört der Runde: die Meldungen selbst prüft ``test_foundry_service``."""
     service.sync(config, runde(config), client=Abgleich(welt))
     html = seite(config).get_data(as_text=True)
-    assert "Stand vom" in html
-    assert "daggerheart" in html
+    assert "Stand vom" not in html
+    assert "daggerheart" not in html
     assert GM_FIGUR not in html
-
-
-def test_bei_ausgefallenem_foundry_erklaert_die_seite_den_alten_stand(config, welt):
-    service.sync(config, runde(config), client=Abgleich(welt))
-    service.sync(config, runde(config), client=Abgleich(fehler=FoundryUnreachable("keine Antwort")))
-    html = seite(config).get_data(as_text=True)
-    assert "nicht erreichbar" in html
-    assert "Angezeigt wird der Stand" in html
 
 
 def bewacht(tmp_path):
@@ -313,14 +343,9 @@ def test_die_suche_steht_hinter_demselben_tuersteher(tmp_path):
 
 
 def test_die_einstellungsseite_zeigt_die_gepflegten_werte(tmp_path):
-    config = Config(
-        foundry_url="https://foundry.example",
-        foundry_user="chronist",
-        data_dir=tmp_path,
-    )
+    config = Config(ollama_url="http://ollama.example:11434", data_dir=tmp_path)
     html = gelesen(config, "/einstellungen")
-    assert "https://foundry.example" in html
-    assert 'name="foundry_user"' in html
+    assert "http://ollama.example:11434" in html
     assert 'name="discord_bot_token"' in html
     assert 'name="ollama_url"' in html
     assert 'name="ollama_model"' in html
@@ -356,38 +381,30 @@ def test_das_passwort_wird_nirgends_gespeichert(tmp_path):
 
 
 def test_das_formular_hat_kein_passwortfeld_mehr_und_sagt_warum(tmp_path):
-    for pfad in ("/einstellungen", "/einrichtung/foundry"):
-        assert "das Passwort wird nirgends gespeichert" in gelesen(Config(data_dir=tmp_path), pfad)
-    # Der Wizard hat gar keins mehr; das eine in den Einstellungen gehört dem Abgleich
-    # und nicht dem Speichern-Formular.
-    assert 'name="foundry_password"' not in gelesen(
-        Config(data_dir=tmp_path), "/einrichtung/foundry"
-    )
-    einstellungen = gelesen(Config(data_dir=tmp_path), "/einstellungen")
-    assert 'name="foundry_password" type="password" form="abgleich"' in einstellungen
+    """Der Wizard hat keins; die Betreiber-Seite kennt Foundry gar nicht mehr."""
+    wizard = gelesen(Config(data_dir=tmp_path), "/einrichtung/foundry")
+    assert "das Passwort wird nirgends gespeichert" in wizard
+    assert 'name="foundry_password"' not in wizard
+    assert "foundry_password" not in gelesen(Config(data_dir=tmp_path), "/einstellungen")
 
 
 def test_gespeichertes_schlaegt_die_umgebung(tmp_path):
-    config = Config(
-        foundry_url="https://umgebung.example",
-        foundry_user="umgebungs-konto",
-        data_dir=tmp_path,
-    )
+    config = Config(ollama_url="http://umgebung.example:11434", data_dir=tmp_path)
     client = create_app(config).test_client()
-    client.post("/einstellungen", data={"foundry_url": "https://frontend.example"})
-    assert settings.effective(config, runde(config)).foundry_url == "https://frontend.example"
+    client.post("/einstellungen", data={"ollama_url": "http://frontend.example:11434"})
+    assert settings.effective(config, runde(config)).ollama_url == "http://frontend.example:11434"
     for pfad in ("/status", "/einstellungen"):
         html = client.get(pfad, follow_redirects=True).get_data(as_text=True)
-        assert "https://frontend.example" in html
-        assert "https://umgebung.example" not in html
+        assert "http://frontend.example:11434" in html
+        assert "http://umgebung.example:11434" not in html
 
 
 def test_ein_passwort_im_speichern_formular_wird_nicht_uebernommen(tmp_path):
     """Selbst wer das Feld von Hand nachbaut, bekommt keinen gespeicherten Wert."""
     config = Config(data_dir=tmp_path)
     client = create_app(config).test_client()
-    client.post("/einstellungen", data={"foundry_user": "chronist", "foundry_password": PASSWORT})
-    assert settings.stored(runde(config)) == {"foundry_user": "chronist"}
+    client.post("/einstellungen", data={"ollama_model": "gemma4:12b", "foundry_password": PASSWORT})
+    assert settings.stored(runde(config)) == {"ollama_model": "gemma4:12b"}
     assert not zugang.ist_gemerkt(runde(config))
 
 
@@ -415,10 +432,20 @@ def test_ein_leeres_bot_token_feld_behaelt_den_token(tmp_path):
     config = Config(data_dir=tmp_path)
     client = create_app(config).test_client()
     client.post("/einstellungen", data={"discord_bot_token": BOT_TOKEN})
-    client.post("/einstellungen", data={"foundry_user": "chronist", "discord_bot_token": ""})
+    client.post("/einstellungen", data={"ollama_model": "gemma4:12b", "discord_bot_token": ""})
     aktuell = settings.effective(config, runde(config))
     assert aktuell.discord_bot_token == BOT_TOKEN
-    assert aktuell.foundry_user == "chronist"
+    assert aktuell.ollama_model == "gemma4:12b"
+
+
+def test_der_token_kommt_nur_per_post_herein(tmp_path):
+    """In einer URL landete er im Zugriffslog des Proxys — dort gehört er nie hin."""
+    config = Config(data_dir=tmp_path)
+    client = create_app(config).test_client()
+    antwort = client.get(f"/einstellungen?discord_bot_token={BOT_TOKEN}")
+    assert antwort.status_code == 200
+    assert BOT_TOKEN not in antwort.get_data(as_text=True)
+    assert settings.effective(config, runde(config)).discord_bot_token is None
 
 
 def test_ein_gespeicherter_bot_token_richtet_discord_ohne_umgebung_ein(tmp_path):
@@ -434,10 +461,10 @@ def test_ein_gespeicherter_bot_token_richtet_discord_ohne_umgebung_ein(tmp_path)
     assert f"<dd>{settings.FRONTEND}</dd>" in html
 
 
-def test_status_nennt_je_wert_die_quelle(tmp_path):
-    config = Config(foundry_user="umgebungs-konto", data_dir=tmp_path)
+def test_die_technikdetails_nennen_je_instanz_wert_die_quelle(tmp_path):
+    config = Config(ollama_url="http://umgebung.example:11434", data_dir=tmp_path)
     client = create_app(config).test_client()
-    client.post("/einstellungen", data={"foundry_url": "https://frontend.example"})
+    client.post("/einstellungen", data={"ollama_model": "gemma4:12b"})
     html = zustand(client).get_data(as_text=True)
     assert f"<dd>{settings.FRONTEND}</dd>" in html
     assert f"<dd>{settings.UMGEBUNG}</dd>" in html
@@ -447,10 +474,7 @@ def test_status_nennt_je_wert_die_quelle(tmp_path):
 def test_die_einstellungen_stehen_hinter_demselben_tuersteher(tmp_path):
     client = bewacht(tmp_path)
     assert client.get("/einstellungen").status_code == 403
-    assert (
-        client.post("/einstellungen", data={"foundry_url": "https://frontend.example"}).status_code
-        == 403
-    )
+    assert client.post("/einstellungen", data={"ollama_model": "gemma4:12b"}).status_code == 403
     assert client.post("/einstellungen", data={"discord_bot_token": BOT_TOKEN}).status_code == 403
     assert settings.stored(runde(Config(data_dir=tmp_path))) == {}
 
@@ -546,21 +570,15 @@ def test_mit_bot_token_verschwindet_die_einrichtungshilfe(tmp_path):
     assert "Developer Portal" not in html
 
 
-def test_der_zustellkanal_wird_im_formular_gepflegt(tmp_path):
+def test_der_zustellkanal_wird_nicht_mehr_auf_der_betreiberseite_gepflegt(tmp_path):
+    """Er gehört der Runde — gesetzt wird er in Discord (``bot.einrichten.kanal_setzen``)."""
     config = Config(data_dir=tmp_path)
     client = create_app(config).test_client()
 
-    assert 'name="discord_recap_channel"' in client.get("/einstellungen").get_data(as_text=True)
+    assert 'name="discord_recap_channel"' not in client.get("/einstellungen").get_data(as_text=True)
     client.post("/einstellungen", data={"discord_recap_channel": "chronik"})
 
-    assert settings.effective(config, runde(config)).discord_recap_channel == "chronik"
-    for pfad in ("/einstellungen", "/status"):
-        assert "chronik" in client.get(pfad, follow_redirects=True).get_data(as_text=True)
-
-
-def test_ohne_zustellkanal_sagt_der_status_dass_nichts_zugestellt_wird(tmp_path):
-    html = seite(Config(data_dir=tmp_path)).get_data(as_text=True)
-    assert "Kein Zustellkanal" in html
+    assert settings.effective(config, runde(config)).discord_recap_channel is None
 
 
 UNKONFIGURIERT = "Foundry ist nicht eingerichtet"
@@ -593,7 +611,6 @@ def test_ein_gescheiterter_abgleich_steht_auf_der_arbeitsseite(config, welt):
     service.sync(config, runde(config), client=Abgleich(fehler=FoundryUnreachable("keine Antwort")))
     html = gelesen(config, "/")
     assert VERALTET in html
-    assert '<a href="/einstellungen#zustand">' in html
 
 
 def test_ein_geglueckter_abgleich_nimmt_das_band_wieder_weg(config, welt):
@@ -778,15 +795,16 @@ def test_spaeter_legt_die_einrichtung_beiseite_ohne_etwas_zu_speichern(tmp_path)
     assert instanz.onboarding_done(config.database_path)
     html = client.get("/").get_data(as_text=True)
     assert UNKONFIGURIERT in html
-    assert '<a href="/einstellungen">Zugang eintragen</a>' in html
+    assert '<a href="/einrichtung">Zugang eintragen</a>' in html
 
 
-def test_nach_der_einrichtung_fuehrt_das_band_in_die_einstellungen(tmp_path):
+def test_auch_nach_der_einrichtung_fuehrt_das_band_in_den_wizard(tmp_path):
+    """Der Foundry-Zugang gehört der Runde und steht in den Einstellungen nicht mehr."""
     config, _ = eine_sitzung(tmp_path)
     instanz.finish_onboarding(config.database_path)
     html = gelesen(config, "/")
     assert UNKONFIGURIERT in html
-    assert '<a href="/einstellungen">Zugang eintragen</a>' in html
+    assert '<a href="/einrichtung">Zugang eintragen</a>' in html
 
 
 def test_der_wizard_steht_hinter_demselben_tuersteher(tmp_path):
@@ -809,25 +827,19 @@ def test_die_fachlichen_reiter_stehen_neben_einem_zahnrad(tmp_path):
     assert ">Status</a>" not in html
 
 
-def test_der_alte_statuspfad_leitet_dauerhaft_in_den_zustand_um(tmp_path):
+def test_der_alte_statuspfad_leitet_dauerhaft_auf_die_betreiberseite_um(tmp_path):
     antwort = create_app(Config(data_dir=tmp_path)).test_client().get("/status")
     assert antwort.status_code == 301
-    assert antwort.headers["Location"] == "/einstellungen#zustand"
-
-
-def test_der_zustand_steht_unter_seinem_anker_in_den_einstellungen(tmp_path):
-    html = gelesen(Config(data_dir=tmp_path), "/einstellungen")
-    assert 'id="zustand"' in html
-    assert "<h2>Woher kommen die Spieldaten?</h2>" in html
+    assert antwort.headers["Location"] == "/einstellungen"
 
 
 # --- Nach Nutzerfragen geschnitten ---------------------------------------------------
 
 
 FRAGEN = (
-    "Woher kommen die Spieldaten?",
     "Wie kommt Gesprochenes herein?",
     "Wer formuliert die Chronik?",
+    "Wer darf verwalten?",
 )
 
 
@@ -838,29 +850,14 @@ def test_die_einstellungen_sind_nach_nutzerfragen_geschnitten(tmp_path):
     assert html.index(FRAGEN[0]) < html.index(FRAGEN[1]) < html.index(FRAGEN[2])
 
 
-def test_die_foundry_karte_traegt_zugang_zustand_und_den_abgleich(config, welt):
-    service.sync(config, runde(config), client=Abgleich(welt))
-    html = gelesen(config, "/einstellungen")
-    karte = html.split('id="zustand"')[1].split("</section>")[0]
-    assert 'name="foundry_url"' in karte
-    assert "Zugang steht" in karte
-    assert "Stand vom" in karte
-    assert ">Jetzt abgleichen</button>" in karte
-
-
-def test_der_abgleich_knopf_haengt_am_eigenen_formular(tmp_path):
-    html = gelesen(Config(data_dir=tmp_path), "/einstellungen")
-    assert '<form id="abgleich" method="post" action="/abgleich"' in html
-    assert 'form="abgleich"' in html
-
-
 def test_die_technikdetails_stehen_zugeklappt_am_ende(tmp_path):
     html = gelesen(Config(data_dir=tmp_path), "/einstellungen")
     block = html.split('<details class="karte">')[1]
     assert "<summary>Technikdetails</summary>" in block
     assert "Datenbank" in block
     assert "Schema-Stand" in block
-    assert "Foundry-Adresse" in block
+    assert "Discord-Bot-Token" in block
+    assert "Foundry-Adresse" not in block
 
 
 # --- Anstoßen aus der Oberfläche ----------------------------------------------------
@@ -947,12 +944,6 @@ def test_ein_gescheiterter_abgleich_bietet_das_erneute_holen_an(config, welt):
     assert ">Jetzt abgleichen</button>" in html
 
 
-def test_der_zustand_bietet_den_abgleich_immer_an(tmp_path):
-    html = gelesen(Config(data_dir=tmp_path), "/einstellungen")
-    assert 'action="/abgleich"' in html
-    assert ">Jetzt abgleichen</button>" in html
-
-
 def test_der_abgleich_kehrt_auf_die_seite_zurueck_von_der_er_kam(config, welt):
     client = create_app(config).test_client()
     antwort = client.post("/abgleich", data={"zurueck": f"/sitzungen/{1}"})
@@ -963,7 +954,7 @@ def test_der_abgleich_kehrt_auf_die_seite_zurueck_von_der_er_kam(config, welt):
 def test_der_abgleich_folgt_keiner_adresse_nach_draussen(config):
     client = create_app(config).test_client()
     antwort = client.post("/abgleich", data={"zurueck": "//woanders.example/"})
-    assert antwort.headers["Location"] == "/einstellungen#zustand"
+    assert antwort.headers["Location"] == "/"
     assert warte_bis(lambda: not jobs.running(runde(config), jobs.ABGLEICH))
 
 
@@ -1009,12 +1000,10 @@ def test_auch_die_abweisung_spricht_nutzersprache(tmp_path):
 
 def test_ein_abgleich_ohne_zugang_erklaert_das_ohne_variablennamen(tmp_path):
     config = Config(data_dir=tmp_path)
-    zustand = service.sync(config, runde(config))
-    assert zustand.stale
-
-    html = seite(config).get_data(as_text=True)
-    assert "Für den Zugang zu Foundry fehlen noch" in html
-    assert systemsprache(html) == []
+    stand = service.sync(config, runde(config))
+    assert stand.stale
+    assert "Für den Zugang zu Foundry fehlen noch" in stand.message
+    assert systemsprache(stand.message) == []
 
 
 def test_auch_das_abgelegte_protokoll_spricht_nutzersprache(tmp_path):
@@ -1148,14 +1137,14 @@ def test_wer_sich_selbst_aussperren_wuerde_wird_gewarnt(tmp_path):
     client = create_app(config).test_client()
     antwort = client.post(
         "/einstellungen",
-        data={"admin_group": GRUPPE, "foundry_user": "chronist"},
+        data={"admin_group": GRUPPE, "ollama_model": "gemma4:12b"},
         headers=MITSPIEL,
     )
     assert antwort.status_code == 200
     assert "stehst du selbst nicht" in antwort.get_data(as_text=True)
     assert instanz.admin_group(config.database_path) == ""
     # Was daneben im Formular stand, ist trotzdem gespeichert.
-    assert settings.stored(runde(config))["foundry_user"] == "chronist"
+    assert settings.stored(runde(config))["ollama_model"] == "gemma4:12b"
 
 
 def test_die_warnung_laesst_sich_bewusst_uebergehen(tmp_path):
@@ -1187,7 +1176,7 @@ def test_die_gruppe_zurueckzunehmen_warnt_nicht(tmp_path):
 
 def test_ein_formular_ohne_das_feld_nimmt_die_rolle_nicht_still_zurueck(tmp_path):
     config, client = mit_gruppe(tmp_path)
-    client.post("/einstellungen", data={"foundry_user": "chronist"}, headers=VERWALTUNG)
+    client.post("/einstellungen", data={"ollama_model": "gemma4:12b"}, headers=VERWALTUNG)
     assert instanz.admin_group(config.database_path) == GRUPPE
 
 
