@@ -371,6 +371,7 @@ def abschluss_starten(
     passwort: str | None,
     *,
     wer: str = "",
+    merken: bool = True,
     melden: Callable[[str], None],
 ) -> str:
     """Abgleich, Verschriften, Komponieren — ein Auftrag, eine Meldung im Thread.
@@ -381,10 +382,15 @@ def abschluss_starten(
     geprüft hat. ``None`` heißt: keines gegeben — dann bleibt es beim Merkzettel, den der
     Abgleich als Rückfall liest, und das Gemerkte wird nicht überschrieben. Ein leerer
     Text bleibt dagegen ein leeres Feld und vergisst, was da war.
+
+    ``merken=False`` sagt: dieses Passwort kam gerade **aus** dem Merkzettel. Es dort
+    wieder abzulegen setzte die Frist neu — und da ``jobs.start`` leer ausgeht, sobald
+    eine andere Runde die Maschine hält, verbrauchte es dann niemand. Jeder erneute
+    Versuch schöbe die zwölf Stunden aus #64 weiter, bis sie nichts mehr begrenzen.
     """
     if jobs.running(runde, jobs.CHRONIK):
         return LAEUFT_SCHON
-    if passwort is not None:
+    if passwort is not None and merken:
         zugang.merken(runde, passwort, wer=wer)
     auftrag = jobs.start(
         config,

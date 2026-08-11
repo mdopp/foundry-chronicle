@@ -81,15 +81,47 @@ class FakeGilde:
 
 
 class FakeAntwort:
+    """Die erste Antwort auf eine Interaktion — mit dem Aufschub, den Discord auch kennt.
+
+    ``defer`` und ``is_done`` gehören zum echten ``InteractionResponse``. Fehlten sie hier,
+    ginge ein Rückruf, der aufschiebt, im Test an einem ``AttributeError`` unter statt an
+    dem, was er tut.
+    """
+
     def __init__(self):
         self.gesendet: list[dict] = []
         self.bearbeitet: list[dict] = []
+        self.aufgeschoben = False
+
+    def is_done(self) -> bool:
+        return self.aufgeschoben or bool(self.gesendet)
+
+    async def defer(self, **rest):
+        self.aufgeschoben = True
 
     async def send_message(self, text=None, *, view=None, **rest):
+        # Discord weist eine zweite *erste* Antwort ab. Der Fake tut es auch, sonst
+        # bliebe ein Rückruf grün, der in echt an genau dieser Stelle scheiterte.
+        if self.is_done():
+            raise RuntimeError("InteractionResponded: schon beantwortet")
         self.gesendet.append({"text": text, "view": view})
 
     async def edit_message(self, *, content=None, view=None, **rest):
         self.bearbeitet.append({"content": content, "view": view})
+
+
+class FakeNachreichung:
+    """Was nach einem Aufschub nachgereicht wird — für den Absender dieselbe Antwort.
+
+    Sie landet in derselben Liste wie eine unmittelbare Antwort: geprüft wird, *dass*
+    jemand etwas erfährt, nicht über welchen der beiden Wege Discord es zustellt.
+    """
+
+    def __init__(self, gesendet: list[dict]):
+        self._gesendet = gesendet
+
+    async def send(self, text=None, *, view=None, **rest):
+        self._gesendet.append({"text": text, "view": view})
 
 
 class FakeMitglied:
@@ -108,6 +140,7 @@ MITGLIED = FakeMitglied()
 class FakeInteraction:
     def __init__(self, *, guild_id=GILDE, wer=LEITUNG, kanal=None):
         self.response = FakeAntwort()
+        self.followup = FakeNachreichung(self.response.gesendet)
         self.guild_id = guild_id
         self.user = wer
         self.channel = kanal
