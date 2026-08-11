@@ -1239,13 +1239,33 @@ def test_ohne_sprach_abhaengigkeiten_startet_der_bot_gar_nicht(konfiguration, py
     # Genau der Fall, der auf der Box rot war: py-cord verbindet sich anstandslos und
     # schreibt eine Warnzeile, aber hören kann der Bot nichts. Das gehört an den Start,
     # nicht mitten in den Befehl.
-    pycord.utils.get_missing_voice_dependencies = lambda: ("davey",)
+    pycord.utils.get_missing_voice_dependencies = lambda: ("PyNaCl",)
 
     with pytest.raises(BotFehler) as fehler:
         gateway.baue(konfiguration)
 
-    assert "davey" in str(fehler.value)
+    assert "PyNaCl" in str(fehler.value)
     assert FakeBot.erzeugt == []
+
+
+def test_das_fehlende_davey_haelt_den_start_nicht_auf(konfiguration, pycord):
+    """``davey`` fehlt mit Absicht — es ist die Bedingung dafuer, dass der Bot etwas hoert.
+
+    Mit davey meldet py-cord Discord DAVE-Faehigkeit, der Ton kommt Ende-zu-Ende
+    verschluesselt an, und ``opus.py`` dekodiert **erst** und entschluesselt **danach**:
+    der Dekoder sieht Rauschen und wirft »corrupted stream«. Am 2026-08-11 hat die erste
+    echte Runde deshalb keine Spur bekommen. Ohne davey melden wir DAVE-Fassung 0 und
+    Discord stuft auf die Transportverschluesselung herunter, die PyNaCl lesen kann.
+
+    Ein Start, der ueber das absichtlich fehlende Paket stolpert, machte den Bot
+    unbrauchbar — deshalb steht das hier fest.
+    """
+    pycord.utils.get_missing_voice_dependencies = lambda: ("davey",)
+
+    bot = gateway.baue(konfiguration)
+
+    assert bot is not None
+    assert FakeBot.erzeugt != []
 
 
 def test_die_fehlende_inhalts_freigabe_wird_gesagt_statt_geworfen(
@@ -3058,3 +3078,29 @@ def test_die_senke_haengt_an_ihrem_sprachclient(konfiguration, sitzung_id, ohne_
     assert verbindung.senke.client is verbindung, (
         "die Senke kennt ihren Sprachclient nicht — py-cord stirbt damit beim ersten Paket"
     )
+
+
+def test_dem_gateway_wird_dave_fassung_null_gemeldet(konfiguration, pycord):
+    """Sonst kommt der Ton verschluesselt an und der Opus-Dekoder sieht Rauschen.
+
+    py-cord schickt ``max_dave_protocol_version`` aus ``discord.voice.state``. Steht dort
+    etwas groesseres als 0, handelt Discord DAVE aus — und ``opus.py`` dekodiert erst und
+    entschluesselt danach. Am 2026-08-11 endete die erste echte Runde deshalb mit
+    »corrupted stream« und ohne eine einzige Spur.
+    """
+    zustand = types.SimpleNamespace(DAVE_PROTOCOL_VERSION=1)
+    pycord.voice = types.SimpleNamespace(state=zustand)
+
+    gateway.baue(konfiguration)
+
+    assert zustand.DAVE_PROTOCOL_VERSION == 0
+
+
+def test_ohne_dave_im_paket_wird_nichts_angefasst(konfiguration, pycord):
+    """Der Riegel greift nur, wenn er etwas vorfindet — sonst bleibt py-cord unberuehrt."""
+    zustand = types.SimpleNamespace(DAVE_PROTOCOL_VERSION=0)
+    pycord.voice = types.SimpleNamespace(state=zustand)
+
+    gateway.baue(konfiguration)
+
+    assert zustand.DAVE_PROTOCOL_VERSION == 0
