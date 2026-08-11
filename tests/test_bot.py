@@ -383,6 +383,33 @@ def test_eine_ansage_die_woanders_lief_belegt_keine_einwilligung(
     assert eintrag.kind == consent.ANSAGE
 
 
+class ZiehtWaehrendDerAnsage(FakeStimme):
+    """Ein Administrator zieht den Bot, während die Ansage noch spielt."""
+
+    async def ansagen(self, datei):
+        await super().ansagen(datei)
+        self.verschoben = True
+
+
+def test_wer_waehrend_der_ersten_ansage_gezogen_wird_faengt_gar_nicht_erst_an(
+    konfiguration, sitzung_id, ohne_espeak
+):
+    """Dieselbe Lücke wie beim Nachzügler, nur am Anfang — und hier trägt sie alles.
+
+    Der Ansage-Eintrag nennt Kanal und Besetzung des Ursprungs; beides wäre gelogen, wenn
+    die Ansage nebenan gespielt hat. Also entsteht keiner, und mitgeschnitten wird auch
+    nicht: ein Lauf, der weder schreibt noch etwas sagt, wäre das Schlechteste von beidem.
+    """
+    stimme = ZiehtWaehrendDerAnsage()
+
+    with pytest.raises(recorder.AufnahmeFehler) as fehler:
+        asyncio.run(recorder.starten(konfiguration, stimme, unsere_runde(konfiguration)))
+
+    assert str(fehler.value) == recorder.VERSCHOBEN_BEIM_START
+    assert consent.for_session(unsere_runde(konfiguration), sitzung_id) == ()
+    assert stimme.ablauf == ["ansage"]
+
+
 def test_stoppen_beendet_den_mitschnitt_trennt_und_reiht_ein(
     konfiguration, sitzung_id, ohne_espeak
 ):
@@ -701,6 +728,9 @@ class FakeGilde:
     def __init__(self, kennung=11):
         self.id = kennung
         self.mitglieder = {}
+        # Discords eigener Zustand des Bots. py-cord schreibt ihn, bevor es das Ereignis
+        # ausliefert — auch dann, wenn der Voice-Client den Kanal gerade nicht nachträgt.
+        self.me = None
 
     def get_member(self, kennung):
         return self.mitglieder.get(kennung)
@@ -755,6 +785,9 @@ class FakeSprachkanalOhneChat:
 
     async def connect(self):
         self.verbindung = FakeVoiceClient(self)
+        if self.guild.me is not None:
+            # Beitreten ist auch ein Zustandswechsel: Discord führt den Bot ab jetzt hier.
+            self.guild.me.voice.channel = self
         return self.verbindung
 
 
@@ -819,8 +852,10 @@ def runde(pycord):
     gilde = FakeGilde()
     mira = FakeMitglied(int(MIRA.id), MIRA.name)
     brok = FakeMitglied(int(BROK.id), BROK.name)
-    chronist = FakeMitglied(999, "Chronik-Bot", bot=True)
+    chronist = FakeMitglied(999, "Chronik-Bot", bot=True, kanal=None)
     kanal = FakeSprachkanal(gilde, mira, brok, chronist)
+    chronist.voice.channel = kanal
+    gilde.me = chronist
     for wer in (mira, brok):
         gilde.mitglieder[wer.id] = wer
         wer.voice = types.SimpleNamespace(channel=kanal)
@@ -1326,15 +1361,61 @@ def test_der_waechter_der_alten_aufnahme_verdraengt_den_der_neuen_nicht(
 
 
 def verschieben(runde, kennung=78):
-    """Ein Administrator zieht den Bot nach nebenan — py-cord trägt den Kanal nach.
+    """Ein Administrator zieht den Bot nach nebenan — beide Quellen tragen den Kanal nach.
 
-    Genau das tut ``voice/state.py`` → ``_update_voice_channel``, und zwar bevor das
-    Ereignis beim Bot ankommt; ``VoiceClient.channel`` ist danach der neue Kanal.
+    ``voice/state.py`` → ``_update_voice_channel`` setzt ``VoiceClient.channel``, und
+    ``guild._update_voice_state`` schreibt Discords eigenen Zustand des Bots. Beides
+    geschieht, bevor das Ereignis beim Bot ankommt.
     """
     nachbar = FakeSprachkanal(runde.gilde, runde.mira, runde.brok)
     nachbar.id = kennung
     runde.kanal.verbindung.channel = nachbar
+    runde.chronist.voice.channel = nachbar
     return nachbar
+
+
+def verbindung_zum_kanal(runde):
+    """Die echte ``Sprachverbindung`` auf dem nachgebauten Voice-Client."""
+    return gateway.Sprachverbindung(asyncio.run(runde.kanal.connect()))
+
+
+def test_die_mitglieder_sind_die_des_aufnahmekanals_nicht_die_des_bots(pycord, runde):
+    """Die Zusicherung aus #101, ohne Umweg über den Beobachter.
+
+    Dieselbe Liste geht in den Ansage-Eintrag des Einwilligungsprotokolls und entscheidet,
+    wann der Kanal als leer gilt. Zöge sie mit dem Bot mit, stünde im Protokoll die
+    Besetzung eines Kanals, in dem nie etwas angesagt wurde — und die Leere entschiede
+    über eine fremde Besetzung.
+    """
+    stimme = verbindung_zum_kanal(runde)
+    nachbar = verschieben(runde)
+    nachbar.members = [FakeMitglied(4404, "Fremde")]
+
+    assert [wer.name for wer in stimme.mitglieder()] == [MIRA.name, BROK.name]
+
+
+def test_die_verschiebung_faellt_auch_ohne_den_voice_client_auf(pycord, runde):
+    """``VoiceClient.channel`` allein reicht nicht — py-cord trägt ihn nicht immer nach.
+
+    Im Verbindungszustand ``got_voice_server_update`` lässt ``voice/state.py`` den Kanal
+    stehen. Fällt eine Verschiebung mit einer Voice-Server-Migration zusammen, zeigt der
+    Voice-Client weiter auf den alten Kanal; Discords eigener Zustand des Bots nicht.
+    """
+    stimme = verbindung_zum_kanal(runde)
+    nachbar = FakeSprachkanal(runde.gilde, runde.mira)
+    nachbar.id = 78
+    runde.chronist.voice.channel = nachbar
+
+    assert runde.kanal.verbindung.channel is runde.kanal
+    assert not stimme.im_kanal()
+
+
+def test_ohne_verbindung_sitzt_der_bot_in_keinem_kanal(pycord, runde):
+    """Getrennt ist nicht »noch da«: ``VoiceClient.channel`` ist dann ``None``."""
+    stimme = verbindung_zum_kanal(runde)
+    runde.kanal.verbindung.channel = None
+
+    assert not stimme.im_kanal()
 
 
 def test_verschoben_zaehlt_weiter_der_kanal_der_aufnahme(
@@ -1393,6 +1474,42 @@ def test_wer_verschoben_wird_hoert_auf_und_sagt_warum(
     (gesagt,) = thread.geschrieben
     assert gesagt.startswith(gateway.VERSCHOBEN.format(kanal=runde.kanal.name))
     assert "wartet auf den Stapel" in gesagt
+
+
+def test_der_start_im_falschen_kanal_laesst_keinen_lauf_zurueck(
+    konfiguration, sitzung_im_thread, ohne_espeak, runde, kurze_frist, monkeypatch
+):
+    """Wird der Bot während der ersten Ansage gezogen, gilt der Lauf nicht als laufend.
+
+    Sonst stünde er als schneidend da, schriebe nichts und sagte nichts — bis irgendein
+    fremdes Voice-Ereignis vorbeikäme. Stattdessen bricht der Befehl ab, sagt es dem
+    Aufrufer und lässt den Bot nicht im falschen Kanal sitzen.
+    """
+    echt = FakeVoiceClient.play
+
+    def zieht(selbst, quelle, *, after):
+        echt(selbst, quelle, after=after)
+        verschieben(runde)
+
+    monkeypatch.setattr(FakeVoiceClient, "play", zieht)
+    bot = gateway.baue(konfiguration)
+    thread = FakeTextkanal()
+    bot.kanaele[THREAD] = thread
+    ctx = FakeCtx(runde.mira)
+
+    async def ablauf():
+        await befehl(bot, "start")(ctx)
+        # Erst hierdurch fiele ein hängengebliebener Lauf überhaupt auf — es gibt keinen.
+        await bot.ereignisse["on_voice_state_update"](runde.mira, zustand(), zustand(runde.kanal))
+        await ruhen()
+
+    asyncio.run(ablauf())
+
+    assert not runde.kanal.verbindung.schneidet
+    assert runde.kanal.verbindung.getrennt
+    assert consent.for_session(unsere_runde(konfiguration), sitzung_im_thread) == ()
+    assert thread.geschrieben == []
+    assert ctx.antworten[-1] == gateway.GESCHEITERT.format(grund=recorder.VERSCHOBEN_BEIM_START)
 
 
 def test_was_nach_dem_verschieben_ankommt_landet_in_keiner_spur(
@@ -1522,6 +1639,23 @@ def test_der_gescheiterte_abschied_sagt_es_statt_zu_verschwinden(
     alle_gehen(bot, runde)
 
     assert thread.geschrieben == [gateway.LEER_GESCHEITERT]
+
+
+def test_das_langsamere_netz_meldet_kein_zweites_ende(konfiguration, sitzung_im_thread, pycord):
+    """Wer leer zurückbekommt, war der zweite — und der Satz gehört dem ersten.
+
+    ``_mitschnitt_beenden`` gibt leer zurück, wenn ein anderer den Lauf schon beansprucht
+    hat. Ein zweiter Satz behauptete ein zweites Ende und schickte zu einem
+    ``/aufnahme stop``, das »keine Aufnahme« antwortet.
+    """
+    bot = gateway.baue(konfiguration)
+    thread = FakeTextkanal()
+    bot.kanaele[THREAD] = thread
+    aufnahme = Aufnahme(konfiguration, unsere_runde(konfiguration), sitzung_im_thread, KANAL)
+
+    asyncio.run(gateway._beenden_und_sagen(bot, gateway._Lauf(), aufnahme, "beendet", "kaputt"))
+
+    assert thread.geschrieben == []
 
 
 def test_eine_misslungene_ansage_macht_aus_dem_ende_keinen_fehlschlag(
