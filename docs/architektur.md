@@ -120,7 +120,10 @@ Szene ihres Startzeitpunkts. Voraussetzung ist, dass der Nullpunkt dieser Uhr in
 später geschätzt. Ein Auswahlweg in Discord ist bewusst verworfen. Was aus den Spuren
 kommt, wird bei jedem Lauf ersetzt (`note.origin`); was ein Mensch geschrieben hat,
 bleibt unangetastet. **Ein Diktat hat keine Sitzungsuhr** und wird deshalb nicht
-zugeordnet — für den Präsenzweg bleibt die Szenenfolge die einzige Zeitachse.
+verschränkt — es bekommt seine Szene über den Zeitpunkt der **Nachricht**, mit der es im
+Thread ankam (`recording.message_at`, #160): dieselbe Regel, nach der eine getippte Notiz
+ihre Szene findet, und derselbe `note.origin`, also ersetzt der zweite Lauf auch hier.
+Für den Präsenzweg bleibt die Szenenfolge die einzige Zeitachse.
 
 **Foundry liefert die Zahlen, der Text die Erzählung.** Würfe, Schaden und Beute
 werden nie aus gesprochener oder getippter Sprache rekonstruiert, sondern aus dem

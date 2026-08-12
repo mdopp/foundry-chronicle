@@ -93,6 +93,7 @@ NACHGETRAGEN = (
     ("recording", "deleted_at", "TEXT"),
     ("recording", "discord_user_id", "TEXT"),
     ("recording", "started_at", "TEXT"),
+    ("recording", "message_at", "TEXT"),
     ("note", "origin", "TEXT"),
     ("protocol", "delivered_at", "TEXT"),
     ("session", "thread_id", "TEXT"),

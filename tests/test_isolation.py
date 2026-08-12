@@ -173,6 +173,13 @@ def fuellen(config: Config, runde, marke: str) -> dict[str, int]:
             ((0, 1000, f"Gesprochen von {marke}."),),
             "2026-05-01T21:00:00",
         )
+        transcribe_service.store(
+            scope,
+            sitzung,
+            f"{marke}-memo",
+            ((0, 1000, f"Diktiert von {marke}."),),
+            "2026-05-01T21:00:00",
+        )
         with scope:
             scope.execute(
                 "INSERT INTO register_entry (runde_id, kind, name, description, state, "
@@ -215,6 +222,16 @@ def fuellen(config: Config, runde, marke: str) -> dict[str, int]:
         started_at="2026-05-01T20:00:00+00:00",
     )
     aufnahme = recordings.for_session(runde, sitzung)[0]
+    # Und ein Diktat daneben: keine Sitzungsuhr, dafür der Zeitpunkt seiner Nachricht. Das
+    # ist der zweite Weg, auf dem gesprochenes Wort in Szenen geschrieben wird (#160), und
+    # er gehört durch dieselbe Schranke wie der erste.
+    recordings.enqueue(
+        runde,
+        sitzung,
+        f"{marke}-memo.m4a",
+        discord_user_id="d-1",
+        message_at="2026-05-01T21:30:00+00:00",
+    )
     consent.record(
         runde,
         session_id=sitzung,
@@ -575,12 +592,16 @@ def test_das_transkript_wandert_nur_in_die_eigenen_szenen(zwei_runden):
     und eine verwechselte Runde legte die Stimmen der einen Gruppe in die Chronik der
     anderen. Zweitens verwirft er dabei — ein zweiter Lauf hier darf drüben nichts
     abräumen.
+
+    Zwei Notizen je Runde, weil es zwei Wege sind: die Bot-Spur über die Sitzungsuhr und
+    das Diktat über den Zeitpunkt seiner Nachricht (#160). Beide müssen durch die Schranke.
     """
     _config, a, b, ids = zwei_runden
-    assert merge.uebernehmen(a, ids[1]["sitzung"]) == 1
+    assert merge.uebernehmen(a, ids[1]["sitzung"]) == 2
     assert merge.uebernehmen(a, ids[2]["sitzung"]) == 0
-    assert merge.uebernehmen(b, ids[2]["sitzung"]) == 1
+    assert merge.uebernehmen(b, ids[2]["sitzung"]) == 2
 
+    assert f"Diktiert von {MARKE[1]}." in _notiztexte(a, ids[1]["sitzung"])
     assert MARKE[1] in _notiztexte(a, ids[1]["sitzung"])
     assert MARKE[2] not in _notiztexte(a, ids[1]["sitzung"])
     assert MARKE[2] in _notiztexte(b, ids[2]["sitzung"])
