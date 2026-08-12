@@ -23,6 +23,7 @@ verletzt.
 from __future__ import annotations
 
 import re
+from datetime import datetime, timedelta
 
 import pytest
 from conftest import runde
@@ -177,6 +178,39 @@ WELT = {
 ZWEITE_SZENE = "Der Karren ohne Zugtier"
 DRITTE_SZENE = "Was unter der Plane lag"
 
+# Wann die Trennlinien gezogen wurden, in Sekunden nach dem Aufnahmebeginn. Beide liegen
+# **mitten im Gespräch**: die zweite Szene beginnt, während Kesselflick noch redet, die
+# dritte in der Stille davor. Genau daran zeigt sich die Regel — eine Äußerung gehört in
+# die Szene ihres Startzeitpunkts, auch wenn sie über die Linie hinausredet.
+SZENE_ZWEI_AB = 30
+SZENE_DREI_AB = 60
+
+# Wer wohin gehört, wenn die Regel gilt. Von Hand aus GESPRAECH abgelesen: alles vor
+# 30 s in die erste, alles ab 30 s in die zweite, alles ab 60 s in die dritte Szene.
+JE_SZENE = (
+    (
+        HALBER_SATZ,
+        UNTERBRECHUNG,
+        FORTSETZUNG,
+        GLEICHZEITIG_FRAGE,
+        GLEICHZEITIG_ANTWORT,
+        "Ich gehe zum Karren.",
+        "Ich gehe mit.",
+        WIEDERHOLUNG,
+    ),
+    (
+        "Dann geht ihr beide, und ich",
+        "Wer die Plane anhebt, würfelt auf Instinkt.",
+        "— und ich bleibe am Tor.",
+    ),
+    (
+        "Unter der Plane liegt eine Kiste mit einem Wachssiegel.",
+        VERSCHMOLZEN,
+        "Frisch heißt, jemand war vor uns hier.",
+        "Oder jemand ist noch hier.",
+    ),
+)
+
 # --- Die Nachbarrunde ----------------------------------------------------------------
 #
 # Sie spielt etwas ganz anderes und darf in der Chronik der ersten mit keinem Wort
@@ -287,18 +321,48 @@ def angesagt(gastgeber, *mitglieder, guild_id="g-erste"):
     )
 
 
-def spuren(gastgeber, sitzung_id, gespraech):
-    """Je Sprecher eine Spur mit Discord-Id — so legt der Aufnahme-Bot sie ab."""
+def spuren(gastgeber, sitzung_id, gespraech, beginn_at):
+    """Je Sprecher eine Spur mit Discord-Id und Aufnahmebeginn — so legt der Bot sie ab."""
     je_sprecher: dict[str, list[tuple[int, int, str]]] = {}
     for wer, beginn, ende, text in gespraech:
         je_sprecher.setdefault(wer.id, []).append((beginn, ende, text))
     scope = db.scoped(gastgeber)
     try:
         for wer in dict.fromkeys(eintrag[0] for eintrag in gespraech):
-            recordings.enqueue(gastgeber, sitzung_id, f"{wer.name}.wav", discord_user_id=wer.id)
+            recordings.enqueue(
+                gastgeber,
+                sitzung_id,
+                f"{wer.name}.wav",
+                discord_user_id=wer.id,
+                started_at=beginn_at,
+            )
             transcribe.store(scope, sitzung_id, wer.name, tuple(je_sprecher[wer.id]), STAND)
     finally:
         scope.close()
+
+
+def sitzungsbeginn(gastgeber, sitzung_id):
+    """Wann die erste Szene gezogen wurde — der Nullpunkt, auf den die Spuren gelegt werden.
+
+    Die erste Szene entsteht mit der Sitzung und trägt die Wanduhr; die Aufnahme beginnt
+    im selben Moment. Damit liegen Sitzungsuhr und Szenengrenzen auf derselben Achse,
+    ohne dass irgendwo ein Zeitpunkt erfunden würde.
+    """
+    scope = db.scoped(gastgeber)
+    try:
+        return scope.execute(
+            "SELECT created_at FROM scene WHERE runde_id = ? AND session_id = ? "
+            "ORDER BY position LIMIT 1",
+            (scope.runde_id, sitzung_id),
+        ).fetchone()["created_at"]
+    finally:
+        scope.close()
+
+
+def versetzt(zeitpunkt, sekunden):
+    return (datetime.fromisoformat(zeitpunkt) + timedelta(seconds=sekunden)).isoformat(
+        timespec="seconds"
+    )
 
 
 def welt_einspielen(gastgeber, roh):
@@ -335,9 +399,10 @@ def sitzung_id(config):
         {MORGENTAU.id: MORGENTAU_IN_FOUNDRY, KESSELFLICK.id: KESSELFLICK_IN_FOUNDRY},
     )
     sitzung = notes.create_session(gastgeber, played_on="2026-08-11", title="Die Graue Gasse")
-    spuren(gastgeber, sitzung, GESPRAECH)
-    for titel in (ZWEITE_SZENE, DRITTE_SZENE):
-        notes.add_scene(gastgeber, sitzung, title=titel)
+    beginn = sitzungsbeginn(gastgeber, sitzung)
+    spuren(gastgeber, sitzung, GESPRAECH, beginn)
+    for titel, ab in ((ZWEITE_SZENE, SZENE_ZWEI_AB), (DRITTE_SZENE, SZENE_DREI_AB)):
+        notes.add_scene(gastgeber, sitzung, title=titel, at=versetzt(beginn, ab))
     szenen = notes.session(gastgeber, sitzung).scenes
     verknuepfe(
         gastgeber,
@@ -364,6 +429,7 @@ def nachbarin(config, sitzung_id):
             (NACHBARIN, 0, 3000, f"Die {FREMDES_WORT} lag noch auf dem Tisch."),
             (NACHBARIN, 9000, 11000, f"Niemand ruehrte die {FREMDES_WORT} an."),
         ),
+        sitzungsbeginn(zweite, sitzung),
     )
     szene = notes.session(zweite, sitzung).scenes[0]
     notes.add_note(zweite, szene.id, f"Die {FREMDES_WORT} blieb liegen.")
@@ -382,7 +448,13 @@ def unterhaltung(config, sitzung_id):
 
 
 @pytest.fixture
-def chronik(config, sitzung_id, modell):
+def uebernommen(config, sitzung_id):
+    """Der Übergang, den ``jobs.chronik`` vor der Komposition geht — hier für sich."""
+    return merge.uebernehmen(runde(config), sitzung_id)
+
+
+@pytest.fixture
+def chronik(config, sitzung_id, uebernommen, modell):
     return compose_session(config, runde(config), sitzung_id, model=modell)
 
 
@@ -417,15 +489,6 @@ def test_zwei_segmente_derselben_stimme_werden_ein_beitrag(unterhaltung):
 # --- Der Durchstich ------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "#140: compose.service.material() liest note und scene_foundry_message, nicht "
-        "transcript_segment. Die einzige Bruecke ist die Formularroute der Weboberflaeche, "
-        "die mit #62/#69 verschwindet — ohne sie faellt das fertige Transkript zwischen "
-        "Verschriftung und Komposition heraus."
-    ),
-)
 def test_jeder_redebeitrag_kommt_in_der_chronik_an(unterhaltung, chronik, modell):
     """Der Bruch, den kein Stufentest sah: ein Transkript, erzeugt und fallengelassen."""
     fehlend = [a.text for a in unterhaltung if a.text not in chronik.text]
@@ -436,6 +499,47 @@ def test_jeder_redebeitrag_kommt_in_der_chronik_an(unterhaltung, chronik, modell
     gezeigt = "\n".join(modell.auftraege)
     assert [a.text for a in unterhaltung if a.text not in gezeigt] == []
     assert NOTIZEN_TITEL in chronik.text
+
+
+def test_jede_aussage_faellt_in_die_szene_ihres_starts(config, sitzung_id, uebernommen):
+    """Wer über die Trennlinie hinausredet, bleibt trotzdem in der Szene, in der er anfing."""
+    assert uebernommen == 3
+
+    szenen = notes.session(runde(config), sitzung_id).scenes
+    assert [len(szene.notes) for szene in szenen] == [1, 1, 1]
+    for szene, erwartet in zip(szenen, JE_SZENE, strict=True):
+        zeilen = szene.notes[0].text.splitlines()
+        assert [zeile.split(": ", 1)[1] for zeile in zeilen] == list(erwartet)
+
+
+def test_ein_zweiter_abschluss_legt_das_gespraech_nicht_ein_zweites_mal(
+    config, sitzung_id, uebernommen
+):
+    """Der Lauf ist wiederholbar — sonst stünde nach dem zweiten alles doppelt da."""
+    vorher = notes.session(runde(config), sitzung_id)
+
+    assert merge.uebernehmen(runde(config), sitzung_id) == 3
+
+    nachher = notes.session(runde(config), sitzung_id)
+    assert nachher.note_count == vorher.note_count
+    assert [[notiz.text for notiz in szene.notes] for szene in nachher.scenes] == [
+        [notiz.text for notiz in szene.notes] for szene in vorher.scenes
+    ]
+
+
+def test_eine_von_hand_geschriebene_notiz_ueberlebt_den_zweiten_lauf(
+    config, sitzung_id, uebernommen
+):
+    """Ersetzt wird nur Abgeleitetes — was ein Mensch tippte, räumt kein Lauf fort."""
+    gastgeber = runde(config)
+    erste = notes.session(gastgeber, sitzung_id).scenes[0]
+    notes.add_note(gastgeber, erste.id, "Am Tor roch es nach nassem Stein.")
+
+    merge.uebernehmen(gastgeber, sitzung_id)
+
+    texte = [notiz.text for notiz in notes.session(gastgeber, sitzung_id).scenes[0].notes]
+    assert "Am Tor roch es nach nassem Stein." in texte
+    assert len(texte) == 2
 
 
 # --- Die Zahlenschranke --------------------------------------------------------------
@@ -450,8 +554,13 @@ def test_eine_unbelegte_zahl_wird_verworfen_und_die_verwerfung_steht_da(chronik,
 
 
 def test_eine_belegte_zahl_bleibt_im_verbindungstext_stehen(chronik, modell):
-    """Die Schranke fängt das Erfundene, nicht das Belegte — sonst bliebe nur die Liste."""
-    belegter_satz = BELEGT.format(wer="Yrsa Grauhalm", summe=INSTINKT_SUMME)
+    """Die Schranke fängt das Erfundene, nicht das Belegte — sonst bliebe nur die Liste.
+
+    Wen der Mock nennt, ist der erste Name in seiner Vorlage — seit die Übernahme steht,
+    ist das eine Stimme aus dem Transkript und nicht mehr der Sprecher des Wurfs. Genau
+    das ist der Beleg, dass das Gespräch vor den Zahlen im Auftrag steht.
+    """
+    belegter_satz = BELEGT.format(wer="Kesselflick", summe=INSTINKT_SUMME)
 
     assert belegter_satz in modell.antworten
     assert belegter_satz in chronik.text

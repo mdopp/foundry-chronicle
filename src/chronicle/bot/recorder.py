@@ -27,6 +27,7 @@ import asyncio
 import logging
 import wave
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Protocol
 
@@ -148,6 +149,10 @@ PROBE_AUFGERAEUMT_REST = (
 )
 
 
+def _now() -> str:
+    return datetime.now(UTC).isoformat(timespec="seconds")
+
+
 @dataclass(frozen=True)
 class Kanal:
     guild_id: str
@@ -254,6 +259,7 @@ class Aufnahme:
         self._config = config
         self._spuren: dict[str, _Spur] = {}
         self._angesagt = False
+        self.begonnen_at: str | None = None
         # Nur gezählt, nicht gedeutet: wie oft überhaupt etwas zu schreiben ankam. Das ist
         # die Frage, die der Empfangstest beantwortet — und die einzige, die man von außen
         # nicht sehen kann.
@@ -291,6 +297,17 @@ class Aufnahme:
             len(mitglieder),
         )
         return kennung
+
+    def mitschnitt_begonnen(self) -> None:
+        """Hält den Nullpunkt der Sitzungsuhr fest — den Moment, ab dem Millisekunde 0 zählt.
+
+        Er wird hier festgehalten und nirgends später hergeleitet: ``uploaded_at`` ist der
+        Zeitpunkt des Einreihens und damit das *Ende* der Aufnahme, und die Ansage davor
+        dauert je nach Text unterschiedlich lang. Ein aus einem der beiden gerechneter
+        Beginn wäre eine geratene Zeitrechnung, und aus ihr fiele jede Äußerung in die
+        falsche Szene.
+        """
+        self.begonnen_at = _now()
 
     def schreiben(self, sprecher: consent.Member, pcm: bytes) -> None:
         if not self._angesagt:
@@ -375,6 +392,7 @@ class Aufnahme:
                         self.session_id,
                         spur.pfad.name,
                         discord_user_id=user_id,
+                        started_at=self.begonnen_at,
                     )
                 except recordings.BereitsEingereiht:
                     pass
@@ -446,6 +464,7 @@ async def starten(config: Config, stimme: Stimme, runde: Runde) -> Aufnahme:
         raise AufnahmeFehler(VERSCHOBEN_BEIM_START)
     aufnahme.ansage_protokollieren(stimme.mitglieder())
     stimme.mitschneiden(aufnahme)
+    aufnahme.mitschnitt_begonnen()
     return aufnahme
 
 

@@ -166,7 +166,11 @@ def fuellen(config: Config, runde, marke: str) -> dict[str, int]:
             kind=compose_service.RUECKBLICK,
         )
         transkript = transcribe_service.store(
-            scope, sitzung, "spur", ((0, 1000, f"Gesprochen von {marke}."),), "2026-05-01T21:00:00"
+            scope,
+            sitzung,
+            f"{marke}-spur",
+            ((0, 1000, f"Gesprochen von {marke}."),),
+            "2026-05-01T21:00:00",
         )
         with scope:
             scope.execute(
@@ -200,7 +204,15 @@ def fuellen(config: Config, runde, marke: str) -> dict[str, int]:
     finally:
         scope.close()
 
-    recordings.enqueue(runde, sitzung, f"{marke}-spur.wav", discord_user_id="d-1")
+    # Mit festgehaltenem Aufnahmebeginn: erst damit hat die Spur eine Sitzungsuhr, und
+    # erst dann geht der Weg »Transkript → Szene« überhaupt los, den es zu trennen gilt.
+    recordings.enqueue(
+        runde,
+        sitzung,
+        f"{marke}-spur.wav",
+        discord_user_id="d-1",
+        started_at="2026-05-01T20:00:00+00:00",
+    )
     aufnahme = recordings.for_session(runde, sitzung)[0]
     consent.record(
         runde,
@@ -377,6 +389,8 @@ SCHREIBER = frozenset(
         "notes.add_note",
         "notes.update_note",
         "notes.remove_note",
+        "notes.drop_derived",
+        "merge.uebernehmen",
         "recordings.enqueue",
         "recordings.accept",
         "recordings.mark",
@@ -546,6 +560,33 @@ def test_der_thread_der_fremden_runde_ist_keine_sitzung(zwei_runden):
     assert notes.remove_note(a, ids[2]["nachricht"]) is False
     fremde = notes.session(b, ids[2]["sitzung"]).scenes[0].notes
     assert [notiz.text for notiz in fremde] == [f"Im Keller stand {MARKE[2]}."]
+
+
+def _notiztexte(runde, session_id) -> str:
+    daten = notes.session(runde, session_id)
+    return " ".join(notiz.text for szene in daten.scenes for notiz in szene.notes)
+
+
+def test_das_transkript_wandert_nur_in_die_eigenen_szenen(zwei_runden):
+    """Der neue Weg aus #140 geht durch dieselbe Schranke wie alles andere.
+
+    Er ist der schärfste Fall seit Langem: er **schreibt** gesprochenes Wort in Szenen,
+    und eine verwechselte Runde legte die Stimmen der einen Gruppe in die Chronik der
+    anderen. Zweitens verwirft er dabei — ein zweiter Lauf hier darf drüben nichts
+    abräumen.
+    """
+    _config, a, b, ids = zwei_runden
+    assert merge.uebernehmen(a, ids[1]["sitzung"]) == 1
+    assert merge.uebernehmen(a, ids[2]["sitzung"]) == 0
+    assert merge.uebernehmen(b, ids[2]["sitzung"]) == 1
+
+    assert MARKE[1] in _notiztexte(a, ids[1]["sitzung"])
+    assert MARKE[2] not in _notiztexte(a, ids[1]["sitzung"])
+    assert MARKE[2] in _notiztexte(b, ids[2]["sitzung"])
+    assert MARKE[1] not in _notiztexte(b, ids[2]["sitzung"])
+
+    assert notes.drop_derived(a, ids[2]["sitzung"], merge.TRANSKRIPT) == 0
+    assert MARKE[2] in _notiztexte(b, ids[2]["sitzung"])
 
 
 def test_aufnahme_der_fremden_runde_bleibt_unberuehrt(zwei_runden):

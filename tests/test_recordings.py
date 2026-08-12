@@ -449,10 +449,12 @@ def test_eine_alte_datenbank_bekommt_die_spalte_nachgetragen(tmp_path):
 
     verbindung = db.connect(pfad)
     try:
-        zeile = verbindung.execute("SELECT filename, deleted_at FROM recording").fetchone()
+        zeile = verbindung.execute(
+            "SELECT filename, deleted_at, started_at FROM recording"
+        ).fetchone()
     finally:
         verbindung.close()
-    assert (zeile["filename"], zeile["deleted_at"]) == ("memo.m4a", None)
+    assert (zeile["filename"], zeile["deleted_at"], zeile["started_at"]) == ("memo.m4a", None, None)
     assert db.current_schema_version(pfad) == db.SCHEMA_VERSION
 
 

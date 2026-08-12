@@ -146,6 +146,11 @@ CREATE TABLE IF NOT EXISTS scene (
 -- ``discord_message_id`` bindet die Notiz an die Nachricht, aus der sie entstand. Discord
 -- meldet Änderung und Löschung nur mit dieser Kennung — ohne sie bliebe eine gelöschte
 -- Notiz bei uns stehen, und das wäre die falsche Sorte Gedächtnis.
+-- ``origin`` sagt, woher der Text kommt: ``NULL`` heißt, ein Mensch hat ihn geschrieben,
+-- ``'transkript'`` heißt, er wurde aus den Spuren dieser Sitzung abgeleitet. Der
+-- Unterschied ist nicht kosmetisch — Abgeleitetes wird beim nächsten Lauf **ersetzt**,
+-- Geschriebenes nie. Ohne diese Spalte legte ein zweiter Abschluss dasselbe Gespräch ein
+-- zweites Mal in dieselbe Szene.
 CREATE TABLE IF NOT EXISTS note (
     id                 INTEGER PRIMARY KEY,
     runde_id           INTEGER NOT NULL REFERENCES runde (id) ON DELETE CASCADE,
@@ -154,6 +159,7 @@ CREATE TABLE IF NOT EXISTS note (
     created_at         TEXT NOT NULL,
     updated_at         TEXT NOT NULL,
     discord_message_id TEXT,
+    origin             TEXT,
     FOREIGN KEY (scene_id, runde_id) REFERENCES scene (id, runde_id) ON DELETE CASCADE
 );
 
@@ -223,6 +229,13 @@ CREATE TABLE IF NOT EXISTS transcript (
 --
 -- ``filename`` ist über alle Runden hinweg eindeutig: das Aufnahmeverzeichnis ist eines,
 -- zwei gleichnamige Spuren wären dieselbe Datei.
+--
+-- ``started_at`` ist der **Nullpunkt der Sitzungsuhr**: der Wanduhr-Zeitpunkt, an dem der
+-- Mitschnitt begann. ``transcript_segment.start_ms`` zählt ab genau diesem Moment, und
+-- ohne ihn ließe sich eine Äußerung keiner Szene zuordnen, ohne die Zeitrechnung zu
+-- raten. Er wird beim Start festgehalten, nicht später aus ``uploaded_at`` geschätzt —
+-- das ist der Zeitpunkt des *Einreihens*, also das Ende der Aufnahme. ``NULL`` steht bei
+-- allem, was keine Sitzungsuhr hat: Diktate, Uploads, Bestände von vor dieser Spalte.
 CREATE TABLE IF NOT EXISTS recording (
     id          INTEGER PRIMARY KEY,
     runde_id    INTEGER NOT NULL REFERENCES runde (id) ON DELETE CASCADE,
@@ -230,6 +243,7 @@ CREATE TABLE IF NOT EXISTS recording (
     filename    TEXT NOT NULL UNIQUE,
     source      TEXT NOT NULL,
     uploaded_at TEXT NOT NULL,
+    started_at  TEXT,
     status      TEXT NOT NULL
                 CHECK (status IN ('wartet', 'laeuft', 'fertig', 'gescheitert')),
     detail      TEXT,

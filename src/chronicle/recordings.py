@@ -103,6 +103,7 @@ class Recording:
     text: str = ""
     deleted_at: str | None = None
     discord_user_id: str | None = None
+    started_at: str | None = None
 
 
 def _now() -> str:
@@ -122,6 +123,7 @@ def _eintrag(row: sqlite3.Row, text: str = "") -> Recording:
         text=text,
         deleted_at=row["deleted_at"],
         discord_user_id=row["discord_user_id"],
+        started_at=row["started_at"] if "started_at" in row.keys() else None,
     )
 
 
@@ -166,6 +168,7 @@ def enqueue(
     filename: str,
     *,
     discord_user_id: str | None = None,
+    started_at: str | None = None,
 ) -> Recording:
     """Reiht eine Spur ein.
 
@@ -173,6 +176,11 @@ def enqueue(
     die Audiodaten je Client, wer gesprochen hat ist also bekannt und muss nicht später
     aus dem Dateinamen geraten werden — geraten stünde irgendwann der falsche Name über
     einem Absatz.
+
+    ``started_at`` ebenso, und es ist der Nullpunkt der Sitzungsuhr: der Moment, in dem
+    der Mitschnitt begann. Ohne ihn hat die Spur keine Zeitachse, die sich auf die Szenen
+    legen ließe — ein Diktat vom Heimweg bekommt deshalb keinen, und zwar auch dann
+    nicht, wenn es als Anhang im Thread landet und darum eine Discord-Id trägt.
 
     Liegt die Datei schon in der Warteschlange, kommt ``BereitsEingereiht`` — ein zweiter
     Anlauf über mehrere Spuren soll die schon eingereihten überspringen können, statt an
@@ -184,7 +192,8 @@ def enqueue(
         with scope:
             cursor = scope.execute(
                 "INSERT INTO recording (runde_id, session_id, filename, source, uploaded_at, "
-                "status, updated_at, discord_user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                "status, updated_at, discord_user_id, started_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     scope.runde_id,
                     session_id,
@@ -194,6 +203,7 @@ def enqueue(
                     WARTET,
                     zeitpunkt,
                     discord_user_id,
+                    started_at,
                 ),
             )
     except sqlite3.IntegrityError as fehler:
@@ -210,6 +220,7 @@ def enqueue(
         uploaded_at=zeitpunkt,
         status=WARTET,
         discord_user_id=discord_user_id,
+        started_at=started_at,
     )
 
 
@@ -232,7 +243,7 @@ def _mit_transkript(scope: db.Scope, row: sqlite3.Row) -> Recording:
 # Lauf ersetzt die Transkript-Zeile im Ganzen, ihre Id wäre also nicht haltbar.
 AUSWAHL = (
     "SELECT r.id, r.session_id, r.filename, r.source, r.uploaded_at, r.status, r.detail, "
-    "r.deleted_at, r.discord_user_id, t.id AS transcript_id FROM recording r "
+    "r.deleted_at, r.discord_user_id, r.started_at, t.id AS transcript_id FROM recording r "
     "LEFT JOIN transcript t ON t.runde_id = r.runde_id AND t.session_id = r.session_id "
     "AND t.source = r.source WHERE r.runde_id = ? "
 )
