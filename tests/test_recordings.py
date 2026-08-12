@@ -7,14 +7,12 @@ ein erfundenes.
 
 from __future__ import annotations
 
-import io
 import sqlite3
 import wave
 from datetime import UTC, datetime, timedelta
 
 import pytest
 from conftest import runde
-from werkzeug.datastructures import FileStorage
 
 from chronicle import db, notes, recordings
 from chronicle.config import Config
@@ -53,12 +51,12 @@ def sitzung_id(config):
     return notes.create_session(runde(config), played_on="2026-08-06", title="Der Keller")
 
 
-def diktat(name="Sprachmemo 3.m4a", inhalt=DIKTAT):
-    return FileStorage(stream=io.BytesIO(inhalt), filename=name)
-
-
-def hochladen(config, sitzung_id, **kwargs):
-    return recordings.accept(config, runde(config), sitzung_id, diktat(**kwargs))
+def hochladen(config, sitzung_id, name="Sprachmemo 3.m4a", inhalt=DIKTAT):
+    """Eine angenommene Spur, so wie der Sitzungs-Thread sie ablegt: Datei, dann Zeile."""
+    config.recordings_dir.mkdir(parents=True, exist_ok=True)
+    ziel = recordings.target_path(config.recordings_dir, sitzung_id, name)
+    ziel.write_bytes(inhalt)
+    return recordings.enqueue(runde(config), sitzung_id, ziel.name)
 
 
 # --- Hochladen ----------------------------------------------------------------------
@@ -88,33 +86,6 @@ def test_mehrere_diktate_je_sitzung_stehen_nebeneinander(config, sitzung_id):
 
     assert len(list(config.recordings_dir.iterdir())) == 2
     assert len(recordings.for_session(runde(config), sitzung_id)) == 2
-
-
-def test_ohne_datei_wird_verstaendlich_abgewiesen(config, sitzung_id):
-    with pytest.raises(recordings.Rejected) as fehler:
-        recordings.accept(config, runde(config), sitzung_id, None)
-
-    assert "Keine Datei ausgewählt" in str(fehler.value)
-    assert recordings.for_session(runde(config), sitzung_id) == ()
-
-
-def test_was_kein_audio_ist_wird_verstaendlich_abgewiesen(config, sitzung_id):
-    with pytest.raises(recordings.Rejected) as fehler:
-        hochladen(config, sitzung_id, name="notizen.txt")
-
-    meldung = str(fehler.value)
-    assert "keine Audiodatei" in meldung
-    assert ".m4a" in meldung
-    assert not config.recordings_dir.exists() or list(config.recordings_dir.iterdir()) == []
-
-
-def test_eine_leere_datei_hinterlaesst_nichts(config, sitzung_id):
-    with pytest.raises(recordings.Rejected) as fehler:
-        hochladen(config, sitzung_id, inhalt=b"")
-
-    assert "leer" in str(fehler.value)
-    assert list(config.recordings_dir.iterdir()) == []
-    assert recordings.for_session(runde(config), sitzung_id) == ()
 
 
 def test_die_grenze_ist_grosszuegig_genug_fuer_einen_abend():

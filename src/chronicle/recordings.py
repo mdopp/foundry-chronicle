@@ -1,15 +1,16 @@
-"""Die Warteschlange der Spuren: hochgeladen, wartend, transkribiert.
+"""Die Warteschlange der Spuren: angenommen, wartend, transkribiert.
 
-Ein Diktat-Upload legt hier einen Job an — dieselbe Warteschlange und dieselbe Stufe,
-die später der Recorder-Bot befüllt. Einen zweiten Verarbeitungsweg gibt es nicht.
+Ein Diktat aus dem Sitzungs-Thread legt hier einen Job an — dieselbe Warteschlange und
+dieselbe Stufe, die auch der Recorder-Bot befüllt. Einen zweiten Verarbeitungsweg gibt es
+nicht.
 
 Die Zeile *ist* der Job, ihre ``id`` die Job-Id. Gemeldet wird ihr Zustand und sonst
 nichts: ein Balken, der sich füllt, wäre geraten, und geraten wird hier nichts. Der
 Lauf beginnt im nächsten Stapel, nicht beim Absenden.
 
-Geschrieben wird im Strom auf die Platte — Werkzeug spult den Hochladestrom ab einem
-halben Megabyte selbst in eine temporäre Datei, und ``save`` kopiert von dort weiter.
-Eine Stunde Audio steht damit nie im Speicher.
+Angenommen wird woanders: der Thread in ``chronicle.bot.chronik``, der Mitschnitt in
+``chronicle.bot.recorder``. Beide legen die Datei ab und rufen dann ``enqueue`` — was
+leer ankam, kommt hier gar nicht erst an.
 
 **Die Aufbewahrungsfrist steht hier**, und zwar als Zahl: der Bot sagt sie im Sprachkanal
 zu (``chronicle.bot.ansage``), und derselbe Wert setzt sie durch. Ein Versprechen, das nur
@@ -76,10 +77,6 @@ SUFFIXES = (
 MAX_BYTES = 512 * 1024 * 1024
 
 
-class Rejected(ValueError):
-    """Was nicht angenommen wird, wird gesagt — still verschluckt wird nichts."""
-
-
 class BereitsEingereiht(Exception):
     """Diese Datei liegt schon in der Warteschlange — ein zweiter Versuch wäre keiner."""
 
@@ -144,24 +141,6 @@ def target_path(recordings_dir: Path, session_id: int, name: str) -> Path:
         ziel = recordings_dir / f"sitzung{session_id}-{zeit}-{stamm}-{zaehler}{suffix}"
         zaehler += 1
     return ziel
-
-
-def accept(config, runde: Runde, session_id: int, datei) -> Recording:
-    """Nimmt eine hochgeladene Spur an und reiht sie ein."""
-    name = (getattr(datei, "filename", None) or "").strip()
-    if not name:
-        raise Rejected("Keine Datei ausgewählt — die Sprachnotiz im Dateiwähler aussuchen.")
-    if Path(name).suffix.lower() not in SUFFIXES:
-        erlaubt = ", ".join(SUFFIXES)
-        raise Rejected(f"»{name}« ist keine Audiodatei. Angenommen wird: {erlaubt}.")
-
-    config.recordings_dir.mkdir(parents=True, exist_ok=True)
-    ziel = target_path(config.recordings_dir, session_id, name)
-    datei.save(ziel)
-    if ziel.stat().st_size == 0:
-        ziel.unlink()
-        raise Rejected(f"»{name}« kam leer an — die Aufnahme noch einmal hochladen.")
-    return enqueue(runde, session_id, ziel.name)
 
 
 def enqueue(

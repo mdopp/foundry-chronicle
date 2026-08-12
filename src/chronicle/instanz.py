@@ -13,12 +13,11 @@ Fast alles in diesem System gehört einer Runde. Diese Werte nicht:
 - **Die Verwaltungsgruppe.** Sie stammt aus der Benutzerverwaltung der Box und gilt für
   die Betreiber-Seite dieser Instanz — und nur für sie: Rechte über eine fremde Runde
   trägt sie nicht und bekommt sie auch nicht (#90).
-- **Der abgeschlossene Erststart.** Er gilt der Oberfläche, nicht dem Spiel.
 
 Genau diese Werte sind der Grund, warum **eine kleine Betreiber-Seite bestehen bleibt**,
 wenn #69 die übrige Oberfläche abräumt (Owner-Entscheidung 2026-08-11, #89): sie gehören
 keiner Gilde und haben deshalb in Discord keinen Ort. ``/einstellungen`` ist auf sie
-eingedampft — der Erststart fällt als Einziges mit dem Wizard.
+eingedampft; der Merker des abgeschlossenen Erststarts fiel mit dem Wizard, der ihn setzte.
 
 Abgelegt wird in ``meta`` — der Schlüsselraum ohne Runde. ``settings`` daneben ist die
 Tabelle **einer** Runde, und dass diese Werte dort nicht liegen, ist keine
@@ -35,7 +34,6 @@ from chronicle import db
 # Die Konfigurationswerte, die der Instanz gehören — dieselben Namen wie in ``Config``.
 KEYS = ("discord_bot_token", "ollama_url", "ollama_model")
 
-ONBOARDING_KEY = "onboarding_done"
 ADMIN_GROUP_KEY = "admin_group"
 
 
@@ -74,14 +72,6 @@ def save(database_path: Path, values: Mapping[str, str | None]) -> None:
     for name, wert in values.items():
         if name in KEYS:
             _schreiben(database_path, name, (wert or "").strip())
-
-
-def onboarding_done(database_path: Path) -> bool:
-    return _lesen(database_path, ONBOARDING_KEY) == "1"
-
-
-def finish_onboarding(database_path: Path) -> None:
-    _schreiben(database_path, ONBOARDING_KEY, "1")
 
 
 def admin_group(database_path: Path) -> str:
