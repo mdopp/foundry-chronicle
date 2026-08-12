@@ -11,11 +11,20 @@ geraten, und geraten wird hier nichts.
 
 Die Audiodatei bleibt liegen. Gelöscht wird sie nur, wenn der Aufrufer es ausdrücklich
 verlangt — eine Aufnahme still zu entfernen wäre der teuerste stille Fehler.
+
+**Hier steht die Schranke gegen erfundene Sätze** (``MINDESTDAUER``, #142) und nicht im
+Recorder, obwohl der schon prüft, ob eine Spur leer ist. Zwei Gründe: dessen Frage lautet
+»ist überhaupt etwas angekommen« und wird über die geschriebenen Bytes beantwortet — eine
+andere Frage als »steckt eine Äußerung darin«; und er sieht nur die eigenen Spuren, nicht
+die hochgeladenen. Alles trifft sich erst hier, vor dem Modell. Die Schranke zusätzlich
+dort zu ziehen hieße, dieselbe Regel an zwei Stellen zu pflegen — und es bliebe der Weg,
+auf dem sie umgangen wird.
 """
 
 from __future__ import annotations
 
 import logging
+import wave
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -35,6 +44,33 @@ KIND = "transkript"
 # So viele Sekunden Audio liegen zwischen zwei Fortschrittsmeldungen.
 MELDEABSTAND = 60.0
 
+# Kürzer als das ist keine Äußerung, sondern der Rest einer abgebrochenen Aufnahme — und
+# **daraus erfindet Whisper Sätze**. Beim ersten echten Lauf machte es aus einer 15-KB-Spur
+# mit 0,08 s Inhalt »Thank you for watching!«, ungekennzeichnet, mitten im verschränkten
+# Gespräch (#142). Erfundene Zahlen fängt die Zahlenschranke der Komposition; für erfundene
+# Sätze gibt es nichts, und die Hausregel ist eindeutig: eine Lücke schlägt einen Satz, dem
+# man nicht ansieht, dass er erfunden ist. Also **verwerfen und sagen**, nicht verschriften
+# und kennzeichnen — ein Kennzeichen überlebt das Umschreiben zur Prosa nicht zuverlässig,
+# eine nicht vorhandene Zeile schon.
+#
+# Warum 0,3 s und warum die Länge: gemessen wurden im selben Lauf 0,08 s für die kaputte
+# Spur und 18,7 s für die brauchbare. Ein gesprochenes »Ja.« liegt bei einer halben Sekunde
+# — die Schwelle liegt also gut viermal über dem Bruchstück und deutlich unter der
+# kürzesten echten Äußerung, trifft keins von beiden knapp und unterscheidet damit »kurz«
+# von »nichts«. Der Effektivwert wäre die zweite messbare Größe (1236 gegen Spitze 17198),
+# ist hier aber bewusst **nicht** die Schranke: ein leiser Sprecher hat einen niedrigen
+# Effektivwert, und ihn stummzuschalten wäre derselbe Fehler mit umgekehrtem Vorzeichen.
+MINDESTDAUER = 0.3
+
+# Die Meldung geht an die Runde. Sie muss sagen, dass nichts verlorenging: »Spur
+# übersprungen« liest sich sonst wie »Aufnahme kaputt«, und wer das nachts im Kanal liest,
+# sucht am nächsten Tag nach einer Stunde Ton, die es nie gab.
+UEBERSPRUNGEN = (
+    "Spur »{source}«: nur {sekunden} Sekunden Ton — darin steckt keine Äußerung, deshalb "
+    "wird sie nicht verschriftet. Verlorengegangen ist nichts, und die übrigen Spuren der "
+    "Sitzung sind davon unberührt."
+)
+
 
 @dataclass(frozen=True)
 class Transcript:
@@ -44,9 +80,12 @@ class Transcript:
     audio_seconds: float
     model_name: str
     vocabulary_names: int
+    uebersprungen: bool = False
 
     @property
     def message(self) -> str:
+        if self.uebersprungen:
+            return UEBERSPRUNGEN.format(source=self.source, sekunden=f"{self.audio_seconds:.2f}")
         return (
             f"Spur »{self.source}«: {self.segment_count} Segmente bis "
             f"{zeitmarke(self.audio_seconds)}, erkannt mit {self.model_name}, "
@@ -68,6 +107,24 @@ def recording_path(config: Config, name: str) -> Path:
     """Ein relativer Name liegt im Aufnahmeverzeichnis, nicht im Datenverzeichnis."""
     pfad = Path(name)
     return pfad if pfad.is_absolute() else config.recordings_dir / pfad
+
+
+def spurdauer(pfad: Path) -> float | None:
+    """Wie viele Sekunden Ton in der Spur stehen — ``None``, wenn es sich nicht ablesen lässt.
+
+    Nur der WAV-Kopf, ohne zu dekodieren: Rahmen durch Rate. Ein hochgeladenes m4a vom
+    Telefon ist ohne Dekodieren nicht messbar und läuft deshalb weiter durch — der
+    gemessene Fall ist eine Bot-Spur, und die ist immer WAV. Eine Schranke zu raten, wo
+    nicht gemessen werden kann, wäre schlimmer als keine.
+    """
+    if pfad.suffix.lower() != ".wav":
+        return None
+    try:
+        with wave.open(str(pfad), "rb") as datei:
+            rate = datei.getframerate()
+            return datei.getnframes() / rate if rate else None
+    except (wave.Error, EOFError, OSError):
+        return None
 
 
 def names(scope: db.Scope, session_id: int) -> tuple[str, ...]:
@@ -160,9 +217,23 @@ def transcribe_session(
         ).fetchone()
         if bekannt is None:
             return None
+        spur = source or audio_path.stem
+        dauer = spurdauer(audio_path)
+        if dauer is not None and dauer < MINDESTDAUER:
+            # Vor dem Modell und vor dem Vorspann: eine Spur ohne Äußerung soll nichts
+            # kosten. Die Datei bleibt liegen, auch bei ``delete_audio`` — gelöscht wird,
+            # was verschriftet wurde, und die Aufbewahrungsfrist holt sie ohnehin.
+            return Transcript(
+                session_id=session_id,
+                source=spur,
+                segment_count=0,
+                audio_seconds=dauer,
+                model_name="",
+                vocabulary_names=0,
+                uebersprungen=True,
+            )
         eigennamen = vocabulary.capped(names(scope, session_id))
         vorspann = vocabulary.prompt(eigennamen)
-        spur = source or audio_path.stem
         erkenner = model if model is not None else model_from_config(config)
 
         logger.info("Spur %s: %s beginnt, %s Namen vorgespannt", spur, audio_path, len(eigennamen))
