@@ -54,7 +54,7 @@ from chronicle.discord import rueckblick as discord_rueckblick
 from chronicle.discord import service as discord_service
 from chronicle.foundry import service as foundry_service
 from chronicle.foundry import store as foundry_store
-from chronicle.foundry.model import Character, ChatMessage, Player, WorldSnapshot
+from chronicle.foundry.model import Character, ChatMessage, Player, Scene, WorldSnapshot
 from chronicle.transcribe import merge
 from chronicle.transcribe import service as transcribe_service
 
@@ -149,6 +149,7 @@ def fuellen(config: Config, runde, marke: str) -> dict[str, int]:
                         content=f"Der Wurf von {marke}.",
                     ),
                 ),
+                scenes=(Scene(id="k-1", name=f"Karte {marke}", active=True),),
             ),
         )
         with scope:

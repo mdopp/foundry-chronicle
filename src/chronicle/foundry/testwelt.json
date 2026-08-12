@@ -1839,86 +1839,107 @@
  "scenes": [
   {
    "_id": "GQlF5FICNRnCptpS",
+   "active": false,
    "ownership": {
     "default": 0,
     "LmnVP8mcmCzw8sZ4": 3
    },
-   "name": "Szene-01"
+   "name": "Szene-01",
+   "navName": "Ort-01"
   },
   {
    "_id": "idCna70rkLzx0Dwu",
+   "active": false,
    "ownership": {
     "default": 0,
     "LmnVP8mcmCzw8sZ4": 3
    },
-   "name": "Szene-02"
+   "name": "Szene-02",
+   "navName": ""
   },
   {
    "_id": "wDJmNaCp77Qexyw7",
+   "active": false,
    "ownership": {
     "default": 0,
     "LmnVP8mcmCzw8sZ4": 3
    },
-   "name": "Szene-03"
+   "name": "Szene-03",
+   "navName": ""
   },
   {
    "_id": "ef9N9FeTpnBhZYVX",
+   "active": false,
    "ownership": {
     "default": 0,
     "LmnVP8mcmCzw8sZ4": 3
    },
-   "name": "Szene-04"
+   "name": "Szene-04",
+   "navName": "Ort-04"
   },
   {
    "_id": "7QuIAKmKKTJ4gJnl",
+   "active": false,
    "ownership": {
     "default": 0,
     "LmnVP8mcmCzw8sZ4": 3
    },
-   "name": "Szene-05"
+   "name": "Szene-05",
+   "navName": ""
   },
   {
    "_id": "VKQ9Cpz3dMSQSBge",
+   "active": false,
    "ownership": {
     "default": 0,
     "LmnVP8mcmCzw8sZ4": 3
    },
-   "name": "Szene-06"
+   "name": "Szene-06",
+   "navName": ""
   },
   {
    "_id": "UVoJaqL0wiHPgN1N",
+   "active": false,
    "ownership": {
     "default": 0,
     "LmnVP8mcmCzw8sZ4": 3
    },
-   "name": "Szene-07"
+   "name": "Szene-07",
+   "navName": "Ort-07"
   },
   {
    "_id": "lMBlITf7YhppHAwq",
+   "active": false,
    "ownership": {
     "default": 0,
     "LmnVP8mcmCzw8sZ4": 3
    },
-   "name": "Szene-08"
+   "name": "Szene-08",
+   "navName": ""
   },
   {
    "_id": "De2mYKVGO9tzYwD1",
+   "active": false,
    "ownership": {
     "default": 0,
     "LmnVP8mcmCzw8sZ4": 3
    },
-   "name": "Szene-09"
+   "name": "Szene-09",
+   "navName": ""
   },
   {
    "_id": "8akUs8MivHmMBl2z",
+   "active": false,
    "ownership": {
     "default": 0,
     "LmnVP8mcmCzw8sZ4": 3
    },
-   "name": "Szene-10"
+   "name": "Szene-10",
+   "navName": "Ort-10"
   },
   {
    "_id": "4LAXZUvouN3UR91O",
+   "active": true,
    "ownership": {
     "default": 0,
     "LmnVP8mcmCzw8sZ4": 3,
@@ -1929,10 +1950,12 @@
     "TFiX9S4eicHocsdc": 2,
     "nKeh9dFdJ7T2rQF0": 2
    },
-   "name": "Szene-11"
+   "name": "Szene-11",
+   "navName": ""
   },
   {
    "_id": "sIihjbihkpdAWwzb",
+   "active": false,
    "ownership": {
     "default": 0,
     "LmnVP8mcmCzw8sZ4": 3,
@@ -1943,10 +1966,12 @@
     "TFiX9S4eicHocsdc": 2,
     "nKeh9dFdJ7T2rQF0": 2
    },
-   "name": "Szene-12"
+   "name": "Szene-12",
+   "navName": ""
   },
   {
    "_id": "7ljNHFLyGHq4zVj2",
+   "active": false,
    "ownership": {
     "default": 0,
     "LmnVP8mcmCzw8sZ4": 3,
@@ -1957,10 +1982,12 @@
     "TFiX9S4eicHocsdc": 2,
     "nKeh9dFdJ7T2rQF0": 2
    },
-   "name": "Szene-13"
+   "name": "Szene-13",
+   "navName": "Ort-13"
   },
   {
    "_id": "lmHjq3zLVRzRPXm2",
+   "active": false,
    "ownership": {
     "default": 0,
     "LmnVP8mcmCzw8sZ4": 3,
@@ -1971,10 +1998,12 @@
     "TFiX9S4eicHocsdc": 2,
     "nKeh9dFdJ7T2rQF0": 2
    },
-   "name": "Szene-14"
+   "name": "Szene-14",
+   "navName": ""
   },
   {
    "_id": "rmKzdqzlQgfBLYYO",
+   "active": false,
    "ownership": {
     "default": 0,
     "LmnVP8mcmCzw8sZ4": 3,
@@ -1985,10 +2014,12 @@
     "TFiX9S4eicHocsdc": 2,
     "nKeh9dFdJ7T2rQF0": 2
    },
-   "name": "Szene-15"
+   "name": "Szene-15",
+   "navName": ""
   },
   {
    "_id": "tw1ttT6zRhFOkMir",
+   "active": false,
    "ownership": {
     "default": 0,
     "LmnVP8mcmCzw8sZ4": 3,
@@ -1999,10 +2030,12 @@
     "TFiX9S4eicHocsdc": 2,
     "nKeh9dFdJ7T2rQF0": 2
    },
-   "name": "Szene-16"
+   "name": "Szene-16",
+   "navName": "Ort-16"
   },
   {
    "_id": "oMlRd5D6encidrzY",
+   "active": false,
    "ownership": {
     "default": 0,
     "LmnVP8mcmCzw8sZ4": 3,
@@ -2013,10 +2046,12 @@
     "TFiX9S4eicHocsdc": 2,
     "nKeh9dFdJ7T2rQF0": 2
    },
-   "name": "Szene-17"
+   "name": "Szene-17",
+   "navName": ""
   },
   {
    "_id": "jyQBIvacUfZA90Pt",
+   "active": false,
    "ownership": {
     "default": 0,
     "LmnVP8mcmCzw8sZ4": 3,
@@ -2027,10 +2062,12 @@
     "TFiX9S4eicHocsdc": 2,
     "nKeh9dFdJ7T2rQF0": 2
    },
-   "name": "Szene-18"
+   "name": "Szene-18",
+   "navName": ""
   },
   {
    "_id": "2XM07qjvLiCAKP7a",
+   "active": false,
    "ownership": {
     "default": 0,
     "LmnVP8mcmCzw8sZ4": 3,
@@ -2041,10 +2078,12 @@
     "AfvhKZP0nYyiL73h": 2,
     "Wk5OyThcSngGzOpt": 2
    },
-   "name": "Szene-19"
+   "name": "Szene-19",
+   "navName": "Ort-19"
   },
   {
    "_id": "xksL3yjWWF2xLz2v",
+   "active": false,
    "ownership": {
     "default": 0,
     "LmnVP8mcmCzw8sZ4": 3,
@@ -2055,10 +2094,12 @@
     "AfvhKZP0nYyiL73h": 2,
     "Wk5OyThcSngGzOpt": 2
    },
-   "name": "Szene-20"
+   "name": "Szene-20",
+   "navName": ""
   },
   {
    "_id": "QSaLeMPDlmeYGwHc",
+   "active": false,
    "ownership": {
     "default": 0,
     "LmnVP8mcmCzw8sZ4": 3,
@@ -2069,10 +2110,12 @@
     "AfvhKZP0nYyiL73h": 2,
     "Wk5OyThcSngGzOpt": 2
    },
-   "name": "Szene-21"
+   "name": "Szene-21",
+   "navName": ""
   },
   {
    "_id": "1T43DsVcbj1SjXu2",
+   "active": false,
    "ownership": {
     "default": 0,
     "LmnVP8mcmCzw8sZ4": 3,
@@ -2083,10 +2126,12 @@
     "AfvhKZP0nYyiL73h": 2,
     "Wk5OyThcSngGzOpt": 2
    },
-   "name": "Szene-22"
+   "name": "Szene-22",
+   "navName": "Ort-22"
   },
   {
    "_id": "Nr1pQUFQvrxSFwmL",
+   "active": false,
    "ownership": {
     "default": 0,
     "LmnVP8mcmCzw8sZ4": 3,
@@ -2097,10 +2142,12 @@
     "AfvhKZP0nYyiL73h": 2,
     "Wk5OyThcSngGzOpt": 2
    },
-   "name": "Szene-23"
+   "name": "Szene-23",
+   "navName": ""
   },
   {
    "_id": "AXyAVwfCNbYka9KS",
+   "active": false,
    "ownership": {
     "default": 0,
     "LmnVP8mcmCzw8sZ4": 3,
@@ -2111,10 +2158,12 @@
     "AfvhKZP0nYyiL73h": 2,
     "Wk5OyThcSngGzOpt": 2
    },
-   "name": "Szene-24"
+   "name": "Szene-24",
+   "navName": ""
   },
   {
    "_id": "PNBlIdSl02JXxjDx",
+   "active": false,
    "ownership": {
     "default": 0,
     "LmnVP8mcmCzw8sZ4": 3,
@@ -2125,10 +2174,12 @@
     "AfvhKZP0nYyiL73h": 2,
     "Wk5OyThcSngGzOpt": 2
    },
-   "name": "Szene-25"
+   "name": "Szene-25",
+   "navName": "Ort-25"
   },
   {
    "_id": "eTPO2X2Wz1x6EwRV",
+   "active": false,
    "ownership": {
     "default": 0,
     "LmnVP8mcmCzw8sZ4": 3,
@@ -2139,55 +2190,68 @@
     "AfvhKZP0nYyiL73h": 2,
     "Wk5OyThcSngGzOpt": 2
    },
-   "name": "Szene-26"
+   "name": "Szene-26",
+   "navName": ""
   },
   {
    "_id": "eePIAM8qtqymCatP",
+   "active": false,
    "ownership": {
     "default": 2,
     "LmnVP8mcmCzw8sZ4": 3
    },
-   "name": "Szene-27"
+   "name": "Szene-27",
+   "navName": ""
   },
   {
    "_id": "zoVkLOoynfpdea1a",
+   "active": false,
    "ownership": {
     "default": 2,
     "LmnVP8mcmCzw8sZ4": 3
    },
-   "name": "Szene-28"
+   "name": "Szene-28",
+   "navName": "Ort-28"
   },
   {
    "_id": "PSGfvMGAnC4UJ5Th",
+   "active": false,
    "ownership": {
     "default": 2,
     "LmnVP8mcmCzw8sZ4": 3
    },
-   "name": "Szene-29"
+   "name": "Szene-29",
+   "navName": ""
   },
   {
    "_id": "NSu5GFnbOBhzS8M9",
+   "active": false,
    "ownership": {
     "default": 2,
     "LmnVP8mcmCzw8sZ4": 3
    },
-   "name": "Szene-30"
+   "name": "Szene-30",
+   "navName": ""
   },
   {
    "_id": "llPieUFfCcMcRo2Z",
+   "active": false,
    "ownership": {
     "default": 2,
     "LmnVP8mcmCzw8sZ4": 3
    },
-   "name": "Szene-31"
+   "name": "Szene-31",
+   "navName": "Ort-31"
   },
   {
    "_id": "dMevtfd7VSbPXy8c",
+   "active": false,
    "ownership": {
     "default": 2,
     "LmnVP8mcmCzw8sZ4": 3
    },
-   "name": "Szene-32"
+   "name": "Szene-32",
+   "navName": ""
   }
  ]
 }

@@ -26,6 +26,12 @@ UNBETEILIGTES_KONTO = "Ehemaliges Konto"
 GM_FIGUR = "Der Schattenfuerst"
 GM_GEFLUESTER = "Der Schattenfuerst wartet im Keller."
 
+# Eine Karte, die die Gruppe nie gesehen hat. Ihr Name allein ist der Vorgriff, gegen den
+# die Berechtigungsfilterung gebaut ist.
+GM_SZENE = "Das Grab des Verraeters"
+KARTENLEISTE = "Der Keller"
+OHNE_KARTENLEISTE = "Marktplatz von Ardisstein"
+
 WELT_ID = "der-krumme-ast"
 WELT_TITEL = "Der Krumme Ast"
 
@@ -143,7 +149,30 @@ WELT = {
             "speaker": {},
         },
     ],
-    "scenes": [{"_id": "s-keller", "name": "Der Keller unter dem Krummen Ast"}],
+    "scenes": [
+        {
+            "_id": "s-keller",
+            "name": "Der Keller unter dem Krummen Ast",
+            "navName": KARTENLEISTE,
+            "active": True,
+            "ownership": {"default": 2},
+            # Das Karten-Innenleben, das die Chronik nicht trägt.
+            "walls": [{"c": [0, 0, 10, 0]}],
+            "tokens": [{"name": "Brok Eisenfaust"}],
+        },
+        {
+            "_id": "s-markt",
+            "name": OHNE_KARTENLEISTE,
+            "navName": "",
+            "ownership": {"default": 2},
+        },
+        {
+            "_id": "s-grab",
+            "name": GM_SZENE,
+            "navName": GM_SZENE,
+            "ownership": {"default": 0, LEITUNG: 3},
+        },
+    ],
 }
 
 

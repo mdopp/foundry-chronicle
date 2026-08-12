@@ -67,6 +67,21 @@ class ChatMessage:
 
 
 @dataclass(frozen=True)
+class Scene:
+    """Eine Karte der Welt — für die Chronik ist sie ein Ortsname, sonst nichts.
+
+    Das Karten-Innenleben (Wände, Lichter, Kacheln, Token) bleibt in Foundry: die Chronik
+    trägt es nicht, und was nicht gespeichert wird, kann auch nicht auslaufen. ``name`` ist
+    ``navName``, wenn die Spielleitung einen vergeben hat, sonst ``name`` — die Leiste über
+    der Karte ist das, was die Gruppe am Tisch gesehen hat.
+    """
+
+    id: str
+    name: str
+    active: bool = False
+
+
+@dataclass(frozen=True)
 class World:
     """Welche Welt der Server gerade zeigt.
 
@@ -87,6 +102,7 @@ class WorldSnapshot:
     players: tuple[Player, ...] = ()
     characters: tuple[Character, ...] = ()
     messages: tuple[ChatMessage, ...] = ()
+    scenes: tuple[Scene, ...] = ()
 
 
 @dataclass(frozen=True)

@@ -1,8 +1,8 @@
 """Der Zwischenspeicher. Was hier ankommt, ist bereits gefiltert.
 
 Foundry ist zwischen den Sitzungen oft aus; ohne diesen Stand wäre die Chronik dann leer.
-Konten und Figuren sind **Spiegel**: ihr aktueller Stand steht in Foundry, ein Abgleich
-ersetzt sie am Stück.
+Konten, Figuren und Karten sind **Spiegel**: ihr aktueller Stand steht in Foundry, ein
+Abgleich ersetzt sie am Stück.
 
 Chat-Nachrichten sind es nicht. Sie sind **Ereignisse** und werden hinzugefügt und
 behalten, Schlüssel ist die Foundry-Id. Das Chat-Log zu leeren ist übliche Praxis der
@@ -26,6 +26,7 @@ from chronicle.foundry.model import (
     Die,
     Player,
     Roll,
+    Scene,
     World,
     WorldSnapshot,
 )
@@ -117,7 +118,7 @@ def message(row: sqlite3.Row) -> ChatMessage:
 def save(scope: db.Scope, snapshot: WorldSnapshot) -> None:
     runde_id = scope.runde_id
     with scope:
-        for tabelle in ("foundry_player", "foundry_character"):
+        for tabelle in ("foundry_player", "foundry_character", "foundry_scene"):
             scope.execute(f"DELETE FROM {tabelle} WHERE runde_id = ?", (runde_id,))
         scope.execute(
             "INSERT INTO foundry_snapshot (runde_id, fetched_at, system) VALUES (?, ?, ?) "
@@ -136,6 +137,10 @@ def save(scope: db.Scope, snapshot: WorldSnapshot) -> None:
                 (runde_id, f.id, f.name, f.type, json.dumps(list(f.owner_ids)), int(f.limited))
                 for f in snapshot.characters
             ],
+        )
+        scope.executemany(
+            "INSERT INTO foundry_scene (runde_id, id, name, active) VALUES (?, ?, ?, ?)",
+            [(runde_id, k.id, k.name, int(k.active)) for k in snapshot.scenes],
         )
         # Erst alles vormerken, dann das Mitgelieferte wieder freistellen. Der Umweg spart
         # die Liste aller mitgelieferten Ids in einer einzigen Bedingung — die stieße bei
@@ -180,6 +185,9 @@ def load(scope: db.Scope) -> WorldSnapshot | None:
     characters = scope.execute(
         "SELECT * FROM foundry_character WHERE runde_id = ? ORDER BY name", (runde_id,)
     ).fetchall()
+    scenes = scope.execute(
+        "SELECT * FROM foundry_scene WHERE runde_id = ? ORDER BY name, id", (runde_id,)
+    ).fetchall()
     messages = scope.execute(
         "SELECT * FROM foundry_message WHERE runde_id = ? ORDER BY timestamp, id", (runde_id,)
     ).fetchall()
@@ -201,6 +209,7 @@ def load(scope: db.Scope) -> WorldSnapshot | None:
             for r in characters
         ),
         messages=tuple(message(r) for r in messages),
+        scenes=tuple(Scene(id=r["id"], name=r["name"], active=bool(r["active"])) for r in scenes),
     )
 
 

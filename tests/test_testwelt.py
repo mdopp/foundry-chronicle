@@ -43,7 +43,7 @@ FIXTURE_PLAN = {
     "system": {feld: anonym.WERT for feld in anonym.SYSTEM_FELDER},
     "users": [{feld: anonym.WERT for feld in (*anonym.BENUTZER_FELDER, "name")}],
     "actors": [anonym.FIGUR_PLAN | {"name": anonym.WERT}],
-    "scenes": [anonym.SZENEN_PLAN | {"name": anonym.WERT}],
+    "scenes": [anonym.SZENEN_PLAN | {"name": anonym.WERT, "navName": anonym.WERT}],
     "messages": [
         anonym.NACHRICHT_PLAN
         | {
@@ -142,6 +142,18 @@ def test_die_fixture_hat_den_umfang_einer_echten_welt():
     assert stufen & {permissions.LIMITED, permissions.OBSERVER}
 
 
+def test_die_fixture_traegt_karten_die_nur_die_leitung_kennt():
+    """Ohne sie bewiese die Filterung an den Szenen nichts — und der Vorgriff bliebe offen."""
+    raw = testwelt.welt()
+    konto = testwelt.konto(raw)
+    stufen = [permissions.effective_level(szene.get("ownership"), konto) for szene in raw["scenes"]]
+    assert stufen.count(permissions.NONE) == 18
+    assert [szene["active"] for szene in raw["scenes"]].count(True) == 1
+    # Beide Formen des Ortsnamens kommen vor: mit Kartenleiste und ohne.
+    assert any(szene["navName"] for szene in raw["scenes"])
+    assert any(not szene["navName"] for szene in raw["scenes"])
+
+
 def test_die_fixture_traegt_leitungs_inhalt_den_der_filter_wegnehmen_muss():
     """Eine geflüsterte und eine blinde Nachricht — sonst bewiese der Filter hier nichts."""
     raw = testwelt.welt()
@@ -207,6 +219,11 @@ def test_der_abgleich_laeuft_ohne_netz_durch_dieselbe_strecke(auf_testwelt):
     assert all(figur.type is None and figur.owner_ids == () for figur in limitiert)
     assert len(stand.messages) == 6
     assert stand.players
+    # Und dieselbe Rechnung für die Karten: von 32 bleiben die 8 der eigenen Gruppe und die
+    # 6 offenen; die 10 der Leitung und die 8 der Nachbargruppe sind Vorgriffe und fallen.
+    assert len(raw["scenes"]) == 32
+    assert len(stand.scenes) == 14
+    assert len([szene for szene in stand.scenes if szene.active]) == 1
 
 
 def test_die_testwelt_braucht_kein_passwort(auf_testwelt):

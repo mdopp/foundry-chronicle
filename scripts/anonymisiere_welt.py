@@ -76,7 +76,10 @@ WELT_FELDER = ("id", "type", "version", "coreVersion", "systemVersion")
 SYSTEM_FELDER = ("id", "type", "version")
 BENUTZER_FELDER = ("_id", "role", "character")
 FIGUR_FELDER = ("_id", "type")
-SZENEN_FELDER = ("_id",)
+# Von einer Szene trägt die Chronik den Ortsnamen und die Frage, welche Karte gerade liegt.
+# Das Karten-Innenleben — ``walls``, ``lights``, ``tiles``, ``tokens`` — steht hier nicht
+# und fällt damit weg: es sagt nichts über den Abend und kann Freitext enthalten.
+SZENEN_FELDER = ("_id", "active")
 NACHRICHT_FELDER = ("_id", "timestamp", "author", "type", "style", "blind")
 SPRECHER_FELDER = ("scene", "actor", "token")
 
@@ -362,6 +365,19 @@ def _nachricht(nachricht: Mapping, ersatz: Ersatz) -> dict:
     return behalten
 
 
+def _szene(szene: Mapping, ersatz: Ersatz) -> dict:
+    """Eine Szene, auf ihren Ortsnamen eingedampft.
+
+    ``navName`` ist der Name in der Kartenleiste und im echten Abzug oft leer — er bleibt
+    dann leer statt zu verschwinden, denn genau daran entscheidet der Adapter, welchen der
+    beiden Namen er nimmt.
+    """
+    behalten = _nach_plan(szene, SZENEN_PLAN, ersatz) | {"name": ersatz.name(szene.get("name"))}
+    if "navName" in szene:
+        behalten["navName"] = ersatz.name(szene.get("navName"))
+    return behalten
+
+
 def anonymisiere(raw: Mapping, ersatz: Ersatz | None = None) -> dict:
     """Der Rohabzug, auf das Eincheckbare reduziert und umbenannt."""
     ersatz = Ersatz(raw) if ersatz is None else ersatz
@@ -378,10 +394,7 @@ def anonymisiere(raw: Mapping, ersatz: Ersatz | None = None) -> dict:
             for figur in _dokumente(raw, "actors")
         ],
         "messages": [_nachricht(nachricht, ersatz) for nachricht in _dokumente(raw, "messages")],
-        "scenes": [
-            _nach_plan(szene, SZENEN_PLAN, ersatz) | {"name": ersatz.name(szene.get("name"))}
-            for szene in _dokumente(raw, "scenes")
-        ],
+        "scenes": [_szene(szene, ersatz) for szene in _dokumente(raw, "scenes")],
     }
 
 

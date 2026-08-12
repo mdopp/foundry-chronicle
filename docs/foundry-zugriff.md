@@ -35,7 +35,15 @@ tables  cards  folders  users   messages  combats  settings
 ```
 
 Für die Chronik zählen **`messages`** (das Chat-Log), **`actors`** (Spielfiguren und
-NSCs) und **`combats`** (Kampfzustand). Der Rest ist für uns Beifang.
+NSCs), **`scenes`** (die Karten — davon aber nur Kennung, Ortsname und ob sie gerade
+`active` ist; das Karten-Innenleben aus `walls`, `lights`, `tiles` und `tokens` bleibt
+draußen) und **`combats`** (Kampfzustand). Der Rest ist für uns Beifang.
+
+Der Ortsname einer Szene ist **`navName`, wenn gesetzt, sonst `name`**: `navName` steht in
+der Kartenleiste und ist das, was die Gruppe am Tisch gesehen hat — im echten Abzug ist er
+oft leer. Und `scenes` trägt `ownership` wie jedes andere Dokument: eine Karte, die nur
+die Spielleitung kennt, wird **vor** dem Speicher weggefiltert. Ihr Name allein wäre schon
+ein Vorgriff.
 
 Daneben stehen zwei Kopfblöcke, die keine Sammlung sind: **`system`** (`{id, ...}` —
 welches Regelwerk) und **`world`** (`{id, title, ...}` — welche Welt gerade offen ist).

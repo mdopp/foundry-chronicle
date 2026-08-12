@@ -28,6 +28,7 @@ FIGUR_NAME = "Nuala Abendrot"
 ALIAS = "Nuala"
 KONTO_NAME = "Chronistin Wolke"
 SZENE_NAME = "Der Schankraum"
+SZENE_NAV = "Schankstube"
 JOURNAL_NAME = "Was Talmar verschweigt"
 
 # Der erste Anlauf des Skripts vergab hübsche Fantasienamen — und stolperte über eine
@@ -118,7 +119,17 @@ def roh() -> dict:
         "journal": [{"_id": "j1", "name": JOURNAL_NAME, "pages": [{"text": LEITUNG_NAME}]}],
         "folders": [{"_id": "f1", "name": "Charaktere"}],
         "macros": [{"_id": "k1", "name": "Wurf"}],
-        "scenes": [{"_id": "s1", "name": SZENE_NAME, "ownership": {"default": 0}, "walls": [1]}],
+        "scenes": [
+            {
+                "_id": "s1",
+                "name": SZENE_NAME,
+                "navName": SZENE_NAV,
+                "active": True,
+                "ownership": {"default": 0},
+                "walls": [1],
+                "tokens": [{"name": FIGUR_NAME}],
+            }
+        ],
     }
 
 
@@ -191,7 +202,21 @@ def test_szenen_behalten_ihre_kennung_und_verlieren_ihren_namen(roh):
     szene = sauber(roh)["scenes"][0]
     assert szene["_id"] == "s1"
     assert szene["name"] != SZENE_NAME
-    assert "walls" not in szene
+    # Auch der Name in der Kartenleiste ist ein Name — und das Karten-Innenleben bleibt
+    # ganz draußen: es sagt nichts über den Abend und kann Freitext tragen.
+    assert szene["navName"] not in ("", SZENE_NAV)
+    assert "walls" not in szene and "tokens" not in szene
+
+
+def test_szenen_behalten_was_der_adapter_liest(roh):
+    """``active`` und ein leeres ``navName`` — daran entscheidet der Adapter den Ortsnamen."""
+    assert sauber(roh)["scenes"][0]["active"] is True
+
+    roh["scenes"][0]["navName"] = ""
+    assert sauber(roh)["scenes"][0]["navName"] == ""
+
+    del roh["scenes"][0]["navName"]
+    assert "navName" not in sauber(roh)["scenes"][0]
 
 
 def test_ein_misslungenes_ersetzen_bricht_den_lauf_ab(roh, tmp_path, monkeypatch):

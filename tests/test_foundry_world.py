@@ -1,6 +1,17 @@
-from conftest import GM_FIGUR, LEITUNG, UNBETEILIGTES_KONTO, UNSER_KONTO
+from dataclasses import fields
+
+from conftest import (
+    GM_FIGUR,
+    GM_SZENE,
+    KARTENLEISTE,
+    LEITUNG,
+    OHNE_KARTENLEISTE,
+    UNBETEILIGTES_KONTO,
+    UNSER_KONTO,
+)
 
 from chronicle.foundry import permissions
+from chronicle.foundry.model import Scene
 from chronicle.foundry.systems import read_roll
 from chronicle.foundry.world import project
 
@@ -114,5 +125,30 @@ def test_regelwerk_aus_dem_abzug(welt):
 
 def test_beifang_wird_nicht_uebernommen(welt):
     abgezogen = abzug(welt)
-    assert not hasattr(abgezogen, "scenes")
     assert abgezogen.fetched_at == STAND
+    # Vom Karten-Innenleben — Wänden, Lichtern, Token — kommt nichts mit: die Chronik
+    # trägt es nicht, und was nicht gespeichert wird, kann nicht auslaufen.
+    assert {feld.name for feld in fields(Scene)} == {"id", "name", "active"}
+
+
+def test_die_szene_die_nur_die_leitung_kennt_ist_ein_vorgriff(welt):
+    """Der Spoiler-Fall: ein ungespielter Ortsname im Protokoll verriete das Geheimnis."""
+    assert GM_SZENE not in namen(abzug(welt).scenes)
+    assert GM_SZENE in namen(abzug(welt, LEITUNG).scenes)
+
+
+def test_der_ortsname_kommt_aus_navname_und_faellt_auf_name_zurueck(welt):
+    """``navName`` ist, was in der Kartenleiste steht — im echten Abzug oft leer."""
+    orte = {szene.id: szene.name for szene in abzug(welt).scenes}
+    assert orte["s-keller"] == KARTENLEISTE
+    assert orte["s-markt"] == OHNE_KARTENLEISTE
+
+
+def test_foundry_sagt_welche_karte_gerade_liegt(welt):
+    aktiv = [szene.id for szene in abzug(welt).scenes if szene.active]
+    assert aktiv == ["s-keller"]
+
+
+def test_eine_welt_ohne_szenen_liefert_keine(welt):
+    assert abzug({}).scenes == ()
+    assert abzug({"scenes": []}).scenes == ()
