@@ -4,6 +4,8 @@ Der Vorschlag darf nirgends wie eine Zuordnung aussehen — das ist hier die eig
 Prüfung. Alle Namen sind erfunden, wie überall in diesen Tests.
 """
 
+import unicodedata
+
 import pytest
 from conftest import UNSER_KONTO, runde
 
@@ -117,6 +119,33 @@ def test_genau_zaehlt_die_figur_mit():
 def test_genau_uebersieht_gross_und_kleinschreibung_und_raender():
     """Ein Leerzeichen am Rand ist kein anderer Name — sonst fragte es, wo nichts zu fragen ist."""
     assert people.genau("  mira ", spieler("Mira")) is not None
+
+
+def test_genau_uebersieht_wie_ein_zeichen_zusammengesetzt_ist():
+    """Optisch gleiche Namen sind gleiche Namen — welche Tastatur sie tippte, zählt nicht.
+
+    ``é`` gibt es als ein Zeichen und als ``e`` mit angehängtem Akzent. macOS liefert das
+    eine, Windows das andere, und im Menü stünde sonst eine Frage ohne Unterschied.
+    """
+    zerlegt = unicodedata.normalize("NFD", "Renée")
+
+    assert zerlegt != "Renée"
+    assert people.genau(zerlegt, spieler("Renée")) is not None
+    assert people.genau("Renée", [people.Spieler(id="u-1", name=zerlegt)]) is not None
+
+
+@pytest.mark.parametrize(
+    ("name", "konto"),
+    [("STRASSE", "Straße"), ("finn", "ﬁnn"), ("Mira\u00a0", "Mira")],
+)
+def test_genau_weitet_nicht_ueber_die_kleinschreibung_hinaus(name, konto):
+    """Die Vorgabe heißt 1:1 — ``casefold`` und ein blindes ``strip`` machten mehr daraus.
+
+    ``casefold`` setzt ``ß`` mit ``ss`` gleich und löst die Ligatur ``ﬁ`` auf, ``strip``
+    ohne Argument nähme auch das geschützte Leerzeichen mit. Jedes davon ist die weitende
+    Richtung, und die gehört ins Menü und nicht in den Zweig ohne Rückfrage.
+    """
+    assert people.genau(name, spieler(konto)) is None
 
 
 @pytest.mark.parametrize("fast", ["Mirah", "Miral", "Mir a", "Mira Sturmwind"])
@@ -246,7 +275,7 @@ def test_ein_wert_ausserhalb_der_liste_wird_nicht_gespeichert(eingerichtet):
 
     assert LEITUNG_IN_FOUNDRY not in {s.id for s in uebersicht.spieler}
     assert erinnern.zuordnen(runde(eingerichtet), MIRA.id, LEITUNG_IN_FOUNDRY) == (
-        erinnern.SPIELER_WEG
+        erinnern.Zugeordnet(satz=erinnern.SPIELER_WEG)
     )
     assert gespeichert(eingerichtet) == {}
 

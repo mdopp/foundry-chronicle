@@ -3516,9 +3516,7 @@ def test_das_menue_im_zwiegespraech_bietet_kein_fremdes_konto_an(
 
     interaktion = antworten(menue, runde.brok, "u-mira")
 
-    assert interaktion.response.bearbeitet[0]["content"] == erinnern.SPIELER_VERGEBEN.format(
-        niemand=erinnern.ZUORDNUNG_KEINE
-    )
+    assert interaktion.response.bearbeitet[0]["content"] == erinnern.SPIELER_VERGEBEN
     assert zugeordnet(konfiguration) == {MIRA.id: "Mira", BROK.id: None}
 
 
@@ -3561,7 +3559,10 @@ def test_wer_bestaetigt_hat_wird_beim_naechsten_betreten_nicht_erneut_gefragt(
 
     # Je einmal aus dem ersten Lauf, kein zweites Mal aus dem zweiten.
     assert len(runde.brok.zwiegespraech) == 1
-    assert len(thread.geschrieben) == 1
+    assert thread.geschrieben == [
+        erinnern.BETRETEN_VERMERK.format(name=MIRA.name, spieler="Mira"),
+        erinnern.MENUE_VERMERK.format(name=BROK.name, spieler="Brok Eisenfaust"),
+    ]
     assert zugeordnet(konfiguration) == {MIRA.id: "Mira", BROK.id: "Brok Eisenfaust"}
 
 
@@ -3782,6 +3783,177 @@ def test_ohne_weg_in_den_thread_entsteht_keine_zuordnung(
     # Und der Mitschnitt läuft: ein verschlossener Thread ist kein Grund, nicht zu hören.
     assert runde.kanal.verbindung.schneidet
     assert MIRA.name not in caplog.text
+
+
+@pytest.fixture
+def sitzung_ohne_thread(konfiguration):
+    """Eine Sitzung aus der Zeit vor dem Sitzungs-Thread — es gibt dorthin gar keinen Weg."""
+    return notes.create_session(unsere_runde(konfiguration))
+
+
+def test_ohne_thread_an_der_sitzung_entsteht_keine_zuordnung(
+    konfiguration, sitzung_ohne_thread, ohne_espeak, runde
+):
+    """Der zweite der drei Wege, auf denen der Vermerk nicht hinauskommt.
+
+    ``_in_den_thread`` gibt hier ``False`` zurück, statt zu werfen — der werfende Thread
+    allein deckt die Zusage also nicht ab.
+    """
+    foundry_spieler(konfiguration, "Mira", "Brok Eisenfaust")
+    bot = gateway.baue(konfiguration)
+    thread = FakeTextkanal()
+    bot.kanaele[THREAD] = thread
+
+    asyncio.run(befehl(bot, "start")(FakeCtx(runde.mira)))
+
+    assert thread.geschrieben == []
+    assert zugeordnet(konfiguration)[MIRA.id] is None
+    assert runde.kanal.verbindung.schneidet
+
+
+def test_ein_fortgeraeumter_thread_laesst_keine_zuordnung_entstehen(
+    konfiguration, sitzung_im_thread, ohne_espeak, runde
+):
+    """Und der dritte: den Thread gibt es nicht mehr, Discord antwortet mit 404.
+
+    Auch das ist ein ``False`` und kein Wurf. Fort ist dabei nicht »zuckt« — der 404 käme
+    beim nächsten Betreten genauso wieder, also entsteht die Zuordnung auch später nicht.
+    """
+    foundry_spieler(konfiguration, "Mira", "Brok Eisenfaust")
+    bot = gateway.baue(konfiguration)
+    fort = FakeFortgeraeumterThread()
+    bot.kanaele[THREAD] = fort
+
+    asyncio.run(befehl(bot, "start")(FakeCtx(runde.mira)))
+
+    assert fort.versuche == 1
+    assert zugeordnet(konfiguration)[MIRA.id] is None
+    assert runde.kanal.verbindung.schneidet
+
+
+class FakeThreadDerDazwischenkommt(FakeTextkanal):
+    """Ein Thread, dessen ``send`` genau die Lücke ausnutzt, um die es hier geht.
+
+    Zwischen Vermerk und Festschreiben liegt ein ``await``. Wer dort das Konto nimmt, macht
+    aus dem Vermerk eine Behauptung — ``zuordnen`` weist die Zuordnung danach ab.
+    """
+
+    def __init__(self, dazwischen):
+        super().__init__()
+        self.dazwischen = dazwischen
+
+    async def send(self, text):
+        await super().send(text)
+        if self.dazwischen is not None:
+            greift, self.dazwischen = self.dazwischen, None
+            greift()
+
+
+def test_wer_dazwischen_das_konto_nimmt_laesst_den_vermerk_nicht_stehen(
+    konfiguration, sitzung_im_thread, ohne_espeak, runde
+):
+    """Der Vermerk steht schon im Thread, das Schreiben gelingt nicht — dann wird widerrufen.
+
+    Ein zweiter Anlauf kommt nicht: je Aufnahme wird genau einmal gefragt. Bliebe der
+    Vermerk stehen, behauptete der Thread auf Dauer eine Verbindung, die es nicht gibt.
+    """
+    foundry_spieler(konfiguration, "Mira", "Brok Eisenfaust")
+    bot = gateway.baue(konfiguration)
+    thread = FakeThreadDerDazwischenkommt(
+        lambda: people.confirm(unsere_runde(konfiguration), {BROK.id: "u-mira"})
+    )
+    bot.kanaele[THREAD] = thread
+
+    asyncio.run(befehl(bot, "start")(FakeCtx(runde.mira)))
+
+    assert zugeordnet(konfiguration) == {MIRA.id: None, BROK.id: "Mira"}
+    assert thread.geschrieben == [
+        erinnern.BETRETEN_VERMERK.format(name=MIRA.name, spieler="Mira"),
+        erinnern.BETRETEN_DOCH_NICHT.format(name=MIRA.name, spieler="Mira"),
+    ]
+
+
+def test_ein_gescheitertes_festschreiben_widerruft_den_vermerk(
+    konfiguration, mit_thread, ohne_espeak, runde, monkeypatch, caplog
+):
+    """Dasselbe, wenn das Schreiben selbst nicht durchgeht — die SQLite hängt, etwa."""
+    foundry_spieler(konfiguration, "Mira", "Brok Eisenfaust")
+    bot = gateway.baue(konfiguration)
+    thread = mit_thread(bot)
+
+    def stolpert(*_args, **_rest):
+        raise RuntimeError("database is locked")
+
+    monkeypatch.setattr(people, "confirm", stolpert)
+
+    with caplog.at_level(logging.ERROR):
+        asyncio.run(befehl(bot, "start")(FakeCtx(runde.mira)))
+
+    assert zugeordnet(konfiguration) == {MIRA.id: None, BROK.id: None}
+    assert thread.geschrieben == [
+        erinnern.BETRETEN_VERMERK.format(name=MIRA.name, spieler="Mira"),
+        erinnern.BETRETEN_DOCH_NICHT.format(name=MIRA.name, spieler="Mira"),
+    ]
+    assert "RuntimeError" in caplog.text
+
+
+def test_wer_sich_im_zwiegespraech_waehlt_steht_danach_im_thread(
+    konfiguration, mit_thread, ohne_espeak, runde
+):
+    """Je schwächer der Beleg, desto mehr Tageslicht — hier stimmt gar kein Name überein.
+
+    Der Satz sagt den Unterschied zur Namensgleichheit: gewählt, nicht erkannt.
+    """
+    foundry_spieler(konfiguration, "Mira", "Brok Eisenfaust")
+    bot = gateway.baue(konfiguration)
+    thread = mit_thread(bot)
+    asyncio.run(befehl(bot, "start")(FakeCtx(runde.mira)))
+
+    antworten(gefragt_wurde(runde.brok), runde.brok, "u-brok eisenfaust")
+
+    assert thread.geschrieben[-1] == erinnern.MENUE_VERMERK.format(
+        name=BROK.name, spieler="Brok Eisenfaust"
+    )
+    assert erinnern.MENUE_VERMERK != erinnern.BETRETEN_VERMERK
+
+
+def test_ein_verschlossener_thread_wirft_die_eigene_antwort_nicht_weg(
+    konfiguration, mit_thread, ohne_espeak, runde, caplog
+):
+    """Anders als beim 1:1-Vermerk ist der Satz hier keine Bedingung — sie hat geantwortet.
+
+    Und die Antwort auf den Klick steht schon: eine durchgereichte Ausnahme machte daraus
+    ein »hat nicht geklappt«, obwohl die Zuordnung entstanden ist.
+    """
+    foundry_spieler(konfiguration, "Mira", "Brok Eisenfaust")
+    bot = gateway.baue(konfiguration)
+    thread = mit_thread(bot)
+    asyncio.run(befehl(bot, "start")(FakeCtx(runde.mira)))
+    thread.stolpert = 99
+
+    with caplog.at_level(logging.ERROR):
+        interaktion = antworten(gefragt_wurde(runde.brok), runde.brok, "u-brok eisenfaust")
+
+    assert zugeordnet(konfiguration)[BROK.id] == "Brok Eisenfaust"
+    (bearbeitet,) = interaktion.response.bearbeitet
+    assert bearbeitet["content"] == erinnern.ZUGEORDNET.format(
+        name=BROK.name, spieler="Brok Eisenfaust"
+    )
+    assert "ungesagt" in caplog.text
+
+
+def test_wer_im_zwiegespraech_abgewiesen_wird_steht_nicht_im_thread(
+    konfiguration, mit_thread, ohne_espeak, runde
+):
+    """Gegenprobe: vermerkt wird, was entstanden ist — nicht, was versucht wurde."""
+    foundry_spieler(konfiguration, "Mira", "Brok Eisenfaust")
+    bot = gateway.baue(konfiguration)
+    thread = mit_thread(bot)
+    asyncio.run(befehl(bot, "start")(FakeCtx(runde.mira)))
+
+    antworten(gefragt_wurde(runde.brok), runde.brok, "u-mira")
+
+    assert thread.geschrieben == [erinnern.BETRETEN_VERMERK.format(name=MIRA.name, spieler="Mira")]
 
 
 class FakeCtxMitLoeschung(FakeCtx):

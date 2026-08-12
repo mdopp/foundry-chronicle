@@ -26,6 +26,7 @@ Hier steht nur, welche Id zu welcher gehört.
 from __future__ import annotations
 
 import json
+import unicodedata
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -43,6 +44,12 @@ SCHWELLE = 0.8
 # Liegen zwei Foundry-Spieler ähnlich nah, wird nichts vorgeschlagen: dann ist die Frage
 # echt, und eine echte Frage gehört dem Menschen und nicht der Vorauswahl.
 ABSTAND = 0.1
+
+# Der Leerraum, den ``genau`` am Rand abschneidet — und nur dieser. ``str.strip()`` ohne
+# Argument nähme jedes Zeichen mit, das Unicode für Leerraum hält, das geschützte
+# Leerzeichen eingeschlossen; damit wären zwei verschieden geschriebene Namen gleich, und
+# das ist die weitende Richtung, die hier nicht gilt.
+LEERRAUM = " \t\n\r\f\v"
 
 
 @dataclass(frozen=True)
@@ -83,6 +90,13 @@ def _spieler(scope: db.Scope) -> tuple[Spieler, ...]:
     # Nur Spielfiguren: die Spielleitung besitzt in Foundry auch jeden NSC, und »Die Wirtin
     # zum Krummen Ast« ist der Name einer Wirtin und nicht der einer Mitspielerin. Ohne den
     # Filter machte ein Spitzname aus dem NSC-Fundus seinen Träger zur Spielleitung.
+    #
+    # ``= ?`` lässt dabei auch alles liegen, wo kein Typ steht: ``NULL`` und der leere
+    # String vergleichen sich mit nichts. Das trifft die **eingeschränkte** Projektion aus
+    # ``foundry.world`` — wer eine Figur nur sehen, aber nicht führen darf, bekommt Id und
+    # Namen und keinen Typ. Solche Figuren zählen hier also nicht mit; die Folge ist allein
+    # Verlust: es wird gefragt, wo vielleicht nicht hätte gefragt werden müssen. Eine
+    # falsche Zuordnung kann daraus nicht werden, und das ist die Richtung, die zählt.
     figuren: dict[str, list[str]] = {}
     for zeile in scope.execute(
         "SELECT name, owner_ids FROM foundry_character "
@@ -141,18 +155,36 @@ def _naehe(name: str, kandidat: Spieler) -> float:
     return max(_aehnlich(name, wert) for wert in (kandidat.name, *kandidat.characters))
 
 
+def _schluessel(name: str) -> str:
+    """Woran ``genau`` zwei Namen misst: NFC, Ränder ab, Kleinschreibung — mehr nicht.
+
+    ``lower`` und nicht ``casefold``: casefold ist die **weitende** Richtung. Es macht
+    ``Straße`` zu ``strasse`` und die Ligatur ``ﬁ`` zu ``fi``, und damit stünden zwei
+    verschiedene Namen als gleich da — die Vorgabe heißt 1:1 und nicht »ungefähr«. Die
+    Kleinschreibung bleibt, weil »mira« und »Mira« derselbe Name sind.
+
+    NFC ist keine Weitung, sondern die Auflösung zweier Schreibweisen **desselben**
+    Zeichens: ``é`` als ein Zeichen und ``e`` mit angehängtem Akzent sehen gleich aus,
+    also sind es gleiche Namen. Ohne die Normalisierung hinge die Gleichheit daran, welche
+    Tastatur jemand benutzt.
+    """
+    return unicodedata.normalize("NFC", name).strip(LEERRAUM).lower()
+
+
 def _gleich(name: str, kandidat: Spieler) -> bool:
-    gesucht = name.casefold().strip()
-    return any(gesucht == wert.casefold().strip() for wert in (kandidat.name, *kandidat.characters))
+    gesucht = _schluessel(name)
+    return any(gesucht == _schluessel(wert) for wert in (kandidat.name, *kandidat.characters))
 
 
 def genau(name: str, kandidaten: Sequence[Spieler]) -> Spieler | None:
     """Der eine Spieler, der **genau** so heißt — er selbst oder eine seiner Figuren.
 
-    Kein Abstandsmaß, keine Ähnlichkeit: Zeichen für Zeichen, bis auf Groß- und Kleinschreibung
-    und Leerzeichen am Rand. Das ist der Unterschied zu ``suggest`` und der Grund, warum ein
-    Treffer hier ohne Rückfrage gilt — »Mira« neben »Mirah« ist keine Gleichheit, sondern
-    eine Verwechslung, und die gehört ins Menü.
+    Kein Abstandsmaß, keine Ähnlichkeit: Zeichen für Zeichen. Übersehen wird genau
+    dreierlei, und die Aufzählung ist vollständig — Groß- und Kleinschreibung
+    (``lower``, nicht ``casefold``), gewöhnlicher Leerraum am Rand, und ob ein Zeichen
+    zusammengesetzt oder als eines geschrieben ist (NFC). Das ist der Unterschied zu
+    ``suggest`` und der Grund, warum ein Treffer hier ohne Rückfrage gilt — »Mira« neben
+    »Mirah« ist keine Gleichheit, sondern eine Verwechslung, und die gehört ins Menü.
 
     Und **eindeutig** muss sie sein: heißen zwei Konten gleich, ist auch Gleichheit keine
     Antwort. Dann kommt keiner zurück und es wird gefragt.

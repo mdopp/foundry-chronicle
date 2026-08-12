@@ -173,11 +173,31 @@ passiert ist** — und Teile davon nacherzählen können.
   ist Zeichen für Zeichen der eines freien Foundry-Kontos oder einer seiner Spielfiguren,
   eindeutig und von niemandem sonst getragen (Betreiber-Entscheidung 2026-08-12). Das ist
   kein Vorschlag, sondern ein Beleg; es wird im Thread der Sitzung vermerkt, **bevor** es
-  geschrieben wird, und ohne Weg dorthin entsteht es nicht. Alles andere — Ähnlichkeit,
+  geschrieben wird, ohne Weg dorthin entsteht es nicht, und wenn das Schreiben danach doch
+  nicht durchgeht, wird der Vermerk widerrufen. Alles andere — Ähnlichkeit,
   zwei gleichnamige Konten, ein vergebenes, ein Gast — wird **die betroffene Person
   selbst** im Zwiegespräch gefragt, mit einem Menü der freien Konten; wer wer ist,
   entscheidet man über sich selbst. Keine Antwort ist auch eine: die Spur bleibt unter dem
   Discord-Namen, und das Protokoll sagt es so.
+- **Je schwächer der Beleg, desto mehr Tageslicht** (Betreiber-Entscheidung 2026-08-12).
+  Deshalb steht auch die im Zwiegespräch **gewählte** Zuordnung im Thread — sie hat gar
+  keinen Beleg, nur eine Antwort, und der Satz sagt den Unterschied: gewählt, nicht
+  erkannt. Anders als beim 1:1-Vermerk ist der Weg in den Thread dort keine Bedingung: dort
+  entscheidet niemand, hier hat die Person selbst geantwortet.
+- **Korrigiert wird in `/zuordnung`, und nur dort darf ein Konto umgehängt werden.** Der
+  Fall ist echt: benennt sich Brok in »Mira« um, während die echte Mira »Mira am Handy«
+  heißt, bekommt Brok beim Betreten Miras Konto. In `/zuordnung` steht jede Person mit
+  ihrem Stand untereinander — wer umhängt, sieht vorher, wem er es abnimmt, der Satz sagt
+  es noch einmal, und die Vorbesitzerin steht danach wieder offen da. Im **Zwiegespräch**
+  geht das nicht: dort sitzt eine Person allein vor einer Liste, niemand sieht zu, und ein
+  vergebenes Konto wird abgewiesen. »Erst zurücknehmen, dann setzen« wäre die schlechtere
+  Antwort — zwei Schritte in der Zeile einer anderen Person, und dazwischen liegt das
+  Konto frei.
+- Ob **ohne Rückfrage** zugeordnet werden darf, entscheidet auch, wer sonst noch so heißt
+  — und gefragt wird dafür das **ganze Einwilligungsprotokoll der Runde, für immer**. Ein
+  Gast, der vor einem Jahr einmal dabei war, schaltet den Zweig für sein Namensdoppel
+  dauerhaft ab; dann steht dort auf Dauer das Menü. Das ist die konservative Richtung: es
+  wird gefragt statt geraten, und der Preis ist ein Klick.
 - **Foundry ist eine harte Abhängigkeit.** Ist es beim Einrichten aus, bleibt das
   System leer — das braucht eine verständliche Meldung, keine leere Liste. Die
   Fakten werden deshalb zwischengespeichert, nicht bei jedem Aufruf geholt.

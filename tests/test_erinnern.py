@@ -709,6 +709,35 @@ def test_niemand_nimmt_die_zuordnung_zurueck(stelle, bot):
     assert erinnern.ZUORDNUNG_GELOEST.format(name="Mira") in beschreibung
 
 
+def test_im_zuordnungsmenue_laesst_sich_ein_fremdes_konto_uebernehmen(stelle, bot):
+    """Das Menü bietet auch Vergebenes an — hier darf es das, denn hier wird korrigiert.
+
+    Der Weg über die Ansicht und nicht nur über ``zuordnen``: träte das ``uebernehmen``
+    hier nicht auf, stünde das Konto im Menü und würde beim Klick abgewiesen — genau der
+    Zustand, den die Prüfung bemängelt hat.
+    """
+    _config, unsere = stelle
+    sitzung = sitzung_mit_notiz(unsere)
+    aufgenommen(unsere, sitzung, (MIRA, "Mira am Handy"), (BROK, "Mira"))
+    welt_ablegen(unsere)
+    people.confirm(unsere, {BROK: "u-mira"})
+    ctx = FakeCtx()
+    asyncio.run(befehl(bot, gateway.BEFEHL_ZUORDNUNG)(ctx))
+
+    (menue,) = [teil for teil in ctx.ansichten[0].items if teil.custom_id.endswith(MIRA)]
+    assert "u-mira" in [option.value for option in menue.options]
+
+    interaktion = waehlen(ctx.ansichten[0], MIRA, "u-mira")
+
+    assert people.speakers(unsere)[MIRA].confirmed.id == "u-mira"
+    assert people.speakers(unsere)[BROK].confirmed is None
+    beschreibung = interaktion.response.bearbeitet[0]["embed"].gebaut["description"]
+    assert (
+        erinnern.UEBERNOMMEN.format(name="Mira am Handy", spieler="Mira", vorher="Mira")
+        in beschreibung
+    )
+
+
 def test_ein_verschwundener_spieler_aendert_nichts(stelle, bot):
     _config, unsere = stelle
     sitzung = sitzung_mit_notiz(unsere)
@@ -938,18 +967,44 @@ def test_das_menue_beim_betreten_traegt_nur_freie_konten(stelle):
 
 
 def test_ein_vergebenes_konto_wird_nicht_ein_zweites_mal_vergeben(stelle):
-    """Auch wenn es doch einmal in einer alten Ansicht steht: zwei Spuren, ein Name."""
+    """Auch wenn es doch einmal in einer alten Ansicht steht: zwei Spuren, ein Name.
+
+    Das ist der Weg **ohne** ``uebernehmen`` — das Menü im Zwiegespräch, wo niemand zusieht.
+    """
     _config, unsere = stelle
     sitzung = sitzung_mit_notiz(unsere)
     aufgenommen(unsere, sitzung, (MIRA, "Mira"), (BROK, "Brok"))
     welt_ablegen(unsere)
     people.confirm(unsere, {MIRA: "u-mira"})
 
-    satz = erinnern.zuordnen(unsere, BROK, "u-mira")
+    ergebnis = erinnern.zuordnen(unsere, BROK, "u-mira")
 
-    assert satz == erinnern.SPIELER_VERGEBEN.format(niemand=erinnern.ZUORDNUNG_KEINE)
+    assert ergebnis == erinnern.Zugeordnet(satz=erinnern.SPIELER_VERGEBEN)
     assert people.speakers(unsere)[BROK].confirmed is None
     assert people.speakers(unsere)[MIRA].confirmed.id == "u-mira"
+
+
+def test_in_der_zuordnung_laesst_sich_ein_vergebenes_konto_umhaengen(stelle):
+    """Der Fall aus der Prüfung: Brok heißt »Mira« und bekam Miras Konto beim Betreten.
+
+    Die echte Mira muss es zurückholen können, und zwar in **einem** Schritt — sonst wäre
+    der Satz im Vermerk (»ändert `/zuordnung` es«) ein Verweis auf einen zugemauerten Weg.
+    """
+    _config, unsere = stelle
+    sitzung = sitzung_mit_notiz(unsere)
+    aufgenommen(unsere, sitzung, (MIRA, "Mira am Handy"), (BROK, "Mira"))
+    welt_ablegen(unsere)
+    people.confirm(unsere, {BROK: "u-mira"})
+
+    ergebnis = erinnern.zuordnen(unsere, MIRA, "u-mira", uebernehmen=True)
+
+    assert ergebnis.satz == erinnern.UEBERNOMMEN.format(
+        name="Mira am Handy", spieler="Mira", vorher="Mira"
+    )
+    assert ergebnis.spieler.id == "u-mira"
+    assert people.speakers(unsere)[MIRA].confirmed.id == "u-mira"
+    # Und die Vorbesitzerin steht danach wieder offen da — nicht doppelt zugeordnet.
+    assert people.speakers(unsere)[BROK].confirmed is None
 
 
 def test_das_eigene_konto_noch_einmal_zu_waehlen_bleibt_erlaubt(stelle):
@@ -960,9 +1015,10 @@ def test_das_eigene_konto_noch_einmal_zu_waehlen_bleibt_erlaubt(stelle):
     welt_ablegen(unsere)
     people.confirm(unsere, {MIRA: "u-mira"})
 
-    satz = erinnern.zuordnen(unsere, MIRA, "u-mira")
+    ergebnis = erinnern.zuordnen(unsere, MIRA, "u-mira")
 
-    assert satz == erinnern.ZUGEORDNET.format(name="Mira", spieler="Mira")
+    assert ergebnis.satz == erinnern.ZUGEORDNET.format(name="Mira", spieler="Mira")
+    assert ergebnis.spieler.id == "u-mira"
     assert people.speakers(unsere)[MIRA].confirmed.id == "u-mira"
 
 
