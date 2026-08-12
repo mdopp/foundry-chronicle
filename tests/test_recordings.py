@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import io
 import sqlite3
+import wave
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -270,6 +271,26 @@ def test_eine_verschwundene_spur_wird_gemeldet_statt_still_zu_scheitern(client, 
     aufnahme = recordings.for_session(runde(config), sitzung_id)[0]
     assert aufnahme.status == recordings.GESCHEITERT
     assert "liegt nicht mehr da" in aufnahme.detail
+
+
+def test_eine_spur_ohne_aeusserung_ist_kein_fehlschlag(config, sitzung_id):
+    """Übersprungen heißt fertig, nicht gescheitert — und die Meldung sagt das auch (#142)."""
+    config.recordings_dir.mkdir(parents=True, exist_ok=True)
+    pfad = config.recordings_dir / f"sitzung{sitzung_id}-teek.wav"
+    with wave.open(str(pfad), "wb") as datei:
+        datei.setnchannels(2)
+        datei.setsampwidth(2)
+        datei.setframerate(48000)
+        datei.writeframes(bytes(int(48000 * 0.08) * 4))
+    recordings.enqueue(runde(config), sitzung_id, pfad.name)
+
+    (meldung,) = service.run_queue(config, runde(config), model=Erkenner())
+
+    assert "nicht verschriftet" in meldung
+    aufnahme = recordings.for_session(runde(config), sitzung_id)[0]
+    assert aufnahme.status == recordings.FERTIG
+    assert aufnahme.text == ""
+    assert "Verlorengegangen ist nichts" in aufnahme.detail
 
 
 def test_eine_kaputte_spur_nimmt_die_uebrigen_nicht_mit(client, config, sitzung_id, monkeypatch):

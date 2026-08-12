@@ -5,6 +5,7 @@ Kein Test lädt ein Modell herunter: der echte Spracherkenner steckt hinter
 """
 
 import sys
+import wave
 
 import pytest
 from conftest import UNSER_KONTO, runde
@@ -293,6 +294,83 @@ def test_eine_datenbank_ohne_index_traegt_die_transkripte_beim_start_nach(config
     db.init(config.database_path)
 
     assert search.find(runde(config), "Schwert").groups
+
+
+# --- Die Schranke gegen erfundene Sätze (#142) --------------------------------------
+
+
+class NieGefragt:
+    """Ein Erkenner, der beweist, dass er gar nicht erst gefragt wurde."""
+
+    name = "nie-gefragt"
+
+    def transcribe(self, audio_path, *, vocabulary=""):
+        raise AssertionError("eine Spur ohne Äußerung darf das Modell nicht erreichen")
+
+
+def wav_spur(pfad, sekunden):
+    """Eine WAV-Spur im Format des Aufnahme-Bots: 48 kHz, Stereo, 16 Bit."""
+    pfad.parent.mkdir(parents=True, exist_ok=True)
+    with wave.open(str(pfad), "wb") as datei:
+        datei.setnchannels(2)
+        datei.setsampwidth(2)
+        datei.setframerate(48000)
+        datei.writeframes(bytes(int(48000 * sekunden) * 4))
+    return pfad
+
+
+def test_eine_spur_ohne_aeusserung_erreicht_das_modell_nicht(config, scope, tmp_path):
+    """Der gemessene Fall: 0,08 s Rauschen, aus denen Whisper einen Satz machte."""
+    sitzung_id = sitzung(scope)
+    bruchstueck = wav_spur(tmp_path / "aufnahmen" / "teek.wav", 0.08)
+
+    ergebnis = service.transcribe_session(
+        config, runde(config), sitzung_id, bruchstueck, model=NieGefragt()
+    )
+
+    assert ergebnis.uebersprungen
+    assert ergebnis.segment_count == 0
+    assert segmente(scope, sitzung_id) == []
+    assert bruchstueck.is_file()
+
+
+def test_eine_kurze_echte_aeusserung_ueberlebt_die_schranke(config, scope, tmp_path):
+    """Die Gegenprobe: »Ja.« ist kurz, aber gesprochen — und muss durchkommen."""
+    sitzung_id = sitzung(scope)
+    ja = wav_spur(tmp_path / "aufnahmen" / "mira.wav", 0.5)
+
+    ergebnis = service.transcribe_session(
+        config,
+        runde(config),
+        sitzung_id,
+        ja,
+        model=Erkenner(Segment(start=0.0, end=0.5, text=" Ja.")),
+    )
+
+    assert not ergebnis.uebersprungen
+    assert [zeile["text"] for zeile in segmente(scope, sitzung_id)] == ["Ja."]
+
+
+def test_die_meldung_zur_uebersprungenen_spur_behauptet_keinen_verlust(config, scope, tmp_path):
+    sitzung_id = sitzung(scope)
+    bruchstueck = wav_spur(tmp_path / "aufnahmen" / "teek.wav", 0.08)
+
+    meldung = service.transcribe_session(
+        config, runde(config), sitzung_id, bruchstueck, model=NieGefragt()
+    ).message
+
+    assert "0.08 Sekunden" in meldung
+    assert "keine Äußerung" in meldung
+    assert "Verlorengegangen ist nichts" in meldung
+
+
+def test_was_sich_nicht_messen_laesst_wird_nicht_geraten(spur, tmp_path):
+    """Ein m4a vom Telefon und ein abgeschnittener Kopf: keine Zahl, also keine Schranke."""
+    kaputt = tmp_path / "halb.wav"
+    kaputt.write_bytes(b"RIFF")
+
+    assert service.spurdauer(spur) is None
+    assert service.spurdauer(kaputt) is None
 
 
 # --- Ablageort und Umgebung ---------------------------------------------------------
