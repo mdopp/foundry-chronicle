@@ -808,6 +808,22 @@ def test_eine_sprachnachricht_im_thread_geht_in_dieselbe_warteschlange(stelle, b
     assert nachricht.antworten == [chronik.DIKTAT]
 
 
+def test_das_diktat_behaelt_den_zeitpunkt_seiner_nachricht(stelle, bot):
+    """Ohne ihn fände es nie eine Szene: eine Sitzungsuhr hat ein Diktat nicht (#160)."""
+    _config, unsere = stelle
+    _ctx, thread = sitzung_starten(bot)
+    gestern = datetime(2026, 8, 6, 20, 30, tzinfo=UTC)
+
+    melden(
+        bot,
+        FakeNachricht(7404, "", kanal=thread.id, zeit=gestern, anhaenge=(FakeAnhang("memo.m4a"),)),
+    )
+
+    (spur,) = recordings.pending(unsere)
+    assert spur.message_at == "2026-08-06T20:30:00+00:00"
+    assert spur.started_at is None
+
+
 def test_ein_anhang_ohne_ton_ist_einfach_kein_diktat(stelle, bot):
     _config, unsere = stelle
     _ctx, thread = sitzung_starten(bot)

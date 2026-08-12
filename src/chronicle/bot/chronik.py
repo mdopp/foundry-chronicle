@@ -384,14 +384,26 @@ def ist_diktat(dateiname: str) -> bool:
 
 
 async def _diktat(
-    config: Config, runde: Runde, session_id: int, anhang: Anhang, autor_id: str | None
+    config: Config, runde: Runde, session_id: int, anhang: Anhang, nachricht: Nachricht
 ) -> str:
+    """Ein Anhang wird eine wartende Spur — mit dem Zeitpunkt der Nachricht daran.
+
+    Der Zeitpunkt ist kein Beiwerk: eine Sitzungsuhr hat ein Diktat nicht, also ist er
+    das Einzige, woran es später seine Szene findet. Ohne ihn bliebe es verschriftet in
+    der Datenbank liegen und stünde in keiner Chronik.
+    """
     if anhang.size > recordings.MAX_BYTES:
         return ZU_GROSS.format(name=anhang.filename, grenze=recordings.MAX_BYTES // (1024 * 1024))
     config.recordings_dir.mkdir(parents=True, exist_ok=True)
     ziel = recordings.target_path(config.recordings_dir, session_id, anhang.filename)
     await anhang.speichern(ziel)
-    recordings.enqueue(runde, session_id, ziel.name, discord_user_id=autor_id)
+    recordings.enqueue(
+        runde,
+        session_id,
+        ziel.name,
+        discord_user_id=nachricht.autor_id,
+        message_at=nachricht.zeitpunkt.strip() or None,
+    )
     logger.info("Diktat aus dem Thread: %s → Sitzung %s", ziel.name, session_id)
     return DIKTAT
 
@@ -406,7 +418,7 @@ async def aufnehmen(
     Hälfte jedes Satzes eines ganzen Abends.
     """
     meldungen = [
-        await _diktat(config, runde, session_id, anhang, nachricht.autor_id)
+        await _diktat(config, runde, session_id, anhang, nachricht)
         for anhang in nachricht.anhaenge
         if ist_diktat(anhang.filename)
     ]

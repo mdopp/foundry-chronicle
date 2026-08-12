@@ -251,6 +251,12 @@ CREATE TABLE IF NOT EXISTS transcript (
 -- raten. Er wird beim Start festgehalten, nicht später aus ``uploaded_at`` geschätzt —
 -- das ist der Zeitpunkt des *Einreihens*, also das Ende der Aufnahme. ``NULL`` steht bei
 -- allem, was keine Sitzungsuhr hat: Diktate, Uploads, Bestände von vor dieser Spalte.
+--
+-- ``message_at`` ist der Anker für genau die: der Zeitpunkt der **Nachricht**, mit der ein
+-- Diktat im Thread ankam. Er entscheidet über seine Szene, so wie er es bei einer
+-- getippten Notiz tut — ein Diktat darf Tage später kommen und gehört trotzdem in die
+-- Szene von Dienstag. Nicht ``uploaded_at``: das ist der Zeitpunkt des Ablegens.
+-- ``NULL`` steht bei allem, was ohne Nachricht hereinkam: Bot-Spuren, Uploads.
 CREATE TABLE IF NOT EXISTS recording (
     id          INTEGER PRIMARY KEY,
     runde_id    INTEGER NOT NULL REFERENCES runde (id) ON DELETE CASCADE,
@@ -259,6 +265,7 @@ CREATE TABLE IF NOT EXISTS recording (
     source      TEXT NOT NULL,
     uploaded_at TEXT NOT NULL,
     started_at  TEXT,
+    message_at  TEXT,
     status      TEXT NOT NULL
                 CHECK (status IN ('wartet', 'laeuft', 'fertig', 'gescheitert')),
     detail      TEXT,

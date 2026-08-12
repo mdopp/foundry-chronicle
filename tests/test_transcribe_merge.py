@@ -68,11 +68,17 @@ def spur(config, sitzung_id, wer, *segmente, discord_user_id="egal", started_at=
         scope.close()
 
 
-def diktat(config, sitzung_id, *segmente, discord_user_id=None):
-    recordings.enqueue(runde(config), sitzung_id, "memo.m4a", discord_user_id=discord_user_id)
+def diktat(config, sitzung_id, *segmente, discord_user_id=None, message_at=None, name="memo"):
+    recordings.enqueue(
+        runde(config),
+        sitzung_id,
+        f"{name}.m4a",
+        discord_user_id=discord_user_id,
+        message_at=message_at,
+    )
     scope = db.scoped(runde(config))
     try:
-        service.store(scope, sitzung_id, "memo", tuple(segmente), STAND)
+        service.store(scope, sitzung_id, name, tuple(segmente), STAND)
     finally:
         scope.close()
 
@@ -261,6 +267,143 @@ def test_eine_sitzung_ohne_szene_kommt_ohne_notiz_davon(config, sitzung_id):
 
 def test_eine_ruhende_runde_bekommt_kein_gesprochenes_wort_mehr(config, sitzung_id, monkeypatch):
     mitschnitt(config, sitzung_id)
+    monkeypatch.setattr(merge.lebenszyklus, "ruht", lambda _runde: True)
+
+    assert merge.uebernehmen(runde(config), sitzung_id) == 0
+    assert notiztexte(config, sitzung_id) == []
+
+
+# --- Das Diktat findet seine Szene (#160) -------------------------------------------
+
+GESTERN = "2026-08-06T20:00:00+00:00"
+HEUTE = "2026-08-07T20:00:00+00:00"
+
+GESAGT = "Der Wirt hat gelogen."
+
+
+def zwei_abende(config, sitzung_id):
+    """Zwei Trennlinien mit echten Zeitpunkten — dazwischen liegt ein Tag."""
+    angesagt(config, MIRA)
+    notes.add_scene(runde(config), sitzung_id, title="Gestern", at=GESTERN)
+    notes.add_scene(runde(config), sitzung_id, title="Heute", at=HEUTE)
+
+
+def szene_mit(config, sitzung_id, text):
+    """Der Titel der Szene, in der dieser Text steht — sonst ``None``."""
+    for szene in notes.session(runde(config), sitzung_id).scenes:
+        if any(text in notiz.text for notiz in szene.notes):
+            return szene.title
+    return None
+
+
+def test_ein_diktat_landet_in_der_szene_seines_nachrichtenzeitpunkts(config, sitzung_id):
+    zwei_abende(config, sitzung_id)
+    diktat(
+        config,
+        sitzung_id,
+        (0, 2000, GESAGT),
+        discord_user_id=MIRA.id,
+        message_at="2026-08-07T21:30:00+00:00",
+    )
+
+    assert merge.uebernehmen(runde(config), sitzung_id) == 1
+    assert szene_mit(config, sitzung_id, GESAGT) == "Heute"
+    assert notiztexte(config, sitzung_id) == [f"Mira: {GESAGT}"]
+
+
+def test_ein_diktat_von_gestern_landet_nicht_in_der_aktuellen_szene(config, sitzung_id):
+    """Die Gegenprobe: entschieden hat der Zeitpunkt der Nachricht, nicht der des Ablegens."""
+    zwei_abende(config, sitzung_id)
+    diktat(
+        config,
+        sitzung_id,
+        (0, 2000, GESAGT),
+        discord_user_id=MIRA.id,
+        message_at="2026-08-06T22:00:00+00:00",
+    )
+
+    merge.uebernehmen(runde(config), sitzung_id)
+
+    assert szene_mit(config, sitzung_id, GESAGT) == "Gestern"
+
+
+def test_ein_diktat_ohne_nachrichtenzeitpunkt_bekommt_keinen_geraten(config, sitzung_id):
+    """Ein Bestand von vor der Spalte: lieber nichts als eine Szene aus ``uploaded_at``."""
+    zwei_abende(config, sitzung_id)
+    diktat(config, sitzung_id, (0, 2000, GESAGT), discord_user_id=MIRA.id)
+
+    assert merge.uebernehmen(runde(config), sitzung_id) == 0
+    assert notiztexte(config, sitzung_id) == []
+
+
+def test_zweimal_abschliessen_schreibt_das_diktat_nicht_doppelt(config, sitzung_id):
+    """Dieselbe Herkunft wie das Transkript — der zweite Lauf ersetzt, statt zu verdoppeln."""
+    zwei_abende(config, sitzung_id)
+    diktat(
+        config,
+        sitzung_id,
+        (0, 2000, GESAGT),
+        discord_user_id=MIRA.id,
+        message_at="2026-08-07T21:30:00+00:00",
+    )
+
+    assert merge.uebernehmen(runde(config), sitzung_id) == 1
+    assert merge.uebernehmen(runde(config), sitzung_id) == 1
+    assert notiztexte(config, sitzung_id) == [f"Mira: {GESAGT}"]
+
+
+def test_das_diktat_laesst_die_verschraenkten_bot_spuren_unberuehrt(config, sitzung_id):
+    """Es kommt hinzu — es wandert nicht auf die Sitzungsuhr und verschiebt dort nichts."""
+    mitschnitt(config, sitzung_id)
+    notes.add_scene(runde(config), sitzung_id, title="Unten", at="2026-08-06T20:00:30+00:00")
+    diktat(
+        config,
+        sitzung_id,
+        (0, 2000, GESAGT),
+        discord_user_id=MIRA.id,
+        message_at="2026-08-06T20:00:10+00:00",
+    )
+
+    assert merge.uebernehmen(runde(config), sitzung_id) == 3
+
+    szenen = notes.session(runde(config), sitzung_id).scenes
+    assert szenen[0].notes[0].text == "Mira: Wir gehen hinunter."
+    assert szenen[1].notes[0].text == "Davey: Hier riecht es nach Rauch."
+    assert [a.text for a in merge.conversation(runde(config), sitzung_id, mit_uhr=True)] == [
+        "Wir gehen hinunter.",
+        "Hier riecht es nach Rauch.",
+    ]
+
+
+def test_die_komposition_bekommt_das_diktat_wie_eine_notiz(config, sitzung_id):
+    zwei_abende(config, sitzung_id)
+    diktat(
+        config,
+        sitzung_id,
+        (0, 2000, GESAGT),
+        discord_user_id=MIRA.id,
+        message_at="2026-08-07T21:30:00+00:00",
+    )
+    merge.uebernehmen(runde(config), sitzung_id)
+
+    scope = db.scoped(runde(config))
+    try:
+        stoff = material(scope, sitzung_id)
+    finally:
+        scope.close()
+
+    assert f"Mira: {GESAGT}" in [text for szene in stoff.scenes for text in szene.notes]
+
+
+def test_eine_ruhende_runde_bekommt_auch_kein_diktat_mehr(config, sitzung_id, monkeypatch):
+    zwei_abende(config, sitzung_id)
+    diktat(
+        config,
+        sitzung_id,
+        (0, 2000, GESAGT),
+        discord_user_id=MIRA.id,
+        message_at="2026-08-07T21:30:00+00:00",
+    )
     monkeypatch.setattr(merge.lebenszyklus, "ruht", lambda _runde: True)
 
     assert merge.uebernehmen(runde(config), sitzung_id) == 0

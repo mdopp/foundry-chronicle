@@ -16,6 +16,11 @@ Diktat vom Heimweg hat keinen Bezug zu einer Sitzungsuhr; es auf dieselbe Achse 
 hieße, einen Zeitstempel zu erfinden. Für die Präsenzrunde bleibt die Szenenfolge die
 einzige Zeitachse und »Diktat zur Szene übernehmen« der Weg dorthin.
 
+Eine Szene bekommt ein Diktat trotzdem, nur über einen anderen Anker: den Zeitpunkt der
+**Nachricht**, mit der es im Thread ankam (``recording.message_at``, #160). Das ist
+dieselbe Regel, nach der eine getippte Notiz ihre Szene findet — verschränkt wird ein
+Diktat deswegen nicht, und die Sitzungsuhr bleibt unberührt.
+
 Beschriftet wird aus der bestätigten Zuordnung. Ohne Bestätigung steht der Discord-Name
 da — nie ein Vorschlag, nie ein geratener Name.
 
@@ -67,6 +72,21 @@ MIT_UHR = "AND r.started_at IS NOT NULL "
 
 ORDNUNG = "ORDER BY s.start_ms, r.source, s.id"
 
+# Die Gegenprobe zu ``MIT_UHR``: kein festgehaltener Beginn, dafür der Zeitpunkt der
+# Nachricht. Sortiert wird innerhalb einer Spur, denn ein Diktat wird als **ein** Stück
+# übernommen — es gibt keine zweite Stimme, mit der es zu verschränken wäre.
+DIKTATE = (
+    "SELECT r.id AS recording_id, r.discord_user_id AS discord_user_id, r.source AS source, "
+    "r.message_at AS message_at, s.text AS text "
+    "FROM transcript t "
+    "JOIN recording r ON r.runde_id = t.runde_id AND r.session_id = t.session_id "
+    "AND r.source = t.source "
+    "JOIN transcript_segment s ON s.transcript_id = t.id "
+    "WHERE t.runde_id = ? AND t.session_id = ? "
+    "AND r.started_at IS NULL AND r.message_at IS NOT NULL "
+    "ORDER BY r.id, s.start_ms, s.id"
+)
+
 # Der Nullpunkt der Sitzungsuhr. Mehrere Spuren eines Mitschnitts tragen denselben Wert;
 # genommen wird der früheste, damit die Achse dort beginnt, wo die Aufnahme begann.
 BEGINN = (
@@ -89,6 +109,23 @@ class Utterance:
     @property
     def marke(self) -> str:
         return zeitmarke(self.start_ms / 1000)
+
+
+@dataclass(frozen=True)
+class Diktat:
+    """Ein verschriftetes Diktat und der Zeitpunkt, der ihm seine Szene gibt.
+
+    Kein ``Utterance``: es liegt auf keiner Sitzungsuhr, und ein ``start_ms`` daran wäre
+    genau die erfundene Zeitrechnung, gegen die dieses Modul gebaut ist.
+    """
+
+    moment: str
+    speaker: str
+    text: str
+
+    @property
+    def notiz(self) -> str:
+        return f"{self.speaker}: {self.text}"
 
 
 def _beschriftung(sprecher: dict[str, people.Person], zeile: sqlite3.Row) -> tuple[str, bool]:
@@ -198,6 +235,27 @@ def _nullpunkt(runde: Runde, session_id: int) -> datetime | None:
     return datetime.fromisoformat(zeile["beginn"])
 
 
+def _diktate(runde: Runde, session_id: int) -> tuple[Diktat, ...]:
+    """Die verschrifteten Diktate einer Sitzung, je Spur eines — beschriftet wie eine Spur."""
+    sprecher = people.speakers(runde)
+    scope = db.scoped(runde)
+    try:
+        zeilen = scope.execute(DIKTATE, (scope.runde_id, session_id)).fetchall()
+    finally:
+        scope.close()
+    je_spur: dict[int, list[sqlite3.Row]] = {}
+    for zeile in zeilen:
+        je_spur.setdefault(zeile["recording_id"], []).append(zeile)
+    gefunden: list[Diktat] = []
+    for teile in je_spur.values():
+        text = " ".join(teil["text"].strip() for teil in teile if teil["text"].strip())
+        if not text:
+            continue
+        name, _ = _beschriftung(sprecher, teile[0])
+        gefunden.append(Diktat(moment=teile[0]["message_at"], speaker=name, text=text))
+    return tuple(gefunden)
+
+
 def uebernehmen(runde: Runde, session_id: int) -> int:
     """Legt das Gespräch der Sitzung in die Szenen und sagt, wie viele Notizen entstanden.
 
@@ -206,27 +264,35 @@ def uebernehmen(runde: Runde, session_id: int) -> int:
     **Startzeitpunkts**, auch wenn sie über eine Trennlinie hinausredet — geteilt würde
     sonst mitten im Satz, und die Hälfte danach stünde ohne ihren Anfang da.
 
-    Nichts geschieht, solange der Nullpunkt der Sitzungsuhr fehlt: ohne ihn ließe sich
-    ``start_ms`` nur auf die Szenen legen, indem man einen Beginn schätzt. Eine Sitzung
-    ohne Mitschnitt bleibt damit genau so, wie sie war, und eine ruhende Runde bekommt
-    ohnehin nichts mehr.
+    Für den Mitschnitt geschieht nichts, solange der Nullpunkt der Sitzungsuhr fehlt: ohne
+    ihn ließe sich ``start_ms`` nur auf die Szenen legen, indem man einen Beginn schätzt.
+    Ein **Diktat** kommt trotzdem an — nicht über die Uhr, sondern über den Zeitpunkt
+    seiner Nachricht (#160). Beides schreibt dieselbe Herkunft, wird also von demselben
+    zweiten Lauf ersetzt statt verdoppelt. Eine ruhende Runde bekommt ohnehin nichts mehr.
     """
     if lebenszyklus.ruht(runde):
         return 0
     nullpunkt = _nullpunkt(runde, session_id)
-    if nullpunkt is None:
+    diktate = _diktate(runde, session_id)
+    if nullpunkt is None and not diktate:
         return 0
-    aussagen = conversation(runde, session_id, mit_uhr=True)
     # Erst verwerfen, dann neu legen — und zwar auch dann, wenn nichts mehr übrig ist:
     # sonst überlebte eine Notiz aus einem Lauf, dessen Spuren inzwischen fort sind.
     notes.drop_derived(runde, session_id, TRANSKRIPT)
     je_szene: dict[int, list[Utterance]] = {}
-    for aussage in aussagen:
-        szene = notes.scene_at(runde, session_id, _moment(nullpunkt, aussage.start_ms))
-        if szene is not None:
-            je_szene.setdefault(szene, []).append(aussage)
+    if nullpunkt is not None:
+        for aussage in conversation(runde, session_id, mit_uhr=True):
+            szene = notes.scene_at(runde, session_id, _moment(nullpunkt, aussage.start_ms))
+            if szene is not None:
+                je_szene.setdefault(szene, []).append(aussage)
     geschrieben = 0
     for szene, gruppe in je_szene.items():
         if notes.add_note(runde, szene, note_text(gruppe), origin=TRANSKRIPT) is not None:
+            geschrieben += 1
+    for diktat in diktate:
+        szene = notes.scene_at(runde, session_id, diktat.moment)
+        if szene is None:
+            continue
+        if notes.add_note(runde, szene, diktat.notiz, origin=TRANSKRIPT) is not None:
             geschrieben += 1
     return geschrieben
