@@ -110,16 +110,18 @@ speichert **kein fremdes Geheimnis**. Das löst die Operator-Entscheidung vom 20
 für das Passwort ab; sie gilt weiter für den Bot-Token.
 
 **Operator-Entscheidung 2026-08-06 — der Bot-Token liegt in der SQLite.** Die Werte für
-Foundry, Discord und Ollama werden in der Oberfläche gepflegt (#25, der Bot-Token seit
-#19); ein dort gesetzter Wert schlägt die Umgebung, die als Vorgabe beim ersten Start
-bleibt. Damit liegt der Bot-Token **im Klartext in `chronicle.sqlite3` — und die geht ins
+Discord und Ollama werden auf der Betreiber-Seite gepflegt (#25, der Bot-Token seit #19),
+die für Foundry seit #157 in Discord unter `/setup` — die frühere Fassung nannte für
+alle drei »die Oberfläche«, weil es damals nur eine gab. Ein gepflegter Wert schlägt die
+Umgebung, die als Vorgabe beim ersten Start bleibt. Damit liegt der Bot-Token **im Klartext in `chronicle.sqlite3` — und die geht ins
 Backup.** Das ist bewusst so entschieden: eine Homelab-Instanz, Backup auf eigenem NAS,
 und der Betrieb wäre sonst nur über ServiceBay-Template-Variablen zu ändern. Er ist
 außerdem **unser** Token und nicht der einer fremden Gegenstelle. Die Abwägung hängt an
 drei Bedingungen, die nicht wegfallen dürfen — sie gelten für **jedes** Geheimnis in
 `settings.SECRET_KEYS`:
 
-- Die Seite steht **hinter Authelia und dem `Remote-User`-Guard** wie jede andere.
+- Die Seite steht **hinter Authelia und dem `Remote-User`-Guard**. Seit #157 ist sie die
+  einzige, die es gibt — die Bedingung ist damit nicht schwächer, sondern trägt allein.
 - Der Wert wird **nirgends angezeigt** — nicht im Formular, nicht auf `/status`, nicht in
   `repr`, Log oder Fehlermeldung; angezeigt wird nur, *ob* er gesetzt ist.
 - Übertragen wird **nur per POST**, nie in einer URL; ein leeres Feld heißt unverändert.
@@ -212,9 +214,16 @@ Assists (`get_assist`) lesen. Dieser Abschnitt ist der Extrakt, nicht der Ersatz
   Instanz ganz ohne Seite und ist mit der Entscheidung vom 2026-08-10 überholt.)
 - **Läufe über ~10 s sind server-eigene, beobachtbare Jobs** — abbrechbar, neustartfest,
   Wiederanbindung über Job-Id (`get_assist long-running-process`).
-- **Erklärte Abweichung, auslaufend:** Flask + Jinja statt des empfohlenen FastAPI.
-  Grund war SSR für eine Handvoll Ansichten. Mit #69 fällt die Begründung weg und mit
-  ihr fast der ganze Webteil — was bleibt, ist ein Prozess mit `/healthz` und der Bot.
+- **Erklärte Abweichung, ausgelaufen und trotzdem stehengeblieben:** Flask + Jinja statt
+  des empfohlenen FastAPI. Grund war SSR für eine Handvoll Ansichten; die Handvoll ist
+  mit #157 auf **eine** Seite geschrumpft. Damit ist die alte Begründung erledigt — der
+  Rahmen bleibt trotzdem, weil ein Wechsel jetzt erst recht nichts einbrächte: übrig
+  sind ein Formular, zwei Weiterleitungen, `/healthz` und der Bot. Ein Umbau auf FastAPI
+  wäre Arbeit ohne Gegenwert und ein Risiko am Install-Gate der Box. **Wer hier etwas
+  Neues baut, baut es in Discord** — eine zweite Seite entstünde ohnehin nicht.
+  (Die frühere Fassung nannte die Abweichung »auslaufend« und erwartete, dass mit #69
+  fast der ganze Webteil verschwindet. Das ist eingetreten; geblieben ist die
+  Betreiber-Seite, und mit ihr Flask.)
 - **Standards-Lücken werden zurückgemeldet:** `standards-gap`-Issue in
   `mdopp/servicebay` (`get_assist report-standards-gaps`).
 

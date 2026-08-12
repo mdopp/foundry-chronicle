@@ -11,7 +11,7 @@
   },
   "CHRONICLE_SUBDOMAIN": {
     "type": "subdomain",
-    "description": "Subdomain der Chronik — sie benennt die Instanz, nicht eine Gruppe: eine Instanz trägt mehrere Runden, je Discord-Server eine. Authelia-Forward-Auth davor: unauthentifiziert antwortet die Subdomain mit 302 auf auth.<domain>, danach setzt NPM den Remote-User-Header. Ein eigenes Login hat der Dienst nicht.",
+    "description": "Subdomain der Betreiber-Seite — gespielt wird in Discord, hier stehen nur Bot-Token, Ollama und die Verwaltungsgruppe. Sie benennt die Instanz, nicht eine Gruppe: eine Instanz trägt mehrere Runden, je Discord-Server eine. Authelia-Forward-Auth davor: unauthentifiziert antwortet die Subdomain mit 302 auf auth.<domain>, danach setzt NPM den Remote-User-Header. Ein eigenes Login hat der Dienst nicht.",
     "default": "daggerheart",
     "exposure": "public",
     "proxyPort": "CHRONICLE_PORT",
