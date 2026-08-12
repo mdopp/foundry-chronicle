@@ -101,6 +101,13 @@ DIKTAT = "Aufnahme angekommen — verschriftet wird sie, sobald du `/chronik fer
 
 ZU_GROSS = "»{name}« ist größer als {grenze} MB und bleibt liegen."
 
+# Kein Fehlschlag der Sitzung, sondern ein misslungener Anhang: die Meldung sagt beides,
+# sonst sucht die Runde am nächsten Tag nach einer Aufnahme, die es nie gab.
+LEER = (
+    "»{name}« kam ohne Ton an — null Bytes. Ich reihe sie nicht ein; schick sie einfach "
+    "noch einmal. An der Sitzung fehlt sonst nichts."
+)
+
 NICHT_ABGELEGT = (
     "Das konnte ich nicht ablegen: {grund} Schreib es noch einmal — bleibt es dabei, "
     "steht der Grund im Log des Bots."
@@ -391,12 +398,23 @@ async def _diktat(
     Der Zeitpunkt ist kein Beiwerk: eine Sitzungsuhr hat ein Diktat nicht, also ist er
     das Einzige, woran es später seine Szene findet. Ohne ihn bliebe es verschriftet in
     der Datenbank liegen und stünde in keiner Chronik.
+
+    **Hier steht die Byte-Schranke** — »ist überhaupt etwas angekommen«. Das ist die Frage
+    der Annahme, und sie wird an der Datei beantwortet, nicht an Discords Größenangabe:
+    eine Spur ohne ein einziges Byte belegt sonst einen Platz in der Warteschlange und
+    kostet einen Modelllauf. Die andere Frage — »steckt eine Äußerung darin« — beantwortet
+    ``transcribe.service`` an der Dauer (``MINDESTDAUER``, #142) und bleibt dort: dorthin
+    laufen alle Spuren, auch die des Aufnahme-Bots, die hier nie vorbeikommen.
     """
     if anhang.size > recordings.MAX_BYTES:
         return ZU_GROSS.format(name=anhang.filename, grenze=recordings.MAX_BYTES // (1024 * 1024))
     config.recordings_dir.mkdir(parents=True, exist_ok=True)
     ziel = recordings.target_path(config.recordings_dir, session_id, anhang.filename)
     await anhang.speichern(ziel)
+    if ziel.stat().st_size == 0:
+        ziel.unlink()
+        logger.info("Leeres Diktat aus dem Thread abgewiesen: %s", anhang.filename)
+        return LEER.format(name=anhang.filename)
     recordings.enqueue(
         runde,
         session_id,

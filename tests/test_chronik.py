@@ -854,6 +854,36 @@ def test_eine_zu_grosse_aufnahme_bleibt_liegen_und_sagt_es(stelle, bot):
     ]
 
 
+def test_eine_leere_aufnahme_wird_nicht_eingereiht_und_gesagt(stelle, bot):
+    """0 Bytes sind keine Spur: eingereiht belegte sie einen Platz und einen Modelllauf."""
+    config, unsere = stelle
+    _ctx, thread = sitzung_starten(bot)
+
+    nachricht = melden(
+        bot,
+        FakeNachricht(7405, "", kanal=thread.id, anhaenge=(FakeAnhang("memo.m4a", inhalt=b""),)),
+    )
+
+    assert recordings.pending(unsere) == ()
+    assert list(config.recordings_dir.iterdir()) == []
+    assert nachricht.antworten == [chronik.LEER.format(name="memo.m4a")]
+
+
+def test_eine_winzige_aufnahme_kommt_trotzdem_durch(stelle, bot):
+    """Die Gegenprobe: kurz ist nicht leer — ob eine Äußerung darin steckt, sagt #142."""
+    config, unsere = stelle
+    _ctx, thread = sitzung_starten(bot)
+
+    nachricht = melden(
+        bot,
+        FakeNachricht(7406, "", kanal=thread.id, anhaenge=(FakeAnhang("kurz.m4a", inhalt=b"t"),)),
+    )
+
+    (spur,) = recordings.pending(unsere)
+    assert (config.recordings_dir / spur.filename).read_bytes() == b"t"
+    assert nachricht.antworten == [chronik.DIKTAT]
+
+
 # -- Abschließen ------------------------------------------------------------------------
 
 

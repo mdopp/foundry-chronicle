@@ -24,9 +24,6 @@ from difflib import SequenceMatcher
 from chronicle import db
 from chronicle.runde import Runde
 
-# Der Name des Formularfeldes je Zeile — die Discord-Id hängt hinten dran.
-FELD = "person-"
-
 # Ab hier ist eine Namensähnlichkeit einen Vorschlag wert.
 SCHWELLE = 0.8
 
