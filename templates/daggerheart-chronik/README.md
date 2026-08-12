@@ -62,6 +62,31 @@ anlegt. Wer hier einen Container ergänzt, macht aus jedem laufenden Lauf einen
 Discord unter `/setup`, Vorgabe 04:00 nach der Zone der Runde; ein verpasstes Fenster wird
 nicht nachgeholt.
 
+## Die Grafikkarte
+
+Der Container `chronik` bekommt die NVIDIA-Karte über **CDI** durchgereicht
+(`resources.limits.nvidia.com/gpu` plus die SELinux-Freigabe
+`io.podman.annotations.label/chronik: disable` — ohne die zweite meldet NVML auf rootless
+FCoS »Insufficient Permissions«). Voraussetzung auf der Box ist das
+nvidia-container-toolkit mit einer erzeugten `/etc/cdi/nvidia.yaml`; das ist eine
+Betreiber-Einstellung, keine Zeile im Repo. Der `bot` bekommt sie nicht: verschriftet wird
+im nächtlichen Lauf, und der hängt im Webdienst.
+
+Mit Karte läuft Whisper als `large-v3-turbo` in float16, ohne als `small` in int8 auf der
+CPU. Der Unterschied ist nicht kosmetisch — aus »Elfen« wurde ohne Karte »Helfe«, und ein
+Verhörer ist im fertigen Protokoll Wochen später nicht mehr als solcher zu erkennen.
+
+**Die Karte ist geteilt.** Auf denselben 16 GB liegen Ollama, `solaris-tts` und
+`solaris-whisper`. Schlägt das Laden fehl, weil der Speicher gerade nicht reicht, fällt der
+Dienst auf CPU/`small` zurück und läuft langsam weiter, statt die Nacht abzubrechen. Wer
+die Karte ganz für Ollama frei braucht, setzt `CHRONICLE_WHISPER_DEVICE=cpu` in der
+Umgebung — das Template erzwingt kein Gerät.
+
+Nach dem Deploy gehört zur Abnahme, dass der Container die Karte auch wirklich sieht
+(`CUDA verfuegbar: True`): `podman kube play` hat `resources.limits` auf dieser Plattform
+schon einmal still verworfen, und dann bliebe es beim CPU-Rückfall, ohne dass etwas
+fehlschlägt.
+
 ## Daten
 
 ```

@@ -11,6 +11,12 @@ metadata:
     # nginx liefert den Proxy-Host, auth die Authelia-Forward-Auth davor. Beide müssen
     # stehen, bevor dieser Dienst installiert wird — sonst zeigt die Subdomain ins Leere.
     servicebay.dependencies: "nginx,auth"
+    # Zweite Hälfte der Karten-Durchreichung weiter unten. Ohne sie sieht der Container
+    # die Geräte zwar, aber NVML scheitert auf rootless FCoS beim Hochfahren mit
+    # »Insufficient Permissions«, weil SELinux den Treiberzugriff verbietet. Ollama und
+    # solaris-whisper setzen dafür SecurityLabelDisable=true; im Pod-Manifest heißt
+    # dasselbe so und gilt gezielt nur für den einen Container, der die Karte braucht.
+    io.podman.annotations.label/chronik: "disable"
     # Install-Gate der Box: /healthz antwortet 200, sobald Flask das Schema angelegt hat.
     # Der Poller fragt am Proxy vorbei, deshalb ist der Endpunkt vom Remote-User-Zwang
     # ausgenommen (siehe chronicle/app.py).
@@ -65,6 +71,34 @@ spec:
       # als Bot-Token bei Discord an (401 in der Neustart-Schleife, siehe #33).
     ports:
       - containerPort: {{CHRONICLE_PORT}}
+    # Die Grafikkarte, durchgereicht über CDI — dieselbe Form, in der ollama und
+    # solaris-whisper auf der Box daran hängen. Ohne sie meldet der Container »CUDA
+    # verfuegbar: False« und Whisper bleibt bei ``small``/int8 auf der CPU; aus »Elfen«
+    # wurde damit »Helfe« und aus »niederstreckt« »niedersteckt« (#141). Die
+    # CDI-Beschreibung erzeugt das nvidia-container-toolkit auf der Box, nicht dieses
+    # Template.
+    #
+    # **Nur hier, nicht beim bot**: verschriftet wird im nächtlichen Lauf, und der hängt
+    # im Webdienst (``chronicle.nightly`` — ein zweiter Anleger von Job-Zeilen scheidet
+    # aus, siehe README).
+    #
+    # **Reicht der Speicher nicht, bleibt der Dienst heil.** Die 16 GB teilen sich
+    # Ollama, solaris-tts und solaris-whisper. Schlägt das Laden auf der Karte fehl,
+    # fällt ``chronicle.transcribe.client`` auf CPU/``small`` zurück — ein langsamer
+    # Lauf statt einer abgebrochenen Nacht (#84). Deshalb steht hier auch kein
+    # ``CHRONICLE_WHISPER_DEVICE``: das Template macht die Karte sichtbar, die Wahl
+    # trifft der Dienst zur Laufzeit. Wer sie ganz für Ollama frei braucht, setzt die
+    # Variable auf ``cpu``, statt diese Zeilen zu entfernen.
+    #
+    # Ob die Angabe ankommt, sagt erst der Lauf auf der Box: ``podman kube play`` hat
+    # ``resources.limits`` schon einmal still verworfen (ServiceBay #1026 — daher laufen
+    # ollama und solaris-whisper dort als .container-Quadlet mit AddDevice=). Ein
+    # Pod-Manifest kennt keine andere Schreibweise, und podman 5.8 kennt dafür keine
+    # Anmerkung. Wird sie verworfen, kostet das kein Wort im Protokoll, nur Güte: der
+    # Rückfall oben trägt, und die Lücke gehört dann zurück an die Plattform gemeldet.
+    resources:
+      limits:
+        nvidia.com/gpu: "1"
     volumeMounts:
       - mountPath: /data
         name: chronik-daten
