@@ -577,12 +577,6 @@ class _Lauf:
         # Wieder an der Aufnahme und nicht allein an der Person: an ihr hinge der Vermerk
         # über das Ende hinaus und verschluckte die Frage der nächsten Aufnahme.
         self.gefragt: tuple[Aufnahme, set[str]] | None = None
-        # Und der Vermerk, der zu einer bereits geschriebenen Zuordnung noch aussteht, je
-        # Discord-Kennung das Konto und sein Text. Er entsteht nur, wenn der Vermerk **und**
-        # die Rücknahme danach scheitern — dann steht eine wahre Zuordnung ungesagt da, und
-        # das nächste Betreten holt den Satz nach. Wieder an der Aufnahme: nach ihrem Ende
-        # gibt es keinen Thread mehr, in den er gehörte.
-        self.ungesagt: tuple[Aufnahme, dict[str, tuple[str, str]]] | None = None
 
 
 async def _mitschnitt_beenden(lauf: _Lauf, runde: Runde | None = None) -> tuple[str, ...]:
@@ -604,7 +598,6 @@ async def _mitschnitt_beenden(lauf: _Lauf, runde: Runde | None = None) -> tuple[
     # sie nach dem Ende der Aufnahme weiter vor, ohne dass ihn noch jemand liest.
     allein, lauf.allein = lauf.allein, None
     gefragt, lauf.gefragt = lauf.gefragt, None
-    ungesagt, lauf.ungesagt = lauf.ungesagt, None
     _leerlauf_absagen(lauf)
     try:
         return tuple(await recorder.stoppen(stimme, aufnahme))
@@ -617,7 +610,6 @@ async def _mitschnitt_beenden(lauf: _Lauf, runde: Runde | None = None) -> tuple[
         # Thread zu schreiben. Also sagt ``LEER_GESCHEITERT`` es stattdessen — von selbst
         # sieht erst wieder nach, wen ``on_voice_state_update`` neu bestellt.
         lauf.aufnahme, lauf.stimme, lauf.allein, lauf.gefragt = aufnahme, stimme, allein, gefragt
-        lauf.ungesagt = ungesagt
         raise
 
 
@@ -771,53 +763,56 @@ async def _allein_melden(bot, lauf: _Lauf, zurueck: consent.Member) -> None:
     logger.info("Mitschnitt ohne Thread beendet: %s", " ".join(meldungen))
 
 
-async def _von_selbst_zuordnen(
-    bot, aufnahme: Aufnahme, runde, kennung: str, stand
-) -> tuple[str, str]:
+async def _von_selbst_zuordnen(bot, aufnahme: Aufnahme, runde, kennung: str, stand) -> None:
     """Erst schreiben, dann sagen — und kommt der Satz nicht durch, wieder zurücknehmen.
 
     Über zwei Systeme hinweg — SQLite hier, Discord dort — gibt es kein gemeinsames
     Zusammenschreiben; eine der beiden Reihenfolgen muss danebengehen können. Gewählt ist
     die, deren Fehlerfall **Schweigen** ist und keine Lüge. Andersherum stünde der Vermerk
     im Thread, bevor feststeht, dass es die Zuordnung gibt — und ein Satz über eine
-    Verbindung, die niemand mehr nachprüft, ist schlimmer als eine Zuordnung, die vorerst
-    ungesagt bleibt.
+    Verbindung, die niemand mehr nachprüft, ist schlimmer als eine Zuordnung, von der
+    niemand erfährt.
 
-    Zurück kommen Konto und Vermerk, wenn er noch aussteht. Das ist der eine Fall, in dem
-    beides danebenging: der Satz kam nicht hinaus **und** die Rücknahme auch nicht. Dann
-    steht in der SQLite eine **wahre** Zuordnung ohne Vermerk; sie zu verschweigen wäre die
-    stille Verknüpfung, gegen die #76 steht, also wird der Satz beim nächsten Betreten
-    nachgeholt. Das Konto gehört dazu, weil bis dahin Zeit vergeht: was der Satz behauptet,
-    wird vor dem zweiten Anlauf noch einmal nachgesehen.
+    Zurückgenommen wird über ``zuruecknehmen`` und nicht über ``zuordnen(…, KEINE)``:
+    zwischen dem Schreiben und hier liegt ein Gang ans Netz, und wer in diesem Fenster über
+    ``/zuordnung`` dieselbe Person auf ein anderes Konto legt, verlöre seine Entscheidung
+    still. Genommen wird deshalb nur das eigene Geschriebene.
+
+    Scheitert **auch** die Rücknahme, bleibt eine wahre Zuordnung ohne Ansage stehen. Das
+    ist die schwächere, ehrliche Zusage dieses Weges: selten — Discord muss zweimal
+    versagen, während die Datenbank arbeitet —, der Fehlerfall ist Schweigen statt einer
+    Lüge, und nachgeholt wird nichts.
     """
     try:
         entstanden = erinnern.zuordnen(runde, kennung, stand.automatisch.id).spieler
     except Exception:  # noqa: BLE001
         logger.exception("Die Zuordnung beim Betreten ließ sich nicht festschreiben")
-        return ("", "")
+        return
     if entstanden is None:
         logger.info("Das Konto war beim Betreten schon vergeben — es bleibt beim Discord-Namen.")
-        return ("", "")
+        return
     try:
         gesagt = await _in_den_thread(bot, aufnahme, stand.vermerk)
     except Exception:  # noqa: BLE001
         logger.exception("Der Vermerk zur Zuordnung beim Betreten kam nicht durch")
         gesagt = False
     if gesagt:
-        return ("", "")
+        return
     try:
-        erinnern.zuordnen(runde, kennung, erinnern.KEINE)
+        geloest = erinnern.zuruecknehmen(runde, kennung, entstanden.id)
     except Exception:  # noqa: BLE001
         logger.exception(
-            "Zuordnung beim Betreten steht ungesagt: weder der Vermerk noch seine Rücknahme "
-            "gingen durch — das nächste Betreten holt ihn nach"
+            "Zuordnung beim Betreten steht ohne Ansage: weder der Vermerk noch seine "
+            "Rücknahme gingen durch"
         )
-        return (entstanden.id, stand.vermerk)
+        return
+    if not geloest:
+        logger.info("Inzwischen steht dort eine andere Zuordnung — sie bleibt, wie sie ist.")
+        return
     logger.info("Ohne Weg in den Thread bleibt es beim Discord-Namen — Zuordnung zurückgenommen.")
-    return ("", "")
 
 
-async def _zuordnen_oder_fragen(bot, aufnahme: Aufnahme, mitglied, kennung: str) -> tuple[str, str]:
+async def _zuordnen_oder_fragen(bot, aufnahme: Aufnahme, mitglied, kennung: str) -> None:
     """Der eine Weg: entweder steht die Zuordnung von selbst, oder es wird gefragt.
 
     Gefragt wird **die betroffene Person** und nicht die Runde — wer wer ist, entscheidet
@@ -830,18 +825,18 @@ async def _zuordnen_oder_fragen(bot, aufnahme: Aufnahme, mitglied, kennung: str)
     # Kennung neu vergeben, schriebe die Zuordnung in eine fremde Kampagne.
     gemeint = lebenszyklus.dieselbe(aufnahme.runde)
     if gemeint is None:
-        return ("", "")
+        return
     stand = erinnern.betreten(gemeint, kennung)
     if stand.person is None:
-        return ("", "")
+        return
     if stand.automatisch is not None:
-        return await _von_selbst_zuordnen(bot, aufnahme, gemeint, kennung, stand)
+        await _von_selbst_zuordnen(bot, aufnahme, gemeint, kennung, stand)
+        return
     await _zustellen(
         mitglied.send,
         erinnern.BETRETEN_FRAGE.format(kanal=aufnahme.kanal.name),
         zuletzt={"view": _betretensansicht(bot, aufnahme, gemeint, stand)},
     )
-    return ("", "")
 
 
 async def _zuordnung_klaeren(bot, lauf: _Lauf, aufnahme: Aufnahme, mitglied) -> None:
@@ -854,27 +849,16 @@ async def _zuordnung_klaeren(bot, lauf: _Lauf, aufnahme: Aufnahme, mitglied) -> 
     Zucken, sondern ein Dauerzustand, und bei jedem Stummschalten neu anzuklopfen wäre die
     schlechtere Zumutung. Keine Antwort ist auch eine — dann bleibt die Spur unter dem
     Discord-Namen, und das Protokoll sagt es so.
-
-    Die eine Ausnahme ist der ausstehende Vermerk: dort **gibt** es die Zuordnung schon,
-    und ungesagt darf sie nicht bleiben. Sie zählt deshalb nicht als erledigt, und jedes
-    weitere Betreten versucht den Satz erneut — bis er steht.
     """
     kennung = str(mitglied.id)
     schon = lauf.gefragt
     vermerkt = schon[1] if schon is not None and schon[0] is aufnahme else set()
-    offen = lauf.ungesagt[1] if lauf.ungesagt is not None and lauf.ungesagt[0] is aufnahme else {}
-    if kennung in offen:
-        # Herausgenommen **vor** dem ``await``, damit zwei Ereignisse im selben Schwung ihn
-        # nicht doppelt in den Thread schreiben; geht es wieder nicht, kommt er zurück.
-        konto, text = offen.pop(kennung)
-        await _vermerk_nachholen(bot, aufnahme, offen, kennung, konto, text)
-        return
     if kennung in vermerkt:
         return
     vermerkt.add(kennung)
     lauf.gefragt = (aufnahme, vermerkt)
     try:
-        konto, ungesagt = await _zuordnen_oder_fragen(bot, aufnahme, mitglied, kennung)
+        await _zuordnen_oder_fragen(bot, aufnahme, mitglied, kennung)
     except Exception as fehler:  # noqa: BLE001
         # Ohne Traceback und ohne Namen: der häufigste Grund ist ein Konto, das keine
         # Direktnachrichten annimmt, und das ist kein Fehlschlag, sondern eine Antwort.
@@ -882,34 +866,6 @@ async def _zuordnung_klaeren(bot, lauf: _Lauf, aufnahme: Aufnahme, mitglied) -> 
             "Die Zuordnung beim Betreten kam nicht zustande (%s) — es bleibt beim Discord-Namen.",
             type(fehler).__name__,
         )
-        return
-    if ungesagt:
-        vermerkt.discard(kennung)
-        offen[kennung] = (konto, ungesagt)
-        lauf.ungesagt = (aufnahme, offen)
-
-
-async def _vermerk_nachholen(
-    bot, aufnahme: Aufnahme, offen: dict, kennung: str, konto: str, text: str
-) -> None:
-    """Der zweite Anlauf für einen Satz, der beim ersten nicht hinauskam.
-
-    Zwischen beiden liegt Zeit, und in der Zeit kann ``/zuordnung`` die Verbindung umgehängt
-    oder gelöst haben. Der Satz behauptet sie aber — also wird erst nachgesehen und sonst
-    geschwiegen: ein nachgereichter Vermerk über eine Zuordnung von vorhin wäre genau die
-    Behauptung, gegen die die ganze Reihenfolge steht.
-    """
-    gemeint = lebenszyklus.dieselbe(aufnahme.runde)
-    if gemeint is None or not erinnern.steht_noch(gemeint, kennung, konto):
-        logger.info("Die ungesagte Zuordnung gibt es so nicht mehr — der Vermerk entfällt.")
-        return
-    try:
-        nachgeholt = await _in_den_thread(bot, aufnahme, text)
-    except Exception:  # noqa: BLE001
-        logger.exception("Der nachgeholte Vermerk kam wieder nicht durch")
-        nachgeholt = False
-    if not nachgeholt:
-        offen[kennung] = (konto, text)
 
 
 async def _beenden_und_sagen(
@@ -1703,23 +1659,33 @@ async def _uebernahme_sagen(bot, runde, ergebnis: erinnern.Zugeordnet) -> None:
     Zwei Wege, und der **Thread** ist der belastbare: er erreicht die Runde auch dann, wenn
     die Vorbesitzerin keine Direktnachrichten annimmt. Deren Ausbleiben verwirft die
     Übernahme deshalb nicht; es wird protokolliert, ohne Namen und ohne Kennung.
+
+    Ob es den Thread überhaupt gab, steht im Log: eine Runde ohne Sitzung hat keinen, und
+    »der Thread-Vermerk trägt sie« wäre dann eine Auskunft über etwas, das nicht geschehen
+    ist.
     """
     wer, vorher, spieler = ergebnis.wer, ergebnis.vorher, ergebnis.spieler
     sitzung = chronik.letzte_sitzung(runde)
-    if sitzung is not None:
-        await _in_den_sitzungsthread(
-            bot,
-            runde,
-            sitzung,
-            erinnern.UEBERNAHME_VERMERK.format(
-                name=wer.discord_name, spieler=spieler.name, vorher=vorher.discord_name
-            ),
+    im_thread = sitzung is not None and await _in_den_sitzungsthread(
+        bot,
+        runde,
+        sitzung,
+        erinnern.UEBERNAHME_VERMERK.format(
+            name=wer.discord_name, spieler=spieler.name, vorher=vorher.discord_name
+        ),
+    )
+    if not im_thread:
+        logger.warning(
+            "Die Übernahme steht in keinem Thread — es bleibt bei der Nachricht an die "
+            "Vorbesitzerin."
         )
     kennung = int(vorher.discord_user_id)
     ziel = bot.get_user(kennung) or await bot.fetch_user(kennung)
     await _zustellen(
         ziel.send,
-        erinnern.UEBERNAHME_ANGESAGT.format(name=wer.discord_name, spieler=spieler.name),
+        erinnern.UEBERNAHME_ANGESAGT.format(
+            runde=runde.name, name=wer.discord_name, spieler=spieler.name
+        ),
     )
 
 
@@ -1771,13 +1737,14 @@ def _zuordnungsansicht(bot, config: Config, runde, stand: erinnern.Zuordnung):
                 return
             # Gefangen, weil die Antwort oben schon steht: eine Ausnahme von hier machte
             # daraus über ``_geklickt`` ein »hat nicht geklappt«, obwohl umgehängt ist. Und
-            # eine geschlossene Direktnachricht ist kein Grund, die Übernahme zu verwerfen —
-            # der Thread-Vermerk trägt sie. Ohne Namen und ohne Kennung im Log.
+            # eine geschlossene Direktnachricht ist kein Grund, die Übernahme zu verwerfen.
+            # Was von den beiden Wegen ankam, sagt ``_uebernahme_sagen`` selbst — ohne
+            # Namen und ohne Kennung im Log.
             try:
                 await _uebernahme_sagen(bot, gemeint, ergebnis)
             except Exception as fehler:  # noqa: BLE001
                 logger.warning(
-                    "Die Übernahme blieb teils ungesagt (%s) — der Thread-Vermerk trägt sie.",
+                    "Die Übernahme blieb teils ungesagt (%s) — umgehängt ist sie trotzdem.",
                     type(fehler).__name__,
                 )
 

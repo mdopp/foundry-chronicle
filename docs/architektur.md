@@ -183,12 +183,17 @@ passiert ist** — und Teile davon nacherzählen können.
   SQLite und Discord hinweg gibt es kein gemeinsames Zusammenschreiben; eine der beiden
   Reihenfolgen muss danebengehen können, also gilt die, deren Fehlerfall **Schweigen** ist
   und keine Lüge im Thread. Kommt der Vermerk nicht hinaus, wird die Zuordnung
-  zurückgenommen; geht auch das nicht, bleibt eine **wahre** Zuordnung ungesagt stehen und
-  der Satz wird **beim nächsten Betreten nachgeholt**. Die frühere Fassung sagte es
-  andersherum und versprach »keine Zuordnung, von der die Runde nichts erfährt«; das war
-  garantiert um den Preis, dass ein gescheitertes Festschreiben einen Vermerk stehenließ,
-  der eine Verbindung behauptete, die es nicht gab. Eine Zusage, die die Wirklichkeit nicht
-  halten kann, ist schlimmer als eine ehrliche schwächere.
+  zurückgenommen — und zwar **nur, wenn dort noch genau das steht, was eben geschrieben
+  wurde**: dazwischen liegt ein Gang ans Netz, und wer in diesem Fenster über `/zuordnung`
+  dieselbe Person umhängt, verlöre seine Entscheidung sonst still. **Scheitert auch die
+  Rücknahme, steht eine wahre Zuordnung ohne Ansage da** — selten, Discord muss zweimal
+  versagen, während die Datenbank arbeitet; der Fehlerfall ist Schweigen statt einer Lüge,
+  aber er ist echt und wird hier nicht weggeschrieben. **Nachgeholt wird nichts:** ein
+  Satz, der Stunden später eine Verbindung von vorhin behauptet, wäre die teurere
+  Erfindung. Die frühere Fassung versprach umgekehrt »keine Zuordnung, von der die Runde
+  nichts erfährt«; das war garantiert um den Preis, dass ein gescheitertes Festschreiben
+  einen Vermerk stehenließ, der eine Verbindung behauptete, die es nicht gab. Eine Zusage,
+  die die Wirklichkeit nicht halten kann, ist schlimmer als eine ehrliche schwächere.
 - **Je schwächer der Beleg, desto mehr Tageslicht** (Betreiber-Entscheidung 2026-08-12).
   Deshalb steht auch die im Zwiegespräch **gewählte** Zuordnung im Thread — sie hat keinen
   Beleg, nur eine Antwort, und der Satz sagt, wie sie zustande kam: gewählt, nicht erkannt.

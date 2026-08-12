@@ -3882,21 +3882,20 @@ def test_vermerkt_wird_nur_was_zuordnen_auch_geschrieben_hat(
     assert zugeordnet(konfiguration)[MIRA.id] is None
 
 
-def test_ohne_ruecknahme_bleibt_die_wahre_zuordnung_und_der_vermerk_wird_nachgeholt(
+def test_ohne_ruecknahme_bleibt_eine_wahre_zuordnung_ohne_ansage_stehen(
     konfiguration, mit_thread, ohne_espeak, runde, monkeypatch, caplog
 ):
     """Der eine Fall, in dem beides danebengeht: der Vermerk **und** seine Rücknahme.
 
-    Dann steht in der SQLite eine **wahre** Zuordnung, die niemand kennt. Sie zu verwerfen
-    geht nicht — das Zurücknehmen ist ja gerade gescheitert —, also gilt die schwächere,
-    ehrliche Zusage: der Satz wird beim nächsten Betreten nachgeholt. Dafür darf diese
-    Person nicht als erledigt vermerkt sein.
+    Dann steht in der SQLite eine **wahre** Zuordnung, von der die Runde nichts erfährt.
+    Sie zu verwerfen geht nicht — das Zurücknehmen ist ja gerade gescheitert —, und
+    nachgeholt wird nichts. Das ist die schwächere, ehrliche Zusage: der Fehlerfall ist
+    Schweigen statt einer Lüge, aber er ist echt, und er steht im Log.
     """
     foundry_spieler(konfiguration, "Mira", "Brok Eisenfaust")
     bot = gateway.baue(konfiguration)
     thread = mit_thread(bot)
-    # Der Vermerk stolpert genau einmal; der zweite Anlauf käme durch.
-    thread.stolpert = 1
+    thread.stolpert = 99
     echt = people.confirm
     geschrieben = []
 
@@ -3914,93 +3913,37 @@ def test_ohne_ruecknahme_bleibt_die_wahre_zuordnung_und_der_vermerk_wird_nachgeh
 
     assert zugeordnet(konfiguration)[MIRA.id] == "Mira"
     assert thread.geschrieben == []
-    assert "ungesagt" in caplog.text
+    assert "ohne Ansage" in caplog.text
     assert MIRA.name not in caplog.text
-    # Nicht als erledigt vermerkt — sonst käme das nächste Betreten gar nicht erst hierher.
-    gefragt = der_lauf(bot).gefragt
-    assert gefragt is not None and MIRA.id not in gefragt[1]
-
-    asyncio.run(
-        bot.ereignisse["on_voice_state_update"](runde.mira, zustand(), zustand(runde.kanal))
-    )
-
-    assert thread.geschrieben == [erinnern.BETRETEN_VERMERK.format(name=MIRA.name, spieler="Mira")]
-    assert zugeordnet(konfiguration)[MIRA.id] == "Mira"
 
 
-def test_ein_nachgeholter_vermerk_behauptet_keine_zuordnung_von_vorhin(
-    konfiguration, mit_thread, ohne_espeak, runde, monkeypatch, caplog
+def test_die_ruecknahme_loescht_keine_entscheidung_von_zwischendurch(
+    konfiguration, mit_thread, ohne_espeak, runde, caplog
 ):
-    """Zwischen erstem und zweitem Anlauf liegt Zeit — und in der Zeit gibt es `/zuordnung`.
+    """Zwischen Schreiben und Rücknahme liegt ein Gang ans Netz — und in dem gibt es `/zuordnung`.
 
-    Wurde die Verbindung dort gelöst, ist der liegengebliebene Satz eine Behauptung über
-    etwas, das es nicht mehr gibt. Dann wird geschwiegen statt nachgereicht.
+    Der Thread hier tut genau das, was ein langsames Discord zulässt: er lässt jemanden
+    dieselbe Person auf ein anderes Konto legen und wirft danach. Nähme die Rücknahme
+    blind, was gerade dasteht, wäre diese Entscheidung still fort — niemand hat sie
+    zurückgenommen, und trotzdem stünde am Ende nichts mehr da.
     """
     foundry_spieler(konfiguration, "Mira", "Brok Eisenfaust")
     bot = gateway.baue(konfiguration)
     thread = mit_thread(bot)
-    thread.stolpert = 1
-    echt = people.confirm
-    geschrieben = []
+    unsere = unsere_runde(konfiguration)
 
-    def einmal(*args, **rest):
-        if geschrieben:
-            raise RuntimeError("database is locked")
-        geschrieben.append(args)
-        return echt(*args, **rest)
+    async def dazwischenfunken(text):
+        await asyncio.sleep(0)
+        people.confirm(unsere, {MIRA.id: "u-brok eisenfaust"})
+        raise RuntimeError("Discord hat abgelehnt")
 
-    monkeypatch.setattr(people, "confirm", einmal)
+    thread.send = dazwischenfunken
 
-    with caplog.at_level(logging.ERROR):
+    with caplog.at_level(logging.INFO):
         asyncio.run(befehl(bot, "start")(FakeCtx(runde.mira)))
 
-    assert zugeordnet(konfiguration)[MIRA.id] == "Mira"
-    monkeypatch.setattr(people, "confirm", echt)
-    people.confirm(unsere_runde(konfiguration), {MIRA.id: ""})
-
-    asyncio.run(
-        bot.ereignisse["on_voice_state_update"](runde.mira, zustand(), zustand(runde.kanal))
-    )
-
-    assert thread.geschrieben == []
-    assert zugeordnet(konfiguration)[MIRA.id] is None
-
-
-def test_der_nachgeholte_vermerk_bleibt_offen_solange_er_nicht_durchkommt(
-    konfiguration, mit_thread, ohne_espeak, runde, monkeypatch, caplog
-):
-    """Gegenprobe: scheitert auch der zweite Anlauf, wird beim dritten wieder versucht.
-
-    Sonst wäre »beim nächsten Betreten nachgeholt« beim ersten Zucken schon aufgebraucht.
-    """
-    foundry_spieler(konfiguration, "Mira", "Brok Eisenfaust")
-    bot = gateway.baue(konfiguration)
-    thread = mit_thread(bot)
-    thread.stolpert = 2
-    echt = people.confirm
-    geschrieben = []
-
-    def einmal(*args, **rest):
-        if geschrieben:
-            raise RuntimeError("database is locked")
-        geschrieben.append(args)
-        return echt(*args, **rest)
-
-    monkeypatch.setattr(people, "confirm", einmal)
-    dazu = bot.ereignisse["on_voice_state_update"]
-
-    async def ablauf():
-        with caplog.at_level(logging.ERROR):
-            await befehl(bot, "start")(FakeCtx(runde.mira))
-            await dazu(runde.mira, zustand(), zustand(runde.kanal))
-            zwischenstand = list(thread.geschrieben)
-            await dazu(runde.mira, zustand(), zustand(runde.kanal))
-        return zwischenstand
-
-    zwischenstand = asyncio.run(ablauf())
-
-    assert zwischenstand == []
-    assert thread.geschrieben == [erinnern.BETRETEN_VERMERK.format(name=MIRA.name, spieler="Mira")]
+    assert zugeordnet(konfiguration)[MIRA.id] == "Brok Eisenfaust"
+    assert "andere Zuordnung" in caplog.text
     assert MIRA.name not in caplog.text
 
 

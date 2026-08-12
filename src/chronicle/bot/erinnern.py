@@ -153,10 +153,14 @@ UEBERNAHME_VERMERK = (
     "**{vorher}**, dort steht jetzt wieder nichts. Umgehängt wurde es in `/zuordnung`; "
     "dort geht es auch wieder zurück."
 )
+
+# Auch dieser Satz geht ins Zwiegespräch und nennt deshalb die **Runde** — dieselbe Regel
+# wie bei ``BETRETEN_FRAGE``: eine Instanz trägt mehrere (#62/#63), und weder eine
+# Direktnachricht noch der Verweis auf `/zuordnung` sagt sonst, welche gemeint ist.
 UEBERNAHME_ANGESAGT = (
-    "Deine Zuordnung zum Foundry-Konto **{spieler}** hat **{name}** übernommen — deine Spuren "
-    "tragen ab jetzt wieder deinen Discord-Namen. War das ein Versehen, holt `/zuordnung` "
-    "es zurück."
+    "In **{runde}** hat **{name}** deine Zuordnung zum Foundry-Konto **{spieler}** "
+    "übernommen — deine Spuren dort tragen ab jetzt wieder deinen Discord-Namen. War das "
+    "ein Versehen, holt `/zuordnung` in dieser Runde es zurück."
 )
 
 # Gefragt wird beim Betreten des Sprachkanals, damit jede Äußerung von Anfang an einer
@@ -256,8 +260,9 @@ class Betreten:
     schreiben, dann sagen. Über SQLite und Discord hinweg gibt es kein gemeinsames
     Zusammenschreiben, also entscheidet, welcher Fehlerfall der erträglichere ist, und das
     ist **Schweigen** und nicht eine Lüge im Thread. Was der Vermerk nicht erreicht, nimmt
-    ``zuordnen`` wieder zurück; geht auch das nicht, steht eine wahre Zuordnung ohne
-    Vermerk, und der Vermerk wird beim nächsten Betreten nachgeholt.
+    ``zuruecknehmen`` wieder zurück. Scheitert **auch** die Rücknahme, steht eine wahre
+    Zuordnung ohne Ansage da — selten, aber echt, und nachgeholt wird nichts: ein Satz, der
+    Stunden später eine Verbindung von vorhin behauptet, wäre die teurere Erfindung.
     """
 
     person: people.Person | None = None
@@ -545,17 +550,20 @@ def betreten(runde: Runde, discord_user_id: str) -> Betreten:
     )
 
 
-def steht_noch(runde: Runde, discord_user_id: str, foundry_user_id: str) -> bool:
-    """Ob diese Zuordnung noch genau so dasteht.
+def zuruecknehmen(runde: Runde, discord_user_id: str, foundry_user_id: str) -> bool:
+    """Eine Zuordnung lösen — aber nur, wenn dort noch **genau dieses** Konto steht.
 
-    Für einen Satz, der zwischen seinem Anlass und seiner Zustellung liegengeblieben ist:
-    ein nachgeholter Vermerk behauptet eine Verbindung, und in der Zwischenzeit kann sie in
-    ``/zuordnung`` umgehängt oder gelöst worden sein. Dann gibt es nichts mehr zu sagen.
+    Der Unterschied zu ``zuordnen(…, KEINE)`` ist die Bedingung, und sie ist der ganze
+    Punkt: wer zurücknimmt, nimmt zurück, was **er selbst** geschrieben hat. Zwischen
+    beidem liegt ein Gang ans Netz, und in diesem Fenster kann ``/zuordnung`` dieselbe
+    Person längst umgehängt haben; blind zu löschen nähme dieser Entscheidung still ihre
+    Wirkung. ``False`` heißt deshalb: dort steht etwas anderes, und das bleibt stehen.
     """
     person = people.speakers(runde).get(discord_user_id)
-    if person is None or person.confirmed is None:
+    if person is None or person.confirmed is None or person.confirmed.id != foundry_user_id:
         return False
-    return person.confirmed.id == foundry_user_id
+    people.confirm(runde, {discord_user_id: ""})
+    return True
 
 
 def zuordnen(
