@@ -1704,7 +1704,10 @@ def baue(config: Config):
     @antwortet
     async def chronik_fertig(ctx) -> None:
         runde = chronik.runde_verlangen(config, ctx.guild_id)
-        sitzung = chronik.sitzung_verlangen(runde, str(ctx.channel_id))
+        # Nicht der Kanal, sondern die Runde bestimmt die Sitzung — wie bei ``/aufnahme``.
+        # Nach ``/aufnahme stop`` steht man im Sprachkanal, und dort abzuweisen hieß, zu
+        # einer zweiten Sitzung zu raten (#156). Welche gemeint ist, sagt die Antwort.
+        sitzung = chronik.laufende_sitzung(runde)
         wer = _wer(ctx)
         # Ohne Fenster nur zweierlei: wer selbst hinterlegt hat, und wo es gar keinen
         # Server gibt. Eine fremde Eingabe wird **nicht** stillschweigend übernommen.
