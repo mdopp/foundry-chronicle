@@ -807,7 +807,7 @@ async def _von_selbst_zuordnen(bot, aufnahme: Aufnahme, runde, kennung: str, sta
         )
         return
     if not geloest:
-        logger.info("Inzwischen steht dort eine andere Zuordnung — sie bleibt, wie sie ist.")
+        logger.info("Dort steht nicht mehr, was eben geschrieben wurde — es bleibt, wie es ist.")
         return
     logger.info("Ohne Weg in den Thread bleibt es beim Discord-Namen — Zuordnung zurückgenommen.")
 
@@ -1675,10 +1675,9 @@ async def _uebernahme_sagen(bot, runde, ergebnis: erinnern.Zugeordnet) -> None:
         ),
     )
     if not im_thread:
-        logger.warning(
-            "Die Übernahme steht in keinem Thread — es bleibt bei der Nachricht an die "
-            "Vorbesitzerin."
-        )
+        # Nur die Tatsache, keine Vorhersage: der Brief an die Vorbesitzerin geht erst
+        # danach los und kann genauso scheitern. Ob er ankam, sagt der Aufrufer.
+        logger.warning("Die Übernahme steht in keinem Thread.")
     kennung = int(vorher.discord_user_id)
     ziel = bot.get_user(kennung) or await bot.fetch_user(kennung)
     await _zustellen(
@@ -1744,7 +1743,8 @@ def _zuordnungsansicht(bot, config: Config, runde, stand: erinnern.Zuordnung):
                 await _uebernahme_sagen(bot, gemeint, ergebnis)
             except Exception as fehler:  # noqa: BLE001
                 logger.warning(
-                    "Die Übernahme blieb teils ungesagt (%s) — umgehängt ist sie trotzdem.",
+                    "Die Ansage zur Übernahme ging nicht durch (%s) — umgehängt ist sie "
+                    "trotzdem. Wie weit sie kam, steht in der Zeile davor.",
                     type(fehler).__name__,
                 )
 

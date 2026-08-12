@@ -3943,7 +3943,7 @@ def test_die_ruecknahme_loescht_keine_entscheidung_von_zwischendurch(
         asyncio.run(befehl(bot, "start")(FakeCtx(runde.mira)))
 
     assert zugeordnet(konfiguration)[MIRA.id] == "Brok Eisenfaust"
-    assert "andere Zuordnung" in caplog.text
+    assert "nicht mehr, was eben geschrieben wurde" in caplog.text
     assert MIRA.name not in caplog.text
 
 
