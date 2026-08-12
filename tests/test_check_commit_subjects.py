@@ -1,18 +1,31 @@
 import importlib.util
+import re
 import sys
 from pathlib import Path
 
+WURZEL = Path(__file__).resolve().parent.parent
+
 _spec = importlib.util.spec_from_file_location(
     "check_commit_subjects",
-    Path(__file__).resolve().parent.parent / "scripts" / "check_commit_subjects.py",
+    WURZEL / "scripts" / "check_commit_subjects.py",
 )
 check = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(check)
 
 
 def test_akzeptiert_die_erlaubten_typen():
-    for typ in ("feat", "fix", "refactor", "chore", "docs", "test"):
+    for typ in ("feat", "fix", "refactor", "chore", "docs", "test", "revert"):
         assert check.problem(f"{typ}: etwas geändert") is None
+
+
+def test_akzeptiert_eine_ruecknahme_als_conventional_commit():
+    assert check.problem("revert(discord): DAVE laesst sich nicht abmelden") is None
+
+
+def test_claude_md_nennt_denselben_typ_satz():
+    abschnitt = (WURZEL / "CLAUDE.md").read_text(encoding="utf-8").split("## Commits")[1]
+    aufzaehlung = re.search(r"`type\(scope\): subject` —(.+?)\. Scope", abschnitt, re.S).group(1)
+    assert set(re.findall(r"`([a-z]+)`", aufzaehlung)) == set(check.TYPES)
 
 
 def test_akzeptiert_scope_und_breaking_marker():
