@@ -172,27 +172,50 @@ passiert ist** — und Teile davon nacherzählen können.
   gehört. Ohne Rückfrage gesetzt wird sie nur bei **1:1 gleichem Namen** — der Discord-Name
   ist Zeichen für Zeichen der eines freien Foundry-Kontos oder einer seiner Spielfiguren,
   eindeutig und von niemandem sonst getragen (Betreiber-Entscheidung 2026-08-12). Das ist
-  kein Vorschlag, sondern ein Beleg; es wird im Thread der Sitzung vermerkt, **bevor** es
-  geschrieben wird, ohne Weg dorthin entsteht es nicht, und wenn das Schreiben danach doch
-  nicht durchgeht, wird der Vermerk widerrufen. Alles andere — Ähnlichkeit,
-  zwei gleichnamige Konten, ein vergebenes, ein Gast — wird **die betroffene Person
-  selbst** im Zwiegespräch gefragt, mit einem Menü der freien Konten; wer wer ist,
-  entscheidet man über sich selbst. Keine Antwort ist auch eine: die Spur bleibt unter dem
-  Discord-Namen, und das Protokoll sagt es so.
+  kein Vorschlag, sondern ein Beleg. **Eindeutig heißt: gegen alle Konten der Runde
+  geprüft**, und erst danach wird das Vergebene abgezogen — andersherum verschwände die
+  Mehrdeutigkeit zweier Gleichnamiger genau dann, wenn eines der beiden schon vergeben ist.
+  Alles andere — Ähnlichkeit, zwei gleichnamige Konten, ein vergebenes, ein Gast — wird
+  **die betroffene Person selbst** im Zwiegespräch gefragt, mit einem Menü der freien
+  Konten; wer wer ist, entscheidet man über sich selbst. Keine Antwort ist auch eine: die
+  Spur bleibt unter dem Discord-Namen, und das Protokoll sagt es so.
+- **Erst schreiben, dann vermerken** — und das ist die schwächere, ehrliche Zusage. Über
+  SQLite und Discord hinweg gibt es kein gemeinsames Zusammenschreiben; eine der beiden
+  Reihenfolgen muss danebengehen können, also gilt die, deren Fehlerfall **Schweigen** ist
+  und keine Lüge im Thread. Kommt der Vermerk nicht hinaus, wird die Zuordnung
+  zurückgenommen; geht auch das nicht, bleibt eine **wahre** Zuordnung ungesagt stehen und
+  der Satz wird **beim nächsten Betreten nachgeholt**. Die frühere Fassung sagte es
+  andersherum und versprach »keine Zuordnung, von der die Runde nichts erfährt«; das war
+  garantiert um den Preis, dass ein gescheitertes Festschreiben einen Vermerk stehenließ,
+  der eine Verbindung behauptete, die es nicht gab. Eine Zusage, die die Wirklichkeit nicht
+  halten kann, ist schlimmer als eine ehrliche schwächere.
 - **Je schwächer der Beleg, desto mehr Tageslicht** (Betreiber-Entscheidung 2026-08-12).
-  Deshalb steht auch die im Zwiegespräch **gewählte** Zuordnung im Thread — sie hat gar
-  keinen Beleg, nur eine Antwort, und der Satz sagt den Unterschied: gewählt, nicht
-  erkannt. Anders als beim 1:1-Vermerk ist der Weg in den Thread dort keine Bedingung: dort
-  entscheidet niemand, hier hat die Person selbst geantwortet.
+  Deshalb steht auch die im Zwiegespräch **gewählte** Zuordnung im Thread — sie hat keinen
+  Beleg, nur eine Antwort, und der Satz sagt, wie sie zustande kam: gewählt, nicht erkannt.
+  Über Namen sagt er **nichts**: ins Menü führt auch die Mehrdeutigkeit, und dort ist der
+  Name gerade derselbe. Anders als beim 1:1-Vermerk ist der Weg in den Thread dort keine
+  Bedingung: dort entscheidet niemand, hier hat die Person selbst geantwortet.
 - **Korrigiert wird in `/zuordnung`, und nur dort darf ein Konto umgehängt werden.** Der
   Fall ist echt: benennt sich Brok in »Mira« um, während die echte Mira »Mira am Handy«
-  heißt, bekommt Brok beim Betreten Miras Konto. In `/zuordnung` steht jede Person mit
-  ihrem Stand untereinander — wer umhängt, sieht vorher, wem er es abnimmt, der Satz sagt
-  es noch einmal, und die Vorbesitzerin steht danach wieder offen da. Im **Zwiegespräch**
-  geht das nicht: dort sitzt eine Person allein vor einer Liste, niemand sieht zu, und ein
+  heißt, bekommt Brok beim Betreten Miras Konto. Im **Zwiegespräch** geht das Umhängen
+  nicht: dort sitzt eine Person allein vor einer Liste, niemand sieht zu, und ein
   vergebenes Konto wird abgewiesen. »Erst zurücknehmen, dann setzen« wäre die schlechtere
   Antwort — zwei Schritte in der Zeile einer anderen Person, und dazwischen liegt das
   Konto frei.
+- **Die Übernahme wird gesagt, nicht bloß getan.** Sie ist der Schritt mit der größten
+  Folge und war der stillste: die Antwort auf den Klick sieht nur, wer geklickt hat, und in
+  der Zuordnung bleibt danach genau eine Zeile stehen. Dass `/zuordnung` die Runde
+  nebeneinander zeigt, trägt das **nicht** — die Ansicht reicht bis `PRO_SEITE`, und ab der
+  sechsten Person steht die Vorbesitzerin weder vorher noch nachher darin. Also ein
+  **Thread-Vermerk**, der beide nennt, und eine **Nachricht an die Vorbesitzerin**. Der
+  Thread ist der belastbare Weg; ein geschlossenes Postfach wird protokolliert und verwirft
+  die Übernahme nicht.
+- **`/zuordnung` kennt keinen `_wer`-Abgleich** — jedes Mitglied handelt in jeder Zeile.
+  Das ist so gewollt: nach #62 entscheiden Discords Kanal- und Rollenrechte, wer den Befehl
+  überhaupt sieht, und ein zweites Rollenmodell daneben gibt es für Spielinhalte nicht. Seit
+  dem Umhängen ist es tragend und steht deshalb ausgeschrieben da statt vorausgesetzt. Beim
+  **Betreten** liegt es anders: die Frage steht im Zwiegespräch, sie gilt einer Person, und
+  nur die beantwortet sie — dort wird die Kennung sehr wohl geprüft.
 - Ob **ohne Rückfrage** zugeordnet werden darf, entscheidet auch, wer sonst noch so heißt
   — und gefragt wird dafür das **ganze Einwilligungsprotokoll der Runde, für immer**. Ein
   Gast, der vor einem Jahr einmal dabei war, schaltet den Zweig für sein Namensdoppel

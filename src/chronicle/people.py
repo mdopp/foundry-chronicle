@@ -13,7 +13,8 @@ festgeschrieben. »Genau« heißt hier wörtlich: ``genau`` vergleicht Zeichen f
 kein Abstandsmaß, keine Ähnlichkeit. Und er gilt nur, solange die Gleichheit **eindeutig**
 ist; heißen zwei Konten gleich, ist auch Gleichheit keine Antwort, dann wird gefragt.
 Ungefragt entsteht damit nur, was der Runde auch gesagt wird — den Vermerk setzt
-``chronicle.bot.gateway``, bevor hier etwas geschrieben wird.
+``chronicle.bot.gateway``, gleich nachdem hier geschrieben wurde, und kommt er nicht
+hinaus, nimmt es dieselbe Stelle wieder zurück.
 
 Gespeichert wird deshalb Bestätigtes und Gleichnamiges — nie ein Vorschlag. Vorschläge
 entstehen bei jedem Aufruf neu und bleiben, wo man sie als solche sieht: im Menü.
@@ -171,9 +172,26 @@ def _schluessel(name: str) -> str:
     return unicodedata.normalize("NFC", name).strip(LEERRAUM).lower()
 
 
-def _gleich(name: str, kandidat: Spieler) -> bool:
+def getroffen(name: str, kandidat: Spieler) -> str | None:
+    """Welcher Name dieses Kontos ``name`` **genau** trifft — sein eigener oder der einer Figur.
+
+    ``genau`` sagt, *wer* getroffen hat; das hier sagt, *womit*. Der Unterschied gehört in
+    den Satz, mit dem die Runde davon erfährt: heißt jemand wie die **Figur**, ist der
+    Kontoname dort eine Behauptung über Namensgleichheit, die im selben Satz sichtbar
+    nicht stimmt.
+
+    Zurück kommt der Name so, wie er in Foundry steht — verglichen wird über ``_schluessel``,
+    angezeigt wird das Original.
+    """
     gesucht = _schluessel(name)
-    return any(gesucht == _schluessel(wert) for wert in (kandidat.name, *kandidat.characters))
+    return next(
+        (wert for wert in (kandidat.name, *kandidat.characters) if _schluessel(wert) == gesucht),
+        None,
+    )
+
+
+def _gleich(name: str, kandidat: Spieler) -> bool:
+    return getroffen(name, kandidat) is not None
 
 
 def genau(name: str, kandidaten: Sequence[Spieler]) -> Spieler | None:
@@ -188,6 +206,12 @@ def genau(name: str, kandidaten: Sequence[Spieler]) -> Spieler | None:
 
     Und **eindeutig** muss sie sein: heißen zwei Konten gleich, ist auch Gleichheit keine
     Antwort. Dann kommt keiner zurück und es wird gefragt.
+
+    Eindeutig heißt dabei: unter **diesen** Kandidaten. Wer hier nur die freien Konten
+    einwirft, fragt etwas anderes — dann verschwindet die Mehrdeutigkeit zweier Gleichnamiger
+    genau dann, wenn einer davon schon vergeben ist, und übrig bleibt eine Gleichheit, die
+    keine ist. Die Aufrufer geben deshalb **alle** Konten der Runde und ziehen erst danach
+    ab, was vergeben ist.
     """
     treffer = [kandidat for kandidat in kandidaten if _gleich(name, kandidat)]
     return treffer[0] if len(treffer) == 1 else None
