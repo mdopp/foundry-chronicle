@@ -98,6 +98,49 @@ def test_ohne_kandidaten_gibt_es_nichts_vorzuschlagen():
     assert people.suggest("Mira", []) is None
 
 
+# -- 1:1 gleich: der eine Vergleich, der ohne Rückfrage gilt ------------------------------
+
+
+def test_genau_nimmt_den_zeichengleichen_namen():
+    treffer = people.genau("Mira", spieler("Mira", "Chronist"))
+
+    assert treffer is not None
+    assert treffer.name == "Mira"
+
+
+def test_genau_zaehlt_die_figur_mit():
+    mit_figur = people.Spieler(id="u-mira", name="Mira", characters=("Aelin Sturmwind",))
+
+    assert people.genau("Aelin Sturmwind", [mit_figur, *spieler("Chronist")]) is mit_figur
+
+
+def test_genau_uebersieht_gross_und_kleinschreibung_und_raender():
+    """Ein Leerzeichen am Rand ist kein anderer Name — sonst fragte es, wo nichts zu fragen ist."""
+    assert people.genau("  mira ", spieler("Mira")) is not None
+
+
+@pytest.mark.parametrize("fast", ["Mirah", "Miral", "Mir a", "Mira Sturmwind"])
+def test_genau_laesst_das_fast_gleiche_liegen(fast):
+    assert people.genau(fast, spieler("Mira")) is None
+
+
+def test_was_ein_vorschlag_noch_hergibt_ist_keine_gleichheit():
+    """Der Unterschied in einer Zeile: ``suggest`` nimmt »Mirah«, ``genau`` nimmt es nicht."""
+    assert people.suggest("Mirah", spieler("Mira")) is not None
+    assert people.genau("Mirah", spieler("Mira")) is None
+
+
+def test_zwei_gleichnamige_konten_sind_nicht_eindeutig():
+    """Dann ist auch Gleichheit keine Antwort — die Frage gehört dem Menschen."""
+    beide = [people.Spieler(id="u-1", name="Mira"), people.Spieler(id="u-2", name="Mira")]
+
+    assert people.genau("Mira", beide) is None
+
+
+def test_genau_ohne_kandidaten_trifft_nichts():
+    assert people.genau("Mira", []) is None
+
+
 def test_ein_vorschlag_wird_nicht_gespeichert(eingerichtet):
     angesagt(eingerichtet, MIRA)
 

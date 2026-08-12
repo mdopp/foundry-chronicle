@@ -134,6 +134,10 @@ ZU_VIELE_SPIELER = (
 )
 NICHT_AUFGENOMMEN = "Diese Person habe ich nicht aufgenommen — ich habe nichts geändert."
 SPIELER_WEG = "Diesen Foundry-Spieler kenne ich nicht mehr — ich habe nichts geändert."
+SPIELER_VERGEBEN = (
+    "Dieses Foundry-Konto gehört schon jemand anderem — ich habe nichts geändert. "
+    "Soll es wechseln, nimm es in `/zuordnung` erst mit »{niemand}« zurück."
+)
 
 # Gefragt wird beim Betreten des Sprachkanals, damit jede Äußerung von Anfang an einer
 # Figur gehört (#76). Der Satz geht ins Zwiegespräch und nennt deshalb den Sprachkanal:
@@ -145,13 +149,13 @@ BETRETEN_FRAGE = (
     "sagt es dann auch so. Ändern kannst du es jederzeit mit `/zuordnung`."
 )
 
-# Und der eine Fall, in dem nicht gefragt wird: der Name ist derselbe. Gesagt wird es
+# Und der eine Fall, in dem nicht gefragt wird: der Name ist 1:1 derselbe. Gesagt wird es
 # trotzdem — eine Zuordnung, die von selbst entstanden ist und die niemand sieht, ist
 # genau die stillschweigend übernommene Vermutung, gegen die es die Bestätigung gibt.
 BETRETEN_VERMERK = (
-    "**{name}** heißt hier wie **{spieler}** in eurem Foundry — ich habe beide verbunden, "
-    "damit die Spur von Anfang an den richtigen Namen trägt. Stimmt das nicht, ändert "
-    "`/zuordnung` es."
+    "**{name}** heißt hier genauso wie **{spieler}** in eurem Foundry — ich habe beide "
+    "verbunden, damit die Spur von Anfang an den richtigen Namen trägt. Stimmt das nicht, "
+    "ändert `/zuordnung` es."
 )
 
 NUR_SELBST = (
@@ -185,8 +189,13 @@ class Zuordnung:
 class Betreten:
     """Was beim Betreten des Sprachkanals mit **einer** Person zu geschehen ist.
 
-    Leer heißt: nichts. Mit ``automatisch`` ist sie schon zugeordnet und ``vermerk`` sagt
-    es der Runde; sonst steht die Frage aus und ``spieler`` sind die Zeilen ihres Menüs.
+    Leer heißt: nichts. Mit ``automatisch`` ist sie zuzuordnen und ``vermerk`` sagt es der
+    Runde; sonst steht die Frage aus und ``spieler`` sind die Zeilen ihres Menüs.
+
+    Eine Entscheidung, kein Vollzug: geschrieben hat das hier noch nichts. Der Vermerk geht
+    **zuerst** hinaus, und erst wenn er angekommen ist, schreibt ``zuordnen`` fest — eine
+    Zuordnung, die entsteht, ohne dass sie jemand erfährt, ist die stillschweigend
+    übernommene Vermutung, gegen die es die Bestätigung überhaupt gibt.
     """
 
     person: people.Person | None = None
@@ -394,35 +403,64 @@ def wahlmoeglichkeiten(
     return tuple(zeilen)
 
 
+def _sonst_noch_so(stand: people.Uebersicht, person: people.Person, konto: people.Spieler) -> bool:
+    """Ob außer ihr noch jemand einen Namen trägt, der genau dieses Konto trifft.
+
+    Die Gegenrichtung der Gleichheit, und die Zugehörigkeitsprüfung, die es hier überhaupt
+    geben kann: sitzt neben der echten Mira ein Gast, der ebenso heißt, ist die Gleichheit
+    kein Beleg mehr, sondern eine Verwechslung mit Folgen — wer zuerst hereinkommt, nähme
+    der anderen ihr Konto, und aus ``frei`` wäre es danach verschwunden. Dann wird gefragt,
+    und zwar beide, und das Konto bleibt so lange zu haben.
+
+    Dasselbe greift, wenn zwei Namen dasselbe Konto von zwei Seiten treffen — die eine heißt
+    wie das Konto, die andere wie dessen Figur.
+    """
+    return any(
+        andere.discord_user_id != person.discord_user_id
+        and people.genau(andere.discord_name, (konto,)) is not None
+        for andere in stand.personen
+    )
+
+
 def betreten(runde: Runde, discord_user_id: str) -> Betreten:
-    """Wer den Sprachkanal betritt: schon zugeordnet, gleich zugeordnet oder zu fragen.
+    """Wer den Sprachkanal betritt: schon zugeordnet, zuzuordnen oder zu fragen.
 
-    Die Namensgleichheit ist der eine Fall, der ohne Rückfrage auskommt (#76) — und sie
-    ist etwas anderes als ein Vorschlag: ``people.suggest`` schweigt, sobald zwei Konten
-    ähnlich nah liegen, und ein bereits vergebenes steht ohnehin nicht mehr zur Wahl. Wo
-    es also etwas zu raten gäbe, wird nicht geraten, sondern gefragt. Wer gerade
-    hereinkommt, ist nicht unbedingt jemand, den wir kennen: ein Gast trägt keinen dieser
-    Namen und wird deshalb gefragt wie jeder andere Unbekannte.
+    Der **1:1 gleiche Name** ist der eine Fall, der ohne Rückfrage auskommt (#76,
+    Betreiber-Entscheidung vom 2026-08-12): er ist kein Vorschlag, sondern ein Beleg.
+    Deshalb steht hier ``people.genau`` und nicht ``people.suggest`` — »Mira« neben »Mirah«
+    ist keine Gleichheit, und wer »Miral« heißt, wird gefragt statt geraten.
 
-    Ohne Foundry-Stand steht nichts zur Wahl. Dann wird auch nicht gefragt — eine Frage
-    mit einem leeren Menü ist keine.
+    Drei Dinge machen aus der Gleichheit erst eine Antwort: sie muss **eindeutig** sein
+    (zwei gleichnamige Konten sind keine), das Konto muss **frei** sein, und niemand sonst
+    darf denselben Namen tragen. Sonst steht das Menü an — mit den freien Konten und keinem
+    fremden darin.
+
+    Geschrieben wird hier nichts; das tut ``zuordnen``, nachdem der Vermerk draußen ist.
+
+    Ohne freies Konto steht nichts zur Wahl. Dann wird auch nicht gefragt — eine Frage mit
+    einem leeren Menü ist keine.
     """
     stand = people.overview(runde)
     person = next((wer for wer in stand.personen if wer.discord_user_id == discord_user_id), None)
-    if person is None or person.confirmed is not None or not stand.spieler:
+    if person is None or person.confirmed is not None or not stand.frei:
         return Betreten()
-    if person.suggestion is None:
-        return Betreten(person=person, spieler=stand.spieler)
-    people.confirm(runde, {discord_user_id: person.suggestion.id})
+    treffer = people.genau(person.discord_name, stand.frei)
+    if treffer is None or _sonst_noch_so(stand, person, treffer):
+        return Betreten(person=person, spieler=stand.frei)
     return Betreten(
         person=person,
-        automatisch=person.suggestion,
-        vermerk=BETRETEN_VERMERK.format(name=person.discord_name, spieler=person.suggestion.name),
+        automatisch=treffer,
+        vermerk=BETRETEN_VERMERK.format(name=person.discord_name, spieler=treffer.name),
     )
 
 
 def zuordnen(runde: Runde, discord_user_id: str, foundry_user_id: str) -> str:
-    """Was ein Mensch im Menü gewählt hat — festgeschrieben und in einem Satz bestätigt."""
+    """Was entschieden wurde — festgeschrieben und in einem Satz bestätigt.
+
+    Ein Konto gehört genau einer Person. Ist es schon vergeben, wird es nicht ein zweites
+    Mal vergeben: zwei Spuren trügen sonst denselben Namen, und im fertigen Protokoll fiele
+    das niemandem mehr auf. Zurücknehmen geht, übernehmen nicht.
+    """
     stand = people.overview(runde)
     person = next((wer for wer in stand.personen if wer.discord_user_id == discord_user_id), None)
     if person is None:
@@ -434,5 +472,12 @@ def zuordnen(runde: Runde, discord_user_id: str, foundry_user_id: str) -> str:
     spieler = next((eintrag for eintrag in stand.spieler if eintrag.id == gewaehlt), None)
     if spieler is None:
         return SPIELER_WEG
+    if any(
+        andere.confirmed is not None
+        and andere.confirmed.id == gewaehlt
+        and andere.discord_user_id != discord_user_id
+        for andere in stand.personen
+    ):
+        return SPIELER_VERGEBEN.format(niemand=ZUORDNUNG_KEINE)
     people.confirm(runde, {discord_user_id: gewaehlt})
     return ZUGEORDNET.format(name=person.discord_name, spieler=spieler.name)

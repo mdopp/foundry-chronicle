@@ -21,8 +21,10 @@ Eine Szene bekommt ein Diktat trotzdem, nur über einen anderen Anker: den Zeitp
 dieselbe Regel, nach der eine getippte Notiz ihre Szene findet — verschränkt wird ein
 Diktat deswegen nicht, und die Sitzungsuhr bleibt unberührt.
 
-Beschriftet wird aus der bestätigten Zuordnung. Ohne Bestätigung steht der Discord-Name
-da — nie ein Vorschlag, nie ein geratener Name.
+Beschriftet wird aus der festgeschriebenen Zuordnung: von Hand bestätigt oder 1:1 derselbe
+Name (#76, Betreiber-Entscheidung vom 2026-08-12 — Gleichheit ist ein Beleg, keine
+Vermutung). Sonst steht der Discord-Name da — nie ein Vorschlag, nie ein geratener Name,
+und nie eine Ähnlichkeit.
 
 Was hier herauskommt, geht als **Notiz** in eine Szene: dieselbe Form, die die Eingabe am
 Tisch liefert. Damit bleibt die Komposition unverändert und es gibt weiterhin eine

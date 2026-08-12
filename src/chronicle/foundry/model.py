@@ -39,6 +39,13 @@ class Player:
     is_gm: bool
 
 
+# Der Aktor-Typ einer **Spielfigur**. Foundry führt in derselben Liste auch alles, was die
+# Spielleitung besitzt — Gegner, Wirtinnen, Wachen —, und deren Namen sind keine Namen von
+# Mitspielenden. Der Wert ist Foundry-Kern und nicht Regelwerk: 5e, PF2e und Daggerheart
+# schreiben ihn gleich, unterschiedlich sind nur die Typen daneben.
+SPIELFIGUR = "character"
+
+
 @dataclass(frozen=True)
 class Character:
     id: str
