@@ -106,22 +106,17 @@ def test_der_aufnahme_bot_laeuft_als_zweiter_container(manifest: dict) -> None:
     assert "ports" not in container["bot"]
 
 
-def test_die_karte_haengt_am_webdienst(manifest: dict) -> None:
-    # Verschriftet wird im nächtlichen Lauf, und der hängt im Webdienst. Der Bot nimmt
-    # nur auf — ihm die geteilte Karte zuzuweisen, nähme sie jemandem weg, der sie
-    # rechnet.
-    container = {eintrag["name"]: eintrag for eintrag in manifest["spec"]["containers"]}
-    assert container["chronik"]["resources"]["limits"]["nvidia.com/gpu"] == "1"
-    assert "resources" not in container["bot"]
-
-
-def test_selinux_freigabe_nur_fuer_den_container_mit_der_karte(manifest: dict) -> None:
-    # Ohne sie sieht der Container die Geräte, aber NVML scheitert auf rootless FCoS mit
-    # »Insufficient Permissions«. Sie ist die zweite Hälfte der Durchreichung — und
-    # gehört genau an den einen Container, nicht an den Pod.
+def test_keine_wirkungslose_karten_durchreichung(manifest: dict) -> None:
+    # ``podman kube play`` (5.8.2) verwirft ``resources.limits`` für eine Pod-Spezifikation
+    # still — der Pod startet ohne Karte, ohne dass etwas fehlschlägt (servicebay#2517).
+    # Diese Zusicherung hält die wirkungslose Form draußen: der Weg zur Karte führt über
+    # den geteilten solaris-whisper der Box (#141), nicht über dieses Manifest. Die
+    # SELinux-Freigabe fällt mit ihr, weil sie ohne Durchreichung nur eine Lockerung ohne
+    # Gegenwert wäre.
+    for container in manifest["spec"]["containers"]:
+        assert "resources" not in container
     annotationen = manifest["metadata"]["annotations"]
-    assert annotationen["io.podman.annotations.label/chronik"] == "disable"
-    assert "io.podman.annotations.label/bot" not in annotationen
+    assert not [name for name in annotationen if name.startswith("io.podman.annotations.label")]
 
 
 def test_das_geraet_wird_nicht_erzwungen(manifest: dict) -> None:
