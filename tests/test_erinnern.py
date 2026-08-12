@@ -794,8 +794,11 @@ def test_eine_uebernahme_steht_im_thread_und_bei_der_vorbesitzerin(stelle, bot):
         erinnern.UEBERNAHME_VERMERK.format(name="Mira am Handy", spieler="Mira", vorher="Mira")
     ]
     assert [text for text, _ansicht in vorbesitzerin.zwiegespraech] == [
-        erinnern.UEBERNAHME_ANGESAGT.format(name="Mira am Handy", spieler="Mira")
+        erinnern.UEBERNAHME_ANGESAGT.format(runde=unsere.name, name="Mira am Handy", spieler="Mira")
     ]
+    # In einer Direktnachricht steht sonst nirgends, welche Runde gemeint ist — eine
+    # Instanz trägt mehrere, und `/zuordnung` zeigt in keine bestimmte Gilde.
+    assert unsere.name in vorbesitzerin.zwiegespraech[0][0]
 
 
 def test_ein_geschlossenes_postfach_verwirft_die_uebernahme_nicht(stelle, bot, caplog):
@@ -822,6 +825,31 @@ def test_ein_geschlossenes_postfach_verwirft_die_uebernahme_nicht(stelle, bot, c
     assert "RuntimeError" in caplog.text
     for geheim in ("Mira am Handy", BROK, MIRA):
         assert geheim not in caplog.text
+
+
+def test_ohne_thread_sagt_das_log_was_wirklich_geschah(stelle, bot, caplog):
+    """Eine Sitzung aus der Zeit vor dem Sitzungs-Thread hat keinen — dann trägt er nichts.
+
+    »Der Thread-Vermerk trägt sie« wäre hier eine Auskunft über etwas, das nicht geschehen
+    ist, und genau die liest Wochen später jemand, der wissen will, ob die Runde es erfuhr.
+    """
+    _config, unsere = stelle
+    sitzung = notes.create_session(unsere, played_on="2026-05-01")
+    aufgenommen(unsere, sitzung, (MIRA, "Mira am Handy"), (BROK, "Mira"))
+    welt_ablegen(unsere)
+    people.confirm(unsere, {BROK: "u-mira"})
+    bot.nutzer[int(BROK)] = vorbesitzerin = FakeMitglied(int(BROK), "Mira")
+    ctx = FakeCtx()
+    asyncio.run(befehl(bot, gateway.BEFEHL_ZUORDNUNG)(ctx))
+
+    with caplog.at_level(logging.WARNING):
+        waehlen(ctx.ansichten[0], MIRA, "u-mira")
+
+    assert "in keinem Thread" in caplog.text
+    assert "Thread-Vermerk trägt sie" not in caplog.text
+    # Und die Vorbesitzerin erfährt es trotzdem — der eine Weg, der noch da ist.
+    assert len(vorbesitzerin.zwiegespraech) == 1
+    assert "Mira am Handy" not in caplog.text
 
 
 def test_ohne_uebernahme_wird_nichts_gesagt(stelle, bot):
