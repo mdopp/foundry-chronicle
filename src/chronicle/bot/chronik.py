@@ -413,7 +413,10 @@ async def _diktat(
     await anhang.speichern(ziel)
     if ziel.stat().st_size == 0:
         ziel.unlink()
-        logger.info("Leeres Diktat aus dem Thread abgewiesen: %s", anhang.filename)
+        # Ohne den Namen: er kommt vom Hochladenden und kann alles enthalten. Discords
+        # Sprachnachricht heißt »voice-message.ogg«, eine selbst benannte Datei nicht.
+        # Wer sie sucht, findet sie an der Antwort im Thread, nicht im Log des Betreibers.
+        logger.info("Leeres Diktat aus dem Thread abgewiesen.")
         return LEER.format(name=anhang.filename)
     recordings.enqueue(
         runde,
