@@ -20,10 +20,11 @@ import sys
 from pathlib import Path
 
 import pytest
-from conftest import PASSWORT, runde
+from conftest import PASSWORT, UNSER_KONTO, runde
 
 from chronicle import db, settings
 from chronicle.app import create_app
+from chronicle.bot import chronik, einrichten
 from chronicle.config import Config
 from chronicle.foundry import permissions, service, store, testwelt
 
@@ -276,17 +277,37 @@ def test_die_quelle_gehoert_der_runde_und_faellt_auf_den_server_zurueck(config):
     assert settings.foundry_quelle(gruppe) == settings.TESTWELT
 
 
-def test_die_oberflaeche_sagt_auf_jeder_seite_dass_die_welt_erfunden_ist(auf_testwelt):
-    client = create_app(auf_testwelt).test_client()
-    for pfad in ("/", "/protokolle", "/suche", "/einstellungen"):
-        seite = client.get(pfad, headers=KOPF).get_data(as_text=True)
-        assert testwelt.HINWEIS in seite, pfad
+def test_jeder_abgleich_sagt_dass_die_welt_erfunden_ist(auf_testwelt):
+    """Das Dauerband der Oberfläche ist mit #157 fort — der Satz steht jetzt an der Meldung.
+
+    Sie geht bei jedem ``/chronik fertig`` und bei jedem nächtlichen Lauf in den Kanal.
+    Wer erfundene Zahlen für echte hält, ist der teuerste Fehler dieses Schalters; dagegen
+    hilft nur, es an jeder Stelle zu sagen, an der Zahlen entstehen.
+    """
+    stand = service.sync(auf_testwelt, runde(auf_testwelt))
+    assert not stand.stale, stand.message
+    assert testwelt.HINWEIS in stand.message
 
 
-def test_ohne_testwelt_steht_der_hinweis_nirgends(config):
-    client = create_app(config).test_client()
-    seite = client.get("/einstellungen", headers=KOPF).get_data(as_text=True)
-    assert testwelt.HINWEIS not in seite
+def test_die_wahl_selbst_sagt_es_auch(auf_testwelt):
+    """``/setup`` in Discord antwortet auf die Umstellung mit derselben Warnung."""
+    assert "erfunden" in einrichten.QUELLE_GESETZT_TESTWELT
+    assert einrichten.QUELLE_TESTWELT.endswith("erfundene Zahlen")
+
+
+class NurDieWelt:
+    """Ein Foundry, das genau diesen Rohdump zeigt — mehr braucht der Abgleich nicht."""
+
+    def __init__(self, welt):
+        self._welt = welt
+
+    def fetch_world(self):
+        return UNSER_KONTO, self._welt
+
+
+def test_ohne_testwelt_steht_der_hinweis_nirgends(config, welt):
+    stand = service.sync(config, runde(config), client=NurDieWelt(welt))
+    assert testwelt.HINWEIS not in stand.message
 
 
 def test_die_betreiberseite_stellt_die_quelle_nicht_mehr_um(config):
@@ -304,10 +325,9 @@ def test_die_betreiberseite_stellt_die_quelle_nicht_mehr_um(config):
     assert f'name="{settings.QUELLE_KEY}"' not in seite
 
 
-def test_mit_testwelt_fuehrt_die_startseite_nicht_in_die_einrichtung(auf_testwelt):
+def test_mit_testwelt_fragt_der_sitzungsstart_kein_passwort(auf_testwelt):
     """Wer die Testwelt gewählt hat, hat Foundry entschieden — auch ohne Adresse."""
-    client = create_app(auf_testwelt).test_client()
-    assert client.get("/", headers=KOPF).status_code == 200
+    assert not chronik.foundry_im_spiel(auf_testwelt, runde(auf_testwelt))
 
 
 def test_die_fixture_ist_gueltiges_json_und_wird_nur_einmal_gelesen():

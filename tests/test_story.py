@@ -23,7 +23,7 @@ import pytest
 from conftest import runde
 from mocks import foundry_mock, ollama_mock
 
-from chronicle import db, foundry, notes, protocol, settings
+from chronicle import db, foundry, notes, protocol, search, settings
 from chronicle.app import create_app
 from chronicle.compose.composer import (
     BELEG_TITEL,
@@ -32,7 +32,7 @@ from chronicle.compose.composer import (
     VERWORFEN,
 )
 from chronicle.compose.recap import FAEDEN_TITEL
-from chronicle.compose.service import compose_session, recap_session
+from chronicle.compose.service import RUECKBLICK, compose_session, recap_session
 from chronicle.config import Config
 from chronicle.foundry import testwelt
 
@@ -105,7 +105,7 @@ def verknuepfe(config: Config, paare: list[tuple[int, str]]) -> None:
 
 
 def station_1_aufsetzen(tmp_path):
-    """Frische Instanz auf Wegwerf-Verzeichnissen: sie führt in die Einrichtung."""
+    """Frische Instanz auf Wegwerf-Verzeichnissen: die Haustür steht zu, die Seite ist leer."""
     config = Config(
         data_dir=tmp_path / "daten",
         recordings_dir=tmp_path / "spuren",
@@ -114,12 +114,8 @@ def station_1_aufsetzen(tmp_path):
     client = create_app(config).test_client()
     assert config.database_path.is_file()
 
-    assert client.get("/status").status_code == 403
-    assert client.get("/einrichtung/foundry").status_code == 403
-
-    assert hole(client, "/").headers["Location"] == "/einrichtung"
-    schritt = hole(client, "/einrichtung", folgen=True).get_data(as_text=True)
-    assert "Schritt 1 von 3" in schritt
+    assert client.get("/").status_code == 403
+    assert client.get("/einstellungen").status_code == 403
 
     # Der alte Status-Pfad steht in Lesezeichen; er landet auf der Betreiber-Seite.
     assert hole(client, "/status").status_code == 301
@@ -129,31 +125,28 @@ def station_1_aufsetzen(tmp_path):
     return config, client
 
 
-def station_2_konfigurieren(client, mock_foundry, mock_ollama):
-    """Der Wizard, Schritt für Schritt — das Passwort wird hier gar nicht erst gefragt."""
+def station_2_konfigurieren(config, client, mock_foundry, mock_ollama):
+    """Zwei Orte, zwei Zuständigkeiten: die Runde in Discord, die Instanz auf der Seite.
+
+    Was einer Gilde gehört — Foundry-Zugang, Zustellkanal, Nachtlauf — pflegt ``/setup``
+    (``bot.einrichten``); was der Instanz gehört, steht auf der Betreiber-Seite. Geprüft
+    wird hier der Schreibweg, nicht das Discord-Fenster darüber: das steht in
+    ``test_erinnern`` und ``test_bot``.
+    """
+    gruppe = runde(config)
+    settings.save(
+        gruppe,
+        {"foundry_url": mock_foundry.url, "foundry_user": foundry_mock.BENUTZER},
+    )
+
     antwort = sende(
-        client,
-        "/einrichtung/foundry",
-        foundry_url=mock_foundry.url,
-        foundry_user=foundry_mock.BENUTZER,
+        client, "/einstellungen", ollama_url=mock_ollama.url, ollama_model=ollama_mock.MODELL
     )
     assert antwort.status_code == 302
-    assert antwort.headers["Location"] == "/einrichtung/discord"
 
-    # Eine Präsenzgruppe braucht keinen Bot — überspringen ist immer möglich.
-    antwort = sende(client, "/einrichtung/discord", tat="ueberspringen")
-    assert antwort.headers["Location"] == "/einrichtung/ollama"
-
-    antwort = sende(
-        client,
-        "/einrichtung/ollama",
-        ollama_url=mock_ollama.url,
-        ollama_model=ollama_mock.MODELL,
-    )
-    assert antwort.headers["Location"] == "/"
-
-    # Fertig heißt fertig: die Startseite ist wieder die Sitzungsseite.
-    assert hole(client, "/").status_code == 200
+    aktuell = settings.effective(config, gruppe)
+    assert aktuell.foundry_configured
+    assert aktuell.ollama_model == ollama_mock.MODELL
 
     formular = hole(client, "/einstellungen").get_data(as_text=True)
     assert foundry_mock.PASSWORT not in formular
@@ -208,20 +201,19 @@ def station_3_erster_abgleich(config, client):
     assert len(foundry.current(config, runde(config)).snapshot.messages) == len(welt.messages)
 
 
-def station_4_erste_sitzung(client, config):
-    """Sitzung, Szenen und Notizen per HTTP; die Foundry-Fakten kommen an die Szenen."""
-    antwort = sende(client, "/", played_on=GESPIELT_AM, title=TITEL)
-    assert antwort.status_code == 302
-    sitzung_id = int(antwort.headers["Location"].rsplit("/", 1)[-1])
+def station_4_erste_sitzung(config):
+    """Sitzung, Szenen und Notizen — in Discord ``/chronik start``, ``/szene``, der Thread."""
+    gruppe = runde(config)
+    sitzung_id = notes.create_session(gruppe, played_on=GESPIELT_AM, title=TITEL)
 
     for titel in (ZWEITE_SZENE, DRITTE_SZENE):
-        assert sende(client, f"/sitzungen/{sitzung_id}/szenen", title=titel).status_code == 302
+        assert notes.add_scene(gruppe, sitzung_id, title=titel) is not None
 
-    szenen = notes.session(runde(config), sitzung_id).scenes
+    szenen = notes.session(gruppe, sitzung_id).scenes
     assert [szene.title for szene in szenen] == [None, ZWEITE_SZENE, DRITTE_SZENE]
 
     for szene, notiz in zip(szenen, NOTIZEN, strict=True):
-        assert sende(client, f"/szenen/{szene.id}/notizen", text=notiz).status_code == 302
+        notes.add_note(gruppe, szene.id, notiz)
 
     verknuepfe(config, list(zip((szene.id for szene in szenen), FAKTEN, strict=True)))
     return sitzung_id
@@ -251,54 +243,52 @@ def station_5_erste_zusammenfassung(config, sitzung_id, mock_ollama):
     assert ollama_mock.ERFUNDENE_ZAHL not in rueckblick.text
 
 
-def station_6_wiederfinden(client, sitzung_id):
-    """Wochen später: die Suche findet den Begriff, die Seite trennt sichtbar."""
-    treffer = hole(client, f"/suche?q={SUCHBEGRIFF}").get_data(as_text=True)
-    assert f"<mark>{SUCHBEGRIFF}" in treffer
-    assert f"/sitzungen/{sitzung_id}/protokoll" in treffer
+def station_6_wiederfinden(config, sitzung_id):
+    """Wochen später: ``/suche`` findet den Begriff, die Chronik trennt sichtbar."""
+    ergebnis = search.find(runde(config), SUCHBEGRIFF)
+    treffer = [hit for gruppe in ergebnis.groups for hit in gruppe.hits]
+    assert treffer, ergebnis
+    assert any(SUCHBEGRIFF in hit.raw for hit in treffer)
+    assert any(hit.session_id == sitzung_id for hit in treffer)
 
-    seite = hole(client, f"/sitzungen/{sitzung_id}/protokoll").get_data(as_text=True)
-    for klasse in ("belegt", "verbindung", "deutung"):
-        assert f'class="abschnitt {klasse}"' in seite
-    assert ollama_mock.ERFUNDENE_ZAHL not in seite
+    abgelegt = protocol.stored(runde(config), sitzung_id).text
+    for titel in (BELEG_TITEL, VERBINDUNG_TITEL):
+        assert titel in abgelegt
+    assert FAEDEN_TITEL in protocol.stored(runde(config), sitzung_id, RUECKBLICK).text
+    assert ollama_mock.ERFUNDENE_ZAHL not in abgelegt
 
 
 def test_vom_aufsetzen_bis_zur_ersten_chronik(tmp_path, mock_foundry, mock_ollama):
     """Aufsetzen, konfigurieren, abgleichen, mitschreiben, komponieren, wiederfinden."""
     config, client = station_1_aufsetzen(tmp_path)
-    station_2_konfigurieren(client, mock_foundry, mock_ollama)
+    station_2_konfigurieren(config, client, mock_foundry, mock_ollama)
     station_3_erster_abgleich(config, client)
-    sitzung_id = station_4_erste_sitzung(client, config)
+    sitzung_id = station_4_erste_sitzung(config)
     station_5_erste_zusammenfassung(config, sitzung_id, mock_ollama)
-    station_6_wiederfinden(client, sitzung_id)
+    station_6_wiederfinden(config, sitzung_id)
 
 
 def test_dieselben_stationen_gegen_die_eingebaute_testwelt(tmp_path):
     """Dieselbe Geschichte ohne Server: die Quelle steht auf Testwelt.
 
     Das ist die zweite Hälfte des Beweises. Der Handschlag ist oben abgedeckt; hier zählt
-    die Strecke **danach** — und dass die Oberfläche keinen Zweifel lässt, woher die
-    Zahlen stammen.
+    die Strecke **danach** — und dass kein Abgleich verschweigt, woher die Zahlen stammen.
     """
-    config, client = station_1_aufsetzen(tmp_path)
-    # Die Quelle gehört der Runde; die Betreiber-Seite stellt sie seit #89 nicht mehr um.
+    config, _ = station_1_aufsetzen(tmp_path)
+    # Die Quelle gehört der Runde; gewählt wird sie in Discord (``bot.einrichten``).
     assert settings.save_foundry_quelle(runde(config), settings.TESTWELT)
 
     stand = foundry.sync(config, runde(config))
     assert not stand.stale, stand.message
+    assert testwelt.HINWEIS in stand.message
     assert "keine echten Kampagnendaten" in stand.message
     assert stand.snapshot.characters and stand.snapshot.messages
 
-    # Die Einrichtung ist damit entschieden — und jede Seite sagt, was hier läuft.
-    assert hole(client, "/").status_code == 200
-    for pfad in ("/", "/protokolle", "/einstellungen"):
-        assert testwelt.HINWEIS in hole(client, pfad).get_data(as_text=True), pfad
-
     # Mitschreiben und Komponieren laufen unverändert weiter — die Quelle ändert nur,
     # woher die Zahlen kommen.
-    angelegt = sende(client, "/", played_on=GESPIELT_AM, title=TITEL)
-    sitzung_id = int(angelegt.headers["Location"].rsplit("/", 1)[-1])
-    szene = notes.session(runde(config), sitzung_id).scenes[0]
-    assert sende(client, f"/szenen/{szene.id}/notizen", text=NOTIZEN[0]).status_code == 302
-    geschrieben = notes.session(runde(config), sitzung_id).scenes[0].notes
+    gruppe = runde(config)
+    sitzung_id = notes.create_session(gruppe, played_on=GESPIELT_AM, title=TITEL)
+    szene = notes.session(gruppe, sitzung_id).scenes[0]
+    notes.add_note(gruppe, szene.id, NOTIZEN[0])
+    geschrieben = notes.session(gruppe, sitzung_id).scenes[0].notes
     assert [notiz.text for notiz in geschrieben] == [NOTIZEN[0]]

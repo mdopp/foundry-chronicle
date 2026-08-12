@@ -30,8 +30,8 @@ Ollama-Adresse und -Modell gehören der Instanz und stehen unter `/einstellungen
 Foundry-Adresse und -Benutzer gehören der Runde und werden in Discord unter `/setup`
 eingetragen. Beides liegt in der SQLite; der Dienst liest es von dort, nicht aus der
 Umgebung. Das Foundry-Passwort liegt auch dort nicht — es wird beim Abgleich gefragt und
-danach vergessen. Beim ersten Aufruf führt die Oberfläche in Schritten hindurch; bis alles
-gesetzt ist, startet der Dienst trotzdem, und der Bot sagt in Discord, was noch fehlt.
+danach vergessen. Bis alles gesetzt ist, startet der Dienst trotzdem, und der Bot sagt in
+Discord, was noch fehlt.
 
 Das ist kein Weglassen aus Bequemlichkeit: Der Assistent erzeugt für eine Variable vom
 Typ `secret` einen **Zufallswert**. Für ein internes Geheimnis ist das richtig, für
@@ -44,11 +44,11 @@ Der Pod hat zwei Container aus demselben Image:
 
 | Container | Befehl | Wofür |
 |---|---|---|
-| `chronik` | `waitress-serve` (Vorgabe des Images) | die Oberfläche hinter Authelia **und der nächtliche Lauf** |
+| `chronik` | `waitress-serve` (Vorgabe des Images) | die Betreiber-Seite hinter Authelia **und der nächtliche Lauf** |
 | `bot` | `python -m chronicle.bot` | der Aufnahme-Bot am Discord-Gateway |
 
 Der Bot ist ein eigener, dauerhafter Prozess, weil Sprache nur mitgeschnitten werden kann,
-während sie gesprochen wird. Den Token liest er aus derselben SQLite wie die Oberfläche —
+während sie gesprochen wird. Den Token liest er aus derselben SQLite wie die Betreiber-Seite —
 deshalb teilen beide Container `/data`. **Ohne Token beendet er sich mit einem Satz** und
 wird von der Neustart-Regel des Pods wieder gestartet — das ist erwartet und kein Fehler;
 nach dem Eintragen unter `/einstellungen` findet ihn der nächste Start.

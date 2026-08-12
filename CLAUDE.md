@@ -21,12 +21,14 @@ Diese Regeln gelten für jede Sitzung, Mensch oder Agent.
   Die Weboberfläche wird abgeschaltet — **bis auf eine kleine Betreiber-Seite**
   (Operator-Entscheidung 2026-08-10, #69). Was die spielende Gruppe betrifft, gehört
   nach Discord; was der **Betreiber** einstellt, kann dort nicht hin, weil es keiner
-  Gilde gehört: Bot-Token, Ollama-Adresse und -Modell (#87) — und sonst nichts; »wer
-  verwalten darf« steht nicht darauf, siehe unten (#90). Die frühere Fassung zählte es
-  mit auf; das ist mit der Entscheidung vom 2026-08-11 erledigt.
+  Gilde gehört: Bot-Token, Ollama-Adresse und -Modell (#87) und **wer die Seite selbst
+  verwalten darf**. Letzteres ist keine Rolle im Spiel — es ist die Frage, wer an den
+  Bot-Token darf, und die gehört dem Betrieb dieser Box (#90 regelt etwas anderes: über
+  einer *Runde* steht niemand). Die Fassung vom 2026-08-11 zählte es hier heraus; mit
+  #157 steht es wieder da, weil es sonst nirgends stünde.
   Alles andere fällt. Wer eine neue Fähigkeit baut, baut sie **in Discord**,
-  nicht in einer Seite — die Betreiber-Seite ist kein Ort für Spielinhalte. Bis #69
-  besteht die alte Oberfläche daneben weiter; das ist Übergang, kein zweiter Weg.
+  nicht in einer Seite — die Betreiber-Seite ist kein Ort für Spielinhalte. Seit #157
+  trägt die Seite keine Spielinhalte mehr; einen zweiten Weg gibt es nicht.
 - **Eine Instanz trägt mehrere Runden** (#62/#63). Eine Runde ist eine Discord-Gilde
   mit eigenem Foundry-Zugang. Das löst »eine Instanz pro Gruppe« aus Epic #1 ab.
 
@@ -151,9 +153,12 @@ SQLite-Datei ist klein und enthält alles Unersetzliche.
   fällt durch. Ein vergessenes `WHERE runde_id = ?` ist kein Fehler, sondern ein Leck
   zwischen fremden Kampagnen.
   **Innerhalb** einer Instanz trennte die Weboberfläche zwei Rollen, Mitspielen und
-  Verwalten (#51, `chronicle.roles`) — abgelöst mit #62: wer was darf, entscheidet
-  Discord über seine eigenen Kanal- und Rollenrechte. Kein eigenes Rollenmodell mehr;
-  `chronicle.roles` verschwindet mit #69.
+  Verwalten (#51, `chronicle.roles`) — für das *Spielen* abgelöst mit #62: wer was darf,
+  entscheidet Discord über seine eigenen Kanal- und Rollenrechte. Kein eigenes
+  Rollenmodell mehr für Spielinhalte. **`chronicle.roles` bleibt trotzdem** (Nachtrag
+  #157; die frühere Fassung sagte, es verschwinde mit #69): `ist_verwalter` und der
+  `Remote-Groups`-Header tragen die Antwort auf #90 — wer an den Bot-Token darf. Das ist
+  eine Frage des Betriebs, keine des Spiels, und hat in keiner Gilde einen Ort.
 - **Über der Runde steht niemand — der Betreiber löscht keine fremde Runde**
   (Operator-Entscheidung 2026-08-11, #90). Eine Runde verschwindet auf genau zwei Wegen:
   die **Gruppe selbst** löscht sie (`/chronik loeschen`, Administrator-Recht in ihrer

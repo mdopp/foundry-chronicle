@@ -22,8 +22,9 @@ danach vergessen.
 - Aufbau: Epic [#1](../../issues/1) — die erste Ausbaustufe, abgeschlossen.
   Epic [#62](../../issues/62) löst sie ab: Discord wird die Oberfläche.
 
-> Status: Umbau. Erfassen, Ausgeben und das Runden-Modell laufen über Discord; die
-> Weboberfläche besteht daneben weiter, bis [#69](../../issues/69) sie abschaltet.
+> Status: Umbau. Erfassen, Ausgeben und das Runden-Modell laufen über Discord. Die
+> Weboberfläche trägt seit [#157](../../issues/157) keine Spielinhalte mehr — was bleibt,
+> ist die **Betreiber-Seite** (`/einstellungen`, `/status`, `/healthz`).
 > „Eine Instanz pro Gruppe" war die Entscheidung des ersten Epics — sie ist mit
 > [#62](../../issues/62) abgelöst.
 
@@ -34,27 +35,25 @@ python3 -m venv .venv && . .venv/bin/activate
 pip install -e ".[dev]"
 pre-commit install
 python -m chronicle.bot      # der Bot — das ist der Dienst
-python -m chronicle          # die Weboberfläche, bis #69 sie abschaltet
+python -m chronicle          # die Betreiber-Seite und /healthz
 ```
 
-Beim ersten Mal führt `/` durch die Einrichtung — Foundry, dann Discord, dann Ollama,
-jeder Schritt überspringbar; danach wird unter `/` mitgeschrieben — Sitzung, Szenen,
-Notizen. `/status` leitet mit 301 auf `/einstellungen`. Am Notizfeld sitzt ein
-**Diktier-Knopf** für kurze Notizen: er nutzt die Spracherkennung des Browsers, die über
-die **Cloud des Browser-Herstellers** läuft und nicht auf dieser Box — Browser ohne
-`SpeechRecognition` zeigen ihn gar nicht erst.
+Die Weboberfläche kennt nur noch drei Adressen: `/einstellungen`, `/status` (301 dorthin)
+und `/healthz`; `/` leitet auf die Einstellungen. Alles Übrige — Sitzung, Szene, Notiz,
+Diktat, Chronik, Suche, Register, Zuordnung, Einrichtung — ist mit
+[#157](../../issues/157) nach Discord gezogen.
 
-**Anstoßen kann der Nutzer selbst.** *Chronik erstellen* (Sitzungs- und Chronikseite)
-startet einen **server-eigenen Lauf** nach dem
-ServiceBay-Standard für lange Prozesse: der Zustand steht in der Tabelle `job`, überlebt
-Neuladen und geschlossenen Reiter, und ein Neustart mitten im Lauf wird beim nächsten
-Blick ehrlich als unterbrochen vermerkt statt für immer zu laufen. Je Art läuft höchstens
-einer. Der Chronik-Lauf verschriftet erst die wartenden Aufnahmen und ruft dann dieselben
-Funktionen wie `python -m chronicle.compose`: ein Knopf ist der zweite Auslöser, nicht der
-zweite Weg. Die Stapel-Einstiege unten bleiben — sie sind der Weg für Cron und Betrieb.
+**Angestoßen wird in Discord.** `/chronik fertig` startet einen **server-eigenen Lauf**
+nach dem ServiceBay-Standard für lange Prozesse: der Zustand steht in der Tabelle `job`,
+überlebt Neustarts, und ein Neustart mitten im Lauf wird beim nächsten Blick ehrlich als
+unterbrochen vermerkt statt für immer zu laufen. Je Art läuft höchstens einer. Der
+Chronik-Lauf verschriftet erst die wartenden Aufnahmen und ruft dann dieselben Funktionen
+wie `python -m chronicle.compose`: ein Befehl ist der zweite Auslöser, nicht der zweite
+Weg. Die Stapel-Einstiege unten bleiben — sie sind der Weg für Cron und Betrieb.
 
-**`/einstellungen` ist die Betreiber-Seite und bleibt genau deshalb bestehen, wenn #69 die
-übrige Oberfläche abräumt** (Owner-Entscheidung 2026-08-11, [#89](../../issues/89)): dort
+**`/einstellungen` ist die Betreiber-Seite und bleibt genau deshalb bestehen, während
+[#157](../../issues/157) die übrige Oberfläche abräumt** (Owner-Entscheidung 2026-08-11,
+[#89](../../issues/89)): dort
 stehen der Discord-Bot-Token, Ollama-Adresse und -Modell sowie die Verwaltungsgruppe — die
 gehören der Instanz und keiner Gilde, haben also in Discord keinen Ort. Alles Runden-eigene
 — Foundry-Adresse und -Benutzer, Zustellkanal, Uhrzeit des nächtlichen Laufs samt ihrer
@@ -137,14 +136,11 @@ kennt, wird abgewiesen statt still übernommen — sonst stünde er in der Einst
 Lauf ginge weiter nach der Vorgabe. Die Stapel-Einstiege oben sind der Weg für Cron,
 Betrieb und Ungeduld.
 
-Ohne Argumente wird abgearbeitet, was über die Oberfläche hochgeladen wurde und noch
-wartet: auf der Sitzungsseite lädt ein **Diktat** — eine Sprachnotiz aus der
-Sprachmemo-App des Telefons — eine Spur hoch und reiht sie in dieselbe Warteschlange ein.
-Die Seite zeigt den Stand dieses Jobs, nie einen geratenen Fortschritt; ist er fertig,
-steht das Transkript dort und lässt sich einer Szene als Notiz übernehmen. Lange Diktate
-werden **nicht** im Browser aufgenommen: eine Sprachmemo-App übersteht Bildschirmsperre
-und Anruf, ein Browser-Tab nicht — und die Quelle bleibt erhalten, bis das Transkript
-taugt.
+Ohne Argumente wird abgearbeitet, was noch wartet: ein **Diktat** — eine Sprachnotiz aus
+der Sprachmemo-App des Telefons — hängt als Anhang im Sitzungs-Thread und wird in dieselbe
+Warteschlange eingereiht. Beim Abschluss wird es verschriftet und findet über den
+Zeitpunkt seiner Nachricht in die Szene, in die es gehört. Eine Sprachmemo-App übersteht
+Bildschirmsperre und Anruf, und die Quelle bleibt erhalten, bis das Transkript taugt.
 
 Der Dateiname wird die Quellenkennung der Spur; ein zweiter Lauf ersetzt sie, statt zu
 verdoppeln. **Eine Grafikkarte ist keine Voraussetzung — aber wenn eine da ist, wird sie
@@ -153,8 +149,7 @@ int8, grob das Zwei- bis Fünffache der Echtzeit. Das große Modell erkennt erfu
 Eigennamen deutlich besser, und davon lebt ein Rollenspiel. `CHRONICLE_WHISPER_DEVICE`
 (`cpu`/`cuda`) und `CHRONICLE_WHISPER_MODEL` überschreiben die Erkennung — `cpu` hält die
 Karte für Ollama frei, das sich dieselben 16 GB teilt; ein Fehlschlag auf der Karte fällt
-auf die CPU zurück, statt den Nachtlauf abzubrechen. Felder in der Oberfläche gibt es
-dafür nicht. Als Vokabular werden die Eigennamen
+auf die CPU zurück, statt den Nachtlauf abzubrechen. Ein Feld dafür gibt es nirgends. Als Vokabular werden die Eigennamen
 dieser Sitzung vorgespannt — erst, wer im Chat-Log gesprochen hat, dann der übrige
 Foundry-Zwischenspeicher, hart auf rund 224 Token gekappt.
 
@@ -163,13 +158,12 @@ Dev-Installation muss es nicht laden. Die Tests setzen ein erfundenes Modell ein
 laden nie ein echtes herunter.
 
 **Mehrere Spuren werden zu einer Unterhaltung.** Schneidet der Aufnahme-Bot mit, liegt je
-Sprecher eine Spur; nacheinander gelesen wären das Monologe. Die Sitzungsseite zeigt sie
-deshalb nach Zeit verschränkt — die Marke zählt ab dem Aufnahmebeginn, dem gemeinsamen
-Nullpunkt aller Spuren, und der Name kommt aus der bestätigten Zuordnung. Ohne Zuordnung
-steht der Discord-Name da; geraten wird keiner. Ein Abschnitt zwischen zwei Zeitmarken
-lässt sich einer Szene **als Notiz** übernehmen, in derselben Form, die die Eingabe am
-Tisch liefert — damit bleibt die Komposition unverändert und es gibt weiterhin eine
-Pipeline. Die Marken bleiben draußen: die Chronik leitet aus Notizen und Foundry-Fakten
+Sprecher eine Spur; nacheinander gelesen wären das Monologe. Der Abschluss verschränkt sie
+deshalb nach Zeit — die Marke zählt ab dem Aufnahmebeginn, dem gemeinsamen Nullpunkt aller
+Spuren, und der Name kommt aus der bestätigten Zuordnung. Ohne Zuordnung steht der
+Discord-Name da; geraten wird keiner. Das Verschränkte wird der Szene **als Notiz**
+übernommen, in derselben Form, die die Eingabe am Tisch liefert — damit bleibt die
+Komposition unverändert und es gibt weiterhin eine Pipeline. Die Marken bleiben draußen: die Chronik leitet aus Notizen und Foundry-Fakten
 ab, welche Zahl belegt ist, und eine Uhrzeit steht in keinem Chat-Log. Ein Diktat vom
 Heimweg hat keinen Bezug zu einer Sitzungsuhr und bleibt deshalb außerhalb dieser Achse —
 für die Präsenzrunde ist die Szenenfolge weiterhin die einzige Zeitachse.
@@ -288,7 +282,7 @@ Intent** — ohne sie kämen die Nachrichten leer an.
 Der Bot-Account entsteht im [Discord Developer Portal](https://discord.com/developers/applications):
 
 1. **New Application** anlegen (Name z. B. „Chronik"), links **Bot** öffnen, den
-   **Token** erzeugen. Der Token wird in der Oberfläche unter *Einstellungen*
+   **Token** erzeugen. Der Token wird auf der Betreiber-Seite unter `/einstellungen`
    eingetragen — nie ins Repo, nie in eine Nachricht.
 2. Unter **Bot** die **Message Content Intent** einschalten — ohne sie liefert die
    API keine Nachrichtentexte.
@@ -302,7 +296,7 @@ Der Bot-Account entsteht im [Discord Developer Portal](https://discord.com/devel
    nur eingeladen sein — als „online" erscheint er erst, wenn der Aufnahme-Bot
    eine Gateway-Verbindung hält.
 
-Die Oberfläche ist nur im Heimnetz erreichbar, der Diktat-Moment aber auf dem Heimweg.
+Die Box ist nur im Heimnetz erreichbar, der Diktat-Moment aber auf dem Heimweg.
 Discord ist von überall erreichbar und von Natur aus ein Briefkasten: einwerfen, wann es
 einem einfällt — geholt wird, wenn der Dienst das nächste Mal läuft.
 
@@ -432,7 +426,7 @@ und **am Ende jedes `python -m chronicle.transcribe`-Laufs**, auch wenn nichts z
 
 Gelöscht wird nur die Audiodatei. Die Zeile in der Datenbank bleibt mit `deleted_at` stehen
 — dass es die Spur gab, wann sie kam und was aus ihr wurde, ist die ehrliche Hälfte der
-Geschichte; das Transkript bleibt ohnehin. Die Sitzungsseite sagt es in einem Satz.
+Geschichte; das Transkript bleibt ohnehin.
 
 ### Je Sprecher eine Spur
 

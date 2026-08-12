@@ -1,29 +1,21 @@
-"""Der Dienst: serverseitig gerendertes HTML, sonst nichts.
+"""Die Betreiber-Seite: serverseitig gerendertes HTML, sonst nichts.
 
 Die Haustür steht am Proxy (ServiceBay-ADR 0001): Authelia setzt ``Remote-User``, die
 App baut kein eigenes Login. Erzwungen wird der Header nur, wenn die Umgebung es sagt —
-sonst wäre ``python -m chronicle`` ohne Proxy nicht startbar.
+sonst wäre ``python -m chronicle`` ohne Proxy nicht startbar. Die Tür bleibt, obwohl das
+Spiel nach Discord gezogen ist: auf dieser Seite liegt der Bot-Token.
 
-Fehlt die Foundry-Konfiguration, läuft der Dienst trotzdem und erklärt in der
-Foundry-Karte der Einstellungen, was fehlt — eine harte Abhängigkeit rechtfertigt eine
-verständliche Meldung, keine Startverweigerung. Mitgeschrieben wird auch dann.
-
-Beim ersten Mal führt ``/einrichtung`` in Schritten durch die Einrichtung, statt fünf
-gleichrangige Reiter hinzustellen; geschrieben wird über denselben ``settings.save``-Weg.
+**Spielinhalte gibt es hier keine mehr** (#157). Was die spielende Gruppe betrifft —
+Sitzung, Szene, Notiz, Diktat, Chronik, Suche, Register, Zuordnung, Einrichtung —, steht
+in Discord. Übrig bleibt, was *keiner Gilde gehört* und deshalb dort keinen Ort hat:
+Bot-Token, Ollama-Adresse und -Modell, und wer verwalten darf. Dazu ``/status`` als
+Altweg und ``/healthz`` als Install-Gate der Box.
 
 ``basis`` ist die Umgebung beim Start; gefragt wird nie sie, sondern
 ``settings.effective(basis, runde)`` — ein gepflegter Wert gewinnt und wirkt ohne Neustart.
 
-Diese Oberfläche kennt **keine Runden**: sie arbeitet stillschweigend in der ersten. Mit
-#69 verschwindet sie — **bis auf ``/einstellungen``**: dort stehen seit #89 nur noch die
-Werte der *Instanz* — Bot-Token, Ollama, Verwaltungsgruppe —, und die haben in Discord
-keinen Ort, weil sie keiner Gilde gehören. Alles Runden-eigene ist von dieser Seite
-verschwunden; gepflegt wird es per ``/setup`` in Discord.
-
-Aus demselben Grund stößt diese Oberfläche **keinen Foundry-Abgleich** mehr an: er redet
-mit dem Server *einer* Runde und braucht deren Passwort, das hier niemand mehr eingibt.
-Angestoßen wird er von ``/chronik fertig`` in Discord und vom nächtlichen Lauf; das Band
-sagt weiterhin, wie es um den letzten steht.
+Diese Oberfläche kennt **keine Runden**: die Instanz-Werte stehen zwar in ``instanz``,
+``settings.effective`` will aber eine Runde, und für die Anzeige tut es die erste.
 
 Der nächtliche Lauf hängt an ``dienst()`` und nicht an ``create_app``: eine App, die nur
 befragt wird — im Test, im Skript —, soll nicht anfangen zu arbeiten. Er läuft hier und
@@ -33,78 +25,19 @@ nicht im Aufnahme-Bot, weil es den ohne Bot-Token gar nicht gibt (siehe
 
 from __future__ import annotations
 
-from flask import Flask, Response, abort, g, redirect, render_template, request, url_for
+from flask import Flask, Response, redirect, render_template, request, url_for
 
-from chronicle import (
-    db,
-    foundry,
-    instanz,
-    jobs,
-    nightly,
-    notes,
-    people,
-    protocol,
-    recordings,
-    register,
-    roles,
-    search,
-    settings,
-)
+from chronicle import db, instanz, nightly, roles, settings
 from chronicle import runde as runden
 from chronicle.compose import client as sprachmodell
 from chronicle.compose.client import ModelError
-from chronicle.compose.service import RUECKBLICK
 from chronicle.config import Config
-from chronicle.transcribe import merge
 
 REMOTE_USER_HEADER = "Remote-User"
 
-UNKONFIGURIERT = "unkonfiguriert"
-VERALTET = "veraltet"
-ABGLEICH_LAEUFT = "laeuft"
-
-# Die Einstellungen erklären den Verbindungszustand selbst und ausführlich, der Wizard
-# ist die Einrichtung; ein Band darüber wäre dort nur eine Dopplung.
-OHNE_BAND = frozenset(
-    {
-        "einstellungen",
-        "einstellungen_speichern",
-        "einrichtung",
-        "einrichtung_schritt",
-        "einrichtung_speichern",
-        "healthz",
-    }
-)
-
-# Die Reihenfolge des Wizards und die Felder, für die ein Schritt zuständig ist. Ein
-# Schritt speichert nur seine eigenen — sonst nähme er den übrigen Schritten den Wert.
-SCHRITTE = (
-    ("foundry", ("foundry_url", "foundry_user")),
-    ("discord", ("discord_bot_token", "discord_recap_channel")),
-    ("ollama", ("ollama_url", "ollama_model")),
-)
-
-SCHRITT_FELDER = dict(SCHRITTE)
-
-UEBERSPRINGEN = "ueberspringen"
-SPAETER = "spaeter"
-
-# Was die Runde einmal einrichtet, statt es beim Spielen zu brauchen. Alles andere —
-# Sitzungen, Notizen, Diktate, Protokolle, Suche — steht jedem offen.
-VERWALTUNG = frozenset(
-    {
-        "einstellungen",
-        "einstellungen_speichern",
-        "einrichtung",
-        "einrichtung_schritt",
-        "einrichtung_speichern",
-        "zuordnung",
-        "zuordnung_speichern",
-        "register_vorschlaege",
-        "register_entscheiden",
-        "chronik_anstossen",
-    }
-)
+# Was die Instanz einrichtet. Alles Übrige ist keine Seite mehr, sondern ein Befehl in
+# Discord — und wer den geben darf, entscheidet die Gilde über ihre eigenen Rechte.
+VERWALTUNG = frozenset({"einstellungen", "einstellungen_speichern"})
 
 BESTAETIGT = "gruppe_bestaetigt"
 
@@ -113,11 +46,9 @@ def create_app(config: Config | None = None, *, zeitplan: bool = False) -> Flask
     app = Flask(__name__)
     basis = config if config is not None else Config.from_env()
     app.config["CHRONICLE"] = basis
-    app.config["MAX_CONTENT_LENGTH"] = recordings.MAX_BYTES
     db.init(basis.database_path)
-    # Die Oberfläche kennt keine Runden: sie arbeitet stillschweigend in der ersten. Mit
-    # #69 verschwindet sie, und mit ihr diese Zeile — bis dahin ist sie die ehrlichste
-    # Übersetzung von »eine Instanz pro Gruppe« in die neue Welt.
+    # Die Betreiber-Seite kennt keine Runden — sie zeigt Instanz-Werte. ``settings.effective``
+    # verlangt trotzdem eine, also nimmt sie die erste.
     runde = runden.erste(basis.database_path)
     if zeitplan:
         nightly.starten(basis)
@@ -128,285 +59,25 @@ def create_app(config: Config | None = None, *, zeitplan: bool = False) -> Flask
         if not basis.require_remote_user or request.endpoint == "healthz":
             return None
         if not request.headers.get(REMOTE_USER_HEADER):
-            g.abgewiesen = True
             return render_template("abgewiesen.html"), 403
         return None
 
     @app.before_request
     def verwaltungsrolle() -> tuple[str, int] | None:
-        # Ohne gesetzte Gruppe ist jeder Verwalter — der Wizard beim ersten Start kann
-        # sich also nicht selbst aussperren, denn dort ist noch keine gesetzt.
+        # Ohne gesetzte Gruppe ist jeder Verwalter — eine frische Instanz kann sich also
+        # nicht selbst aussperren, denn dort ist noch keine gesetzt.
         if request.endpoint not in VERWALTUNG:
             return None
         if roles.ist_verwalter(request, basis.database_path):
             return None
         return render_template("keine_verwaltung.html"), 403
 
-    def testwelt_aktiv() -> bool:
-        return settings.foundry_quelle(runde) == settings.TESTWELT
-
-    @app.context_processor
-    def verbindungsband() -> dict[str, object]:
-        if g.get("abgewiesen"):
-            return {
-                "verbindung": None,
-                "zugang": None,
-                "verwalter": False,
-                "testwelt": False,
-            }
-        verwalter = roles.ist_verwalter(request, basis.database_path)
-        lauf = jobs.latest(runde, jobs.ABGLEICH)
-        testwelt = testwelt_aktiv()
-        rahmen = {
-            "verbindung": None,
-            "zugang": None,
-            "verwalter": verwalter,
-            # Das Band der Testwelt hängt auch dort, wo sonst keines hängt — in den
-            # Einstellungen und im Wizard. Wer erfundene Zahlen für echte hält, ist der
-            # teuerste Fehler dieses Schalters, und dagegen hilft nur Wiederholung.
-            "testwelt": testwelt,
-            "testwelt_hinweis": foundry.TESTWELT_HINWEIS,
-        }
-        if request.endpoint in OHNE_BAND:
-            return rahmen
-        if testwelt:
-            return rahmen
-        if not settings.effective(basis, runde).foundry_configured:
-            # Der Weg in die Einrichtung steht nur dem offen, der sie auch gehen darf. Und
-            # er führt in den Wizard: der Foundry-Zugang gehört der Runde und steht in den
-            # Einstellungen seit #89 nicht mehr.
-            return rahmen | {
-                "verbindung": UNKONFIGURIERT,
-                "zugang": url_for("einrichtung") if verwalter else None,
-            }
-        if lauf is not None and lauf.laeuft:
-            return rahmen | {"verbindung": ABGLEICH_LAEUFT}
-        return rahmen | {"verbindung": VERALTET if foundry.failed(basis, runde) else None}
-
-    @app.post("/sitzungen/<int:sitzung_id>/chronik")
-    def chronik_anstossen(sitzung_id: int) -> Response:
-        if notes.session(runde, sitzung_id) is None:
-            abort(404)
-        jobs.start(
-            basis,
-            runde,
-            jobs.CHRONIK,
-            lambda: jobs.chronik(basis, runde, sitzung_id),
-            session_id=sitzung_id,
-        )
-        return redirect(url_for("protokoll", sitzung_id=sitzung_id))
-
-    def einrichtung_offen() -> bool:
-        # Die Einrichtung steht offen, solange Foundry fehlt — nicht nur beim ersten
-        # Aufruf. Wer sie nicht jetzt machen will, legt sie mit »Später« beiseite.
-        if instanz.onboarding_done(basis.database_path) or testwelt_aktiv():
-            return False
-        return not settings.effective(basis, runde).foundry_configured
-
-    @app.get("/")
-    def sitzungen() -> str | Response:
-        # Wer die Einrichtung nicht machen darf, wird auch nicht in sie geschickt.
-        if einrichtung_offen() and roles.ist_verwalter(request, basis.database_path):
-            return redirect(url_for("einrichtung"))
-        return render_template(
-            "sitzungen.html",
-            sitzungen=notes.sessions(runde),
-            heute=notes.today(),
-        )
-
-    @app.post("/")
-    def neue_sitzung() -> Response:
-        sitzung_id = notes.create_session(
-            runde,
-            played_on=request.form.get("played_on", ""),
-            title=request.form.get("title", ""),
-        )
-        return redirect(url_for("sitzung", sitzung_id=sitzung_id))
-
-    def sitzungsseite(
-        sitzung_id: int,
-        diktat_fehler: str | None = None,
-        transkript_fehler: str | None = None,
-    ) -> str:
-        daten = notes.session(runde, sitzung_id)
-        if daten is None:
-            abort(404)
-        return render_template(
-            "sitzung.html",
-            sitzung=daten,
-            aufnahmen=recordings.for_session(runde, sitzung_id),
-            sprecher=people.speakers(runde),
-            transkript=merge.conversation(runde, sitzung_id),
-            frist=recordings.RETENTION_TAGE,
-            diktat_fehler=diktat_fehler,
-            transkript_fehler=transkript_fehler,
-            **chronik_stand(sitzung_id),
-        )
-
-    def chronik_stand(sitzung_id: int) -> dict[str, object]:
-        return {
-            "chronik_job": jobs.latest(runde, jobs.CHRONIK, sitzung_id),
-            "chronik_laeuft": jobs.running(runde, jobs.CHRONIK),
-        }
-
-    @app.get("/sitzungen/<int:sitzung_id>")
-    def sitzung(sitzung_id: int) -> str:
-        return sitzungsseite(sitzung_id)
-
-    @app.post("/sitzungen/<int:sitzung_id>/szenen")
-    def neue_szene(sitzung_id: int) -> Response:
-        szene_id = notes.add_scene(runde, sitzung_id, title=request.form.get("title", ""))
-        if szene_id is None:
-            abort(404)
-        return redirect(url_for("sitzung", sitzung_id=sitzung_id, _anchor=f"szene-{szene_id}"))
-
-    @app.post("/szenen/<int:szene_id>/notizen")
-    def neue_notiz(szene_id: int) -> Response:
-        sitzung_id = notes.session_of_scene(runde, szene_id)
-        if sitzung_id is None:
-            abort(404)
-        notes.add_note(runde, szene_id, request.form.get("text", ""))
-        return redirect(url_for("sitzung", sitzung_id=sitzung_id, _anchor=f"szene-{szene_id}"))
-
-    @app.post("/sitzungen/<int:sitzung_id>/diktat")
-    def neues_diktat(sitzung_id: int) -> Response | tuple[str, int]:
-        if notes.session(runde, sitzung_id) is None:
-            abort(404)
-        try:
-            recordings.accept(basis, runde, sitzung_id, request.files.get("datei"))
-        except recordings.Rejected as fehler:
-            return sitzungsseite(sitzung_id, diktat_fehler=str(fehler)), 400
-        return redirect(url_for("sitzung", sitzung_id=sitzung_id, _anchor="diktat"))
-
-    @app.post("/aufnahmen/<int:aufnahme_id>/notiz")
-    def diktat_uebernehmen(aufnahme_id: int) -> Response:
-        aufnahme = recordings.get(runde, aufnahme_id)
-        if aufnahme is None or not aufnahme.text:
-            abort(404)
-        gewaehlt = request.form.get("scene_id", "")
-        if not gewaehlt.isdigit():
-            abort(404)
-        szene_id = int(gewaehlt)
-        if notes.session_of_scene(runde, szene_id) != aufnahme.session_id:
-            abort(404)
-        notes.add_note(runde, szene_id, aufnahme.text)
-        return redirect(
-            url_for("sitzung", sitzung_id=aufnahme.session_id, _anchor=f"szene-{szene_id}")
-        )
-
-    @app.post("/sitzungen/<int:sitzung_id>/transkript")
-    def transkript_uebernehmen(sitzung_id: int) -> Response | tuple[str, int]:
-        gewaehlt = request.form.get("scene_id", "")
-        if not gewaehlt.isdigit():
-            abort(404)
-        szene_id = int(gewaehlt)
-        if notes.session_of_scene(runde, szene_id) != sitzung_id:
-            abort(404)
-        try:
-            von = merge.marke_ms(request.form.get("von", ""))
-            bis = merge.marke_ms(request.form.get("bis", ""))
-        except ValueError as fehler:
-            return sitzungsseite(sitzung_id, transkript_fehler=str(fehler)), 400
-        abschnitt = merge.span(merge.conversation(runde, sitzung_id), von=von, bis=bis)
-        if not abschnitt:
-            return sitzungsseite(sitzung_id, transkript_fehler=merge.LEERE_SPANNE), 400
-        notes.add_note(runde, szene_id, merge.note_text(abschnitt))
-        return redirect(url_for("sitzung", sitzung_id=sitzung_id, _anchor=f"szene-{szene_id}"))
-
-    @app.errorhandler(413)
-    def zu_gross(_fehler: object) -> tuple[str, int]:
-        return render_template("zu_gross.html", grenze=recordings.MAX_BYTES // (1024 * 1024)), 413
-
-    @app.get("/protokolle")
-    def protokolle() -> str:
-        return render_template("protokolle.html", eintraege=protocol.entries(runde))
-
-    @app.get("/sitzungen/<int:sitzung_id>/protokoll")
-    def protokoll(sitzung_id: int) -> str:
-        daten = notes.session(runde, sitzung_id)
-        if daten is None:
-            abort(404)
-        return render_template(
-            "protokoll.html",
-            sitzung=daten,
-            protokoll=protocol.stored(runde, sitzung_id),
-            rueckblick=protocol.stored(runde, sitzung_id, RUECKBLICK),
-            **chronik_stand(sitzung_id),
-        )
-
-    @app.get("/suche")
-    def suche() -> str:
-        return render_template(
-            "suche.html",
-            ergebnis=search.find(runde, request.args.get("q", "")),
-        )
-
-    @app.get("/register")
-    def register_seite() -> str:
-        return render_template(
-            "register.html",
-            gruppen=register.overview(runde),
-            offene=len(register.pending(runde)),
-        )
-
-    @app.get("/register/vorschlaege")
-    def register_vorschlaege() -> str:
-        return render_template(
-            "register_vorschlaege.html",
-            vorschlaege=register.pending(runde),
-            feld=register.FELD,
-            name_feld=register.NAME_FELD,
-            satz_feld=register.SATZ_FELD,
-        )
-
-    @app.post("/register/vorschlaege")
-    def register_entscheiden() -> Response:
-        # Entschieden wird nur über Zeilen, die in der angezeigten Liste standen — ein
-        # Ja auf einen Eintrag, den niemand gesehen hat, wäre keine Bestätigung.
-        auswahl = {}
-        for eintrag in register.pending(runde):
-            wahl = request.form.get(register.FELD + str(eintrag.id), "").strip()
-            if wahl not in (register.JA, register.NEIN):
-                continue
-            auswahl[eintrag.id] = register.Entscheidung(
-                ja=wahl == register.JA,
-                name=request.form.get(register.NAME_FELD + str(eintrag.id), ""),
-                description=request.form.get(register.SATZ_FELD + str(eintrag.id), ""),
-            )
-        register.decide(runde, auswahl)
-        return redirect(url_for("register_vorschlaege"))
-
-    @app.get("/zuordnung")
-    def zuordnung() -> str:
-        return render_template(
-            "zuordnung.html",
-            uebersicht=people.overview(runde),
-            feld=people.FELD,
-        )
-
-    @app.post("/zuordnung")
-    def zuordnung_speichern() -> Response:
-        uebersicht = people.overview(runde)
-        bekannt = {spieler.id for spieler in uebersicht.spieler}
-        # Gespeichert wird nur, was in der angezeigten Liste stand: diese Tabelle sagt
-        # später, wessen Stimme wessen Absatz ist, und nimmt deshalb keinen Wert an, den
-        # niemand gesehen hat.
-        auswahl = {}
-        for person in uebersicht.personen:
-            gewaehlt = request.form.get(people.FELD + person.discord_user_id, "").strip()
-            auswahl[person.discord_user_id] = gewaehlt if gewaehlt in bekannt else ""
-        people.confirm(runde, auswahl)
-        return redirect(url_for("zuordnung"))
-
-    def felder(*, mit_modellen: bool = True) -> dict[str, object]:
+    def felder() -> dict[str, object]:
         aktuell = settings.effective(basis, runde)
         adresse = str(aktuell.ollama_url)
-        modelle, hinweis, erreichbar = _modelle(adresse) if mit_modellen else ((), "", True)
+        modelle, hinweis, erreichbar = _modelle(adresse)
         return {
-            "foundry_url": aktuell.foundry_url or "",
-            "foundry_user": aktuell.foundry_user or "",
             "bot_token_gesetzt": bool(aktuell.discord_bot_token),
-            "discord_recap_channel": aktuell.discord_recap_channel or "",
             "ollama_url": adresse,
             "ollama_eigen": adresse != settings.DEFAULT_OLLAMA_URL,
             "ollama_standard": settings.DEFAULT_OLLAMA_URL,
@@ -417,12 +88,12 @@ def create_app(config: Config | None = None, *, zeitplan: bool = False) -> Flask
         }
 
     def uebernehmen(namen: tuple[str, ...]) -> None:
-        """Der einzige Schreibweg für die gepflegten Werte — Formular wie Wizard.
+        """Der Schreibweg für die gepflegten Werte.
 
         Ein gar nicht abgesendetes Feld heißt »unverändert«: sonst nähme ein POST ohne
         dieses Feld der Runde still, was ihre Gilde über ``/setup`` in Discord gepflegt
-        hat. Ein abgesendetes leeres Feld heißt weiterhin »zurücknehmen« — daran hängen
-        »kein Zustellkanal« und »wieder das Ollama dieser Box«.
+        hat. Ein abgesendetes leeres Feld heißt weiterhin »zurücknehmen« — daran hängt
+        »wieder das Ollama dieser Box«.
 
         Beim Geheimnis heißt auch das leere Feld »unverändert«: es wird nie angezeigt,
         ein Formular kann es also gar nicht gefüllt zurückschicken.
@@ -472,46 +143,17 @@ def create_app(config: Config | None = None, *, zeitplan: bool = False) -> Flask
         instanz.save_admin_group(basis.database_path, gruppe)
         return redirect(url_for("einstellungen"))
 
-    @app.get("/einrichtung")
-    def einrichtung() -> Response:
-        return redirect(url_for("einrichtung_schritt", schritt=SCHRITTE[0][0]))
-
-    @app.get("/einrichtung/<schritt>")
-    def einrichtung_schritt(schritt: str) -> str:
-        if schritt not in SCHRITT_FELDER:
-            abort(404)
-        namen = [name for name, _ in SCHRITTE]
-        return render_template(
-            "einrichtung.html",
-            schritt=schritt,
-            nummer=namen.index(schritt) + 1,
-            anzahl=len(namen),
-            letzter=namen[-1] == schritt,
-            **felder(mit_modellen=schritt == "ollama"),
-        )
-
-    @app.post("/einrichtung/<schritt>")
-    def einrichtung_speichern(schritt: str) -> Response:
-        if schritt not in SCHRITT_FELDER:
-            abort(404)
-        tat = request.form.get("tat")
-        if tat == SPAETER:
-            instanz.finish_onboarding(basis.database_path)
-            return redirect(url_for("sitzungen"))
-        if tat != UEBERSPRINGEN:
-            uebernehmen(SCHRITT_FELDER[schritt])
-        namen = [name for name, _ in SCHRITTE]
-        naechster = namen.index(schritt) + 1
-        if naechster == len(namen):
-            instanz.finish_onboarding(basis.database_path)
-            return redirect(url_for("sitzungen"))
-        return redirect(url_for("einrichtung_schritt", schritt=namen[naechster]))
-
     # Die Statusseite ist in den Einstellungen aufgegangen; die Adresse steht in
     # Lesezeichen und alten Bändern, deshalb 301 statt 404.
     @app.get("/status")
     def status() -> Response:
         return redirect(url_for("einstellungen"), 301)
+
+    # Die Wurzel trug die Sitzungsliste; die ist mit #157 fort. Sie ist aber die Adresse,
+    # auf die der Proxy zeigt — 404 an der Haustür wäre eine schlechte Auskunft.
+    @app.get("/")
+    def start() -> Response:
+        return redirect(url_for("einstellungen"))
 
     # Test-Seam und Install-Gate der ServiceBay-Box (servicebay.healthcheck).
     @app.get("/healthz")

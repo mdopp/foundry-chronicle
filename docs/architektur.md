@@ -3,8 +3,8 @@
 Eine Instanz trägt mehrere **Runden** (#62/#63). Eine Runde ist der Mandant: Schlüssel nach
 außen ist die Discord-Gilde, Schlüssel nach innen die eigene Id. Jede runden-eigene Tabelle
 trägt `runde_id`; gelesen und geschrieben wird ausschließlich über `db.scoped(runde)`, das
-eine Abfrage ohne Runde zurückweist. Die Weboberfläche kennt noch keine Runden und arbeitet
-bis zu ihrer Abschaltung (#69) stillschweigend in der ersten.
+eine Abfrage ohne Runde zurückweist. Die Betreiber-Seite kennt keine Runden: sie zeigt nur
+noch, was der **Instanz** gehört (#157).
 
 Der Lebenszyklus einer Runde hängt an der Gilde (#68, `chronicle.lebenszyklus`): Beim
 Betreten sagt der Bot einmal, was er tut und **dass der Betreiber der Box alles lesen
@@ -160,11 +160,13 @@ passiert ist** — und Teile davon nacherzählen können.
 
 ## Was die Kanten nicht zeigen
 
-- Alle Web-Kästen — Notiz-Eingabe, Upload, Ansicht, Suche, Register — sind **eine**
-  schlanke, serverseitig gerenderte Oberfläche (#2), kein Frontend-Gerüst.
+- Was einmal Web-Kästen waren — Notiz-Eingabe, Upload, Ansicht, Suche, Register — sind
+  seit #157 Discord-Befehle. Übrig bleibt **eine** serverseitig gerenderte Seite: die
+  Betreiber-Seite mit Bot-Token, Ollama und der Verwaltungsgruppe.
 - **Die Haustür stellt die Plattform:** Subdomain hinter Authelia-Forward-Auth
-  (ServiceBay-ADR 0001). Die Oberfläche selbst kennt kein Login und keine Konten —
-  sie erzwingt nur den `Remote-User`-Header, sobald echte Inhalte drinstehen.
+  (ServiceBay-ADR 0001). Die Seite selbst kennt kein Login und keine Konten — sie
+  erzwingt nur den `Remote-User`-Header. Sie bleibt in Kraft, weil dort ein Geheimnis
+  liegt.
 - Die **Personen-Zuordnung** Discord ↔ Foundry entsteht einmalig: automatisch
   vorgeschlagen, vom Menschen bestätigt, danach im Speicher.
 - **Foundry ist eine harte Abhängigkeit.** Ist es beim Einrichten aus, bleibt das
