@@ -14,7 +14,18 @@ import types
 
 import pytest
 from conftest import runde as erste_runde
-from test_bot import TOKEN, FakeBot, FakeIntents, FakePCMAudio, FakePermissions, FakeSenke
+from test_bot import (
+    TOKEN,
+    FakeAntwort,
+    FakeBot,
+    FakeIntents,
+    FakePCMAudio,
+    FakePermissions,
+    FakeSelect,
+    FakeSelectOption,
+    FakeSenke,
+    FakeView,
+)
 from test_chronik import FakeHTTPException, FakeInputText, FakeModal
 
 from chronicle import consent, db, lebenszyklus, notes, people, register
@@ -57,32 +68,6 @@ class FakeButton:
         self.callback = None
 
 
-class FakeSelectOption:
-    def __init__(self, *, label="", value="", default=False, **rest):
-        self.label = label
-        self.value = value
-        self.default = default
-
-
-class FakeSelect:
-    def __init__(self, *, placeholder="", row=0, custom_id="", options=(), **rest):
-        self.placeholder = placeholder
-        self.row = row
-        self.custom_id = custom_id
-        self.options = list(options)
-        self.values: list[str] = []
-        self.callback = None
-
-
-class FakeView:
-    def __init__(self, *, timeout=None):
-        self.timeout = timeout
-        self.items: list = []
-
-    def add_item(self, teil):
-        self.items.append(teil)
-
-
 class FakeCtx:
     def __init__(self, *, guild_id=GILDE):
         self.guild_id = guild_id
@@ -100,22 +85,6 @@ class FakeCtx:
         self.embeds.append(embed)
         self.ansichten.append(view)
         self.fluechtig.append(ephemeral)
-
-
-class FakeAntwort:
-    def __init__(self):
-        self.bearbeitet: list[dict] = []
-        self.gesendet: list[str] = []
-
-    def is_done(self) -> bool:
-        # Ein Knopfklick schiebt nichts auf: die erste Antwort ist noch frei.
-        return bool(self.gesendet or self.bearbeitet)
-
-    async def edit_message(self, *, content=None, embed=None, view=None):
-        self.bearbeitet.append({"content": content, "embed": embed, "view": view})
-
-    async def send_message(self, text, **rest):
-        self.gesendet.append(text)
 
 
 class FakeInteraction:
@@ -780,6 +749,93 @@ def test_ein_altes_zuordnungsmenue_ordnet_nicht_in_die_frische_runde(stelle, bot
 
     assert interaktion.response.bearbeitet[0]["content"] == chronik.VERALTET
     assert people.overview(frisch).personen == ()
+
+
+# -- Zuordnen beim Betreten des Sprachkanals ----------------------------------------------
+
+
+def test_namensgleichheit_ordnet_beim_betreten_ohne_rueckfrage_zu(stelle):
+    """Der eine Fall aus #76, der ohne Frage auskommt — und der gesagt wird."""
+    _config, unsere = stelle
+    sitzung = sitzung_mit_notiz(unsere)
+    aufgenommen(unsere, sitzung, (MIRA, "Mira"))
+    welt_ablegen(unsere)
+
+    stand = erinnern.betreten(unsere, MIRA)
+
+    assert stand.automatisch.id == "u-mira"
+    assert stand.spieler == ()
+    assert stand.vermerk == erinnern.BETRETEN_VERMERK.format(name="Mira", spieler="Mira")
+    assert people.speakers(unsere)[MIRA].confirmed.name == "Mira"
+
+
+def test_wer_wie_seine_figur_heisst_wird_beim_betreten_ebenso_zugeordnet(stelle):
+    _config, unsere = stelle
+    sitzung = sitzung_mit_notiz(unsere)
+    aufgenommen(unsere, sitzung, (BROK, "Aelin Sturmwind"))
+    welt_ablegen(unsere)
+
+    assert erinnern.betreten(unsere, BROK).automatisch.id == "u-mira"
+
+
+def test_wer_anders_heisst_wird_gefragt_statt_geraten(stelle):
+    """Gegenprobe: ohne Namensgleichheit entsteht keine Zuordnung, sondern eine Frage."""
+    _config, unsere = stelle
+    sitzung = sitzung_mit_notiz(unsere)
+    aufgenommen(unsere, sitzung, (BROK, "Brok"))
+    welt_ablegen(unsere)
+
+    stand = erinnern.betreten(unsere, BROK)
+
+    assert stand.automatisch is None
+    assert [wer.name for wer in stand.spieler] == ["Mira"]
+    assert people.speakers(unsere)[BROK].confirmed is None
+
+
+def test_ein_gast_wird_nicht_auf_ein_vergebenes_konto_gesetzt(stelle):
+    """Wer gerade hereinkommt, ist nicht unbedingt jemand, den wir kennen.
+
+    Der Gast heißt hier sogar wie die Spielerin — und wird trotzdem nur gefragt: ihr Konto
+    ist vergeben und steht deshalb gar nicht mehr zur Wahl.
+    """
+    _config, unsere = stelle
+    sitzung = sitzung_mit_notiz(unsere)
+    aufgenommen(unsere, sitzung, (MIRA, "Mira"), ("d-gast", "Mira"))
+    welt_ablegen(unsere)
+    people.confirm(unsere, {MIRA: "u-mira"})
+
+    stand = erinnern.betreten(unsere, "d-gast")
+
+    assert stand.automatisch is None
+    assert people.speakers(unsere)["d-gast"].confirmed is None
+    assert people.speakers(unsere)[MIRA].confirmed.id == "u-mira"
+
+
+def test_wer_bestaetigt_hat_wird_beim_betreten_nicht_erneut_gefragt(stelle):
+    _config, unsere = stelle
+    sitzung = sitzung_mit_notiz(unsere)
+    aufgenommen(unsere, sitzung, (BROK, "Brok"))
+    welt_ablegen(unsere)
+    people.confirm(unsere, {BROK: "u-mira"})
+
+    assert erinnern.betreten(unsere, BROK) == erinnern.Betreten()
+
+
+def test_ohne_foundry_spieler_wird_beim_betreten_nichts_gefragt(stelle):
+    """Eine Frage mit leerem Menü ist keine — dann bleibt es beim Discord-Namen."""
+    _config, unsere = stelle
+    sitzung = sitzung_mit_notiz(unsere)
+    aufgenommen(unsere, sitzung, (MIRA, "Mira"))
+
+    assert erinnern.betreten(unsere, MIRA) == erinnern.Betreten()
+
+
+def test_wen_wir_nicht_aufgenommen_haben_wird_nicht_zugeordnet(stelle):
+    _config, unsere = stelle
+    sitzung_mit_notiz(unsere)
+    welt_ablegen(unsere)
+
+    assert erinnern.betreten(unsere, "d-fremd") == erinnern.Betreten()
 
 
 def test_die_zuordnung_der_fremden_runde_bleibt_unberuehrt(stelle, bot):

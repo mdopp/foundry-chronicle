@@ -57,6 +57,7 @@ BEFEHL_SETUP = "setup"
 KENNUNG_SCHILD = "eintrag"
 KENNUNG_ENTSCHEIDUNG = "entscheidung"
 KENNUNG_ZUORDNUNG = "zuordnung"
+KENNUNG_BETRETEN = "betreten"
 KENNUNG_KANAL = "kanal"
 KENNUNG_QUELLE = "quelle"
 KENNUNG_LOESCHEN = "loeschen"
@@ -368,6 +369,16 @@ class Sprachverbindung:
             if not wer.bot
         )
 
+    def anwesende(self) -> tuple:
+        """Dieselben, aber als Discord-Mitglieder — nur an sie ist eine Frage zustellbar.
+
+        ``mitglieder`` gibt Kennung und Name her und sonst nichts; das ist die Form, in der
+        ``recorder`` rechnet, und sie kennt Discord mit Absicht nicht. Wer beim Betreten
+        gefragt werden soll, wird aber angeschrieben, und dafür braucht es das Mitglied
+        selbst.
+        """
+        return tuple(wer for wer in self._kanal.members if not wer.bot)
+
     def im_kanal(self) -> bool:
         """Ob der Bot noch dort sitzt, wo angesagt und eingewilligt wurde.
 
@@ -562,6 +573,10 @@ class _Lauf:
         # Wächter des leeren Kanals getappt ist. An der Aufnahme allein erführe die
         # **zweite** Zurückgebliebene nichts, weil für die erste schon vermerkt wäre.
         self.allein: tuple[Aufnahme, set[str]] | None = None
+        # Und ebenso, wen diese Aufnahme beim Betreten schon zugeordnet oder gefragt hat.
+        # Wieder an der Aufnahme und nicht allein an der Person: an ihr hinge der Vermerk
+        # über das Ende hinaus und verschluckte die Frage der nächsten Aufnahme.
+        self.gefragt: tuple[Aufnahme, set[str]] | None = None
 
 
 async def _mitschnitt_beenden(lauf: _Lauf, runde: Runde | None = None) -> tuple[str, ...]:
@@ -582,6 +597,7 @@ async def _mitschnitt_beenden(lauf: _Lauf, runde: Runde | None = None) -> tuple[
     # Der Vermerk ist eine Liste von Discord-Kennungen; ohne diese Zeile hielte der Prozess
     # sie nach dem Ende der Aufnahme weiter vor, ohne dass ihn noch jemand liest.
     allein, lauf.allein = lauf.allein, None
+    gefragt, lauf.gefragt = lauf.gefragt, None
     _leerlauf_absagen(lauf)
     try:
         return tuple(await recorder.stoppen(stimme, aufnahme))
@@ -593,7 +609,7 @@ async def _mitschnitt_beenden(lauf: _Lauf, runde: Runde | None = None) -> tuple[
         # hieße, bei bleibendem Fehler alle neunzig Sekunden denselben Fehlschlag in den
         # Thread zu schreiben. Also sagt ``LEER_GESCHEITERT`` es stattdessen — von selbst
         # sieht erst wieder nach, wen ``on_voice_state_update`` neu bestellt.
-        lauf.aufnahme, lauf.stimme, lauf.allein = aufnahme, stimme, allein
+        lauf.aufnahme, lauf.stimme, lauf.allein, lauf.gefragt = aufnahme, stimme, allein, gefragt
         raise
 
 
@@ -744,6 +760,63 @@ async def _allein_melden(bot, lauf: _Lauf, zurueck: consent.Member) -> None:
         logger.exception("Der Mitschnitt ohne Thread ließ sich nicht beenden")
         return
     logger.info("Mitschnitt ohne Thread beendet: %s", " ".join(meldungen))
+
+
+async def _zuordnen_oder_fragen(bot, aufnahme: Aufnahme, mitglied, kennung: str) -> None:
+    """Der eine Weg: entweder steht die Zuordnung von selbst, oder es wird gefragt.
+
+    Gefragt wird **die betroffene Person** und nicht die Runde — wer wer ist, entscheidet
+    man über sich selbst; deshalb geht die Frage ins Zwiegespräch und nicht in den Thread.
+    Der Vermerk über eine von selbst entstandene Zuordnung geht umgekehrt in den Thread:
+    eine Zuordnung, die niemand sieht, ist die stillschweigend übernommene Vermutung, gegen
+    die es die Bestätigung überhaupt gibt.
+    """
+    # Die Aufnahme hält ihre Runde seit Stunden — ist sie inzwischen gelöscht und ihre
+    # Kennung neu vergeben, schriebe die Zuordnung in eine fremde Kampagne.
+    gemeint = lebenszyklus.dieselbe(aufnahme.runde)
+    if gemeint is None:
+        return
+    stand = erinnern.betreten(gemeint, kennung)
+    if stand.person is None:
+        return
+    if stand.automatisch is not None:
+        logger.info("Beim Betreten von selbst zugeordnet — der Vermerk geht in den Thread.")
+        await _in_den_thread(bot, aufnahme, stand.vermerk)
+        return
+    await _zustellen(
+        mitglied.send,
+        erinnern.BETRETEN_FRAGE.format(kanal=aufnahme.kanal.name),
+        zuletzt={"view": _betretensansicht(gemeint, stand)},
+    )
+
+
+async def _zuordnung_klaeren(bot, lauf: _Lauf, aufnahme: Aufnahme, mitglied) -> None:
+    """Wer den Sprachkanal betritt, wird zugeordnet oder gefragt — je Aufnahme genau einmal.
+
+    Der Vermerk steht **vor** dem ersten ``await``: py-cord stellt jedes Sprachereignis als
+    eigenen Task zu, und zwei Ereignisse derselben Person im selben Schwung fänden hinter
+    dem ``await`` beide nichts vor — die Frage stünde zweimal im Zwiegespräch. Zurückgenommen
+    wird er anders als beim Alleinsein **nicht**: geschlossene Direktnachrichten sind kein
+    Zucken, sondern ein Dauerzustand, und bei jedem Stummschalten neu anzuklopfen wäre die
+    schlechtere Zumutung. Keine Antwort ist auch eine — dann bleibt die Spur unter dem
+    Discord-Namen, und das Protokoll sagt es so.
+    """
+    kennung = str(mitglied.id)
+    schon = lauf.gefragt
+    vermerkt = schon[1] if schon is not None and schon[0] is aufnahme else set()
+    if kennung in vermerkt:
+        return
+    vermerkt.add(kennung)
+    lauf.gefragt = (aufnahme, vermerkt)
+    try:
+        await _zuordnen_oder_fragen(bot, aufnahme, mitglied, kennung)
+    except Exception as fehler:  # noqa: BLE001
+        # Ohne Traceback und ohne Namen: der häufigste Grund ist ein Konto, das keine
+        # Direktnachrichten annimmt, und das ist kein Fehlschlag, sondern eine Antwort.
+        logger.warning(
+            "Die Zuordnung beim Betreten kam nicht zustande (%s) — es bleibt beim Discord-Namen.",
+            type(fehler).__name__,
+        )
 
 
 async def _beenden_und_sagen(
@@ -1568,6 +1641,54 @@ def _zuordnungsansicht(config: Config, runde, stand: erinnern.Zuordnung):
     return Zuordnungsansicht()
 
 
+def _betretensansicht(runde, stand: erinnern.Betreten):
+    """Ein Menü für genau eine Person, im Zwiegespräch: wer bist du in dieser Runde?
+
+    Die einzige Ansicht, die nicht in einer Gilde steht — Discord nennt im Zwiegespräch
+    keine. ``_dieselbe`` liefe deshalb hier immer ins Leere; geprüft wird stattdessen die
+    Runde gegen ihren eigenen Stand, wie es der Lauf tut, der seine Runde schon hält.
+
+    Und geantwortet wird nur über sich selbst: das Zwiegespräch trägt die Frage zwar
+    ohnehin nur an eine Person, aber woran die Zuordnung hängt, steht in der Kennung der
+    Ansicht — nicht darin, wer die Nachricht gerade offen hat.
+    """
+    discord = _discord()
+    person = stand.person
+
+    gebaut = discord.ui.Select(
+        placeholder=erinnern.gekuerzt(
+            erinnern.ZUORDNUNG_WAEHLEN.format(name=person.discord_name),
+            erinnern.PLATZHALTER_GRENZE,
+        ),
+        custom_id=f"{KENNUNG_BETRETEN}:{person.discord_user_id}",
+        options=[
+            discord.SelectOption(label=schrift, value=wert, default=vorgewaehlt)
+            for schrift, wert, vorgewaehlt in erinnern.wahlmoeglichkeiten(person, stand.spieler)
+        ],
+    )
+
+    @_geklickt
+    async def gewaehlt(interaction) -> None:
+        if _wer(interaction) != person.discord_user_id:
+            await interaction.response.edit_message(content=erinnern.NUR_SELBST, view=None)
+            return
+        gemeint = lebenszyklus.dieselbe(runde)
+        if gemeint is None:
+            await interaction.response.edit_message(content=chronik.VERALTET, view=None)
+            return
+        satz = erinnern.zuordnen(gemeint, person.discord_user_id, gebaut.values[0])
+        await interaction.response.edit_message(content=satz, view=None)
+
+    gebaut.callback = gewaehlt
+
+    class Betretensansicht(discord.ui.View):
+        def __init__(self) -> None:
+            super().__init__(timeout=erinnern.FRIST)
+            self.add_item(gebaut)
+
+    return Betretensansicht()
+
+
 def _feld(discord, beschreibung: str):
     """Ein freiwilliges Textfeld eines Slash-Befehls — als Vorgabewert, nicht als Annotation.
 
@@ -1626,6 +1747,11 @@ def baue(config: Config):
             raise
         lauf.stimme = stimme
         await _zustellen(ctx.respond, recorder.GESTARTET, ephemeral=True)
+        # Nach der Antwort und nicht davor: die Frage geht an jede anwesende Person
+        # einzeln, und wer den Befehl gab, soll nicht erst danach erfahren, dass
+        # mitgeschnitten wird. Scheitern kann sie hier nicht mehr — sie fängt selbst.
+        for wer in stimme.anwesende():
+            await _zuordnung_klaeren(bot, lauf, lauf.aufnahme, wer)
 
     @gruppe.command(name="stop", description="Aufnahme beenden und die Spuren einreihen")
     @antwortet
@@ -1965,12 +2091,16 @@ def baue(config: Config):
         # Beides zugleich heißt: derselbe Kanal, nur stummgeschaltet oder verschoben.
         if gekommen and not gegangen:
             _leerlauf_absagen(lauf)
-            await recorder.nachzuegler(
+            protokolliert = await recorder.nachzuegler(
                 config,
                 lauf.stimme,
                 aufnahme,
                 consent.Member(id=str(member.id), name=member.display_name),
             )
+            # Nur wenn die Ansage wirklich gehört wurde: ohne Eintrag steht diese Person
+            # in keinem Einwilligungsprotokoll, und ohne das gibt es nichts zuzuordnen.
+            if protokolliert is not None:
+                await _zuordnung_klaeren(bot, lauf, aufnahme, member)
         elif gegangen and not gekommen:
             verblieben = _menschen(lauf)
             if not verblieben:

@@ -167,8 +167,14 @@ passiert ist** — und Teile davon nacherzählen können.
   (ServiceBay-ADR 0001). Die Seite selbst kennt kein Login und keine Konten — sie
   erzwingt nur den `Remote-User`-Header. Sie bleibt in Kraft, weil dort ein Geheimnis
   liegt.
-- Die **Personen-Zuordnung** Discord ↔ Foundry entsteht einmalig: automatisch
-  vorgeschlagen, vom Menschen bestätigt, danach im Speicher.
+- Die **Personen-Zuordnung** Discord ↔ Foundry entsteht einmalig, und zwar **beim
+  Betreten des Sprachkanals** (#76), damit jede Äußerung von Anfang an einer Figur
+  gehört. Heißt jemand wie ein Foundry-Spieler oder wie dessen Figur, wird sie ohne
+  Rückfrage gesetzt und im Thread der Sitzung vermerkt; sonst wird **die betroffene
+  Person selbst** im Zwiegespräch gefragt — wer wer ist, entscheidet man über sich
+  selbst. Keine Antwort ist auch eine: die Spur bleibt unter dem Discord-Namen, und das
+  Protokoll sagt es so. Ein *Vorschlag* wird dabei nie zur Bestätigung; wo es etwas zu
+  raten gäbe, wird gefragt.
 - **Foundry ist eine harte Abhängigkeit.** Ist es beim Einrichten aus, bleibt das
   System leer — das braucht eine verständliche Meldung, keine leere Liste. Die
   Fakten werden deshalb zwischengespeichert, nicht bei jedem Aufruf geholt.

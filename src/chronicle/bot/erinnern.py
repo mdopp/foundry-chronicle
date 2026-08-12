@@ -135,6 +135,30 @@ ZU_VIELE_SPIELER = (
 NICHT_AUFGENOMMEN = "Diese Person habe ich nicht aufgenommen — ich habe nichts geändert."
 SPIELER_WEG = "Diesen Foundry-Spieler kenne ich nicht mehr — ich habe nichts geändert."
 
+# Gefragt wird beim Betreten des Sprachkanals, damit jede Äußerung von Anfang an einer
+# Figur gehört (#76). Der Satz geht ins Zwiegespräch und nennt deshalb den Sprachkanal:
+# in einer Direktnachricht steht sonst nirgends, welche Runde gemeint ist.
+BETRETEN_FRAGE = (
+    "Ich schneide gerade in **#{kanal}** mit und weiß noch nicht, wer du dort in Foundry "
+    "bist. Wähl dich aus — dann steht dein Name später an deiner Spur statt deines "
+    "Discord-Namens. Antwortest du nicht, bleibt es beim Discord-Namen; das Protokoll "
+    "sagt es dann auch so. Ändern kannst du es jederzeit mit `/zuordnung`."
+)
+
+# Und der eine Fall, in dem nicht gefragt wird: der Name ist derselbe. Gesagt wird es
+# trotzdem — eine Zuordnung, die von selbst entstanden ist und die niemand sieht, ist
+# genau die stillschweigend übernommene Vermutung, gegen die es die Bestätigung gibt.
+BETRETEN_VERMERK = (
+    "**{name}** heißt hier wie **{spieler}** in eurem Foundry — ich habe beide verbunden, "
+    "damit die Spur von Anfang an den richtigen Namen trägt. Stimmt das nicht, ändert "
+    "`/zuordnung` es."
+)
+
+NUR_SELBST = (
+    "Diese Frage galt jemand anderem — wer wer ist, entscheidet jede und jeder über sich "
+    "selbst. Ich habe nichts geändert."
+)
+
 
 @dataclass(frozen=True)
 class Antwort:
@@ -155,6 +179,20 @@ class Zuordnung:
     antwort: Antwort
     personen: tuple[people.Person, ...] = ()
     spieler: tuple[people.Spieler, ...] = ()
+
+
+@dataclass(frozen=True)
+class Betreten:
+    """Was beim Betreten des Sprachkanals mit **einer** Person zu geschehen ist.
+
+    Leer heißt: nichts. Mit ``automatisch`` ist sie schon zugeordnet und ``vermerk`` sagt
+    es der Runde; sonst steht die Frage aus und ``spieler`` sind die Zeilen ihres Menüs.
+    """
+
+    person: people.Person | None = None
+    automatisch: people.Spieler | None = None
+    spieler: tuple[people.Spieler, ...] = ()
+    vermerk: str = ""
 
 
 def gekuerzt(text: str, grenze: int) -> str:
@@ -354,6 +392,33 @@ def wahlmoeglichkeiten(
         for eintrag in (bevorzugt + weitere)[: OPTIONEN_GRENZE - 1]
     )
     return tuple(zeilen)
+
+
+def betreten(runde: Runde, discord_user_id: str) -> Betreten:
+    """Wer den Sprachkanal betritt: schon zugeordnet, gleich zugeordnet oder zu fragen.
+
+    Die Namensgleichheit ist der eine Fall, der ohne Rückfrage auskommt (#76) — und sie
+    ist etwas anderes als ein Vorschlag: ``people.suggest`` schweigt, sobald zwei Konten
+    ähnlich nah liegen, und ein bereits vergebenes steht ohnehin nicht mehr zur Wahl. Wo
+    es also etwas zu raten gäbe, wird nicht geraten, sondern gefragt. Wer gerade
+    hereinkommt, ist nicht unbedingt jemand, den wir kennen: ein Gast trägt keinen dieser
+    Namen und wird deshalb gefragt wie jeder andere Unbekannte.
+
+    Ohne Foundry-Stand steht nichts zur Wahl. Dann wird auch nicht gefragt — eine Frage
+    mit einem leeren Menü ist keine.
+    """
+    stand = people.overview(runde)
+    person = next((wer for wer in stand.personen if wer.discord_user_id == discord_user_id), None)
+    if person is None or person.confirmed is not None or not stand.spieler:
+        return Betreten()
+    if person.suggestion is None:
+        return Betreten(person=person, spieler=stand.spieler)
+    people.confirm(runde, {discord_user_id: person.suggestion.id})
+    return Betreten(
+        person=person,
+        automatisch=person.suggestion,
+        vermerk=BETRETEN_VERMERK.format(name=person.discord_name, spieler=person.suggestion.name),
+    )
 
 
 def zuordnen(runde: Runde, discord_user_id: str, foundry_user_id: str) -> str:

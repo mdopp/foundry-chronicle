@@ -106,10 +106,19 @@ def _aehnlich(links: str, rechts: str) -> float:
     return SequenceMatcher(None, links.casefold().strip(), rechts.casefold().strip()).ratio()
 
 
+def _naehe(name: str, kandidat: Spieler) -> float:
+    """Wie nah ein Discord-Name diesem Spieler kommt — er selbst oder eine seiner Figuren.
+
+    Beides zählt, weil beides vorkommt: die einen heißen in Discord wie ihr Foundry-Konto,
+    die anderen wie die Figur, die sie spielen.
+    """
+    return max(_aehnlich(name, wert) for wert in (kandidat.name, *kandidat.characters))
+
+
 def suggest(name: str, kandidaten: Sequence[Spieler]) -> Spieler | None:
     """Der eine naheliegende Foundry-Spieler zu einem Discord-Namen — oder keiner."""
     bewertet = sorted(
-        ((_aehnlich(name, k.name), k) for k in kandidaten),
+        ((_naehe(name, k), k) for k in kandidaten),
         key=lambda paar: paar[0],
         reverse=True,
     )
