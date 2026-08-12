@@ -106,6 +106,33 @@ def test_der_aufnahme_bot_laeuft_als_zweiter_container(manifest: dict) -> None:
     assert "ports" not in container["bot"]
 
 
+def test_die_karte_haengt_am_webdienst(manifest: dict) -> None:
+    # Verschriftet wird im nächtlichen Lauf, und der hängt im Webdienst. Der Bot nimmt
+    # nur auf — ihm die geteilte Karte zuzuweisen, nähme sie jemandem weg, der sie
+    # rechnet.
+    container = {eintrag["name"]: eintrag for eintrag in manifest["spec"]["containers"]}
+    assert container["chronik"]["resources"]["limits"]["nvidia.com/gpu"] == "1"
+    assert "resources" not in container["bot"]
+
+
+def test_selinux_freigabe_nur_fuer_den_container_mit_der_karte(manifest: dict) -> None:
+    # Ohne sie sieht der Container die Geräte, aber NVML scheitert auf rootless FCoS mit
+    # »Insufficient Permissions«. Sie ist die zweite Hälfte der Durchreichung — und
+    # gehört genau an den einen Container, nicht an den Pod.
+    annotationen = manifest["metadata"]["annotations"]
+    assert annotationen["io.podman.annotations.label/chronik"] == "disable"
+    assert "io.podman.annotations.label/bot" not in annotationen
+
+
+def test_das_geraet_wird_nicht_erzwungen(manifest: dict) -> None:
+    # Der Rückfall auf die CPU ist der Rettungsweg, wenn die geteilten 16 GB gerade nicht
+    # reichen (#84). Er trägt nur, solange das Gerät nicht aus der Umgebung festgenagelt
+    # ist — ein erzwungenes ``cuda`` macht aus einem langsamen Lauf einen gescheiterten.
+    for container in manifest["spec"]["containers"]:
+        umgebung = {eintrag["name"] for eintrag in container["env"]}
+        assert "CHRONICLE_WHISPER_DEVICE" not in umgebung
+
+
 def test_beide_container_teilen_dasselbe_aufnahmeverzeichnis(manifest: dict) -> None:
     for eintrag in manifest["spec"]["containers"]:
         umgebung = {wert["name"]: wert["value"] for wert in eintrag["env"]}
