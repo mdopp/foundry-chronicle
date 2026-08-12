@@ -12,13 +12,18 @@ Vier Schritte, alle nötig, in dieser Reihenfolge:
 Es gibt keinen API-Token: der Zugang ist Benutzer und Passwort eines echten Kontos.
 Adresse und Benutzer kommen aus der Konfiguration, **das Passwort als Argument** — es wird
 nirgends gespeichert und lebt nur im Arbeitsspeicher (``chronicle.zugang``).
+
+``fetch_world`` fragt einmal und legt auf. ``verbindung`` macht denselben Handschlag und
+lässt die Leitung offen, damit ein Aufrufer hören kann, was der Server von sich aus
+schickt — was das ist, weiß hier noch niemand (#146).
 """
 
 from __future__ import annotations
 
 import logging
 import threading
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterator, Mapping
+from contextlib import contextmanager
 
 import requests
 import socketio
@@ -29,6 +34,9 @@ logger = logging.getLogger(__name__)
 
 JOIN_PATH = "/join"
 SESSION_COOKIE = "session"
+
+# python-socketio nimmt ``*`` als Handler für alles, wofür kein eigener registriert ist.
+AUFFANG = "*"
 DEFAULT_TIMEOUT = 120.0
 
 
@@ -104,10 +112,35 @@ class FoundryClient:
     def fetch_world(self) -> tuple[str, Mapping]:
         logger.info("Foundry-Abgleich: %s als %s", self._base, self._config.foundry_user)
         http = self._http_factory()
+        user_id = self._handschlag(http)
+        socket = self._angemeldet(http, user_id)
+        try:
+            return user_id, self._call(socket, "world")
+        finally:
+            socket.disconnect()
+
+    @contextmanager
+    def verbindung(self, *, mithoeren: Callable[..., None] | None = None) -> Iterator:
+        """Dieselbe angemeldete Leitung, aber offen — der Aufrufer hört zu, statt zu fragen.
+
+        ``mithoeren`` wird **vor** dem Verbinden als Auffanghandler gesetzt; danach
+        gesetzt entginge ihm, was der Server gleich nach dem Verbinden schickt. Was
+        socket.io selbst auslöst — ``connect``, ``disconnect``, ``connect_error`` —
+        erreicht ihn nicht, das sind reservierte Ereignisse der Bibliothek.
+        """
+        logger.info("Foundry-Leitung: %s als %s", self._base, self._config.foundry_user)
+        http = self._http_factory()
+        socket = self._angemeldet(http, self._handschlag(http), mithoeren=mithoeren)
+        try:
+            yield socket
+        finally:
+            socket.disconnect()
+
+    def _handschlag(self, http) -> str:
         self._request(http, "GET", JOIN_PATH)
         user_id = self._user_id(self._join_data(http))
         self._login(http, user_id)
-        return user_id, self._world(http, user_id)
+        return user_id
 
     def _request(self, http, method: str, path: str, **kwargs):
         try:
@@ -124,10 +157,12 @@ class FoundryClient:
     def _cookie_header(self, http) -> str:
         return "; ".join(f"{name}={wert}" for name, wert in http.cookies.items())
 
-    def _connect(self, http, *, session_id: str | None = None, on_session=None):
+    def _connect(self, http, *, session_id: str | None = None, on_session=None, mithoeren=None):
         socket = self._socket_factory()
         if on_session is not None:
             socket.on(SESSION_COOKIE, on_session)
+        if mithoeren is not None:
+            socket.on(AUFFANG, mithoeren)
         url = self._base if session_id is None else f"{self._base}?session={session_id}"
         try:
             socket.connect(
@@ -183,17 +218,24 @@ class FoundryClient:
         if not isinstance(rumpf, Mapping) or rumpf.get("status") == "failed" or rumpf.get("error"):
             raise FoundryLoginFailed("Foundry hat die Anmeldung abgelehnt")
 
-    def _world(self, http, user_id: str) -> Mapping:
+    def _angemeldet(self, http, user_id: str, *, mithoeren=None):
         angemeldet = threading.Event()
         sitzung: dict = {}
 
         def on_session(payload=None) -> None:
+            # ``session`` hat einen eigenen Handler und käme beim Auffanghandler sonst nie
+            # an — wer mithört, soll aber das erste Ereignis der Leitung auch sehen.
+            if mithoeren is not None:
+                mithoeren(SESSION_COOKIE, payload)
             if isinstance(payload, Mapping):
                 sitzung.update(payload)
             angemeldet.set()
 
         socket = self._connect(
-            http, session_id=http.cookies.get(SESSION_COOKIE), on_session=on_session
+            http,
+            session_id=http.cookies.get(SESSION_COOKIE),
+            on_session=on_session,
+            mithoeren=mithoeren,
         )
         try:
             if not angemeldet.wait(self._timeout):
@@ -202,6 +244,7 @@ class FoundryClient:
                 raise FoundryLoginFailed(
                     "Die Sitzung wurde nicht an den erwarteten Benutzer gebunden"
                 )
-            return self._call(socket, "world")
-        finally:
+        except FoundryError:
             socket.disconnect()
+            raise
+        return socket
