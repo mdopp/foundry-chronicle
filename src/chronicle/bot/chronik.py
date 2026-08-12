@@ -64,6 +64,14 @@ NUR_IM_THREAD = (
     "weiterschreiben."
 )
 
+# Was der Abschluss sagt, wenn wirklich keine Sitzung offen ist. Nur dann ist der Rat zu
+# `/chronik start` richtig: steht eine, legte er eine zweite an, und die Aufnahmen der
+# ersten blieben liegen (#156).
+KEINE_SITZUNG = (
+    "Hier läuft gerade keine Sitzung, ich habe also nichts abzuschließen. "
+    "`/chronik start` beginnt eine."
+)
+
 KEIN_THREAD = (
     "Ich darf in diesem Kanal keinen Thread anlegen, und eine halbe Sitzung lege ich nicht "
     "an. Gib mir das Recht dazu oder ruf mich in einem Kanal, in dem ich es habe."
@@ -99,8 +107,19 @@ NICHT_ABGELEGT = (
 )
 
 FERTIG = (
-    "Ich schließe die Sitzung ab: die Zahlen aus Foundry holen, die Aufnahmen verschriften, "
-    "die Chronik schreiben. Das dauert seine Zeit — ich melde mich hier, wenn sie steht."
+    "Die Zahlen aus Foundry holen, die Aufnahmen verschriften, die Chronik schreiben — das "
+    "dauert seine Zeit; ich melde mich hier, wenn sie steht."
+)
+
+# Welche Sitzung gemeint ist und wo ihre Chronik erscheint, gehört seit #156 in die
+# Antwort: abgeschlossen wird auch aus dem Sprachkanal, und dort sieht man beides nicht.
+SCHLIESST = "Ich schließe **{sitzung}** ab — die Chronik kommt in {thread}."
+
+# Sitzungen aus der Weboberfläche haben keinen Thread. Das ist kein Fehlschlag: die
+# Chronik entsteht trotzdem, sie wird nur nirgends angehängt.
+SCHLIESST_OHNE_THREAD = (
+    "Ich schließe **{sitzung}** ab — einen Thread hat sie nicht, die Chronik wird also "
+    "nur abgelegt."
 )
 
 LAEUFT_SCHON = "Ich bin schon dabei — ich melde mich hier, wenn die Chronik steht."
@@ -251,6 +270,40 @@ def sitzung_verlangen(runde: Runde, thread_id: str) -> int:
     if sitzung is None:
         raise ChronikFehler(NUR_IM_THREAD)
     return sitzung
+
+
+def laufende_sitzung(runde: Runde) -> int:
+    """Die Sitzung, die der Abschluss meint — dieselbe Auskunft, die die Aufnahme nimmt.
+
+    Nicht über den Thread: nach ``/aufnahme stop`` steht man im Sprachkanal, und ein
+    Abschluss, der dort abwiese, riete zu einer zweiten Sitzung — die Aufnahmen der ersten
+    blieben liegen und die Chronik entstünde für die falsche (#156). Je Runde ist genau
+    eine offen, also ist die Auskunft eindeutig.
+    """
+    sitzung = notes.latest_session(runde)
+    if sitzung is None:
+        raise ChronikFehler(KEINE_SITZUNG)
+    return sitzung.id
+
+
+def sitzungsname(sitzung: notes.Session) -> str:
+    """Wie eine Sitzung in einer Antwort heißt — ihr Titel, sonst ihr Abend."""
+    return (sitzung.title or "").strip() or f"Sitzung vom {sitzung.played_on}"
+
+
+def abschlussmeldung(runde: Runde, session_id: int) -> str:
+    """Was der Abschluss antwortet: welche Sitzung, wohin die Chronik, wie lange es dauert."""
+    sitzung = notes.session(runde, session_id)
+    if sitzung is None:
+        return FERTIG
+    name = sitzungsname(sitzung)
+    thread = thread_der_sitzung(runde, session_id)
+    kopf = (
+        SCHLIESST.format(sitzung=name, thread=f"<#{thread}>")
+        if thread
+        else SCHLIESST_OHNE_THREAD.format(sitzung=name)
+    )
+    return f"{kopf} {FERTIG}"
 
 
 def threadname(titel: str) -> str:
@@ -519,4 +572,4 @@ def abschluss_starten(
         _mit_meldung(lambda: jobs.abschluss(config, runde, session_id, passwort=passwort), melden),
         session_id=session_id,
     )
-    return FERTIG if auftrag is not None else jobs.BELEGT
+    return abschlussmeldung(runde, session_id) if auftrag is not None else jobs.BELEGT

@@ -864,6 +864,14 @@ def abschluss_fahren(bot, unsere, thread, *, passwort=PASSWORT):
     return ctx, interaktion
 
 
+def erwartete_meldung(unsere, thread):
+    """Was der Abschluss antwortet — samt Namen der Sitzung und Verweis auf ihren Thread."""
+    sitzung = notes.session(unsere, notes.session_of_thread(unsere, str(thread.id)))
+    name = sitzung.title or f"Sitzung vom {sitzung.played_on}"
+    kopf = chronik.SCHLIESST.format(sitzung=name, thread=f"<#{thread.id}>")
+    return f"{kopf} {chronik.FERTIG}"
+
+
 def test_fertig_fragt_nach_dem_passwort_und_stoesst_den_einen_lauf_an(stelle, bot, monkeypatch):
     _config, unsere = stelle
     _ctx, thread = sitzung_starten(bot)
@@ -880,7 +888,7 @@ def test_fertig_fragt_nach_dem_passwort_und_stoesst_den_einen_lauf_an(stelle, bo
     sitzung_id = notes.session_of_thread(unsere, str(thread.id))
     assert ctx.modale[0].title == chronik.PASSWORT_TITEL
     assert gesehen == [(PASSWORT, sitzung_id)]
-    assert interaktion.followup.gesendet == [chronik.FERTIG]
+    assert interaktion.followup.gesendet == [erwartete_meldung(unsere, thread)]
     assert thread.gesendet == [chronik.ANGELEGT, STEHT]
     assert jobs.latest(unsere, jobs.CHRONIK, sitzung_id).result == STEHT
 
@@ -907,7 +915,7 @@ def test_nach_dem_passwort_beim_start_fragt_der_abschluss_nicht_noch_einmal(
 
     assert ctx.modale == []
     assert gesehen == [PASSWORT]
-    assert ctx.antworten == [chronik.FERTIG]
+    assert ctx.antworten == [erwartete_meldung(unsere, thread)]
 
 
 def test_ein_zweites_mitglied_schiebt_dem_abschluss_kein_fremdes_passwort_unter(
@@ -1028,7 +1036,7 @@ def test_ohne_foundry_fragt_auch_der_abschluss_nicht_nach_dem_passwort(stelle, b
     asyncio.run(ablauf())
 
     assert abschluss_ctx.modale == []
-    assert abschluss_ctx.antworten == [chronik.FERTIG]
+    assert abschluss_ctx.antworten == [erwartete_meldung(unsere, thread)]
 
 
 def test_auch_mit_gemerktem_passwort_endet_die_aufnahme_vor_dem_lauf(
@@ -1166,17 +1174,117 @@ def test_ein_abschluss_reisst_den_mitschnitt_einer_fremden_runde_nicht_ab(
 
     assert not mitschnitt.kanal.verbindung.getrennt
     assert recordings.pending(fremde) == ()
-    assert interaktion.followup.gesendet == [chronik.FERTIG]
+    assert interaktion.followup.gesendet == [erwartete_meldung(unsere, thread)]
 
 
-def test_fertig_ausserhalb_eines_sitzungs_threads_sagt_es(stelle, bot):
+def test_fertig_aus_dem_sprachkanal_schliesst_die_laufende_sitzung(stelle, bot, monkeypatch):
+    """Nach ``/aufnahme stop`` steht man im Sprachkanal — abgewiesen wird dort nicht mehr.
+
+    Die Abweisung riet zu ``/chronik start`` und damit zu einer **zweiten** Sitzung; die
+    Aufnahmen der ersten blieben liegen (#156). Genommen wird dieselbe Sitzung wie bei der
+    Aufnahme, und die Antwort sagt, welche das ist und wo ihre Chronik erscheint.
+    """
+    _config, unsere = stelle
+    _fenster, thread = sitzung_starten(bot, titel="Der Keller", passwort=PASSWORT)
+    gesehen = []
+    monkeypatch.setattr(
+        jobs,
+        "abschluss",
+        lambda config, eine, sid, *, passwort=None: gesehen.append(sid) or STEHT,
+    )
+    # Der Textkanal des Sprachkanals: nicht der Thread, und auch nicht der Kanal, in dem
+    # ``/chronik start`` gegeben wurde.
+    ctx = FakeCtx(kanal=FakeThread(4711, "Im Sprachkanal"))
+
+    async def ablauf():
+        await chronikbefehl(bot, "fertig")(ctx)
+        await _bis_der_lauf_durch_ist(unsere)
+
+    asyncio.run(ablauf())
+
+    sitzung_id = notes.session_of_thread(unsere, str(thread.id))
+    assert gesehen == [sitzung_id]
+    (antwort,) = ctx.antworten
+    assert "Der Keller" in antwort and f"<#{thread.id}>" in antwort
+    assert antwort == erwartete_meldung(unsere, thread)
+    # Wer beim Start selbst hinterlegt hat, wird auch auf diesem Weg nicht zweimal gefragt.
+    assert ctx.modale == []
+
+
+def test_der_schnellweg_aus_dem_sprachkanal_schiebt_die_frist_nicht_weiter(
+    stelle, bot, monkeypatch
+):
+    """``merken=False`` gilt auch dort, wo der Abschluss den Thread nicht mehr braucht.
+
+    Sonst hätte #156 dem Merkzettel eine dritte Gelegenheit gegeben, die zwölf Stunden aus
+    #64 durch bloßes Nachfassen weiterzuschieben.
+    """
+    _config, unsere = stelle
+    sitzung_starten(bot)
+    zugang.merken(unsere, PASSWORT, wer=str(WER))
+    faellig = zugang._gemerkt[unsere.id].ablauf
+    monkeypatch.setattr(jobs, "start", lambda *args, **kwargs: None)
+
+    ctx = FakeCtx(kanal=types.SimpleNamespace(id=4711))
+    asyncio.run(chronikbefehl(bot, "fertig")(ctx))
+
+    # Der Schnellweg wurde wirklich gegangen — sonst prüfte die Frist unten eine Abweisung.
+    assert ctx.antworten == [jobs.BELEGT]
+    assert ctx.modale == []
+    assert zugang._gemerkt[unsere.id].ablauf == faellig
+
+
+def test_fertig_ohne_thread_nennt_die_sitzung_trotzdem(stelle, bot, monkeypatch):
+    """Die Weboberfläche legt Sitzungen ohne Thread an — das darf nicht scheitern."""
+    _config, unsere = stelle
+    settings.save_foundry_quelle(unsere, settings.TESTWELT)
+    notes.create_session(unsere, title="Ohne Faden", played_on="2026-08-11")
+    monkeypatch.setattr(jobs, "abschluss", lambda config, eine, sid, *, passwort=None: STEHT)
+    ctx = FakeCtx(kanal=FakeThread(4711, "Im Sprachkanal"))
+
+    async def ablauf():
+        await chronikbefehl(bot, "fertig")(ctx)
+        await _bis_der_lauf_durch_ist(unsere)
+
+    asyncio.run(ablauf())
+
+    ohne = chronik.SCHLIESST_OHNE_THREAD.format(sitzung="Ohne Faden")
+    (antwort,) = ctx.antworten
+    assert antwort == f"{ohne} {chronik.FERTIG}"
+    assert "<#" not in antwort
+
+
+def test_fertig_ohne_laufende_sitzung_raet_zu_chronik_start(stelle, bot):
+    """Die Gegenprobe: nur wenn wirklich keine Sitzung offen ist, ist der Rat richtig."""
     ctx = FakeCtx(kanal=types.SimpleNamespace(id=8888))
 
     asyncio.run(chronikbefehl(bot, "fertig")(ctx))
 
     (antwort,) = ctx.antworten
-    assert chronik.NUR_IM_THREAD in antwort
+    assert chronik.KEINE_SITZUNG in antwort
+    assert "`/chronik start`" in antwort
     assert ctx.modale == []
+
+
+def test_fertig_einer_fremden_gilde_ruehrt_unsere_sitzung_nicht_an(stelle, bot, monkeypatch):
+    """Die Runde bestimmt die Gilde — der Thread einer fremden wird nie verlinkt."""
+    config, unsere = stelle
+    runden.anlegen(config.database_path, "Die Andere", guild_id=FREMDE_GILDE)
+    _fenster, thread = sitzung_starten(bot)
+    gesehen = []
+    monkeypatch.setattr(
+        jobs,
+        "abschluss",
+        lambda config, eine, sid, *, passwort=None: gesehen.append(sid) or STEHT,
+    )
+    ctx = FakeCtx(guild_id=FREMDE_GILDE, kanal=types.SimpleNamespace(id=4711))
+
+    asyncio.run(chronikbefehl(bot, "fertig")(ctx))
+
+    (antwort,) = ctx.antworten
+    assert chronik.KEINE_SITZUNG in antwort
+    assert f"<#{thread.id}>" not in antwort
+    assert gesehen == []
 
 
 def test_ein_stolpernder_abschluss_antwortet_trotzdem(stelle, bot, monkeypatch):
