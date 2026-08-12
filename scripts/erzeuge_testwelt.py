@@ -35,6 +35,9 @@ Die Formen, auf die es ankommt, und warum jede da ist:
   das ist der Leitungs-Inhalt, den der Filter fallen lassen muss.
 - **Würfe mit Hoffnung, mit Furcht und ein kritischer**, jeder doppelt abgelegt: einmal
   aufbereitet in ``system.roll``, einmal roh im JSON-String unter ``rolls[]``.
+- **Karten mit und ohne ``navName``, genau eine aktive**, mit derselben Stufenmischung wie
+  die Figuren: eine Szene, die nur die Leitung kennt, ist ein Vorgriff und muss
+  verschwinden.
 
 Das Skript ist deterministisch: derselbe Lauf schreibt dieselbe Datei. Genau das prüft
 ``tests/test_testwelt.py`` als Dauergate — die eingecheckte Fixture muss Zeichen für
@@ -80,6 +83,11 @@ GRUPPE_B = range(9, 15)
 GRUPPE_C = range(15, 19)
 
 NONE, LIMITED, OBSERVER, OWNER = 0, 1, 2, 3
+
+# Welche Karte gerade liegt. Es ist eine, die die Gruppe auch sehen darf und auf der die
+# ersten Nachrichten fallen — eine aktive Szene hinter dem Berechtigungsfilter wäre eine
+# Form, die es am Tisch nicht gibt.
+AKTIVE_SZENE = 10
 
 # Titel, Würfel und Modifikator je Wurf — von Hand gesetzt, damit alle drei Ausgänge
 # vorkommen: Hoffnung überwiegt, Furcht überwiegt, und beide gleich ist ein Kritischer.
@@ -248,6 +256,12 @@ def _figuren(konten: list[dict], figuren_ids: list[str]) -> list[dict]:
 
 
 def _szenen(konten: list[dict], szenen_ids: list[str]) -> list[dict]:
+    """32 Karten mit derselben Stufenmischung wie die Figuren — zehn kennt nur die Leitung.
+
+    Genau eine ist ``active``: die, auf der die ersten Nachrichten fallen. Und ``navName``
+    steht nur an jeder dritten, weil er im echten Abzug meistens leer ist — an dieser
+    Mischung entscheidet sich, ob der Adapter den richtigen der beiden Namen nimmt.
+    """
     leitung = konten[0]["_id"]
     gruppe_a = [konten[stelle]["_id"] for stelle in GRUPPE_A]
     gruppe_b = [konten[stelle]["_id"] for stelle in GRUPPE_B]
@@ -257,7 +271,13 @@ def _szenen(konten: list[dict], szenen_ids: list[str]) -> list[dict]:
     stufen += [{"default": NONE, leitung: OWNER, **{k: OBSERVER for k in gruppe_b}}] * 8
     stufen += [{"default": OBSERVER, leitung: OWNER}] * 6
     return [
-        {"_id": kennung, "ownership": dict(ownership), "name": f"Szene-{stelle + 1:02d}"}
+        {
+            "_id": kennung,
+            "active": stelle == AKTIVE_SZENE,
+            "ownership": dict(ownership),
+            "name": f"Szene-{stelle + 1:02d}",
+            "navName": f"Ort-{stelle + 1:02d}" if stelle % 3 == 0 else "",
+        }
         for stelle, (kennung, ownership) in enumerate(zip(szenen_ids, stufen, strict=True))
     ]
 

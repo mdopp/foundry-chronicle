@@ -11,7 +11,14 @@ from __future__ import annotations
 from collections.abc import Mapping
 
 from chronicle.foundry import permissions, systems
-from chronicle.foundry.model import Character, ChatMessage, Player, World, WorldSnapshot
+from chronicle.foundry.model import (
+    Character,
+    ChatMessage,
+    Player,
+    Scene,
+    World,
+    WorldSnapshot,
+)
 
 UNKNOWN_SYSTEM = "unbekannt"
 
@@ -72,6 +79,24 @@ def _character(actor: Mapping, user_id: str, gm: bool) -> Character | None:
     )
 
 
+def _scene(scene: Mapping, user_id: str, gm: bool) -> Scene | None:
+    """Eine Szene, die die Gruppe nie gesehen hat, gibt es für die Chronik nicht.
+
+    Ein Ortsname ist ein Vorgriff, solange die Karte nur die Spielleitung kennt: »Das Grab
+    des Verräters« im Protokoll verriete genau das Geheimnis, gegen das hier gefiltert
+    wird. Jede Stufe über ``NONE`` heißt dagegen, dass der Name in der Kartenleiste stand.
+    """
+    ownership = scene.get("ownership")
+    stufe = permissions.OWNER if gm else permissions.effective_level(ownership, user_id)
+    if stufe == permissions.NONE:
+        return None
+    return Scene(
+        id=_id(scene),
+        name=str(scene.get("navName") or scene.get("name") or ""),
+        active=bool(scene.get("active")),
+    )
+
+
 def _message(message: Mapping, system: str) -> ChatMessage:
     speaker = message.get("speaker")
     speaker = speaker if isinstance(speaker, Mapping) else {}
@@ -109,5 +134,10 @@ def project(raw: Mapping, user_id: str, *, fetched_at: str) -> WorldSnapshot:
             _message(message, system)
             for message in _documents(raw, "messages")
             if permissions.message_visible(message, user_id, gm)
+        ),
+        scenes=tuple(
+            szene
+            for szene in (_scene(scene, user_id, gm) for scene in _documents(raw, "scenes"))
+            if szene is not None
         ),
     )

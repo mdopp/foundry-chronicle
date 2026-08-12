@@ -77,6 +77,21 @@ CREATE TABLE IF NOT EXISTS foundry_character (
     PRIMARY KEY (runde_id, id)
 );
 
+-- Die Karten der Welt, auf ihren Ortsnamen eingedampft. Das Karten-Innenleben — Wände,
+-- Lichter, Kacheln, Token — steht in Foundry und kommt hier nicht an; die Chronik trägt es
+-- nicht, und was nicht gespeichert wird, kann nicht auslaufen.
+--
+-- Auch dieser Zwischenspeicher ist ein **Spiegel**: ein Abgleich ersetzt ihn am Stück.
+-- Was hier ankommt, hat den Berechtigungsfilter schon hinter sich — eine Szene, die nur
+-- die Spielleitung kennt, steht gar nicht erst drin.
+CREATE TABLE IF NOT EXISTS foundry_scene (
+    runde_id INTEGER NOT NULL REFERENCES runde (id) ON DELETE CASCADE,
+    id       TEXT NOT NULL,
+    name     TEXT NOT NULL,
+    active   INTEGER NOT NULL,
+    PRIMARY KEY (runde_id, id)
+);
+
 -- Chat-Nachrichten sind **Ereignisse, keine Zustände**: ein Abgleich fügt hinzu und behält,
 -- er ersetzt nicht. Das Chat-Log in Foundry zu leeren ist übliche Praxis der Spielleitung —
 -- ein Spiegel verlöre damit genau die Würfe, die eine Szene belegen und aus denen später

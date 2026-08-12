@@ -25,7 +25,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:  # pragma: no cover - nur für die Typprüfung
     from chronicle.runde import Runde
 
-SCHEMA_VERSION = 21
+SCHEMA_VERSION = 22
 
 # Der Name der ersten Runde: die Bestände der Entwicklungs-Instanz wandern hier hinein,
 # und eine frische Datenbank bekommt sie ebenfalls — die Oberfläche braucht bis zu ihrer
@@ -41,6 +41,7 @@ GESCOPTE_TABELLEN = frozenset(
         "foundry_snapshot",
         "foundry_player",
         "foundry_character",
+        "foundry_scene",
         "foundry_message",
         "session",
         "scene",

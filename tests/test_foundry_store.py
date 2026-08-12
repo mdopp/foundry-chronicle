@@ -1,7 +1,7 @@
 from dataclasses import replace
 
 import pytest
-from conftest import UNSER_KONTO, runde
+from conftest import GM_SZENE, UNSER_KONTO, runde
 
 from chronicle import db
 from chronicle.foundry import store
@@ -54,6 +54,7 @@ def test_abzug_ueberlebt_den_umweg_durch_sqlite(scope, welt):
     assert set(geladen.players) == set(abzug.players)
     assert set(geladen.characters) == set(abzug.characters)
     assert {n.id: n for n in geladen.messages} == {n.id: n for n in abzug.messages}
+    assert set(geladen.scenes) == set(abzug.scenes)
 
 
 def test_wurfzahlen_bleiben_zahlen(scope, welt):
@@ -67,13 +68,22 @@ def test_wurfzahlen_bleiben_zahlen(scope, welt):
 
 
 def test_ein_abgleich_ersetzt_die_spiegel(scope, welt):
-    """Konten und Figuren sind Spiegel: ihr aktueller Stand steht in Foundry."""
+    """Konten, Figuren und Karten sind Spiegel: ihr aktueller Stand steht in Foundry."""
     store.save(scope, project(welt, UNSER_KONTO, fetched_at=STAND))
     store.save(scope, leer(SPAETER))
     geladen = store.load(scope)
     assert geladen.players == ()
     assert geladen.characters == ()
+    assert geladen.scenes == ()
     assert geladen.fetched_at == SPAETER
+
+
+def test_die_aktive_karte_bleibt_die_aktive(scope, welt):
+    """Nur *eine* Karte liegt — und nach dem Umweg durch SQLite ist es dieselbe."""
+    store.save(scope, project(welt, UNSER_KONTO, fetched_at=STAND))
+    geladen = store.load(scope)
+    assert [szene.id for szene in geladen.scenes if szene.active] == ["s-keller"]
+    assert GM_SZENE not in [szene.name for szene in geladen.scenes]
 
 
 def test_ein_geleertes_chat_log_nimmt_die_belege_nicht_mit(scope, welt):
