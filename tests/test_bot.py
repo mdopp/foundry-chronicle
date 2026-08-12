@@ -2957,6 +2957,72 @@ def test_der_gescheiterte_abschied_nach_dem_verschieben_sagt_es(
     assert thread.geschrieben == [gateway.VERSCHOBEN_GESCHEITERT.format(kanal=runde.kanal.name)]
 
 
+def test_ein_abriss_wird_nicht_als_verschieben_gemeldet(
+    konfiguration, sitzung_im_thread, ohne_espeak, runde, kurze_frist
+):
+    """Ein harter Abriss endet wie ein Verschieben, begründet sich aber anders (#120).
+
+    Wird der Bot hinausgeworfen oder bricht die Verbindung, sitzt er in **keinem** Kanal —
+    im Thread stand trotzdem, jemand habe ihn »in einen anderen Sprachkanal gezogen«. Die
+    Handlung war richtig, die Auskunft falsch, und sie schickte die Runde nebenan suchen.
+    """
+    bot = gateway.baue(konfiguration)
+    thread = FakeTextkanal()
+    bot.kanaele[THREAD] = thread
+
+    async def ablauf():
+        await befehl(bot, "start")(FakeCtx(runde.mira))
+        runde.kanal.verbindung.senke.write(sprachdaten(stille(480)), runde.mira)
+        # Der Hinauswurf, wie Discord und py-cord ihn hinterlassen: der Zustand des Bots
+        # ist aus dem Zwischenspeicher der Gilde heraus, die Verbindung hat keinen Kanal.
+        runde.chronist.voice = None
+        runde.kanal.verbindung.channel = None
+        await bot.ereignisse["on_voice_state_update"](
+            runde.chronist, zustand(runde.kanal), zustand()
+        )
+        await ruhen()
+
+    asyncio.run(ablauf())
+
+    assert not runde.kanal.verbindung.schneidet
+    (gesagt,) = thread.geschrieben
+    assert gesagt.startswith(gateway.GETRENNT.format(kanal=runde.kanal.name))
+    assert not gesagt.startswith(gateway.VERSCHOBEN.format(kanal=runde.kanal.name))
+
+
+def test_die_meldung_vieler_spuren_kommt_geteilt_statt_gar_nicht(
+    konfiguration, sitzung_im_thread, pycord, monkeypatch
+):
+    """Dreißig Spuren ergaben einen Satz über 2000 Zeichen — Discord wies ihn ab (#120).
+
+    Das ``except`` in ``_beenden_und_sagen`` schluckte den Fehlschlag, und die Runde erfuhr
+    vom Ende des Mitschnitts gar nichts. Geteilt statt gekürzt: jedes Stück nimmt Discord
+    an, und aneinandergehängt steht wieder genau derselbe Satz da.
+    """
+    bot = gateway.baue(konfiguration)
+    thread = FakeTextkanal()
+    bot.kanaele[THREAD] = thread
+    aufnahme = Aufnahme(konfiguration, unsere_runde(konfiguration), sitzung_im_thread, KANAL)
+    lauf = gateway._Lauf()
+    lauf.aufnahme = aufnahme
+    meldungen = tuple(
+        f"Spur {nummer} von Sprecherin {nummer} wartet auf den Stapel." for nummer in range(40)
+    )
+
+    async def viele(*args, **kwargs):
+        return meldungen
+
+    monkeypatch.setattr(recorder, "stoppen", viele)
+
+    asyncio.run(gateway._beenden_und_sagen(bot, lauf, aufnahme, gateway.LEER_BEENDET, "kaputt"))
+
+    ganz = " ".join((gateway.LEER_BEENDET, *meldungen))
+    assert len(ganz) > grenzen.NACHRICHT
+    assert len(thread.geschrieben) > 1
+    assert all(len(stueck) <= grenzen.NACHRICHT for stueck in thread.geschrieben)
+    assert "".join(thread.geschrieben) == ganz
+
+
 def test_der_gescheiterte_abschied_sagt_es_statt_zu_verschwinden(
     konfiguration, sitzung_im_thread, ohne_espeak, runde, kurze_frist, monkeypatch
 ):

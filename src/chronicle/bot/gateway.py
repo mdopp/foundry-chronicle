@@ -169,6 +169,24 @@ VERSCHOBEN_GESCHEITERT = (
     "das nimmt genau diesen Lauf und reiht die Spuren nach. Der Grund steht im Log des Bots."
 )
 
+# Ein Abriss ist kein Umzug: verschoben hat den Bot jemand, getrennt kann ihn auch das Netz
+# haben. Beides endet gleich, begründet sich aber verschieden — und der Satz im Thread ist
+# Wochen später die einzige Auskunft darüber, warum die Spuren an dieser Stelle aufhören.
+GETRENNT = (
+    "Meine Verbindung zu #{kanal} ist abgerissen — deshalb ist der Mitschnitt beendet. Ob "
+    "mich jemand hinausgeworfen hat oder das Netz zuckte, sehe ich von hier aus nicht. Was "
+    "nach dem Abriss gesprochen wurde, steht in keiner Spur. Die Sitzung bleibt offen: hier "
+    "weiterzuschreiben geht, und `/chronik fertig` bleibt eure Entscheidung. Soll weiter "
+    "mitgeschnitten werden, gebt `/aufnahme start` — die Ansage läuft dann noch einmal."
+)
+
+GETRENNT_GESCHEITERT = (
+    "Meine Verbindung zu #{kanal} ist abgerissen, aber das Beenden ist schiefgegangen — die "
+    "Aufnahme gilt weiter als laufend. Mitgeschrieben wird nichts mehr. Bitte einmal "
+    "`/aufnahme stop` geben: das nimmt genau diesen Lauf und reiht die Spuren nach. Der "
+    "Grund steht im Log des Bots."
+)
+
 UNBEKANNT = "unbekannt"
 
 # Ein Befehl, der nicht antwortet, lässt Discord ewig »denkt nach …« anzeigen. Das ist
@@ -375,6 +393,22 @@ class Sprachverbindung:
         # das mit dem Zustand ``got_voice_server_update`` zusammen, bleibt die Lücke —
         # beides zugleich, keins allein.
         return gemeldet is None or gemeldet == self.kanal.id
+
+    def woanders(self) -> bool:
+        """Ob der Bot in einem **anderen** Sprachkanal sitzt — sonst sitzt er in keinem.
+
+        Nur zu fragen, wenn ``im_kanal`` schon Nein gesagt hat; die Frage ist dann allein
+        die nach der Begründung. Discords eigener Zustand entscheidet sie, denn py-cord
+        räumt ``voice_client.channel`` beim Trennen **nicht**: ein dort stehengebliebener
+        alter Kanal belegt keinen Umzug, sondern nur, dass niemand aufgeräumt hat. Erst
+        wenn Discord gar keinen Kanal für uns kennt, zählt der Voice-Client — der trägt
+        beim Verschieben den neuen ein, bevor das Ereignis bei uns ankommt.
+        """
+        gemeldet = _wo_discord_uns_sieht(self._vc)
+        if gemeldet is not None:
+            return gemeldet != self.kanal.id
+        jetzt = getattr(self._vc, "channel", None)
+        return jetzt is not None and str(jetzt.id) != self.kanal.id
 
     async def ansagen(self, datei: Path) -> None:
         """Spielt die Ansage und kehrt erst zurück, wenn sie zu Ende ist."""
@@ -759,15 +793,31 @@ async def _abschied_bei_leere(bot, lauf: _Lauf, aufnahme: Aufnahme) -> None:
     await _beenden_und_sagen(bot, lauf, aufnahme, LEER_BEENDET, LEER_GESCHEITERT)
 
 
-async def _abschied_beim_verschieben(bot, lauf: _Lauf, aufnahme: Aufnahme) -> None:
-    """Wer aus seinem Kanal gezogen wird, hört auf: dort drüben hat niemand zugestimmt."""
-    logger.warning("Der Bot wurde aus #%s verschoben — der Mitschnitt endet.", aufnahme.kanal.name)
+async def _abschied_beim_kanalverlust(bot, lauf: _Lauf, aufnahme: Aufnahme, woanders: bool) -> None:
+    """Wer seinen Kanal verliert, hört auf — und sagt dazu, wie er ihn verlor.
+
+    Gezogen zu werden und getrennt zu werden endet gleich: hier hat niemand mehr
+    zugestimmt, also wird nicht weitergeschnitten. Die **Begründung** ist aber nicht
+    dieselbe, und im Thread steht sie Wochen später als einzige Auskunft darüber, warum
+    die Spuren an dieser Stelle aufhören. Einen Abriss als Verschieben zu melden schickte
+    die Runde in einen Sprachkanal nebenan, in dem nie jemand war (#120).
+    """
+    if woanders:
+        logger.warning(
+            "Der Bot wurde aus #%s verschoben — der Mitschnitt endet.", aufnahme.kanal.name
+        )
+        beendet, gescheitert = VERSCHOBEN, VERSCHOBEN_GESCHEITERT
+    else:
+        logger.warning(
+            "Die Verbindung zu #%s ist abgerissen — der Mitschnitt endet.", aufnahme.kanal.name
+        )
+        beendet, gescheitert = GETRENNT, GETRENNT_GESCHEITERT
     await _beenden_und_sagen(
         bot,
         lauf,
         aufnahme,
-        VERSCHOBEN.format(kanal=aufnahme.kanal.name),
-        VERSCHOBEN_GESCHEITERT.format(kanal=aufnahme.kanal.name),
+        beendet.format(kanal=aufnahme.kanal.name),
+        gescheitert.format(kanal=aufnahme.kanal.name),
     )
 
 
@@ -1900,7 +1950,9 @@ def baue(config: Config):
         # Protokolleintrag, dessen Ansage in einem Kanal lief, den er nie betreten hat.
         # Sein eigenes Verschieben meldet Discord dem Bot als Ereignis wie jedes andere.
         if lauf.stimme is not None and not lauf.stimme.im_kanal():
-            await _abschied_beim_verschieben(bot, lauf, aufnahme)
+            # Die Frage nach dem Wohin **vor** dem ersten ``await``: danach hat der
+            # Beender ``lauf.stimme`` schon geleert, und die Begründung wäre keine mehr.
+            await _abschied_beim_kanalverlust(bot, lauf, aufnahme, lauf.stimme.woanders())
             return
         if member.bot:
             return
