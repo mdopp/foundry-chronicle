@@ -150,6 +150,19 @@ def _testwelt(scope: db.Scope, zeitpunkt: str) -> SyncState:
     )
 
 
+def geschuetzt(ziel: Path) -> Path:
+    """Eine leere Datei, die nur uns gehört — für alles, was ungefiltert vom Server kommt."""
+    ziel.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    # ``mode`` beim Anlegen ist von der umask beschnitten und wird ganz übergangen, wenn
+    # das Verzeichnis schon steht — ein vorhandenes 0755 bliebe sonst offen.
+    ziel.parent.chmod(0o700)
+    # Erst die Rechte, dann der Inhalt: eine Datei mit Klarnamen darf nicht einmal
+    # kurzzeitig für alle lesbar dastehen.
+    ziel.touch(mode=0o600, exist_ok=True)
+    ziel.chmod(0o600)
+    return ziel
+
+
 def abzug(
     config: Config,
     runde: Runde,
@@ -171,14 +184,7 @@ def abzug(
         _user_id, raw = (client or FoundryClient(wirksam, geheim)).fetch_world()
     finally:
         zugang.vergiss(runde)
-    ziel.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-    # ``mode`` beim Anlegen ist von der umask beschnitten und wird ganz übergangen, wenn
-    # das Verzeichnis schon steht — ein vorhandenes 0755 bliebe sonst offen.
-    ziel.parent.chmod(0o700)
-    # Erst die Rechte, dann der Inhalt: eine Datei mit Klarnamen darf nicht einmal
-    # kurzzeitig für alle lesbar dastehen.
-    ziel.touch(mode=0o600, exist_ok=True)
-    ziel.chmod(0o600)
+    geschuetzt(ziel)
     ziel.write_text(json.dumps(raw, ensure_ascii=False), encoding="utf-8")
     return ABZUG_GESCHRIEBEN.format(ziel=ziel, groesse=ziel.stat().st_size // 1024)
 

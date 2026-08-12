@@ -52,10 +52,11 @@ class Http:
 
 
 class Socket:
-    def __init__(self, antworten, sitzung, verbindungsfehler):
+    def __init__(self, antworten, sitzung, verbindungsfehler, von_selbst=()):
         self.antworten = antworten
         self._sitzung = sitzung
         self._verbindungsfehler = verbindungsfehler
+        self._von_selbst = von_selbst
         self.handler = {}
         self.url = None
         self.headers = None
@@ -71,6 +72,9 @@ class Socket:
             raise self._verbindungsfehler
         if "session" in self.handler and self._sitzung is not None:
             self.handler["session"](self._sitzung)
+        for name, nutzlast in self._von_selbst:
+            if "*" in self.handler:
+                self.handler["*"](name, nutzlast)
 
     def call(self, event, timeout=None):
         antwort = self.antworten.get(event)
@@ -86,14 +90,17 @@ STANDARD_SITZUNG = {"userId": UNSER_KONTO}
 
 
 class Sockets:
-    def __init__(self, antworten, *, sitzung=STANDARD_SITZUNG, verbindungsfehler=None):
+    def __init__(
+        self, antworten, *, sitzung=STANDARD_SITZUNG, verbindungsfehler=None, von_selbst=()
+    ):
         self.antworten = antworten
         self.sitzung = sitzung
         self.verbindungsfehler = verbindungsfehler
+        self.von_selbst = von_selbst
         self.erzeugt = []
 
     def __call__(self):
-        socket = Socket(self.antworten, self.sitzung, self.verbindungsfehler)
+        socket = Socket(self.antworten, self.sitzung, self.verbindungsfehler, self.von_selbst)
         self.erzeugt.append(socket)
         return socket
 
@@ -236,3 +243,48 @@ def test_das_passwort_steht_in_keiner_fehlermeldung(config, caplog):
     assert PASSWORT not in str(fehler.value)
     assert fehler.value.__cause__ is None
     assert PASSWORT not in caplog.text
+
+
+def test_die_offene_leitung_macht_denselben_handschlag(config):
+    http = Http()
+    sockets = Sockets({"getJoinData": JOIN_DATEN})
+
+    with client(config, http, sockets).verbindung() as socket:
+        assert not socket.getrennt
+
+    assert [(m, u) for m, u, _ in http.aufrufe] == [
+        ("GET", "https://foundry.example/join"),
+        ("POST", "https://foundry.example/join"),
+    ]
+    assert sockets.erzeugt[1].url == "https://foundry.example?session=sitzung-2"
+    assert all(erzeugt.getrennt for erzeugt in sockets.erzeugt)
+
+
+def test_wer_mithoert_bekommt_die_ereignisse_ab_dem_ersten(config):
+    """Auch ``session`` — es hat einen eigenen Handler und käme sonst nie an."""
+    sockets = Sockets(
+        {"getJoinData": JOIN_DATEN},
+        von_selbst=(("userActivity", {"u-mira": True}),),
+    )
+    gehoert = []
+
+    with client(config, Http(), sockets).verbindung(
+        mithoeren=lambda name, *rest: gehoert.append(name)
+    ):
+        pass
+
+    assert gehoert == ["session", "userActivity"]
+
+
+def test_ohne_mithoeren_wird_kein_auffanghandler_gesetzt(config):
+    sockets = Sockets({"getJoinData": JOIN_DATEN})
+    with client(config, Http(), sockets).verbindung():
+        pass
+    assert "*" not in sockets.erzeugt[1].handler
+
+
+def test_eine_fremde_sitzungsbindung_laesst_keine_leitung_offen(config):
+    sockets = Sockets({"getJoinData": JOIN_DATEN}, sitzung={"userId": "u-mira"})
+    with pytest.raises(FoundryLoginFailed), client(config, Http(), sockets).verbindung():
+        pass
+    assert sockets.erzeugt[1].getrennt

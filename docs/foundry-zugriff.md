@@ -284,8 +284,119 @@ Umschalten ersetzt beim nächsten Abgleich den Zwischenspeicher im Ganzen. Szene
 Nachrichten der anderen Welt verweisen, laufen dann ins Leere — harmlos, und mit dem
 Rück-Abgleich wieder da.
 
+## Was Foundry von sich aus schickt — recherchiert, noch nicht gemessen
+
+Der Handschlag baut eine socket.io-Leitung auf und benutzt sie für **eine** Frage
+(`world`). Dieselbe Leitung schickt aber auch von sich aus. Wie diese Ereignisse heißen,
+stand hier nicht (#146) — und PR #128 baute darüber einen Takt alle zwei Minuten, also
+Polling über eine Push-Leitung.
+
+**Was hier steht, ist recherchiert und nicht an unserer Welt gemessen.** Der Beleg pro
+Aussage steht dabei; gemessen wird mit `scripts/lausche_foundry.py` (unten). Bis dahin
+gilt es als gut belegte Erwartung, nicht als Beobachtung.
+
+### Ein Ereignis für alles: `modifyDocument`
+
+Jede Änderung an einem Dokument — auch eine neue Chat-Nachricht — kommt als
+**`modifyDocument`**. Es gibt kein `createChatMessage` auf dem Socket; was so heißt, ist
+ein *Hook* im Browser-Client und nie etwas auf der Leitung. Belegt durch die
+API-Referenz zu `ClientDatabaseBackend#onModifyDocument` („Handle a socket response
+broadcast back from the server", <https://foundryvtt.com/api/v12/classes/foundry.data.ClientDatabaseBackend.html>)
+und durch einen fremden Client, der genau das von außen tut:
+<https://github.com/this-gavagai/foundryvtt-tm> hört `modifyDocument`, `userActivity`
+und `progress` und führt `ChatMessage` als Dokumenttyp.
+
+Die Nutzlast ist eine `DocumentSocketResponse`
+(<https://foundryvtt.com/api/v12/interfaces/foundry.abstract.types.DocumentSocketRequest.html>,
+Typdefinition in <https://github.com/League-of-Foundry-Developers/foundry-vtt-types>):
+
+```
+type       "ChatMessage" | "Actor" | …      welches Dokument
+action     "create" | "update" | "delete"   erzeugt, geändert, gelöscht
+operation  {parentUuid, pack, render, …}    seit v12 gebündelt
+userId     wer es ausgelöst hat
+result     die Nutzdaten — Form je nach action
+```
+
+**Erzeugt, geändert und gelöscht unterscheiden sich nur in `action` und in der Form von
+`result`:** bei `create` stehen dort die vollständigen Objekte, bei `update` nur die
+geänderten Felder samt `_id`, bei `delete` bloße Ids. Ein Zuhörer, der Würfe sammelt,
+braucht also `action == "create"` und `type == "ChatMessage"` — und muss für `update`
+und `delete` entscheiden, ob er nachträgt.
+
+Zwei Eigenschaften, die den Bau bestimmen:
+
+- **Der Server schickt an alle außer den Auslöser.** Wer selbst nichts schreibt, sieht
+  jede fremde Änderung; auf die eigene bekäme er eine Antwort auf seinen Aufruf. Für uns
+  ist das der Normalfall — die Chronik schreibt nichts nach Foundry zurück.
+- **Er filtert dabei nicht**, so wenig wie bei `world`. Geflüstertes und Blindwürfe
+  kommen mit. Der Berechtigungsfilter gehört deshalb auch hier **vor** den Speicher.
+
+### Der Wurf steckt in `rolls[]` — als JSON-**String**
+
+`ChatMessage.rolls` ist ein Feld aus JSON-Strings, nicht aus Objekten; der Server sendet
+die serialisierte Form. Ein Python-Zuhörer muss `json.loads(nachricht["rolls"][0])`
+machen, sonst greift er ins Leere. Ein serialisierter Wurf trägt `class`, `formula`,
+`total`, `terms[]`, `options` und `evaluated`.
+
+> **Widerspruch, den erst der Lauf auflöst.** Oben steht — ausgezählt an einem **echten**
+> Abzug —, dass sieben von acht Nachrichten einen vollständigen `system.roll` tragen.
+> Der Quelltext des heutigen Daggerheart-Systems
+> (<https://github.com/Foundryborne/daggerheart>, `module/data/chat-message/actorRoll.mjs`)
+> sagt dagegen, `roll` sei dort ein **Getter** über `rolls[]` — und Getter werden nicht
+> serialisiert, stünden also in keiner Nutzlast. Beides kann stimmen, wenn die
+> Systemfassung sich geändert hat; unsere Beobachtung stammt von Daggerheart 1.9.5.
+> Aufgelöst wird das an einer echten Nachricht, nicht hier. Bis dahin bleibt der
+> `system`-Block der dokumentierte Einstieg und `rolls[]` der belegte zweite.
+
+### Was sonst noch von selbst kommt
+
+Neben `session` (direkt nach dem Verbinden, mit `sessionId` und `userId`) und
+`modifyDocument` schickt der Server unter anderem `userActivity`, `pause`, `chatBubble`,
+`showEntry`/`shareImage`, `playAudio`, `pullToScene`, `resetFog`, `shutdown`, `reload`
+und die freien Paketkanäle `module.<id>`/`system.<id>`; **`userQuery`** kam mit v13 dazu.
+`time` ist dagegen Frage und Antwort, kein Push. Diese Liste stammt aus dem
+ausgelieferten Bundle und ist der schwächste Beleg auf dieser Seite — für uns zählt
+davon ohnehin nur `modifyDocument`.
+
+### Welche Foundry-Fassung das voraussetzt
+
+Unser Handschlag ist gegen **13.351** beobachtet. Für `modifyDocument` gilt:
+
+| Fassung | Was sich änderte | Beleg |
+|---|---|---|
+| ≤ 0.5.3 | 156 einzeln benannte Socket-Ereignisse | [#2454](https://github.com/foundryvtt/foundryvtt/issues/2454) |
+| 0.5.4 | Zusammenlegung auf `modifyDocument` | [#2454](https://github.com/foundryvtt/foundryvtt/issues/2454) |
+| v12 | **Bruch** in der Form: alles wandert in ein `operation`-Objekt | [#10214](https://github.com/foundryvtt/foundryvtt/issues/10214) |
+| v13 | `modifyDocument` unverändert; neu ist `userQuery` | [api/v13 `User#query`](https://foundryvtt.com/api/v13/classes/foundry.documents.User.html) |
+
+Also: v12 und v13 sprechen dasselbe, v11 und älter nicht. Ein Zuhörer, der auf v11
+laufen soll, bräuchte einen zweiten Pfad — das lohnt sich vermutlich nicht.
+
+### Nachsehen statt raten: `scripts/lausche_foundry.py`
+
+```
+PYTHONPATH=src python3 scripts/lausche_foundry.py --dauer 180
+```
+
+Derselbe Handschlag wie ein Abgleich (`FoundryClient.verbindung`), aber die Leitung
+bleibt offen: der Lauf schreibt jedes eingehende Ereignis samt Nutzlast weg und legt
+danach auf. Währenddessen in Foundry einmal würfeln, einmal etwas in den Chat schreiben,
+eine Nachricht ändern und eine löschen — danach steht in der Datei, was oben nur
+recherchiert ist.
+
+Das Passwort wird gefragt und nirgends abgelegt. Die Mitschrift geht als
+`dumps/lauschen-<Zeit>.jsonl` in denselben gitignorierten Ordner wie der Weltabzug, mit
+denselben Rechten, und ist aus demselben Grund **personenbezogen**: der Server filtert
+nicht. In die Datenbank geht nichts — sie wird nicht einmal geöffnet.
+
 ## Was noch offen ist
 
+- **Wie heißen die Ereignisse wirklich?** Der Abschnitt oben ist recherchiert, nicht
+  gemessen. Offen bleiben insbesondere: ob ein Nicht-GM-Konto fremdes Geflüster wirklich
+  mitbekommt, ob der Daggerheart-Wurf auf der Leitung einen `system.roll` trägt oder nur
+  `rolls[]`, und ob während einer Sitzung Ereignisse auftreten, die in keiner Quelle
+  stehen. Ein Lauf von `scripts/lausche_foundry.py` beantwortet das.
 - **Wie viel steht wirklich im Chat-Log?** Die beobachtete Welt hatte acht Nachrichten,
   davon sieben Würfe aus einem halbstündigen Fenster — kein Schaden, keine Beute. Ob
   eine volle Sitzung wesentlich mehr liefert, ist ungeprüft. Falls nicht, trägt die
