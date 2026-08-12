@@ -9,7 +9,7 @@ import re
 import subprocess
 import sys
 
-TYPES = ("feat", "fix", "refactor", "chore", "docs", "test")
+TYPES = ("feat", "fix", "refactor", "chore", "docs", "test", "revert")
 
 # Ein verirrtes (...) im Subject lässt release-please grün laufen und trotzdem
 # kein Release schneiden — deshalb ist die Klammer eine eigene Prüfung.

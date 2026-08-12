@@ -49,8 +49,13 @@ erzeugt, trennt sichtbar zwischen Belegtem und Verbindungssätzen.
 ## Commits
 
 - **Conventional Commits**: `type(scope): subject` — `feat`/`fix`/`refactor`/`chore`/
-  `docs`/`test`. Scope spiegelt den Pfad: `feat(ui):`, `fix(foundry):`,
+  `docs`/`test`/`revert`. Scope spiegelt den Pfad: `feat(ui):`, `fix(foundry):`,
   `feat(discord):`, `docs:`.
+- **Eine Rücknahme heißt `revert`, nicht `fix`.** release-please führt sie in einem
+  eigenen Changelog-Abschnitt »Reverts« und hebt dabei den Patch-Stand; als `fix`
+  geschrieben stünde sie unter »Bug Fixes« — nicht falsch, aber unehrlich, weil das
+  Changelog Wochen später als Gedächtnisstütze gelesen wird. Gits eigener Vorspann
+  `Revert "…"` bleibt daneben zulässig und wird ungeprüft übersprungen.
 - **Keine Klammern im Subject** außer dem konventionellen `(scope)`. Ein verirrtes
   `(...)` lässt Release-Werkzeuge grün laufen und trotzdem kein Release schneiden.
 - Beides prüft `scripts/check_commit_subjects.py` — im `commit-msg`-Hook und in CI.
