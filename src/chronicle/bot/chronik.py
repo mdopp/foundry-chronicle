@@ -293,6 +293,16 @@ def laufende_sitzung(runde: Runde) -> int:
     return sitzung.id
 
 
+def letzte_sitzung(runde: Runde) -> int | None:
+    """Dieselbe Auskunft wie ``laufende_sitzung``, nur ohne Wurf — für alles, was bloß sagt.
+
+    Ein Befehl, der eine Auskunft gibt, darf an einer fehlenden Sitzung nicht scheitern:
+    dann gibt es eben keinen Thread, in dem etwas stehen könnte.
+    """
+    sitzung = notes.latest_session(runde)
+    return None if sitzung is None else sitzung.id
+
+
 def sitzungsname(sitzung: notes.Session) -> str:
     """Wie eine Sitzung in einer Antwort heißt — ihr Titel, sonst ihr Abend."""
     return (sitzung.title or "").strip() or f"Sitzung vom {sitzung.played_on}"

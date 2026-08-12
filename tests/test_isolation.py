@@ -403,6 +403,9 @@ ABFRAGEN = {
     # nachdem der Vermerk im Thread steht. Gefragt wird hier mit **d-2**: die trifft ihr
     # Konto 1:1 und läuft damit durch den Zweig, der ohne Klick auskommt.
     "erinnern.betreten": lambda c, r, i: erinnern.betreten(r, "d-2"),
+    # Die Nachschau vor einem nachgereichten Vermerk: sie darf eine Zuordnung der
+    # Nachbarrunde nicht für die eigene halten — beide tragen ``d-1`` auf ``u-1``.
+    "erinnern.steht_noch": lambda c, r, i: erinnern.steht_noch(r, "d-1", "u-1"),
     "lebenszyklus.frist_datum": lambda c, r, i: lebenszyklus.frist_datum(r),
     "lebenszyklus.ruht": lambda c, r, i: lebenszyklus.ruht(r),
     "lebenszyklus.dieselbe": lambda c, r, i: lebenszyklus.dieselbe(r),
@@ -737,6 +740,26 @@ def test_die_zuordnung_beim_betreten_bleibt_in_ihrer_runde(zwei_runden):
     assert _nach_kennung(a)["d-2"].confirmed.name == f"Spielerin {MARKE[1]}"
     assert _nach_kennung(b)["d-2"].confirmed is None
     assert _nach_kennung(b)["d-1"].confirmed is None
+
+
+def test_das_umhaengen_nimmt_nur_in_der_eigenen_runde_etwas_fort(zwei_runden):
+    """``uebernehmen`` ist der einzige Aufruf, der einer **anderen** Person etwas wegnimmt.
+
+    Beide Runden tragen dieselben Discord-Kennungen und dasselbe Konto ``u-1``; eine
+    verwechselte Runde risse hier nicht bloß eine fremde Zeile auf, sondern löschte sie.
+    Gepinnt, weil die Eigenschaft sonst nur zufällig hält.
+    """
+    _config, a, b, _ids = zwei_runden
+
+    ergebnis = erinnern.zuordnen(a, "d-2", "u-1", uebernehmen=True)
+
+    assert ergebnis.spieler.id == "u-1"
+    assert ergebnis.vorher.discord_user_id == "d-1"
+    assert _nach_kennung(a)["d-2"].confirmed.name == f"Spielerin {MARKE[1]}"
+    assert _nach_kennung(a)["d-1"].confirmed is None
+    # Und drüben steht alles, wie es war — dieselbe Kennung, dasselbe Konto.
+    assert _nach_kennung(b)["d-1"].confirmed.name == f"Spielerin {MARKE[2]}"
+    assert _nach_kennung(b)["d-2"].confirmed is None
 
 
 def test_das_menue_beim_betreten_zeigt_nur_konten_der_eigenen_runde(zwei_runden):

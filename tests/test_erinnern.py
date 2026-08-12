@@ -8,6 +8,7 @@ denselben Knopf bekommt eine ehrliche Auskunft statt eines Fehlers.
 from __future__ import annotations
 
 import asyncio
+import logging
 import re
 import sys
 import types
@@ -19,11 +20,13 @@ from test_bot import (
     FakeAntwort,
     FakeBot,
     FakeIntents,
+    FakeMitglied,
     FakePCMAudio,
     FakePermissions,
     FakeSelect,
     FakeSelectOption,
     FakeSenke,
+    FakeTextkanal,
     FakeView,
 )
 from test_chronik import FakeHTTPException, FakeInputText, FakeModal
@@ -43,8 +46,10 @@ FREMDE_GILDE = "9909"
 THREAD = "5001"
 NACHRICHT = "7001"
 
-MIRA = "d-mira"
-BROK = "d-brok"
+# Zahlen und keine sprechenden Kennungen: Discord vergibt Zahlen, und wer ein übernommenes
+# Konto seiner Vorbesitzerin ansagt, schlägt sie damit im Zwischenspeicher des Bots nach.
+MIRA = "4001"
+BROK = "4002"
 
 
 # -- Die Attrappen ----------------------------------------------------------------------
@@ -216,7 +221,7 @@ def erwaehnung_anlegen(runde, eintrag, sitzung):
 WIRTIN = "Die Wirtin zum Krummen Ast"
 
 
-def welt_ablegen(runde, *, spielername="Mira", weitere=0, zwilling=False):
+def welt_ablegen(runde, *, spielername="Mira", weitere=0, zwilling=False, gastfigur=False):
     scope = db.scoped(runde)
     try:
         foundry_store.save(
@@ -231,12 +236,32 @@ def welt_ablegen(runde, *, spielername="Mira", weitere=0, zwilling=False):
                         if zwilling
                         else ()
                     ),
+                    # Ein Konto, das anders heißt als sein Spielername — seine **Figur**
+                    # trägt den Namen. Damit trifft derselbe Discord-Name zwei Konten von
+                    # zwei Seiten, ohne dass zwei Konten gleich heißen müssten.
+                    *(
+                        (Player(id="u-gast", name="Gastkonto", role=1, is_gm=False),)
+                        if gastfigur
+                        else ()
+                    ),
                     *(
                         Player(id=f"u-{nummer}", name=f"Konto {nummer:02d}", role=1, is_gm=False)
                         for nummer in range(weitere)
                     ),
                 ),
                 characters=(
+                    *(
+                        (
+                            Character(
+                                id="a-gast",
+                                name=spielername,
+                                type="character",
+                                owner_ids=("u-gast",),
+                            ),
+                        )
+                        if gastfigur
+                        else ()
+                    ),
                     Character(
                         id="a-aelin",
                         name="Aelin Sturmwind",
@@ -738,6 +763,84 @@ def test_im_zuordnungsmenue_laesst_sich_ein_fremdes_konto_uebernehmen(stelle, bo
     )
 
 
+def uebernahme_buehne(unsere, bot):
+    """Die Lage der Übernahme: Broks Konto, ein Thread zum Vermerken, ein erreichbares Postfach."""
+    sitzung = sitzung_mit_notiz(unsere)
+    aufgenommen(unsere, sitzung, (MIRA, "Mira am Handy"), (BROK, "Mira"))
+    welt_ablegen(unsere)
+    people.confirm(unsere, {BROK: "u-mira"})
+    thread = FakeTextkanal()
+    bot.kanaele[int(THREAD)] = thread
+    vorbesitzerin = FakeMitglied(int(BROK), "Mira")
+    bot.nutzer[int(BROK)] = vorbesitzerin
+    return thread, vorbesitzerin
+
+
+def test_eine_uebernahme_steht_im_thread_und_bei_der_vorbesitzerin(stelle, bot):
+    """Der Schritt mit der größten Folge war der stillste — jetzt hat er Tageslicht.
+
+    Getragen wird die Sichtbarkeit **nicht** von der Ansicht: ``/zuordnung`` zeigt nur
+    ``PRO_SEITE`` Personen, und ab der sechsten steht die Vorbesitzerin weder vorher noch
+    nachher darin. Also der Thread für die Runde und ein Wort an sie selbst.
+    """
+    _config, unsere = stelle
+    thread, vorbesitzerin = uebernahme_buehne(unsere, bot)
+    ctx = FakeCtx()
+    asyncio.run(befehl(bot, gateway.BEFEHL_ZUORDNUNG)(ctx))
+
+    waehlen(ctx.ansichten[0], MIRA, "u-mira")
+
+    assert thread.geschrieben == [
+        erinnern.UEBERNAHME_VERMERK.format(name="Mira am Handy", spieler="Mira", vorher="Mira")
+    ]
+    assert [text for text, _ansicht in vorbesitzerin.zwiegespraech] == [
+        erinnern.UEBERNAHME_ANGESAGT.format(name="Mira am Handy", spieler="Mira")
+    ]
+
+
+def test_ein_geschlossenes_postfach_verwirft_die_uebernahme_nicht(stelle, bot, caplog):
+    """Der Thread ist der belastbare Weg — eine zugemachte Direktnachricht hebt nichts auf.
+
+    Und im Log steht der Grund, aber kein Name und keine Kennung.
+    """
+    _config, unsere = stelle
+    thread, vorbesitzerin = uebernahme_buehne(unsere, bot)
+    vorbesitzerin.zwiegespraech_zu = True
+    ctx = FakeCtx()
+    asyncio.run(befehl(bot, gateway.BEFEHL_ZUORDNUNG)(ctx))
+
+    with caplog.at_level(logging.WARNING):
+        interaktion = waehlen(ctx.ansichten[0], MIRA, "u-mira")
+
+    assert people.speakers(unsere)[MIRA].confirmed.id == "u-mira"
+    assert people.speakers(unsere)[BROK].confirmed is None
+    assert thread.geschrieben == [
+        erinnern.UEBERNAHME_VERMERK.format(name="Mira am Handy", spieler="Mira", vorher="Mira")
+    ]
+    # Und der Klick hat ordentlich geantwortet, statt »hat nicht geklappt« zu melden.
+    assert interaktion.response.gesendet == []
+    assert "RuntimeError" in caplog.text
+    for geheim in ("Mira am Handy", BROK, MIRA):
+        assert geheim not in caplog.text
+
+
+def test_ohne_uebernahme_wird_nichts_gesagt(stelle, bot):
+    """Gegenprobe: ein freies Konto nimmt niemandem etwas — also gibt es nichts zu sagen."""
+    _config, unsere = stelle
+    sitzung = sitzung_mit_notiz(unsere)
+    aufgenommen(unsere, sitzung, (MIRA, "Mira"))
+    welt_ablegen(unsere)
+    thread = FakeTextkanal()
+    bot.kanaele[int(THREAD)] = thread
+    ctx = FakeCtx()
+    asyncio.run(befehl(bot, gateway.BEFEHL_ZUORDNUNG)(ctx))
+
+    waehlen(ctx.ansichten[0], MIRA, "u-mira")
+
+    assert people.speakers(unsere)[MIRA].confirmed.id == "u-mira"
+    assert thread.geschrieben == []
+
+
 def test_ein_verschwundener_spieler_aendert_nichts(stelle, bot):
     _config, unsere = stelle
     sitzung = sitzung_mit_notiz(unsere)
@@ -874,6 +977,100 @@ def test_zwei_gleichnamige_konten_sind_keine_eindeutige_gleichheit(stelle):
 
     assert stand.automatisch is None
     assert [wer.id for wer in stand.spieler] == ["u-mira", "u-zwilling"]
+
+
+def test_ein_vergebener_zwilling_macht_die_gleichheit_nicht_eindeutig(stelle):
+    """Geprüft wird gegen **alle** Konten der Runde, abgezogen wird erst danach.
+
+    Andersherum verschwände die Mehrdeutigkeit genau dann, wenn eines der beiden
+    gleichnamigen Konten schon vergeben ist: unter den freien bliebe eines übrig, und
+    geschrieben würde ohne Rückfrage — obwohl »Mira« in dieser Runde zweimal vorkommt.
+    """
+    _config, unsere = stelle
+    sitzung = sitzung_mit_notiz(unsere)
+    aufgenommen(unsere, sitzung, (MIRA, "Mira"), ("d-anders", "Ganz anders"))
+    welt_ablegen(unsere, zwilling=True)
+    people.confirm(unsere, {"d-anders": "u-mira"})
+
+    stand = erinnern.betreten(unsere, MIRA)
+
+    assert stand.automatisch is None
+    assert [wer.id for wer in stand.spieler] == ["u-zwilling"]
+    assert people.speakers(unsere)[MIRA].confirmed is None
+
+
+def test_ein_vergebenes_konto_und_eine_gleichnamige_figur_sind_zwei_treffer(stelle):
+    """Derselbe Fehler ohne doppelten Kontonamen — der realistischere Weg hinein.
+
+    »Mira« ist der Name eines vergebenen Kontos **und** der Figur eines freien. Wer erst
+    filtert, sieht nur noch den zweiten Treffer und hält ihn für eindeutig.
+    """
+    _config, unsere = stelle
+    sitzung = sitzung_mit_notiz(unsere)
+    aufgenommen(unsere, sitzung, (MIRA, "Mira"), ("d-anders", "Ganz anders"))
+    welt_ablegen(unsere, gastfigur=True)
+    people.confirm(unsere, {"d-anders": "u-mira"})
+
+    stand = erinnern.betreten(unsere, MIRA)
+
+    assert stand.automatisch is None
+    assert [wer.id for wer in stand.spieler] == ["u-gast"]
+    assert people.speakers(unsere)[MIRA].confirmed is None
+
+
+def test_der_vermerk_nennt_den_namen_der_wirklich_getroffen_hat(stelle):
+    """Traf die Figur, steht die Figur im Satz — nicht der Kontoname.
+
+    »**Aelin Sturmwind** heißt hier genauso wie **Mira**« wäre eine Behauptung über
+    Namensgleichheit, die derselbe Satz sichtbar widerlegt.
+    """
+    _config, unsere = stelle
+    sitzung = sitzung_mit_notiz(unsere)
+    aufgenommen(unsere, sitzung, (BROK, "Aelin Sturmwind"))
+    welt_ablegen(unsere)
+
+    stand = erinnern.betreten(unsere, BROK)
+
+    assert stand.automatisch.id == "u-mira"
+    assert stand.vermerk == erinnern.BETRETEN_VERMERK_FIGUR.format(
+        name="Aelin Sturmwind", figur="Aelin Sturmwind", spieler="Mira"
+    )
+    assert "Aelin Sturmwind" in stand.vermerk
+
+
+def test_der_vermerk_am_kontonamen_bleibt_der_einfache_satz(stelle):
+    """Gegenprobe: traf der Kontoname, kommt keine Figur im Satz vor."""
+    _config, unsere = stelle
+    sitzung = sitzung_mit_notiz(unsere)
+    aufgenommen(unsere, sitzung, (MIRA, "Mira"))
+    welt_ablegen(unsere)
+
+    stand = erinnern.betreten(unsere, MIRA)
+
+    assert stand.vermerk == erinnern.BETRETEN_VERMERK.format(name="Mira", spieler="Mira")
+    assert "Aelin Sturmwind" not in stand.vermerk
+
+
+def test_der_satz_zum_menue_behauptet_nichts_ueber_die_namen(stelle):
+    """Ins Menü führt auch die **Mehrdeutigkeit** — dort ist der Name gerade derselbe.
+
+    Der Satz darf deshalb nur sagen, wie die Zuordnung zustande kam, und nichts darüber,
+    ob Namen übereinstimmen: bei zwei gleichnamigen Menschen wäre das nachweislich falsch.
+    """
+    _config, unsere = stelle
+    sitzung = sitzung_mit_notiz(unsere)
+    aufgenommen(unsere, sitzung, (MIRA, "Mira"), (BROK, "Mira"))
+    welt_ablegen(unsere)
+
+    stand = erinnern.betreten(unsere, MIRA)
+
+    assert stand.automatisch is None
+    # Genau hier stimmen die Namen überein — und genau hier steht das Menü.
+    assert people.genau(stand.person.discord_name, stand.spieler) is not None
+
+    satz = erinnern.MENUE_VERMERK.format(name="Mira", spieler="Mira")
+    assert "gewählt, nicht erkannt" in satz
+    assert "überein" not in satz
 
 
 def test_ein_nsc_name_macht_niemanden_zur_spielleitung(stelle):

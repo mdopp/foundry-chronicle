@@ -136,11 +136,27 @@ NICHT_AUFGENOMMEN = "Diese Person habe ich nicht aufgenommen — ich habe nichts
 SPIELER_WEG = "Diesen Foundry-Spieler kenne ich nicht mehr — ich habe nichts geändert."
 SPIELER_VERGEBEN = (
     "Dieses Foundry-Konto gehört schon jemand anderem — ich habe nichts geändert. "
-    "Soll es wechseln, geht das in `/zuordnung`: dort steht neben jedem Namen, wem was "
-    "gehört, und dort darf es auch umgehängt werden."
+    "Soll es wechseln, geht das in `/zuordnung`: dort darf ein Konto umgehängt werden, "
+    "und die Runde erfährt es dann im Thread."
 )
 UEBERNOMMEN = (
     "{name} spielt als {spieler}. Das Konto hatte {vorher} — dort steht jetzt wieder nichts."
+)
+
+# Und dieselbe Übernahme, gesagt statt nur beantwortet. Die Antwort auf den Klick ist
+# ephemer und `/zuordnung` zeigt nur ``PRO_SEITE`` Personen — ab der sechsten stünde die
+# Vorbesitzerin weder vorher noch nachher darin. Der Schritt mit der größten Folge wäre
+# damit der stillste; deshalb der Thread für die Runde und ein Wort an sie selbst
+# (Betreiber-Entscheidung vom 2026-08-12 zu #76).
+UEBERNAHME_VERMERK = (
+    "**{name}** spielt in eurem Foundry als **{spieler}** — bis eben gehörte das Konto "
+    "**{vorher}**, dort steht jetzt wieder nichts. Umgehängt wurde es in `/zuordnung`; "
+    "dort geht es auch wieder zurück."
+)
+UEBERNAHME_ANGESAGT = (
+    "Deine Zuordnung zum Foundry-Konto **{spieler}** hat **{name}** übernommen — deine Spuren "
+    "tragen ab jetzt wieder deinen Discord-Namen. War das ein Versehen, holt `/zuordnung` "
+    "es zurück."
 )
 
 # Gefragt wird beim Betreten des Sprachkanals, damit jede Äußerung von Anfang an einer
@@ -156,28 +172,29 @@ BETRETEN_FRAGE = (
 # Und der eine Fall, in dem nicht gefragt wird: der Name ist 1:1 derselbe. Gesagt wird es
 # trotzdem — eine Zuordnung, die von selbst entstanden ist und die niemand sieht, ist
 # genau die stillschweigend übernommene Vermutung, gegen die es die Bestätigung gibt.
+#
+# Zwei Sätze, weil ``people.getroffen`` zwei Antworten hat: der Kontoname oder der einer
+# seiner Figuren. Einen Satz für beides gibt es nicht — er nennte im Fall der Figur einen
+# Namen, der im selben Satz sichtbar nicht der gleiche ist.
 BETRETEN_VERMERK = (
-    "**{name}** heißt hier genauso wie **{spieler}** in eurem Foundry — ich habe beide "
+    "**{name}** heißt hier genauso wie das Foundry-Konto **{spieler}** — ich habe beide "
     "verbunden, damit die Spur von Anfang an den richtigen Namen trägt. Stimmt das nicht, "
     "ändert `/zuordnung` es."
 )
-
-# Und wenn das Festschreiben hinter dem Vermerk doch nicht durchging: der Satz oben steht
-# dann schon im Thread und behauptet etwas, das es nicht gibt. Also wird er widerrufen —
-# ein zweiter Anlauf kommt nicht, je Aufnahme wird genau einmal gefragt.
-BETRETEN_DOCH_NICHT = (
-    "Zurück damit: **{name}** und **{spieler}** habe ich doch nicht verbunden — das "
-    "Festschreiben ging nicht durch. Es bleibt beim Discord-Namen; `/zuordnung` stellt es "
-    "richtig."
+BETRETEN_VERMERK_FIGUR = (
+    "**{name}** heißt hier genauso wie **{figur}**, die Figur des Foundry-Kontos "
+    "**{spieler}** — ich habe beide verbunden, damit die Spur von Anfang an den richtigen "
+    "Namen trägt. Stimmt das nicht, ändert `/zuordnung` es."
 )
 
-# Der Weg **ohne** jeden Beleg: das Menü im Zwiegespräch, jemand wählt sich ein freies
-# Konto. Er wird genauso vermerkt wie die Namensgleichheit — je schwächer der Beleg, desto
-# mehr Tageslicht (Betreiber-Entscheidung vom 2026-08-12 zu #76). Der Satz sagt den
-# Unterschied: hier stimmt kein Name überein, hier hat jemand gewählt.
+# Der Weg über das Menü im Zwiegespräch: jemand wählt sich ein Konto. Er wird genauso
+# vermerkt wie die Namensgleichheit — je schwächer der Beleg, desto mehr Tageslicht
+# (Betreiber-Entscheidung vom 2026-08-12 zu #76). Der Satz sagt, wie es zustande kam, und
+# **nichts über die Namen**: ins Menü führt auch die Mehrdeutigkeit, und dort ist der Name
+# gerade derselbe — nur eben nicht nur bei einer.
 MENUE_VERMERK = (
     "**{name}** spielt in eurem Foundry als **{spieler}** — so gewählt, nicht erkannt: "
-    "die Namen stimmen nicht überein, ich habe gefragt und das ist die Antwort."
+    "ich habe gefragt, und das ist die Antwort."
 )
 
 NUR_SELBST = (
@@ -212,13 +229,19 @@ class Zugeordnet:
     """Was ``zuordnen`` getan hat: der Satz dazu und das Konto, das jetzt festgeschrieben ist.
 
     ``spieler`` bleibt ``None``, wenn nichts geschrieben wurde — abgewiesen, oder
-    zurückgenommen. Der Unterschied ist nicht Zierde: wer den Vermerk **vor** dem
-    Schreiben hinausgibt, muss danach nachsehen können, ob das Geschriebene auch entstand.
-    Sonst steht im Thread eine Verbindung, die es nicht gibt.
+    zurückgenommen. Der Unterschied ist nicht Zierde: gesagt wird nur, was auch entstanden
+    ist, sonst stünde im Thread eine Verbindung, die es nicht gibt.
+
+    ``wer`` und ``vorher`` stehen zusammen da, wo das Konto einer **anderen** abgenommen
+    wurde. Wer die war, weiß nur dieser Aufruf: danach trägt die Zuordnung genau eine Zeile,
+    und die alte ist fort. Ohne die beiden ließe sich die Übernahme weder vermerken noch der
+    Betroffenen sagen.
     """
 
     satz: str
     spieler: people.Spieler | None = None
+    wer: people.Person | None = None
+    vorher: people.Person | None = None
 
 
 @dataclass(frozen=True)
@@ -228,12 +251,13 @@ class Betreten:
     Leer heißt: nichts. Mit ``automatisch`` ist sie zuzuordnen und ``vermerk`` sagt es der
     Runde; sonst steht die Frage aus und ``spieler`` sind die Zeilen ihres Menüs.
 
-    Eine Entscheidung, kein Vollzug: geschrieben hat das hier noch nichts. Der Vermerk geht
-    **zuerst** hinaus, und erst wenn er angekommen ist, schreibt ``zuordnen`` fest — eine
-    Zuordnung, die entsteht, ohne dass sie jemand erfährt, ist die stillschweigend
-    übernommene Vermutung, gegen die es die Bestätigung überhaupt gibt. Umgekehrt gilt es
-    genauso: was ``zuordnen`` **nicht** geschrieben hat, muss widerrufen werden, sonst
-    behauptet der Vermerk eine Verbindung, die es nicht gibt.
+    Eine Entscheidung, kein Vollzug: geschrieben hat das hier noch nichts. Wer beides tut —
+    ``zuordnen`` und den Vermerk hinausgeben —, tut es in **dieser** Reihenfolge: erst
+    schreiben, dann sagen. Über SQLite und Discord hinweg gibt es kein gemeinsames
+    Zusammenschreiben, also entscheidet, welcher Fehlerfall der erträglichere ist, und das
+    ist **Schweigen** und nicht eine Lüge im Thread. Was der Vermerk nicht erreicht, nimmt
+    ``zuordnen`` wieder zurück; geht auch das nicht, steht eine wahre Zuordnung ohne
+    Vermerk, und der Vermerk wird beim nächsten Betreten nachgeholt.
     """
 
     person: people.Person | None = None
@@ -468,6 +492,19 @@ def _sonst_noch_so(stand: people.Uebersicht, person: people.Person, konto: peopl
     )
 
 
+def _vermerk(name: str, konto: people.Spieler) -> str:
+    """Der Satz an die Runde — mit dem Namen, der **wirklich** getroffen hat.
+
+    ``people.genau`` trifft über den Kontonamen **oder** über den einer Figur. Immer den
+    Kontonamen zu melden hieße im zweiten Fall: »**Aelin Sturmwind** heißt hier genauso wie
+    **Mira**« — eine Behauptung, die der eigene Satz widerlegt.
+    """
+    figur = people.getroffen(name, konto)
+    if figur == konto.name:
+        return BETRETEN_VERMERK.format(name=name, spieler=konto.name)
+    return BETRETEN_VERMERK_FIGUR.format(name=name, figur=figur, spieler=konto.name)
+
+
 def betreten(runde: Runde, discord_user_id: str) -> Betreten:
     """Wer den Sprachkanal betritt: schon zugeordnet, zuzuordnen oder zu fragen.
 
@@ -481,7 +518,14 @@ def betreten(runde: Runde, discord_user_id: str) -> Betreten:
     darf denselben Namen tragen. Sonst steht das Menü an — mit den freien Konten und keinem
     fremden darin.
 
-    Geschrieben wird hier nichts; das tut ``zuordnen``, nachdem der Vermerk draußen ist.
+    Die Eindeutigkeit wird gegen **alle** Konten der Runde geprüft und erst danach das
+    Vergebene abgezogen; die umgekehrte Reihenfolge hebt die Mehrdeutigkeit auf, statt sie
+    zu sehen. Heißen zwei Konten »Mira« und ist eines schon vergeben, bliebe unter den
+    freien genau eines übrig — und geschrieben würde ohne Rückfrage, obwohl der Name in
+    dieser Runde gerade **nicht** eindeutig ist. Dasselbe von zwei Seiten: ein vergebenes
+    Konto »Mira« und ein freies mit der Figur »Mira«.
+
+    Geschrieben wird hier nichts; das tut ``zuordnen``, und der Vermerk geht danach hinaus.
 
     Ohne freies Konto steht nichts zur Wahl. Dann wird auch nicht gefragt — eine Frage mit
     einem leeren Menü ist keine.
@@ -490,14 +534,28 @@ def betreten(runde: Runde, discord_user_id: str) -> Betreten:
     person = next((wer for wer in stand.personen if wer.discord_user_id == discord_user_id), None)
     if person is None or person.confirmed is not None or not stand.frei:
         return Betreten()
-    treffer = people.genau(person.discord_name, stand.frei)
-    if treffer is None or _sonst_noch_so(stand, person, treffer):
+    treffer = people.genau(person.discord_name, stand.spieler)
+    vergeben = treffer is not None and treffer.id not in {konto.id for konto in stand.frei}
+    if treffer is None or vergeben or _sonst_noch_so(stand, person, treffer):
         return Betreten(person=person, spieler=stand.frei)
     return Betreten(
         person=person,
         automatisch=treffer,
-        vermerk=BETRETEN_VERMERK.format(name=person.discord_name, spieler=treffer.name),
+        vermerk=_vermerk(person.discord_name, treffer),
     )
+
+
+def steht_noch(runde: Runde, discord_user_id: str, foundry_user_id: str) -> bool:
+    """Ob diese Zuordnung noch genau so dasteht.
+
+    Für einen Satz, der zwischen seinem Anlass und seiner Zustellung liegengeblieben ist:
+    ein nachgeholter Vermerk behauptet eine Verbindung, und in der Zwischenzeit kann sie in
+    ``/zuordnung`` umgehängt oder gelöst worden sein. Dann gibt es nichts mehr zu sagen.
+    """
+    person = people.speakers(runde).get(discord_user_id)
+    if person is None or person.confirmed is None:
+        return False
+    return person.confirmed.id == foundry_user_id
 
 
 def zuordnen(
@@ -521,9 +579,12 @@ def zuordnen(
     (»ändert `/zuordnung` es«) wäre gelogen. Der Weg über »erst zurücknehmen« wäre die
     schlechtere Antwort: er verlangt zwei Schritte in der Zeile einer **anderen** Person,
     und dazwischen liegt das Konto frei — auch für das Menü der nächsten, die den
-    Sprachkanal betritt. In ``/zuordnung`` steht dagegen jede Person mit ihrem Stand
-    untereinander: wer umhängt, sieht vorher, wem er es abnimmt, der Satz sagt es noch
-    einmal, und die aufgefrischte Übersicht zeigt die andere sofort als offen.
+    Sprachkanal betritt.
+
+    Was das Umhängen **sichtbar** macht, steht nicht hier: ``/zuordnung`` zeigt nur
+    ``PRO_SEITE`` Personen, die Vorbesitzerin fehlt darin ab der sechsten, und die Antwort
+    auf den Klick sieht ohnehin nur, wer geklickt hat. Getragen wird es deshalb vom Thread
+    und von einem Wort an die Vorbesitzerin — dafür steht ``vorher`` in der Antwort.
     """
     stand = people.overview(runde)
     person = next((wer for wer in stand.personen if wer.discord_user_id == discord_user_id), None)
@@ -560,4 +621,6 @@ def zuordnen(
             name=person.discord_name, spieler=spieler.name, vorher=vorher.discord_name
         ),
         spieler=spieler,
+        wer=person,
+        vorher=vorher,
     )
