@@ -1,9 +1,21 @@
 # Daggerheart-Chronik
 
 Sitzungsprotokolle für Tisch-Rollenspielrunden: aus den Notizen, die während des
-Spiels entstehen, und dem Chat-Log aus Foundry VTT wird eine lesbare Chronik. Der Dienst
-ist serverseitig gerendertes HTML ohne eigenes Login — angemeldet wird an Authelia, der
-Proxy setzt `Remote-User`, und ein Request ohne diesen Header wird abgewiesen.
+Spiels entstehen, und dem Chat-Log aus Foundry VTT wird eine lesbare Chronik.
+
+**Bedient wird in Discord** (#62). Was die spielende Gruppe betrifft — Sitzung, Szene,
+Notiz, Diktat, Chronik, Suche, Register, Zuordnung, Einrichtung — ist seit #157 ein
+Befehl im eigenen Server. Über HTTP liefert dieser Dienst nur noch **eine Seite**: die
+Betreiber-Seite unter `/einstellungen`, dazu `/status` (301 dorthin), `/` (Weiterleitung
+dorthin) und `/healthz`. Dort steht, was *keiner Gilde gehört* und deshalb in Discord
+keinen Ort hat: der Discord-Bot-Token, Ollama-Adresse und -Modell, und wer diese Seite
+verwalten darf.
+
+Die Seite ist serverseitig gerendertes HTML **ohne eigenes Login** — angemeldet wird an
+Authelia, der Proxy setzt `Remote-User`, und ein Request ohne diesen Header wird
+abgewiesen. Das ist kein Erbstück aus der Zeit der großen Oberfläche: auf dieser Seite
+liegt der Bot-Token, ServiceBay-ADR 0001 gilt für sie also unverändert. Subdomain,
+Proxy-Route und die `auth`-Abhängigkeit bleiben deshalb.
 
 **Eine Instanz trägt mehrere Runden** (#62). Eine Runde ist eine Discord-Gilde mit eigenem
 Foundry-Zugang; für eine zweite Gruppe wird der Bot in ihren Server eingeladen, nicht der
@@ -15,7 +27,7 @@ eine Gruppe; Vorgabe ist `daggerheart`, die Domain kommt zur Installationszeit a
 
 | Variable | Bedeutung | Vorgabe |
 |---|---|---|
-| `CHRONICLE_SUBDOMAIN` | Subdomain hinter Authelia-Forward-Auth | `daggerheart` |
+| `CHRONICLE_SUBDOMAIN` | Subdomain der Betreiber-Seite, hinter Authelia-Forward-Auth | `daggerheart` |
 | `CHRONICLE_PORT` | HTTP-Port auf der Box | `8700` |
 | `CHRONICLE_IMAGE_TAG` | Image-Tag für den Rollout | `latest` |
 
@@ -135,6 +147,14 @@ Tests grün sind. Für einen Rollout `CHRONICLE_IMAGE_TAG` auf einen festen Tag 
 `sha-<kurz>` oder die Release-Version —, dann pullen, dann neu starten und danach den
 laufenden Digest gegen den erwarteten prüfen.
 
-Nach dem Deploy gehört zur Abnahme: `/healthz` liefert 200, die Subdomain antwortet
-unauthentifiziert mit 302 auf `auth.<domain>`, und ein Request ohne `Remote-User` wird
-abgelehnt.
+Nach dem Deploy gehört zur Abnahme:
+
+- `/healthz` liefert 200 — am Proxy vorbei, es ist das Install-Gate der Box.
+- Die Subdomain antwortet unauthentifiziert mit 302 auf `auth.<domain>`, und ein Request
+  ohne `Remote-User` wird mit 403 abgelehnt.
+- Angemeldet führt die Wurzel `/` auf `/einstellungen` — der Proxy zeigt auf die Wurzel,
+  und dort lag bis #157 die Sitzungsliste; ein 404 an der Haustür wäre eine schlechte
+  Auskunft. `/status` führt mit 301 an dieselbe Stelle.
+- Eine Adresse für Spielinhalte gibt es nicht mehr. Angemeldet liefern `/sitzungen`,
+  `/protokolle`, `/suche` und `/register` zu Recht 404 — das ist der Umzug nach Discord,
+  kein kaputtes Deployment. Unangemeldet kommt auch dort erst der Türsteher: 403.

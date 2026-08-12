@@ -174,8 +174,8 @@ passiert ist** — und Teile davon nacherzählen können.
   Fakten werden deshalb zwischengespeichert, nicht bei jedem Aufruf geholt.
 - Der Stapel zeigt **ehrlichen Status statt Fortschritt**: „läuft im nächsten Stapel,
   Ergebnis morgen früh" — kein Balken, der Echtzeit vortäuscht, die es nicht gibt.
-- **Den Stapel stößt der Webdienst an**, in einem Faden, zu einer Uhrzeit aus den
-  Einstellungen. Nicht der Aufnahme-Bot, den es ohne Bot-Token gar nicht gibt, und kein
+- **Den Stapel stößt der Prozess an, der die Betreiber-Seite trägt**, in einem Faden, zu
+  einer Uhrzeit aus den Einstellungen. Nicht der Aufnahme-Bot, den es ohne Bot-Token gar nicht gibt, und kein
   dritter Prozess: ein Lauf ist eine Zeile in der `job`-Tabelle, und deren
   Absturzerkennung trägt nur, solange genau einer solche Zeilen anlegt. Ein verpasstes
   Fenster wird nicht nachgeholt — die nächste Nacht genügt.

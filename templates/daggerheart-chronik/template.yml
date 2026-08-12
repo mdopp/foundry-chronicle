@@ -10,10 +10,14 @@ metadata:
     servicebay.ports: "{{CHRONICLE_PORT}}/tcp"
     # nginx liefert den Proxy-Host, auth die Authelia-Forward-Auth davor. Beide müssen
     # stehen, bevor dieser Dienst installiert wird — sonst zeigt die Subdomain ins Leere.
+    # Die Schrumpfung mit #157 nimmt ``auth`` nicht heraus: die verbliebene Betreiber-Seite
+    # trägt den Discord-Bot-Token, ADR 0001 gilt für sie also unverändert.
     servicebay.dependencies: "nginx,auth"
     # Install-Gate der Box: /healthz antwortet 200, sobald Flask das Schema angelegt hat.
     # Der Poller fragt am Proxy vorbei, deshalb ist der Endpunkt vom Remote-User-Zwang
-    # ausgenommen (siehe chronicle/app.py).
+    # ausgenommen (siehe chronicle/app.py). Geprüft wird /healthz und nicht die Wurzel —
+    # die antwortet seit #157 mit einer Weiterleitung auf /einstellungen und läge außerdem
+    # hinter dem Remote-User-Zwang, den der Poller gar nicht erfüllen kann.
     servicebay.healthcheck: |
       url: http://localhost:{{CHRONICLE_PORT}}/healthz
       interval: 30s
@@ -32,6 +36,10 @@ spec:
   # Hälfte der Abmachung: 0 heißt liegen lassen.
   restartPolicy: OnFailure
   containers:
+  # Hinter dem Proxy-Host liegt seit #157 keine Anwendung mehr, sondern **eine Seite**:
+  # /einstellungen für Bot-Token, Ollama und die Verwaltungsgruppe, /status als Altweg
+  # dorthin, / als Weiterleitung und /healthz als Install-Gate. Alles Spielbare ist ein
+  # Discord-Befehl. Derselbe Prozess trägt außerdem den nächtlichen Lauf.
   - name: chronik
     image: ghcr.io/mdopp/foundry-chronicle:{{CHRONICLE_IMAGE_TAG}}
     # Container-uid 0 ist unter rootless Podman der unprivilegierte Host-Benutzer, dem
@@ -52,8 +60,10 @@ spec:
       # damit ein direkter Zugriff aus dem LAN die Anmeldung nicht überspringt.
       - name: CHRONICLE_REQUIRE_REMOTE_USER
         value: "1"
-      # Muss {{PUBLIC_DOMAIN}} referenzieren, sonst injiziert der Assembler die Variable
-      # nicht und der Proxy-Host wird still übersprungen — Assist
+      # Den *Wert* liest seit #157 niemand mehr — die Protokollseite, auf die er zeigte,
+      # ist fort. Die Zeile bleibt trotzdem stehen, denn irgendwo im Manifest muss
+      # {{PUBLIC_DOMAIN}} vorkommen: sonst injiziert der Assembler die Variable nicht und
+      # der Proxy-Host wird still übersprungen — Assist
       # footgun-subdomain-needs-public-domain.
       - name: CHRONICLE_PUBLIC_URL
         value: "https://{{CHRONICLE_SUBDOMAIN}}.{{PUBLIC_DOMAIN}}"
@@ -85,8 +95,8 @@ spec:
   # Der Aufnahme-Bot ist ein eigener, dauerhafter Prozess: er hält eine
   # Gateway-Verbindung, weil Sprache nur mitgeschnitten werden kann, während sie
   # gesprochen wird. Gleiches Image, anderer Befehl. Den Token holt er sich aus derselben
-  # SQLite wie der Webdienst — deshalb teilen sie /data. Ohne Token beendet er sich mit
-  # einem Satz, statt in einer Schleife abzustürzen.
+  # SQLite wie die Betreiber-Seite — deshalb teilen sie /data. Ohne Token beendet er sich
+  # mit einem Satz, statt in einer Schleife abzustürzen.
   - name: bot
     image: ghcr.io/mdopp/foundry-chronicle:{{CHRONICLE_IMAGE_TAG}}
     command: ["python", "-m", "chronicle.bot"]

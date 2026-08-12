@@ -319,8 +319,9 @@ Geholt wird **per REST im Stapel, nicht über eine dauerhafte Gateway-Verbindung
 fragt, was seit dem letzten Zeiger dazugekommen ist. Ein zweiter Lauf verdoppelt nichts —
 neben dem Zeiger steht die Kennung jeder erledigten Nachricht in der Datenbank. Das Diktat
 läuft durch Discords Cloud; für Online-Gruppen ändert das nichts, für reine Präsenzgruppen
-ist es eine bewusste Entscheidung — der Discord-Teil darf leer bleiben, dann bleibt das
-Web-Formular der Weg.
+ist es eine bewusste Entscheidung — der Diktat-Kanal darf leer bleiben, dann bleiben die
+getippten Notizen im Sitzungs-Thread der Weg. (Bis #157 stand hier das Web-Formular; das
+gibt es nicht mehr.)
 
 ## Rückblick nach Discord
 
@@ -345,8 +346,10 @@ Konstruktion aus berechtigungsgefiltertem Material komponiert, und daran vorbei 
 nichts hineingereicht.
 
 Discord kappt bei **2000 Zeichen**. Ein längerer Rückblick ist ein Fehler des Rückblicks
-und kein Grund zum Aufteilen: gepostet wird der Anfang plus ein Link auf die
-Protokollseite (`CHRONICLE_PUBLIC_URL`), die volle Länge steht in der Logzeile.
+und kein Grund zum Aufteilen: gepostet wird der Anfang plus der Hinweis, dass die ganze
+Sitzung als Chronik-Datei im Thread liegt; die volle Länge steht in der Logzeile. (Bis
+#157 zeigte der Hinweis auf eine Protokollseite unter `CHRONICLE_PUBLIC_URL` — die Seite
+gibt es nicht mehr, und den Wert liest niemand mehr.)
 
 ## Aufnahme per Discord
 
