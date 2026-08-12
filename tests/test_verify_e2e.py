@@ -11,6 +11,7 @@ import ast
 import importlib.util
 import subprocess
 import sys
+import zoneinfo
 from pathlib import Path
 
 from chronicle import settings
@@ -67,8 +68,15 @@ def test_argumente_gibt_es_keine(capsys):
     assert "ohne Argumente" in capsys.readouterr().out
 
 
-def test_das_skript_kommt_mit_der_standardbibliothek_aus():
-    """Im Image liegt kein pytest und keine Testabhängigkeit — nur Python und das Paket."""
+def test_das_skript_kommt_ohne_testabhaengigkeit_aus():
+    """Im Image liegt kein pytest und keine Testabhängigkeit — nur Python und das Paket.
+
+    Seit #158 fährt der Durchstich über die Bot-Befehle statt über HTTP-Routen, also
+    **muss** er ``chronicle`` importieren. Die Zusage ist damit nicht mehr »nur
+    Standardbibliothek«, sondern »Standardbibliothek und das Paket« — was im Image liegt.
+    Alles darüber hinaus wäre eine Abhängigkeit, die dort fehlt, und der Lauf stürbe am
+    Import statt an einem Schritt.
+    """
     baum = ast.parse(SKRIPT.read_text(encoding="utf-8"))
     module = set()
     for knoten in ast.walk(baum):
@@ -76,12 +84,32 @@ def test_das_skript_kommt_mit_der_standardbibliothek_aus():
             module.update(name.name.split(".")[0] for name in knoten.names)
         elif isinstance(knoten, ast.ImportFrom) and knoten.level == 0 and knoten.module:
             module.add(knoten.module.split(".")[0])
-    assert module <= set(sys.stdlib_module_names)
+    assert module <= set(sys.stdlib_module_names) | {"chronicle"}
 
 
 def test_der_durchstich_prueft_die_vorgabezone_der_einstellungen():
-    """Zwei Orte, eine Zone: das Skript darf ``chronicle`` nicht importieren."""
-    assert verify.STANDARDZONE == settings.DEFAULT_NIGHTLY_ZONE
+    """Eine Zone, ein Ort: seit #158 gelesen statt abgeschrieben.
+
+    Die frühere Fassung verglich eine Kopie im Skript mit der Vorgabe — nötig, solange
+    das Skript ``chronicle`` nicht importieren durfte. Jetzt darf es, also gibt es keine
+    Kopie mehr, die auseinanderlaufen könnte.
+    """
+    assert not hasattr(verify, "STANDARDZONE")
+    assert "settings.DEFAULT_NIGHTLY_ZONE" in SKRIPT.read_text(encoding="utf-8")
+    zoneinfo.ZoneInfo(settings.DEFAULT_NIGHTLY_ZONE)
+
+
+def test_der_durchstich_faehrt_ueber_die_bot_befehle_und_nicht_ueber_routen():
+    """Die Routen, über die er lief, gibt es mit #157 nicht mehr (#158).
+
+    Ohne diesen Nachzug prüfte ``/verify`` auf der Box nur noch ``/healthz``.
+    """
+    quelle = SKRIPT.read_text(encoding="utf-8")
+    for fort in ("/sitzungen/", "/szenen/", "/protokolle", "/suche?", "/einrichtung"):
+        assert fort not in quelle, fort
+    assert "chronik.aufnehmen" in quelle
+    assert "chronik.abschluss_starten" in quelle
+    assert "erinnern.suche" in quelle
 
 
 def test_das_image_bringt_das_skript_mit():

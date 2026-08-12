@@ -1,9 +1,10 @@
-"""Wer verwalten darf — die eine Stelle, an der das entschieden wird.
+"""Wer die Betreiber-Seite verwalten darf — die eine Stelle, an der das entschieden wird.
 
-Mitspielen darf jeder, den die Anmeldung hereinlässt. Verwalten — Einstellungen,
-Einrichtung, Personen-Zuordnung und die Knöpfe, die einen Lauf sofort anstoßen — darf,
-wer in einer bestimmten Gruppe steht. Die Gruppenzugehörigkeit kommt mit jedem Aufruf
-vom Proxy; Konten und Gruppen pflegt die Benutzerverwaltung der Box, nicht die Chronik.
+Mitgespielt wird in Discord, und wer dort was darf, entscheidet die Gilde über ihre
+eigenen Rechte (#62). Hier geht es um etwas anderes: wer an den **Bot-Token** darf. Das
+gehört dem Betrieb dieser Box und hat in keiner Gilde einen Ort, weshalb dieses Modul
+#157 überlebt hat. Die Gruppenzugehörigkeit kommt mit jedem Aufruf vom Proxy; Konten und
+Gruppen pflegt die Benutzerverwaltung der Box, nicht die Chronik.
 
 Gespeichert ist hier nur der *Name* der Gruppe. **Leer heißt: alle dürfen alles** — das
 ist die Vorgabe und das bisherige Verhalten; kleine Runden ohne Rollenbedarf müssen

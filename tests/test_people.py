@@ -8,8 +8,7 @@ import pytest
 from conftest import UNSER_KONTO, runde
 
 from chronicle import consent, db, notes, people, recordings
-from chronicle.app import create_app
-from chronicle.config import Config
+from chronicle.bot import erinnern
 from chronicle.foundry import store
 from chronicle.foundry.world import project
 
@@ -159,50 +158,53 @@ def test_die_zuordnung_speichert_keinen_namen(config):
     assert spalten == {"runde_id", "discord_user_id", "foundry_user_id", "confirmed_at"}
 
 
-def test_die_seite_uebernimmt_den_vorschlag_erst_nach_dem_absenden(eingerichtet):
+def test_der_vorschlag_wird_erst_mit_der_bestaetigung_zur_zuordnung(eingerichtet):
     angesagt(eingerichtet, MIRA)
-    client = create_app(eingerichtet).test_client()
 
-    html = client.get("/zuordnung").get_data(as_text=True)
-    assert "Vorschlag" in html
+    (person,) = people.overview(runde(eingerichtet)).personen
+    assert person.suggestion.id == MIRA_IN_FOUNDRY
     assert gespeichert(eingerichtet) == {}
 
-    client.post("/zuordnung", data={people.FELD + MIRA.id: MIRA_IN_FOUNDRY})
+    people.confirm(runde(eingerichtet), {person.discord_user_id: person.suggestion.id})
 
     assert gespeichert(eingerichtet) == {MIRA.id: MIRA_IN_FOUNDRY}
 
 
-def test_ohne_eindeutigen_vorschlag_sagt_die_seite_das_auch(eingerichtet):
+def test_ohne_eindeutigen_vorschlag_steht_die_person_trotzdem_zur_wahl(eingerichtet):
     angesagt(eingerichtet, DAVEY)
 
-    html = create_app(eingerichtet).test_client().get("/zuordnung").get_data(as_text=True)
+    (person,) = people.overview(runde(eingerichtet)).personen
 
-    assert "Kein eindeutiger Vorschlag" in html
-    assert "Davey" in html
+    assert person.discord_name == "Davey"
+    assert person.suggestion is None
 
 
 def test_ein_wert_ausserhalb_der_liste_wird_nicht_gespeichert(eingerichtet):
+    """Die Spielleitung fällt schon im Berechtigungsfilter heraus — wählbar ist sie nie."""
     angesagt(eingerichtet, MIRA)
-    client = create_app(eingerichtet).test_client()
 
-    client.post("/zuordnung", data={people.FELD + MIRA.id: LEITUNG_IN_FOUNDRY})
+    uebersicht = people.overview(runde(eingerichtet))
 
+    assert LEITUNG_IN_FOUNDRY not in {s.id for s in uebersicht.spieler}
+    assert erinnern.zuordnen(runde(eingerichtet), MIRA.id, LEITUNG_IN_FOUNDRY) == (
+        erinnern.SPIELER_WEG
+    )
     assert gespeichert(eingerichtet) == {}
 
 
-def test_ohne_foundry_stand_erklaert_die_seite_was_fehlt(config):
+def test_ohne_foundry_stand_gibt_es_niemanden_zu_waehlen(config):
     db.init(config.database_path)
     angesagt(config, MIRA)
 
-    html = create_app(config).test_client().get("/zuordnung").get_data(as_text=True)
+    uebersicht = people.overview(runde(config))
 
-    assert "Kein Foundry-Stand" in html
+    assert uebersicht.spieler == ()
+    assert [person.discord_name for person in uebersicht.personen] == ["Mira"]
+    assert uebersicht.personen[0].suggestion is None
 
 
-def test_ohne_aufnahme_steht_da_wovon_die_liste_lebt(eingerichtet):
-    html = create_app(eingerichtet).test_client().get("/zuordnung").get_data(as_text=True)
-
-    assert "Noch niemand aufgenommen" in html
+def test_ohne_aufnahme_ist_niemand_zuzuordnen(eingerichtet):
+    assert people.overview(runde(eingerichtet)).personen == ()
 
 
 def test_die_spur_traegt_den_foundry_namen_sobald_bestaetigt(eingerichtet):
@@ -215,14 +217,14 @@ def test_die_spur_traegt_den_foundry_namen_sobald_bestaetigt(eingerichtet):
     )
     people.confirm(runde(eingerichtet), {MIRA.id: MIRA_IN_FOUNDRY})
 
-    seite = create_app(eingerichtet).test_client().get(f"/sitzungen/{sitzung_id}")
+    (aufnahme,) = recordings.for_session(runde(eingerichtet), sitzung_id)
+    person = people.speakers(runde(eingerichtet))[aufnahme.discord_user_id]
 
-    html = seite.get_data(as_text=True)
-    assert "Gesprochen von <strong>Mira</strong>" in html
-    assert "Aelin Sturmwind" in html
+    assert person.confirmed.name == "Mira"
+    assert person.confirmed.characters == ("Aelin Sturmwind",)
 
 
-def test_eine_unzugeordnete_spur_zeigt_den_discord_namen_und_den_weg_dorthin(eingerichtet):
+def test_eine_unzugeordnete_spur_traegt_den_discord_namen(eingerichtet):
     sitzung_id = notes.create_session(
         runde(eingerichtet), played_on="2026-08-06", title="Der Keller"
     )
@@ -231,16 +233,11 @@ def test_eine_unzugeordnete_spur_zeigt_den_discord_namen_und_den_weg_dorthin(ein
         runde(eingerichtet), sitzung_id, "sitzung1-Davey.wav", discord_user_id=DAVEY.id
     )
 
-    html = (
-        create_app(eingerichtet)
-        .test_client()
-        .get(f"/sitzungen/{sitzung_id}")
-        .get_data(as_text=True)
-    )
+    (aufnahme,) = recordings.for_session(runde(eingerichtet), sitzung_id)
+    person = people.speakers(runde(eingerichtet))[aufnahme.discord_user_id]
 
-    assert "Gesprochen von Davey" in html
-    assert "noch nicht zugeordnet" in html
-    assert "/zuordnung" in html
+    assert person.discord_name == "Davey"
+    assert person.confirmed is None
 
 
 def test_ein_diktat_ohne_sprecher_bekommt_keine_beschriftung(eingerichtet):
@@ -249,18 +246,7 @@ def test_ein_diktat_ohne_sprecher_bekommt_keine_beschriftung(eingerichtet):
     )
     recordings.enqueue(runde(eingerichtet), sitzung_id, "sitzung1-heimweg.m4a")
 
-    html = (
-        create_app(eingerichtet)
-        .test_client()
-        .get(f"/sitzungen/{sitzung_id}")
-        .get_data(as_text=True)
-    )
+    (aufnahme,) = recordings.for_session(runde(eingerichtet), sitzung_id)
 
-    assert "Gesprochen von" not in html
-
-
-def test_ohne_remote_user_bleibt_die_zuordnung_zu(tmp_path):
-    client = create_app(Config(data_dir=tmp_path, require_remote_user=True)).test_client()
-
-    assert client.get("/zuordnung").status_code == 403
-    assert client.post("/zuordnung", data={}).status_code == 403
+    assert aufnahme.discord_user_id is None
+    assert people.speakers(runde(eingerichtet)).get(aufnahme.discord_user_id) is None

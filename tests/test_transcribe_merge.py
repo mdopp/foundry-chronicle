@@ -11,7 +11,6 @@ import pytest
 from conftest import runde
 
 from chronicle import consent, db, notes, people, recordings
-from chronicle.app import create_app
 from chronicle.compose.composer import NOTIZEN_TITEL, compose
 from chronicle.compose.service import material
 from chronicle.config import Config
@@ -34,11 +33,6 @@ def config(tmp_path):
 def sitzung_id(config):
     db.init(config.database_path)
     return notes.create_session(runde(config), played_on="2026-08-06", title="Der Keller")
-
-
-@pytest.fixture
-def client(config):
-    return create_app(config).test_client()
 
 
 def angesagt(config, *mitglieder):
@@ -192,14 +186,6 @@ def test_ein_diktat_ohne_discord_id_kommt_nicht_auf_die_zeitachse(config, sitzun
     diktat(config, sitzung_id, (0, 2000, "Auf dem Heimweg fällt mir ein:"))
 
     assert merge.conversation(runde(config), sitzung_id) == ()
-
-
-def test_die_seite_zeigt_ohne_bot_spuren_kein_transkript(client, config, sitzung_id):
-    diktat(config, sitzung_id, (0, 2000, "Auf dem Heimweg fällt mir ein:"))
-
-    text = client.get(f"/sitzungen/{sitzung_id}").get_data(as_text=True)
-
-    assert "Zusammengeführtes Transkript" not in text
 
 
 # --- Die selbsttätige Übernahme (#140) ----------------------------------------------
@@ -451,71 +437,52 @@ def test_die_notiz_traegt_den_sprecher_aber_keine_zeitmarke(config, sitzung_id):
 # --- Der Weg in die Komposition -----------------------------------------------------
 
 
-def test_der_abschnitt_wird_zur_notiz_in_der_gewaehlten_szene(client, config, sitzung_id):
+def test_der_abschnitt_wird_zur_notiz_in_der_gewaehlten_szene(config, sitzung_id):
     zwei_stimmen(config, sitzung_id)
     szene = notes.session(runde(config), sitzung_id).scenes[0]
 
-    antwort = client.post(
-        f"/sitzungen/{sitzung_id}/transkript",
-        data={"scene_id": str(szene.id), "von": "0:00:05", "bis": "0:00:10"},
-        follow_redirects=True,
+    abschnitt = merge.span(
+        merge.conversation(runde(config), sitzung_id),
+        von=merge.marke_ms("0:00:05"),
+        bis=merge.marke_ms("0:00:10"),
     )
+    notes.add_note(runde(config), szene.id, merge.note_text(abschnitt))
 
-    assert antwort.status_code == 200
     notiz = notes.session(runde(config), sitzung_id).scenes[0].notes[0]
     assert notiz.text == "Davey: Warte, ich sehe nach.\nMira: Da liegt etwas vor der Tür."
 
 
-def test_ein_leerer_abschnitt_wird_gesagt_statt_still_verschluckt(client, config, sitzung_id):
+def test_ein_leerer_abschnitt_wird_zu_keiner_leeren_notiz(config, sitzung_id):
     zwei_stimmen(config, sitzung_id)
     szene = notes.session(runde(config), sitzung_id).scenes[0]
 
-    antwort = client.post(
-        f"/sitzungen/{sitzung_id}/transkript",
-        data={"scene_id": str(szene.id), "von": "1:00:00", "bis": ""},
+    abschnitt = merge.span(
+        merge.conversation(runde(config), sitzung_id), von=merge.marke_ms("1:00:00")
     )
 
-    assert antwort.status_code == 400
-    assert merge.LEERE_SPANNE in antwort.get_data(as_text=True)
+    assert abschnitt == ()
+    assert notes.add_note(runde(config), szene.id, merge.note_text(abschnitt)) is None
     assert notes.session(runde(config), sitzung_id).note_count == 0
 
 
-def test_eine_unlesbare_marke_kommt_als_meldung_zurueck(client, config, sitzung_id):
-    zwei_stimmen(config, sitzung_id)
-    szene = notes.session(runde(config), sitzung_id).scenes[0]
-
-    antwort = client.post(
-        f"/sitzungen/{sitzung_id}/transkript", data={"scene_id": str(szene.id), "von": "gleich"}
-    )
-
-    assert antwort.status_code == 400
-    assert "keine Zeitmarke" in antwort.get_data(as_text=True)
-
-
-def test_ein_abschnitt_geht_nicht_in_eine_fremde_szene(client, config, sitzung_id):
-    zwei_stimmen(config, sitzung_id)
+def test_ein_abschnitt_geht_nicht_in_eine_fremde_szene(config, sitzung_id):
+    """Die Szene sagt selbst, zu welcher Sitzung sie gehört — daran hängt die Prüfung."""
     fremde = notes.session(
         runde(config),
         notes.create_session(runde(config), played_on="2026-08-13"),
     ).scenes[0]
 
-    assert (
-        client.post(f"/sitzungen/{sitzung_id}/transkript", data={"scene_id": "0"}).status_code
-        == 404
-    )
-    assert (
-        client.post(
-            f"/sitzungen/{sitzung_id}/transkript", data={"scene_id": str(fremde.id)}
-        ).status_code
-        == 404
-    )
+    assert notes.session_of_scene(runde(config), fremde.id) != sitzung_id
+    assert notes.session_of_scene(runde(config), 0) is None
 
 
-def test_die_komposition_nimmt_das_transkript_wie_eine_notiz(client, config, sitzung_id):
+def test_die_komposition_nimmt_das_transkript_wie_eine_notiz(config, sitzung_id):
     """Der Schluss der Architektur: dieselbe Materialform, derselbe Composer."""
     zwei_stimmen(config, sitzung_id)
     szene = notes.session(runde(config), sitzung_id).scenes[0]
-    client.post(f"/sitzungen/{sitzung_id}/transkript", data={"scene_id": str(szene.id)})
+    notes.add_note(
+        runde(config), szene.id, merge.note_text(merge.conversation(runde(config), sitzung_id))
+    )
 
     scope = db.scoped(runde(config))
     try:
@@ -532,13 +499,3 @@ def test_die_komposition_nimmt_das_transkript_wie_eine_notiz(client, config, sit
     chronik = compose(stoff).text
     assert NOTIZEN_TITEL in chronik
     assert "Mira: Wir brechen bei Sonnenaufgang auf." in chronik
-
-
-def test_die_sitzungsseite_zeigt_die_verschraenkte_unterhaltung(client, config, sitzung_id):
-    zwei_stimmen(config, sitzung_id)
-
-    text = client.get(f"/sitzungen/{sitzung_id}").get_data(as_text=True)
-
-    assert "Zusammengeführtes Transkript" in text
-    assert "noch nicht zugeordnet" in text
-    assert text.index("Warte, ich sehe nach.") < text.index("Da liegt etwas vor der Tür.")

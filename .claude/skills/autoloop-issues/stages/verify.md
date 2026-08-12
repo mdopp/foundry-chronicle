@@ -19,11 +19,11 @@ The expensive pipeline runs **once per batch**, never once per issue. Deploying 
    ```bash
    podman exec daggerheart-chronik-chronik python /app/scripts/verify_e2e.py
    ```
-   It starts its **own** throwaway instance (fresh `CHRONICLE_DATA_DIR` under `/tmp`, free port, `CHRONICLE_REQUIRE_REMOTE_USER=1`, no Ollama/Foundry/Discord values) and drives session → scene → note → deterministic composition → protocol page carries the note → a Rückblick exists → `/suche` finds the marker → a request without `Remote-User` gets 403 → cleanup. **Exit code decides**; paste its output into `detail` unabridged. The group's real data is never touched, so this does not replace looking at the live instance — it proves the path works on the deployed image.
+   It starts its **own** throwaway instance (fresh `CHRONICLE_DATA_DIR` under `/tmp`, free port, `CHRONICLE_REQUIRE_REMOTE_USER=1`, no Ollama/Foundry/Discord values) and drives the chain **through the bot commands** (#158), with a Discord mock and no token: operator page reachable and closed without `Remote-User` → guild round → `/chronik start` → `/szene` → thread message becomes a note → `/chronik fertig` → the stored chronicle carries the note → a Rückblick exists → `/suche` finds the marker → a thread attachment is queued as a dictation → timezone database present → cleanup. **Exit code decides**; paste its output into `detail` unabridged. The group's real data is never touched, so this does not replace looking at the live instance — it proves the path works on the deployed image.
 3. **Exercise what else the batch changed**, from the checklist the seal wrote into `verify-set --detail`. That checklist is the contract; if it is missing or empty, say so instead of inventing one. Where a path cannot be driven (no Discord voice hardware, no live Foundry), say so **explicitly** in `detail` rather than asserting it works.
 4. **Watch for the failure modes this project actually has**, not generic ones:
    - a number in a generated protocol that is not in Foundry's chat log,
-   - notes that vanish on reload,
+   - notes that never reach the chronicle,
    - a Foundry outage producing an empty screen instead of an explanation,
    - the Foundry token or the Discord bot token appearing in a log line.
 5. **Restore.** Leave the node in its normal running state — no test sessions, no staged config, no half-installed template. If you changed a setting to test something, change it back and confirm it.
