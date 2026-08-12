@@ -1,0 +1,24 @@
+name: py-cord-Fork beobachten
+
+# Der Fork mdopp/pycord existiert nur, solange Pycord-PR #3159 offen ist (#145, #152).
+# Niemand merkt von selbst, wann der Grund wegfällt — also fragt es dieser Lauf wöchentlich.
+# Bewusst hier und nicht im Testlauf: ein Test, der bei jedem Lauf ans Netz geht, ist keiner.
+# Schlägt der Lauf fehl, heißt das nicht »kaputt«, sondern »der Fork darf weg«.
+on:
+  schedule:
+    - cron: '17 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ausstieg:
+    name: Darf der Fork weg
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python3 scripts/pruefe_pycord_ausstieg.py
