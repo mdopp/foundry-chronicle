@@ -3420,9 +3420,9 @@ def test_die_bestaetigung_sagt_das_wichtigste(konfiguration, sitzung_id, ohne_es
 # passieren darf: dass ein Vorschlag als Bestätigung durchgeht.
 
 
-def foundry_spieler(konfiguration, *namen):
+def foundry_spieler(konfiguration, *namen, wo=None):
     """Ein Foundry-Stand mit genau diesen Konten — mehr braucht die Zuordnung nicht."""
-    scope = db.scoped(unsere_runde(konfiguration))
+    scope = db.scoped(unsere_runde(konfiguration) if wo is None else wo)
     try:
         foundry_store.save(
             scope,
@@ -3483,7 +3483,7 @@ def test_beim_start_wird_zugeordnet_wer_gleich_heisst_und_gefragt_wer_nicht(
     konfiguration, mit_thread, ohne_espeak, runde
 ):
     """Beides beim Betreten und nicht erst am Ende des Abends — das ist der Punkt von #76."""
-    foundry_spieler(konfiguration, "Mira")
+    foundry_spieler(konfiguration, "Mira", "Brok Eisenfaust")
     bot = gateway.baue(konfiguration)
     thread = mit_thread(bot)
 
@@ -3495,6 +3495,31 @@ def test_beim_start_wird_zugeordnet_wer_gleich_heisst_und_gefragt_wer_nicht(
     assert runde.mira.zwiegespraech == []
     assert gefragt_wurde(runde.brok) is not None
     assert runde.kanal.name in runde.brok.zwiegespraech[0][0]
+
+
+def test_das_menue_im_zwiegespraech_bietet_kein_fremdes_konto_an(
+    konfiguration, mit_thread, ohne_espeak, runde
+):
+    """Der Weg, auf dem Brok privat und unbeaufsichtigt zu Mira wurde — er ist zu.
+
+    Miras Konto ist beim Start vergeben. In Broks Menü steht es deshalb nicht, und selbst
+    wenn er es doch nennt, wird nichts geschrieben: ein Konto gehört genau einer Person.
+    """
+    foundry_spieler(konfiguration, "Mira", "Brok Eisenfaust")
+    bot = gateway.baue(konfiguration)
+    mit_thread(bot)
+
+    asyncio.run(befehl(bot, "start")(FakeCtx(runde.mira)))
+    menue = gefragt_wurde(runde.brok)
+
+    assert [option.value for option in menue.options] == [erinnern.KEINE, "u-brok eisenfaust"]
+
+    interaktion = antworten(menue, runde.brok, "u-mira")
+
+    assert interaktion.response.bearbeitet[0]["content"] == erinnern.SPIELER_VERGEBEN.format(
+        niemand=erinnern.ZUORDNUNG_KEINE
+    )
+    assert zugeordnet(konfiguration) == {MIRA.id: "Mira", BROK.id: None}
 
 
 def test_die_frage_im_zwiegespraech_ist_noch_keine_zuordnung(
@@ -3544,7 +3569,7 @@ def test_je_aufnahme_wird_genau_einmal_gefragt(
     konfiguration, mit_thread, ohne_espeak, runde, kurze_frist
 ):
     """Sonst stünde bei jedem Gehen und Wiederkommen dieselbe Frage noch einmal im Postfach."""
-    foundry_spieler(konfiguration, "Mira")
+    foundry_spieler(konfiguration, "Mira", "Brok Eisenfaust")
     bot = gateway.baue(konfiguration)
     mit_thread(bot)
     dazu = bot.ereignisse["on_voice_state_update"]
@@ -3566,7 +3591,7 @@ def test_ein_vermerk_von_vorhin_verschluckt_die_frage_der_naechsten_aufnahme_nic
     konfiguration, mit_thread, ohne_espeak, runde
 ):
     """Dieselbe Falle wie beim Wächter des leeren Kanals — deshalb hängt er an der Aufnahme."""
-    foundry_spieler(konfiguration, "Mira")
+    foundry_spieler(konfiguration, "Mira", "Brok Eisenfaust")
     bot = gateway.baue(konfiguration)
     mit_thread(bot)
 
@@ -3603,6 +3628,47 @@ def test_ein_nachzuegler_wird_beim_betreten_zugeordnet(
     ]
 
 
+def schon_einmal_dabei(konfiguration, wer):
+    """Jemand, der an einem früheren Abend schon aufgenommen wurde.
+
+    Der Unterschied macht den Test erst zu einem: wer in *keinem* Protokoll steht, ist auch
+    ohne jede Prüfung nicht zuzuordnen. Wer in einem alten steht, ist es sehr wohl — und
+    darf es trotzdem nicht, wenn er die Ansage von **heute** nie gehört hat.
+
+    Die Sitzung von heute entsteht danach, denn ``latest_session`` nimmt die zuletzt
+    **angelegte**: sonst schnitte der Start in den Abend davor mit.
+    """
+    unsere = unsere_runde(konfiguration)
+    frueher = notes.create_session(unsere, played_on="2026-07-30", title="Der Abend davor")
+    consent.record(
+        unsere,
+        session_id=frueher,
+        kind=consent.ANSAGE,
+        guild_id=KANAL.guild_id,
+        channel_id=KANAL.id,
+        channel_name=KANAL.name,
+        text="Ansage",
+        members=(wer,),
+    )
+    notes.create_session(unsere, thread_id=str(THREAD))
+
+
+def waehrend_der_ansage_ziehen(runde, wohin):
+    """Den Bot mitten in der Ansage in einen anderen Kanal verschieben — wie ein Mensch es tut.
+
+    Vor dem Ereignis geht das nicht: dann greift der Wächter über dem ganzen Rückruf und der
+    Zweig, um den es hier geht, wird nie erreicht.
+    """
+    echt = runde.kanal.verbindung.play
+
+    def play(quelle, *, after):
+        runde.kanal.verbindung.channel = wohin
+        runde.gilde.me.voice.channel = wohin
+        echt(quelle, after=after)
+
+    runde.kanal.verbindung.play = play
+
+
 def test_der_nachzuegler_im_falschen_kanal_wird_nicht_zugeordnet(
     konfiguration, mit_thread, ohne_espeak, runde
 ):
@@ -3610,33 +3676,34 @@ def test_der_nachzuegler_im_falschen_kanal_wird_nicht_zugeordnet(
 
     Wurde der Bot während der Ansage gezogen, hat der Nachzügler sie nie gehört — dann
     entsteht kein Protokolleintrag, und eine Zuordnung dazu wäre eine Behauptung über
-    jemanden, der nie gefragt wurde.
+    jemanden, der nie gefragt wurde. Dass wir ihn von früher kennen, ändert daran nichts:
+    genau daran hinge sie sonst.
     """
     foundry_spieler(konfiguration, "Aelin")
+    schon_einmal_dabei(konfiguration, SPAET)
     bot = gateway.baue(konfiguration)
-    mit_thread(bot)
+    thread = mit_thread(bot)
     spaet = FakeMitglied(int(SPAET.id), SPAET.name)
     asyncio.run(befehl(bot, "start")(FakeCtx(runde.mira)))
     anderswo = FakeSprachkanal(runde.gilde)
     anderswo.id = 78
 
     async def ablauf():
-        # Erst nach der Ansage verschoben: der Start hat noch im richtigen Kanal gegriffen.
-        runde.kanal.verbindung.channel = anderswo
-        runde.gilde.me.voice.channel = anderswo
+        waehrend_der_ansage_ziehen(runde, anderswo)
         await bot.ereignisse["on_voice_state_update"](spaet, zustand(), zustand(runde.kanal))
 
     asyncio.run(ablauf())
 
-    assert SPAET.id not in zugeordnet(konfiguration)
+    assert zugeordnet(konfiguration)[SPAET.id] is None
     assert spaet.zwiegespraech == []
+    assert thread.geschrieben == []
 
 
 def test_ein_geschlossenes_zwiegespraech_haelt_den_mitschnitt_nicht_auf(
     konfiguration, mit_thread, ohne_espeak, runde, caplog
 ):
     """Keine Antwort ist auch eine: die Spur bleibt unter dem Discord-Namen."""
-    foundry_spieler(konfiguration, "Mira")
+    foundry_spieler(konfiguration, "Mira", "Brok Eisenfaust")
     runde.brok.zwiegespraech_zu = True
     bot = gateway.baue(konfiguration)
     mit_thread(bot)
@@ -3691,6 +3758,122 @@ def test_eine_frage_von_vorhin_ordnet_nicht_in_die_frische_runde(
 
     assert interaktion.response.bearbeitet[0]["content"] == chronik.VERALTET
     assert people.overview(frisch).personen == ()
+
+
+def test_ohne_weg_in_den_thread_entsteht_keine_zuordnung(
+    konfiguration, mit_thread, ohne_espeak, runde, caplog
+):
+    """Erst sagen, dann schreiben — sonst gäbe es sie und niemand wüsste davon.
+
+    Genau dagegen argumentiert der eigene Docstring: eine stillschweigend übernommene
+    Verknüpfung fällt Wochen später niemandem mehr auf. Lehnt der Thread ab, bleibt es
+    deshalb beim Discord-Namen, und die Frage steht beim nächsten Mitschnitt wieder an.
+    """
+    foundry_spieler(konfiguration, "Mira", "Brok Eisenfaust")
+    bot = gateway.baue(konfiguration)
+    thread = mit_thread(bot)
+    thread.stolpert = 99
+
+    with caplog.at_level(logging.WARNING):
+        asyncio.run(befehl(bot, "start")(FakeCtx(runde.mira)))
+
+    assert thread.geschrieben == []
+    assert zugeordnet(konfiguration)[MIRA.id] is None
+    # Und der Mitschnitt läuft: ein verschlossener Thread ist kein Grund, nicht zu hören.
+    assert runde.kanal.verbindung.schneidet
+    assert MIRA.name not in caplog.text
+
+
+class FakeCtxMitLoeschung(FakeCtx):
+    """Ein Befehl, dessen Antwort so lange braucht, dass die Runde inzwischen fort ist.
+
+    Kein konstruierter Fall: die Frist der verabschiedeten Runde läuft als Faden auf
+    derselben Schleife, und ``await ctx.respond`` gibt an sie ab. Danach fragt der Start
+    reihum jede anwesende Person — mit einer ``Runde``, die es so nicht mehr gibt, und
+    unter einer Kennung, die SQLite an eine **fremde Gilde** vergeben hat.
+
+    Die fremde Runde bekommt dieselben Discord-Kennungen: derselbe Mensch spielt in zwei
+    Kampagnen, das ist ausdrücklich vorgesehen. Nur heißt dort niemand wie ein Konto, also
+    wäre das Ergebnis einer verwechselten Runde eine Frage — an eine Person, die in dieser
+    Kampagne gerade gar nichts tut.
+    """
+
+    def __init__(self, autor, konfiguration):
+        super().__init__(autor)
+        self.konfiguration = konfiguration
+        self.frisch = None
+
+    async def respond(self, text, **rest):
+        await super().respond(text, **rest)
+        if self.frisch is not None:
+            return
+        alte = unsere_runde(self.konfiguration)
+        lebenszyklus.loeschen(self.konfiguration, alte)
+        self.frisch = runden.anlegen(self.konfiguration.database_path, "Nebenan", guild_id="12")
+        assert self.frisch.id == alte.id
+        sitzung = notes.create_session(self.frisch, thread_id=str(THREAD))
+        consent.record(
+            self.frisch,
+            session_id=sitzung,
+            kind=consent.ANSAGE,
+            guild_id="12",
+            channel_id="78",
+            channel_name="Nebenan",
+            text="Ansage",
+            members=(MIRA, BROK),
+        )
+        foundry_spieler(self.konfiguration, "Aelin", wo=self.frisch)
+
+
+def test_eine_aufnahme_von_vorhin_ordnet_nicht_in_die_frische_runde(
+    konfiguration, mit_thread, ohne_espeak, runde
+):
+    """Die Aufnahme hält ihre Runde — die Kennung kann inzwischen einer fremden Gilde gehören.
+
+    SQLite vergibt ``runde.id`` nach einer Löschung wieder, und die Sitzungskennung ebenso.
+    Verglichen wird deshalb die **Kennung** der Runde und nicht ihre Id; ohne diesen
+    Vergleich stünde die Frage »wer bist du in Foundry« im Postfach zweier Menschen, und
+    beantwortet legte sie sie auf ein Konto einer Kampagne, in der sie gerade nicht spielen.
+    """
+    foundry_spieler(konfiguration, "Mira")
+    bot = gateway.baue(konfiguration)
+    thread = mit_thread(bot)
+    ctx = FakeCtxMitLoeschung(runde.mira, konfiguration)
+
+    asyncio.run(befehl(bot, "start")(ctx))
+
+    assert ctx.antworten == [recorder.GESTARTET]
+    assert [wer.confirmed for wer in people.overview(ctx.frisch).personen] == [None, None]
+    assert runde.mira.zwiegespraech == []
+    assert runde.brok.zwiegespraech == []
+    assert thread.geschrieben == []
+
+
+def test_zwei_ereignisse_im_selben_schwung_fragen_nur_einmal(
+    konfiguration, mit_thread, ohne_espeak, runde
+):
+    """Deshalb steht der Vermerk vor dem ersten ``await`` und nicht dahinter.
+
+    py-cord stellt jedes Sprachereignis als eigenen Task zu. Wer erst nach dem Zustellen
+    vermerkt, findet im zweiten Task nichts vor — und die Frage stünde zweimal im Postfach.
+    """
+    foundry_spieler(konfiguration, "Mira", "Brok Eisenfaust")
+    bot = gateway.baue(konfiguration)
+    mit_thread(bot)
+    spaet = FakeMitglied(int(SPAET.id), SPAET.name)
+    dazu = bot.ereignisse["on_voice_state_update"]
+
+    async def ablauf():
+        await befehl(bot, "start")(FakeCtx(runde.mira))
+        await asyncio.gather(
+            dazu(spaet, zustand(), zustand(runde.kanal)),
+            dazu(spaet, zustand(), zustand(runde.kanal)),
+        )
+        await ruhen()
+
+    asyncio.run(ablauf())
+
+    assert len(spaet.zwiegespraech) == 1
 
 
 def test_die_nachbarrunde_bekommt_von_alldem_nichts(konfiguration, mit_thread, ohne_espeak, runde):

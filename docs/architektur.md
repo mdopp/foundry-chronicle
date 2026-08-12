@@ -169,12 +169,15 @@ passiert ist** — und Teile davon nacherzählen können.
   liegt.
 - Die **Personen-Zuordnung** Discord ↔ Foundry entsteht einmalig, und zwar **beim
   Betreten des Sprachkanals** (#76), damit jede Äußerung von Anfang an einer Figur
-  gehört. Heißt jemand wie ein Foundry-Spieler oder wie dessen Figur, wird sie ohne
-  Rückfrage gesetzt und im Thread der Sitzung vermerkt; sonst wird **die betroffene
-  Person selbst** im Zwiegespräch gefragt — wer wer ist, entscheidet man über sich
-  selbst. Keine Antwort ist auch eine: die Spur bleibt unter dem Discord-Namen, und das
-  Protokoll sagt es so. Ein *Vorschlag* wird dabei nie zur Bestätigung; wo es etwas zu
-  raten gäbe, wird gefragt.
+  gehört. Ohne Rückfrage gesetzt wird sie nur bei **1:1 gleichem Namen** — der Discord-Name
+  ist Zeichen für Zeichen der eines freien Foundry-Kontos oder einer seiner Spielfiguren,
+  eindeutig und von niemandem sonst getragen (Betreiber-Entscheidung 2026-08-12). Das ist
+  kein Vorschlag, sondern ein Beleg; es wird im Thread der Sitzung vermerkt, **bevor** es
+  geschrieben wird, und ohne Weg dorthin entsteht es nicht. Alles andere — Ähnlichkeit,
+  zwei gleichnamige Konten, ein vergebenes, ein Gast — wird **die betroffene Person
+  selbst** im Zwiegespräch gefragt, mit einem Menü der freien Konten; wer wer ist,
+  entscheidet man über sich selbst. Keine Antwort ist auch eine: die Spur bleibt unter dem
+  Discord-Namen, und das Protokoll sagt es so.
 - **Foundry ist eine harte Abhängigkeit.** Ist es beim Einrichten aus, bleibt das
   System leer — das braucht eine verständliche Meldung, keine leere Liste. Die
   Fakten werden deshalb zwischengespeichert, nicht bei jedem Aufruf geholt.

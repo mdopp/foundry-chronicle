@@ -210,7 +210,13 @@ def erwaehnung_anlegen(runde, eintrag, sitzung):
         scope.close()
 
 
-def welt_ablegen(runde, *, spielername="Mira", weitere=0):
+# Der NSC gehört in jede Welt dieser Suite: die Spielleitung besitzt in Foundry auch die
+# Wirtin, und ihr Name darf niemanden zu einer Person machen. Er liegt hier bei ``u-mira``
+# und nicht bei einem Leitungskonto — dann hängt der Fall am Aktor-Typ und an sonst nichts.
+WIRTIN = "Die Wirtin zum Krummen Ast"
+
+
+def welt_ablegen(runde, *, spielername="Mira", weitere=0, zwilling=False):
     scope = db.scoped(runde)
     try:
         foundry_store.save(
@@ -220,6 +226,11 @@ def welt_ablegen(runde, *, spielername="Mira", weitere=0):
                 fetched_at="2026-05-01T20:00:00+00:00",
                 players=(
                     Player(id="u-mira", name=spielername, role=1, is_gm=False),
+                    *(
+                        (Player(id="u-zwilling", name=spielername, role=1, is_gm=False),)
+                        if zwilling
+                        else ()
+                    ),
                     *(
                         Player(id=f"u-{nummer}", name=f"Konto {nummer:02d}", role=1, is_gm=False)
                         for nummer in range(weitere)
@@ -232,6 +243,7 @@ def welt_ablegen(runde, *, spielername="Mira", weitere=0):
                         type="character",
                         owner_ids=("u-mira",),
                     ),
+                    Character(id="a-wirtin", name=WIRTIN, type="npc", owner_ids=("u-mira",)),
                 ),
             ),
         )
@@ -755,7 +767,10 @@ def test_ein_altes_zuordnungsmenue_ordnet_nicht_in_die_frische_runde(stelle, bot
 
 
 def test_namensgleichheit_ordnet_beim_betreten_ohne_rueckfrage_zu(stelle):
-    """Der eine Fall aus #76, der ohne Frage auskommt — und der gesagt wird."""
+    """Der eine Fall aus #76, der ohne Frage auskommt — und der gesagt wird.
+
+    Entschieden ist er hier, geschrieben noch nicht: erst der Vermerk, dann ``zuordnen``.
+    """
     _config, unsere = stelle
     sitzung = sitzung_mit_notiz(unsere)
     aufgenommen(unsere, sitzung, (MIRA, "Mira"))
@@ -766,6 +781,10 @@ def test_namensgleichheit_ordnet_beim_betreten_ohne_rueckfrage_zu(stelle):
     assert stand.automatisch.id == "u-mira"
     assert stand.spieler == ()
     assert stand.vermerk == erinnern.BETRETEN_VERMERK.format(name="Mira", spieler="Mira")
+    assert people.speakers(unsere)[MIRA].confirmed is None
+
+    erinnern.zuordnen(unsere, MIRA, stand.automatisch.id)
+
     assert people.speakers(unsere)[MIRA].confirmed.name == "Mira"
 
 
@@ -792,6 +811,59 @@ def test_wer_anders_heisst_wird_gefragt_statt_geraten(stelle):
     assert people.speakers(unsere)[BROK].confirmed is None
 
 
+@pytest.mark.parametrize("fast", ["Mirah", "Miral", "mira "])
+def test_nur_1zu1_gleich_ordnet_zu_und_fast_gleich_wird_gefragt(stelle, fast):
+    """Die Betreiber-Entscheidung vom 2026-08-12: exakte Übereinstimmung oder Menü.
+
+    »Mirah« und »Miral« sind die Verwechselbaren, die eine Ähnlichkeitsschwelle von 0,8
+    durchgelassen hätte. Der dritte Fall ist die Gegenprobe nach unten: ein Leerzeichen am
+    Rand und eine große Anfangsminuskel sind kein anderer Name, und wer daran scheiterte,
+    fragte, wo es nichts zu fragen gibt.
+    """
+    _config, unsere = stelle
+    sitzung = sitzung_mit_notiz(unsere)
+    aufgenommen(unsere, sitzung, (BROK, fast))
+    welt_ablegen(unsere)
+
+    stand = erinnern.betreten(unsere, BROK)
+
+    if fast.strip().casefold() == "mira":
+        assert stand.automatisch.id == "u-mira"
+    else:
+        assert stand.automatisch is None
+        assert [wer.name for wer in stand.spieler] == ["Mira"]
+
+
+def test_zwei_gleichnamige_konten_sind_keine_eindeutige_gleichheit(stelle):
+    """Heißen zwei Konten gleich, ist auch Gleichheit keine Antwort — dann wird gefragt."""
+    _config, unsere = stelle
+    sitzung = sitzung_mit_notiz(unsere)
+    aufgenommen(unsere, sitzung, (MIRA, "Mira"))
+    welt_ablegen(unsere, zwilling=True)
+
+    stand = erinnern.betreten(unsere, MIRA)
+
+    assert stand.automatisch is None
+    assert [wer.id for wer in stand.spieler] == ["u-mira", "u-zwilling"]
+
+
+def test_ein_nsc_name_macht_niemanden_zur_spielleitung(stelle):
+    """Die Spielleitung besitzt in Foundry auch die Wirtin — deren Name ist kein Beleg.
+
+    Ohne den Filter auf den Aktor-Typ machte ein Spitzname aus dem NSC-Fundus seinen
+    Träger still zum Besitzer des Kontos, in jedem Protokoll dieser Kampagne.
+    """
+    _config, unsere = stelle
+    sitzung = sitzung_mit_notiz(unsere)
+    aufgenommen(unsere, sitzung, (BROK, WIRTIN))
+    welt_ablegen(unsere)
+
+    stand = erinnern.betreten(unsere, BROK)
+
+    assert stand.automatisch is None
+    assert people.overview(unsere).spieler[0].characters == ("Aelin Sturmwind",)
+
+
 def test_ein_gast_wird_nicht_auf_ein_vergebenes_konto_gesetzt(stelle):
     """Wer gerade hereinkommt, ist nicht unbedingt jemand, den wir kennen.
 
@@ -807,7 +879,90 @@ def test_ein_gast_wird_nicht_auf_ein_vergebenes_konto_gesetzt(stelle):
     stand = erinnern.betreten(unsere, "d-gast")
 
     assert stand.automatisch is None
+    assert stand.spieler == ()
     assert people.speakers(unsere)["d-gast"].confirmed is None
+    assert people.speakers(unsere)[MIRA].confirmed.id == "u-mira"
+
+
+def test_ein_gleichnamiger_gast_nimmt_der_spielerin_ihr_konto_nicht_vorweg(stelle):
+    """Und derselbe Gast, bevor irgendjemand zugeordnet ist — der schärfere Fall.
+
+    Hier ist »Mira« noch frei. Ohne die Gegenrichtung der Gleichheit bekäme sie, wer zuerst
+    hereinkommt; danach stünde das Konto in keinem Menü mehr, und die echte Mira bliebe für
+    immer unter ihrem Discord-Namen. Gefragt werden deshalb beide, und das Konto bleibt zu
+    haben.
+    """
+    _config, unsere = stelle
+    sitzung = sitzung_mit_notiz(unsere)
+    aufgenommen(unsere, sitzung, (MIRA, "Mira"), ("d-gast", "Mira"))
+    welt_ablegen(unsere)
+
+    for kennung in ("d-gast", MIRA):
+        stand = erinnern.betreten(unsere, kennung)
+        assert stand.automatisch is None
+        assert [wer.id for wer in stand.spieler] == ["u-mira"]
+
+    assert people.speakers(unsere)["d-gast"].confirmed is None
+    assert people.speakers(unsere)[MIRA].confirmed is None
+
+
+def test_wer_wie_die_figur_der_anderen_heisst_macht_die_gleichheit_mehrdeutig(stelle):
+    """Dieselbe Falle von zwei Seiten: die eine heißt wie das Konto, die andere wie die Figur."""
+    _config, unsere = stelle
+    sitzung = sitzung_mit_notiz(unsere)
+    aufgenommen(unsere, sitzung, (MIRA, "Mira"), (BROK, "Aelin Sturmwind"))
+    welt_ablegen(unsere)
+
+    assert erinnern.betreten(unsere, MIRA).automatisch is None
+    assert erinnern.betreten(unsere, BROK).automatisch is None
+
+
+def test_das_menue_beim_betreten_traegt_nur_freie_konten(stelle):
+    """Ein vergebenes Konto im Menü ist eine Einladung, sich eine Identität zu nehmen."""
+    _config, unsere = stelle
+    sitzung = sitzung_mit_notiz(unsere)
+    aufgenommen(unsere, sitzung, (MIRA, "Mira"), (BROK, "Brok"))
+    welt_ablegen(unsere, weitere=1)
+    people.confirm(unsere, {MIRA: "u-mira"})
+
+    stand = erinnern.betreten(unsere, BROK)
+
+    assert [wer.id for wer in stand.spieler] == ["u-0"]
+    assert [
+        wert
+        for _schrift, wert, _gewaehlt in erinnern.wahlmoeglichkeiten(stand.person, stand.spieler)
+    ] == [
+        erinnern.KEINE,
+        "u-0",
+    ]
+
+
+def test_ein_vergebenes_konto_wird_nicht_ein_zweites_mal_vergeben(stelle):
+    """Auch wenn es doch einmal in einer alten Ansicht steht: zwei Spuren, ein Name."""
+    _config, unsere = stelle
+    sitzung = sitzung_mit_notiz(unsere)
+    aufgenommen(unsere, sitzung, (MIRA, "Mira"), (BROK, "Brok"))
+    welt_ablegen(unsere)
+    people.confirm(unsere, {MIRA: "u-mira"})
+
+    satz = erinnern.zuordnen(unsere, BROK, "u-mira")
+
+    assert satz == erinnern.SPIELER_VERGEBEN.format(niemand=erinnern.ZUORDNUNG_KEINE)
+    assert people.speakers(unsere)[BROK].confirmed is None
+    assert people.speakers(unsere)[MIRA].confirmed.id == "u-mira"
+
+
+def test_das_eigene_konto_noch_einmal_zu_waehlen_bleibt_erlaubt(stelle):
+    """Gegenprobe: vergeben heißt an *jemand anderen* — sonst schlüge die eigene Ansicht fehl."""
+    _config, unsere = stelle
+    sitzung = sitzung_mit_notiz(unsere)
+    aufgenommen(unsere, sitzung, (MIRA, "Mira"))
+    welt_ablegen(unsere)
+    people.confirm(unsere, {MIRA: "u-mira"})
+
+    satz = erinnern.zuordnen(unsere, MIRA, "u-mira")
+
+    assert satz == erinnern.ZUGEORDNET.format(name="Mira", spieler="Mira")
     assert people.speakers(unsere)[MIRA].confirmed.id == "u-mira"
 
 

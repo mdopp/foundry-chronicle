@@ -240,7 +240,13 @@ def fuellen(config: Config, runde, marke: str) -> dict[str, int]:
         channel_id="kanal",
         channel_name=f"Runde {marke}",
         text=f"Ansage {marke}",
-        members=(consent.Member(id="d-1", name=f"Mensch {marke}"),),
+        members=(
+            consent.Member(id="d-1", name=f"Mensch {marke}"),
+            # Und eine, die in Discord **genau** so heißt wie ihr Foundry-Konto: das ist der
+            # Weg aus #76, auf dem ohne Klick geschrieben wird. Ohne sie liefe der Auto-Zweig
+            # in diesem Gate nie, und ein ``raise`` mittendrin bliebe grün.
+            consent.Member(id="d-2", name=f"Spielerin {marke}"),
+        ),
     )
     # Ein zweiter Abend, damit der Bereich der Nacherzählung wirklich einer ist: über eine
     # einzige Sitzung könnte er eine fremde strukturell nie erreichen — und ein vergessenes
@@ -318,6 +324,7 @@ ABFRAGEN = {
     "people.overview": lambda c, r, i: people.overview(r),
     "people.speakers": lambda c, r, i: people.speakers(r),
     "people.suggest": lambda c, r, i: people.suggest("Mira", ()),
+    "people.genau": lambda c, r, i: people.genau("Mira", ()),
     "consent.for_session": lambda c, r, i: consent.for_session(r, i["sitzung"]),
     "jobs.latest": lambda c, r, i: jobs.latest(r, jobs.NACHTLAUF),
     "jobs.running": lambda c, r, i: jobs.running(r),
@@ -392,6 +399,10 @@ ABFRAGEN = {
     "erinnern.wahlmoeglichkeiten": lambda c, r, i: erinnern.wahlmoeglichkeiten(
         people.overview(r).personen[0], people.overview(r).spieler
     ),
+    # Die Entscheidung beim Betreten liest nur — geschrieben wird sie von ``zuordnen``,
+    # nachdem der Vermerk im Thread steht. Gefragt wird hier mit **d-2**: die trifft ihr
+    # Konto 1:1 und läuft damit durch den Zweig, der ohne Klick auskommt.
+    "erinnern.betreten": lambda c, r, i: erinnern.betreten(r, "d-2"),
     "lebenszyklus.frist_datum": lambda c, r, i: lebenszyklus.frist_datum(r),
     "lebenszyklus.ruht": lambda c, r, i: lebenszyklus.ruht(r),
     "lebenszyklus.dieselbe": lambda c, r, i: lebenszyklus.dieselbe(r),
@@ -443,10 +454,10 @@ SCHREIBER = frozenset(
         "ausgabe.anhaengen",
         "ausgabe.erzaehlung_zustellen",
         "erinnern.entscheiden",
+        # Der eine Schreiber der Personen-Zuordnung — auch für den Weg beim Betreten, seit
+        # ``betreten`` nur noch entscheidet (#76). Geprüft weiter unten, einmal am Klick und
+        # einmal am ganzen Weg ohne Klick.
         "erinnern.zuordnen",
-        # Schreibend, weil die Namensgleichheit ohne Rückfrage festschreibt (#76) — geprüft
-        # wird er deshalb wie die übrigen Schreiber mit einem eigenen Test weiter unten.
-        "erinnern.betreten",
         "lebenszyklus.loeschen",
         "lebenszyklus.freigeben",
     }
@@ -696,25 +707,52 @@ def test_knopf_und_menue_wirken_nur_in_der_eigenen_runde(zwei_runden):
     assert people.overview(b).personen[0].confirmed.name == f"Spielerin {MARKE[2]}"
 
 
-def test_die_zuordnung_beim_betreten_bleibt_in_ihrer_runde(zwei_runden):
-    """Der Weg aus #76 verknüpft eine Discord-Person mit einem Foundry-Konto — von selbst.
+def _nach_kennung(runde) -> dict[str, object]:
+    return {person.discord_user_id: person for person in people.overview(runde).personen}
 
-    Damit ist er der schärfste der drei Zuordnungswege: hier klickt niemand, und eine
-    verwechselte Runde legte die Person der einen Gruppe auf ein Konto der anderen. Zur
-    Wahl stehen deshalb nur die Konten **dieser** Runde, und was nebenan gilt, bleibt.
+
+def test_die_zuordnung_beim_betreten_bleibt_in_ihrer_runde(zwei_runden):
+    """Der Weg aus #76 verknüpft eine Discord-Person mit einem Foundry-Konto — ohne Klick.
+
+    Damit ist er der schärfste der drei Zuordnungswege: hier entscheidet niemand von Hand,
+    und eine verwechselte Runde legte die Person der einen Gruppe auf ein Konto der anderen.
+    Gegangen wird deshalb der **ganze** Weg — entscheiden und schreiben —, und zwar in A;
+    B trägt dieselben Discord-Kennungen und dieselbe Namensgleichheit und bleibt trotzdem,
+    wie es war.
     """
+    _config, a, b, _ids = zwei_runden
+    # Erst freigeben: solange das Konto vergeben ist, gibt es nichts von selbst zu setzen.
+    people.confirm(a, {"d-1": ""})
+    people.confirm(b, {"d-1": ""})
+
+    stand = erinnern.betreten(a, "d-2")
+
+    assert stand.automatisch is not None
+    assert stand.automatisch.name == f"Spielerin {MARKE[1]}"
+    # Entschieden, nicht geschrieben: das tut erst ``zuordnen``, nach dem Vermerk.
+    assert _nach_kennung(a)["d-2"].confirmed is None
+
+    erinnern.zuordnen(a, "d-2", stand.automatisch.id)
+
+    assert _nach_kennung(a)["d-2"].confirmed.name == f"Spielerin {MARKE[1]}"
+    assert _nach_kennung(b)["d-2"].confirmed is None
+    assert _nach_kennung(b)["d-1"].confirmed is None
+
+
+def test_das_menue_beim_betreten_zeigt_nur_konten_der_eigenen_runde(zwei_runden):
+    """Wo gefragt wird, steht zur Wahl, was **dieser** Runde gehört — und nur das Freie."""
     _config, a, b, _ids = zwei_runden
     people.confirm(a, {"d-1": ""})
 
     stand = erinnern.betreten(a, "d-1")
 
-    assert stand.person is not None
+    assert stand.automatisch is None
     assert [wer.name for wer in stand.spieler] == [f"Spielerin {MARKE[1]}"]
     # Und wer drüben zugeordnet ist, wird von hier aus nicht angefasst — auch nicht unter
     # derselben Discord-Kennung, die es in beiden Runden gibt.
     assert erinnern.betreten(b, "d-1") == erinnern.Betreten()
-    assert people.overview(b).personen[0].confirmed.name == f"Spielerin {MARKE[2]}"
-    assert people.overview(a).personen[0].confirmed is None
+    assert _nach_kennung(b)["d-1"].confirmed.name == f"Spielerin {MARKE[2]}"
+    assert _nach_kennung(a)["d-1"].confirmed is None
 
 
 def test_einstellungen_gehoeren_der_runde(zwei_runden):

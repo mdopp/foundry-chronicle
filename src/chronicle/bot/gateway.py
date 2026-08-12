@@ -770,6 +770,11 @@ async def _zuordnen_oder_fragen(bot, aufnahme: Aufnahme, mitglied, kennung: str)
     Der Vermerk über eine von selbst entstandene Zuordnung geht umgekehrt in den Thread:
     eine Zuordnung, die niemand sieht, ist die stillschweigend übernommene Vermutung, gegen
     die es die Bestätigung überhaupt gibt.
+
+    Deshalb steht der Vermerk **vor** dem Schreiben und nicht dahinter. Führt kein Weg in
+    den Thread — keiner da, fortgeräumt, oder Discord lehnt ab —, entsteht auch keine
+    Zuordnung: lieber der Discord-Name an der Spur als eine Verknüpfung, von der niemand
+    erfährt. Was den Weg versperrt hat, sagt ``_in_den_thread`` bereits im Log.
     """
     # Die Aufnahme hält ihre Runde seit Stunden — ist sie inzwischen gelöscht und ihre
     # Kennung neu vergeben, schriebe die Zuordnung in eine fremde Kampagne.
@@ -780,8 +785,10 @@ async def _zuordnen_oder_fragen(bot, aufnahme: Aufnahme, mitglied, kennung: str)
     if stand.person is None:
         return
     if stand.automatisch is not None:
-        logger.info("Beim Betreten von selbst zugeordnet — der Vermerk geht in den Thread.")
-        await _in_den_thread(bot, aufnahme, stand.vermerk)
+        if not await _in_den_thread(bot, aufnahme, stand.vermerk):
+            return
+        erinnern.zuordnen(gemeint, kennung, stand.automatisch.id)
+        logger.info("Beim Betreten von selbst zugeordnet — der Vermerk steht im Thread.")
         return
     await _zustellen(
         mitglied.send,
@@ -1643,6 +1650,11 @@ def _zuordnungsansicht(config: Config, runde, stand: erinnern.Zuordnung):
 
 def _betretensansicht(runde, stand: erinnern.Betreten):
     """Ein Menü für genau eine Person, im Zwiegespräch: wer bist du in dieser Runde?
+
+    Zur Wahl stehen die **freien** Konten und nur sie (``erinnern.betreten``). Ein Menü, das
+    ein bereits vergebenes anbietet, ist eine Einladung, sich privat und unbeaufsichtigt die
+    Identität einer Mitspielerin zu nehmen; ``erinnern.zuordnen`` weist ein vergebenes
+    Konto deshalb auch dann ab, wenn es doch einmal in einer alten Ansicht steht.
 
     Die einzige Ansicht, die nicht in einer Gilde steht — Discord nennt im Zwiegespräch
     keine. ``_dieselbe`` liefe deshalb hier immer ins Leere; geprüft wird stattdessen die
