@@ -775,6 +775,12 @@ async def _zuordnen_oder_fragen(bot, aufnahme: Aufnahme, mitglied, kennung: str)
     den Thread — keiner da, fortgeräumt, oder Discord lehnt ab —, entsteht auch keine
     Zuordnung: lieber der Discord-Name an der Spur als eine Verknüpfung, von der niemand
     erfährt. Was den Weg versperrt hat, sagt ``_in_den_thread`` bereits im Log.
+
+    Und was danach kommt, wird **nachgesehen**. Zwischen Vermerk und Schreiben liegt ein
+    ``await``: nimmt jemand in dieser Lücke das Konto, weist ``zuordnen`` es ab, und ein
+    zweiter Anlauf kommt nicht — je Aufnahme wird genau einmal gefragt. Dasselbe gilt, wenn
+    das Schreiben selbst scheitert. Beides ließe den Vermerk als Behauptung im Thread
+    stehen, also wird er widerrufen.
     """
     # Die Aufnahme hält ihre Runde seit Stunden — ist sie inzwischen gelöscht und ihre
     # Kennung neu vergeben, schriebe die Zuordnung in eine fremde Kampagne.
@@ -787,13 +793,26 @@ async def _zuordnen_oder_fragen(bot, aufnahme: Aufnahme, mitglied, kennung: str)
     if stand.automatisch is not None:
         if not await _in_den_thread(bot, aufnahme, stand.vermerk):
             return
-        erinnern.zuordnen(gemeint, kennung, stand.automatisch.id)
+        try:
+            entstanden = erinnern.zuordnen(gemeint, kennung, stand.automatisch.id).spieler
+        except Exception:  # noqa: BLE001
+            logger.exception("Die Zuordnung beim Betreten ließ sich nicht festschreiben")
+            entstanden = None
+        if entstanden is None:
+            await _in_den_thread(
+                bot,
+                aufnahme,
+                erinnern.BETRETEN_DOCH_NICHT.format(
+                    name=stand.person.discord_name, spieler=stand.automatisch.name
+                ),
+            )
+            return
         logger.info("Beim Betreten von selbst zugeordnet — der Vermerk steht im Thread.")
         return
     await _zustellen(
         mitglied.send,
         erinnern.BETRETEN_FRAGE.format(kanal=aufnahme.kanal.name),
-        zuletzt={"view": _betretensansicht(gemeint, stand)},
+        zuletzt={"view": _betretensansicht(bot, aufnahme, gemeint, stand)},
     )
 
 
@@ -1606,7 +1625,15 @@ def _registeransicht(config: Config, runde, stand: erinnern.Offen):
 
 
 def _zuordnungsansicht(config: Config, runde, stand: erinnern.Zuordnung):
-    """Je aufgenommener Person ein Menü mit den Foundry-Spielern dieser Runde."""
+    """Je aufgenommener Person ein Menü mit den Foundry-Spielern dieser Runde.
+
+    Hier steht **jedes** Konto zur Wahl, auch ein vergebenes, und hier darf es auch
+    umgehängt werden (``uebernehmen``). Das ist die Stelle, an der eine falsche Zuordnung
+    wieder weggeht — die Übersicht darüber zeigt jede Person mit ihrem Stand, wer umhängt
+    sieht also vorher, wem er es abnimmt, und die aufgefrischte Ansicht zeigt die andere
+    danach als offen. Das Menü im Zwiegespräch kann beides nicht und darf deshalb beides
+    nicht.
+    """
     if not stand.personen:
         return None
     discord = _discord()
@@ -1630,8 +1657,10 @@ def _zuordnungsansicht(config: Config, runde, stand: erinnern.Zuordnung):
             gemeint = await _noch_dieselbe(config, interaction, runde)
             if gemeint is None:
                 return
-            satz = erinnern.zuordnen(gemeint, person.discord_user_id, gebaut.values[0])
-            naechste = erinnern.zuordnung(gemeint, meldung=satz)
+            ergebnis = erinnern.zuordnen(
+                gemeint, person.discord_user_id, gebaut.values[0], uebernehmen=True
+            )
+            naechste = erinnern.zuordnung(gemeint, meldung=ergebnis.satz)
             await _ersetzen(
                 interaction, naechste.antwort, _zuordnungsansicht(config, gemeint, naechste)
             )
@@ -1648,13 +1677,22 @@ def _zuordnungsansicht(config: Config, runde, stand: erinnern.Zuordnung):
     return Zuordnungsansicht()
 
 
-def _betretensansicht(runde, stand: erinnern.Betreten):
+def _betretensansicht(bot, aufnahme: Aufnahme, runde, stand: erinnern.Betreten):
     """Ein Menü für genau eine Person, im Zwiegespräch: wer bist du in dieser Runde?
 
     Zur Wahl stehen die **freien** Konten und nur sie (``erinnern.betreten``). Ein Menü, das
     ein bereits vergebenes anbietet, ist eine Einladung, sich privat und unbeaufsichtigt die
     Identität einer Mitspielerin zu nehmen; ``erinnern.zuordnen`` weist ein vergebenes
-    Konto deshalb auch dann ab, wenn es doch einmal in einer alten Ansicht steht.
+    Konto deshalb auch dann ab, wenn es doch einmal in einer alten Ansicht steht — hier
+    ohne ``uebernehmen``, anders als in ``/zuordnung``, wo die Runde nebeneinander steht.
+
+    Und was hier gewählt wird, steht danach im Thread. Das ist der Weg **ohne** jeden
+    Beleg — kein Name stimmt überein, jemand klickt sich ein Konto —, und je schwächer der
+    Beleg, desto mehr Tageslicht (Betreiber-Entscheidung vom 2026-08-12). Anders als beim
+    Vermerk der Namensgleichheit ist der Satz hier aber keine **Bedingung**: dort entscheidet
+    niemand, hier hat die Person selbst geantwortet, und ihre Antwort wegzuwerfen, weil
+    Discord den Thread gerade nicht hergibt, wäre die schlechtere Zumutung. Erst antworten,
+    dann sagen — die Interaktion hat drei Sekunden, der Thread hat Zeit.
 
     Die einzige Ansicht, die nicht in einer Gilde steht — Discord nennt im Zwiegespräch
     keine. ``_dieselbe`` liefe deshalb hier immer ins Leere; geprüft wird stattdessen die
@@ -1688,8 +1726,22 @@ def _betretensansicht(runde, stand: erinnern.Betreten):
         if gemeint is None:
             await interaction.response.edit_message(content=chronik.VERALTET, view=None)
             return
-        satz = erinnern.zuordnen(gemeint, person.discord_user_id, gebaut.values[0])
-        await interaction.response.edit_message(content=satz, view=None)
+        ergebnis = erinnern.zuordnen(gemeint, person.discord_user_id, gebaut.values[0])
+        await interaction.response.edit_message(content=ergebnis.satz, view=None)
+        if ergebnis.spieler is None:
+            return
+        # Gefangen, weil die Antwort oben schon steht: eine Ausnahme von hier machte daraus
+        # über ``_geklickt`` ein »hat nicht geklappt«, obwohl die Zuordnung entstanden ist.
+        try:
+            await _in_den_thread(
+                bot,
+                aufnahme,
+                erinnern.MENUE_VERMERK.format(
+                    name=person.discord_name, spieler=ergebnis.spieler.name
+                ),
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception("Die selbst gewählte Zuordnung blieb im Thread ungesagt")
 
     gebaut.callback = gewaehlt
 
