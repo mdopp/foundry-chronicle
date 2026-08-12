@@ -74,6 +74,22 @@ def test_zwei_aehnlich_nahe_namen_ergeben_keinen_vorschlag():
     assert people.suggest("Miral", spieler("Mira", "Mirah")) is None
 
 
+def test_wer_wie_seine_figur_heisst_wird_ebenso_vorgeschlagen():
+    """Die einen heißen in Discord wie ihr Foundry-Konto, die anderen wie ihre Figur."""
+    mit_figur = people.Spieler(id="u-mira", name="Mira", characters=("Aelin Sturmwind",))
+
+    vorschlag = people.suggest("Aelin Sturmwind", [mit_figur, *spieler("Chronist")])
+
+    assert vorschlag is mit_figur
+
+
+def test_eine_figur_hebt_die_schwelle_nicht_auf():
+    """Gegenprobe: die Figur zählt mit, sie wird aber nicht großzügiger behandelt."""
+    mit_figur = people.Spieler(id="u-mira", name="Mira", characters=("Aelin Sturmwind",))
+
+    assert people.suggest("Davey", [mit_figur]) is None
+
+
 def test_ein_fremder_name_ergibt_keinen_vorschlag():
     assert people.suggest("Davey", spieler("Mira", "Chronist")) is None
 

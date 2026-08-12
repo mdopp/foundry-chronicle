@@ -30,13 +30,15 @@ import requests
 from conftest import runde as erste_runde
 
 import chronicle.bot.__main__ as entry
-from chronicle import consent, db, jobs, lebenszyklus, notes, recordings, settings
+from chronicle import consent, db, jobs, lebenszyklus, notes, people, recordings, settings
 from chronicle import runde as runden
-from chronicle.bot import BotFehler, BotHaelt, ansage, chronik, gateway, recorder
+from chronicle.bot import BotFehler, BotHaelt, ansage, chronik, erinnern, gateway, recorder
 from chronicle.bot.ansage import AnsageFehlt
 from chronicle.bot.recorder import Aufnahme, Kanal, NichtAngesagt
 from chronicle.config import DEFAULT_TTS_URL, Config
 from chronicle.discord import grenzen
+from chronicle.foundry import store as foundry_store
+from chronicle.foundry.model import Player, WorldSnapshot
 
 TOKEN = "aufnahme-bot-token-nur-fuer-den-test"
 
@@ -1075,6 +1077,17 @@ class FakeMitglied:
         self.display_name = name
         self.bot = bot
         self.voice = types.SimpleNamespace(channel=kanal)
+        # Das Zwiegespräch: je Nachricht der Text und die Ansicht darunter.
+        self.zwiegespraech: list[tuple[str, object]] = []
+        # Wer keine Direktnachrichten annimmt — Discord antwortet darauf mit 403.
+        self.zwiegespraech_zu = False
+
+    async def send(self, text, **rest):
+        # Wie ``FakeTextkanal.send``: echtes Senden geht ans Netz und gibt dabei ab.
+        await asyncio.sleep(0)
+        if self.zwiegespraech_zu:
+            raise RuntimeError("Cannot send messages to this user")
+        self.zwiegespraech.append((text, rest.get("view")))
 
 
 class FakeGilde:
@@ -1247,6 +1260,58 @@ class FakeOption:
         return f"FakeOption({self.input_type!r}, default={self.default!r})"
 
 
+class FakeSelectOption:
+    def __init__(self, *, label="", value="", default=False, **rest):
+        self.label = label
+        self.value = value
+        self.default = default
+
+
+class FakeSelect:
+    def __init__(self, *, placeholder="", row=0, custom_id="", options=(), **rest):
+        self.placeholder = placeholder
+        self.row = row
+        self.custom_id = custom_id
+        self.options = list(options)
+        self.values: list[str] = []
+        self.callback = None
+
+
+class FakeView:
+    def __init__(self, *, timeout=None):
+        self.timeout = timeout
+        self.items: list = []
+
+    def add_item(self, teil):
+        self.items.append(teil)
+
+
+class FakeAntwort:
+    """``Interaction.response`` — was ein Klick zurückschreiben kann."""
+
+    def __init__(self):
+        self.bearbeitet: list[dict] = []
+        self.gesendet: list[str] = []
+
+    def is_done(self) -> bool:
+        return bool(self.gesendet or self.bearbeitet)
+
+    async def edit_message(self, *, content=None, embed=None, view=None):
+        self.bearbeitet.append({"content": content, "embed": embed, "view": view})
+
+    async def send_message(self, text, **rest):
+        self.gesendet.append(text)
+
+
+class FakeZwiegespraech:
+    """Ein Klick im Zwiegespräch: Discord nennt dort keine Gilde, nur den Klickenden."""
+
+    def __init__(self, wer):
+        self.guild_id = None
+        self.user = wer
+        self.response = FakeAntwort()
+
+
 @pytest.fixture
 def pycord(monkeypatch):
     modul = types.ModuleType("discord")
@@ -1255,12 +1320,17 @@ def pycord(monkeypatch):
     modul.Bot = FakeBot
     modul.Permissions = FakePermissions
     modul.PCMAudio = FakePCMAudio
+    modul.SelectOption = FakeSelectOption
     senken = types.ModuleType("discord.sinks")
     senken.Sink = FakeSenke
     modul.sinks = senken
     werkzeug = types.ModuleType("discord.utils")
     werkzeug.get_missing_voice_dependencies = lambda: ()
     modul.utils = werkzeug
+    oberflaeche = types.ModuleType("discord.ui")
+    oberflaeche.View = FakeView
+    oberflaeche.Select = FakeSelect
+    modul.ui = oberflaeche
     fehler = types.ModuleType("discord.errors")
     fehler.PrivilegedIntentsRequired = FakeRechteFehlen
     fehler.LoginFailure = FakeTokenAbgelehnt
@@ -3340,6 +3410,301 @@ def test_die_bestaetigung_sagt_das_wichtigste(konfiguration, sitzung_id, ohne_es
     (antwort,) = ctx.antworten
     for satzteil in ("Ansage", "eigene Spur", "verlässt den Sprachkanal", "/aufnahme stop"):
         assert satzteil in antwort
+
+
+# -- Zuordnen beim Betreten des Sprachkanals ----------------------------------------------
+#
+# Die Zusage aus #76: jede Äußerung gehört von Anfang an einer Figur. Heißt jemand wie ein
+# Foundry-Spieler oder wie dessen Figur, wird das ohne Rückfrage gesetzt und im Thread
+# vermerkt; sonst wird **die betroffene Person** im Zwiegespräch gefragt. Was hier nie
+# passieren darf: dass ein Vorschlag als Bestätigung durchgeht.
+
+
+def foundry_spieler(konfiguration, *namen):
+    """Ein Foundry-Stand mit genau diesen Konten — mehr braucht die Zuordnung nicht."""
+    scope = db.scoped(unsere_runde(konfiguration))
+    try:
+        foundry_store.save(
+            scope,
+            WorldSnapshot(
+                system="daggerheart",
+                fetched_at="2026-08-06T20:00:00+00:00",
+                players=tuple(
+                    Player(id=f"u-{name.lower()}", name=name, role=1, is_gm=False) for name in namen
+                ),
+            ),
+        )
+    finally:
+        scope.close()
+
+
+def zugeordnet(konfiguration):
+    """Wer wem zugeordnet **ist** — Vorschläge kommen hier mit Absicht nicht vor."""
+    return {
+        kennung: None if person.confirmed is None else person.confirmed.name
+        for kennung, person in people.speakers(unsere_runde(konfiguration)).items()
+    }
+
+
+def gefragt_wurde(mitglied):
+    """Das Menü aus der einen Frage im Zwiegespräch — oder nichts."""
+    if not mitglied.zwiegespraech:
+        return None
+    (_text, view) = mitglied.zwiegespraech[-1]
+    (menue,) = view.items
+    return menue
+
+
+async def antwort_geben(menue, wer, wert):
+    """Wie eine Person im Zwiegespräch auf ihre Frage antwortet."""
+    menue.values = [wert]
+    interaktion = FakeZwiegespraech(wer)
+    await menue.callback(interaktion)
+    return interaktion
+
+
+def antworten(menue, wer, wert):
+    return asyncio.run(antwort_geben(menue, wer, wert))
+
+
+@pytest.fixture
+def mit_thread(konfiguration, sitzung_im_thread):
+    """Die Sitzung hat einen Thread — dort steht der Vermerk über eine Zuordnung."""
+
+    def anhaengen(bot):
+        thread = FakeTextkanal()
+        bot.kanaele[THREAD] = thread
+        return thread
+
+    return anhaengen
+
+
+def test_beim_start_wird_zugeordnet_wer_gleich_heisst_und_gefragt_wer_nicht(
+    konfiguration, mit_thread, ohne_espeak, runde
+):
+    """Beides beim Betreten und nicht erst am Ende des Abends — das ist der Punkt von #76."""
+    foundry_spieler(konfiguration, "Mira")
+    bot = gateway.baue(konfiguration)
+    thread = mit_thread(bot)
+
+    asyncio.run(befehl(bot, "start")(FakeCtx(runde.mira)))
+
+    assert zugeordnet(konfiguration) == {MIRA.id: "Mira", BROK.id: None}
+    assert thread.geschrieben == [erinnern.BETRETEN_VERMERK.format(name=MIRA.name, spieler="Mira")]
+    # Wer von selbst zugeordnet wurde, wird nicht auch noch gefragt — und umgekehrt.
+    assert runde.mira.zwiegespraech == []
+    assert gefragt_wurde(runde.brok) is not None
+    assert runde.kanal.name in runde.brok.zwiegespraech[0][0]
+
+
+def test_die_frage_im_zwiegespraech_ist_noch_keine_zuordnung(
+    konfiguration, mit_thread, ohne_espeak, runde
+):
+    """Die Gegenprobe zur Namensgleichheit: gefragt heißt nicht gesetzt.
+
+    Erst die Antwort schreibt fest. Ein Menü, das schon beim Aufklappen zuordnete, wäre
+    genau die stillschweigend übernommene Vermutung, gegen die es die Bestätigung gibt.
+    """
+    foundry_spieler(konfiguration, "Mira", "Brok Eisenfaust")
+    bot = gateway.baue(konfiguration)
+    mit_thread(bot)
+    asyncio.run(befehl(bot, "start")(FakeCtx(runde.mira)))
+    menue = gefragt_wurde(runde.brok)
+
+    assert zugeordnet(konfiguration)[BROK.id] is None
+
+    antworten(menue, runde.brok, "u-brok eisenfaust")
+
+    assert zugeordnet(konfiguration)[BROK.id] == "Brok Eisenfaust"
+
+
+def test_wer_bestaetigt_hat_wird_beim_naechsten_betreten_nicht_erneut_gefragt(
+    konfiguration, mit_thread, ohne_espeak, runde
+):
+    foundry_spieler(konfiguration, "Mira", "Brok Eisenfaust")
+    bot = gateway.baue(konfiguration)
+    thread = mit_thread(bot)
+
+    async def ablauf():
+        await befehl(bot, "start")(FakeCtx(runde.mira))
+        await antwort_geben(gefragt_wurde(runde.brok), runde.brok, "u-brok eisenfaust")
+        await befehl(bot, "stop")(FakeCtx(runde.mira))
+        await befehl(bot, "start")(FakeCtx(runde.mira))
+        await ruhen()
+
+    asyncio.run(ablauf())
+
+    # Je einmal aus dem ersten Lauf, kein zweites Mal aus dem zweiten.
+    assert len(runde.brok.zwiegespraech) == 1
+    assert len(thread.geschrieben) == 1
+    assert zugeordnet(konfiguration) == {MIRA.id: "Mira", BROK.id: "Brok Eisenfaust"}
+
+
+def test_je_aufnahme_wird_genau_einmal_gefragt(
+    konfiguration, mit_thread, ohne_espeak, runde, kurze_frist
+):
+    """Sonst stünde bei jedem Gehen und Wiederkommen dieselbe Frage noch einmal im Postfach."""
+    foundry_spieler(konfiguration, "Mira")
+    bot = gateway.baue(konfiguration)
+    mit_thread(bot)
+    dazu = bot.ereignisse["on_voice_state_update"]
+
+    async def ablauf():
+        await befehl(bot, "start")(FakeCtx(runde.mira))
+        await dazu(runde.brok, zustand(runde.kanal), zustand())
+        await dazu(runde.brok, zustand(), zustand(runde.kanal))
+        # Und ein Ortswechsel im selben Kanal ist gar kein Betreten.
+        await dazu(runde.brok, zustand(runde.kanal), zustand(runde.kanal))
+        await ruhen()
+
+    asyncio.run(ablauf())
+
+    assert len(runde.brok.zwiegespraech) == 1
+
+
+def test_ein_vermerk_von_vorhin_verschluckt_die_frage_der_naechsten_aufnahme_nicht(
+    konfiguration, mit_thread, ohne_espeak, runde
+):
+    """Dieselbe Falle wie beim Wächter des leeren Kanals — deshalb hängt er an der Aufnahme."""
+    foundry_spieler(konfiguration, "Mira")
+    bot = gateway.baue(konfiguration)
+    mit_thread(bot)
+
+    async def ablauf():
+        await befehl(bot, "start")(FakeCtx(runde.mira))
+        gemerkt = der_lauf(bot).gefragt
+        await befehl(bot, "stop")(FakeCtx(runde.mira))
+        leer = der_lauf(bot).gefragt
+        await befehl(bot, "start")(FakeCtx(runde.mira))
+        await ruhen()
+        return gemerkt, leer
+
+    gemerkt, leer = asyncio.run(ablauf())
+
+    assert gemerkt is not None and BROK.id in gemerkt[1]
+    assert leer is None
+    assert len(runde.brok.zwiegespraech) == 2
+
+
+def test_ein_nachzuegler_wird_beim_betreten_zugeordnet(
+    konfiguration, mit_thread, ohne_espeak, runde
+):
+    foundry_spieler(konfiguration, "Aelin")
+    bot = gateway.baue(konfiguration)
+    thread = mit_thread(bot)
+    spaet = FakeMitglied(int(SPAET.id), SPAET.name)
+
+    asyncio.run(befehl(bot, "start")(FakeCtx(runde.mira)))
+    asyncio.run(bot.ereignisse["on_voice_state_update"](spaet, zustand(), zustand(runde.kanal)))
+
+    assert zugeordnet(konfiguration)[SPAET.id] == "Aelin"
+    assert thread.geschrieben == [
+        erinnern.BETRETEN_VERMERK.format(name=SPAET.name, spieler="Aelin")
+    ]
+
+
+def test_der_nachzuegler_im_falschen_kanal_wird_nicht_zugeordnet(
+    konfiguration, mit_thread, ohne_espeak, runde
+):
+    """Ohne Eintrag im Einwilligungsprotokoll gibt es nichts zuzuordnen.
+
+    Wurde der Bot während der Ansage gezogen, hat der Nachzügler sie nie gehört — dann
+    entsteht kein Protokolleintrag, und eine Zuordnung dazu wäre eine Behauptung über
+    jemanden, der nie gefragt wurde.
+    """
+    foundry_spieler(konfiguration, "Aelin")
+    bot = gateway.baue(konfiguration)
+    mit_thread(bot)
+    spaet = FakeMitglied(int(SPAET.id), SPAET.name)
+    asyncio.run(befehl(bot, "start")(FakeCtx(runde.mira)))
+    anderswo = FakeSprachkanal(runde.gilde)
+    anderswo.id = 78
+
+    async def ablauf():
+        # Erst nach der Ansage verschoben: der Start hat noch im richtigen Kanal gegriffen.
+        runde.kanal.verbindung.channel = anderswo
+        runde.gilde.me.voice.channel = anderswo
+        await bot.ereignisse["on_voice_state_update"](spaet, zustand(), zustand(runde.kanal))
+
+    asyncio.run(ablauf())
+
+    assert SPAET.id not in zugeordnet(konfiguration)
+    assert spaet.zwiegespraech == []
+
+
+def test_ein_geschlossenes_zwiegespraech_haelt_den_mitschnitt_nicht_auf(
+    konfiguration, mit_thread, ohne_espeak, runde, caplog
+):
+    """Keine Antwort ist auch eine: die Spur bleibt unter dem Discord-Namen."""
+    foundry_spieler(konfiguration, "Mira")
+    runde.brok.zwiegespraech_zu = True
+    bot = gateway.baue(konfiguration)
+    mit_thread(bot)
+    ctx = FakeCtx(runde.mira)
+
+    with caplog.at_level(logging.WARNING):
+        asyncio.run(befehl(bot, "start")(ctx))
+
+    assert ctx.antworten == [recorder.GESTARTET]
+    assert runde.kanal.verbindung.schneidet
+    assert zugeordnet(konfiguration)[BROK.id] is None
+    # Im Log steht der Grund, aber kein Name und kein Stapelauszug.
+    assert "RuntimeError" in caplog.text
+    assert BROK.name not in caplog.text
+
+
+def test_die_frage_beim_betreten_beantwortet_nur_die_betroffene_person(
+    konfiguration, mit_thread, ohne_espeak, runde
+):
+    """Wer wer ist, entscheidet man über sich selbst — nicht über jemand anderen."""
+    foundry_spieler(konfiguration, "Mira", "Brok Eisenfaust")
+    bot = gateway.baue(konfiguration)
+    mit_thread(bot)
+    asyncio.run(befehl(bot, "start")(FakeCtx(runde.mira)))
+
+    interaktion = antworten(gefragt_wurde(runde.brok), runde.mira, "u-brok eisenfaust")
+
+    assert interaktion.response.bearbeitet[0]["content"] == erinnern.NUR_SELBST
+    assert zugeordnet(konfiguration)[BROK.id] is None
+
+
+def test_eine_frage_von_vorhin_ordnet_nicht_in_die_frische_runde(
+    konfiguration, mit_thread, ohne_espeak, runde
+):
+    """Im Zwiegespräch nennt Discord keine Gilde — geprüft wird die Runde gegen sich selbst.
+
+    SQLite vergibt ``runde.id`` nach einer Löschung wieder. Ohne diesen Vergleich legte
+    eine Antwort von gestern die Person auf ein Konto einer fremden Gruppe.
+    """
+    foundry_spieler(konfiguration, "Mira", "Brok Eisenfaust")
+    bot = gateway.baue(konfiguration)
+    mit_thread(bot)
+    asyncio.run(befehl(bot, "start")(FakeCtx(runde.mira)))
+    menue = gefragt_wurde(runde.brok)
+
+    unsere = unsere_runde(konfiguration)
+    lebenszyklus.loeschen(konfiguration, unsere)
+    frisch = runden.anlegen(konfiguration.database_path, "Frisch", guild_id=KANAL.guild_id)
+    assert frisch.id == unsere.id
+
+    interaktion = antworten(menue, runde.brok, "u-brok eisenfaust")
+
+    assert interaktion.response.bearbeitet[0]["content"] == chronik.VERALTET
+    assert people.overview(frisch).personen == ()
+
+
+def test_die_nachbarrunde_bekommt_von_alldem_nichts(konfiguration, mit_thread, ohne_espeak, runde):
+    """Neben der Gilden-Runde steht in jeder dieser Datenbanken noch die erste."""
+    foundry_spieler(konfiguration, "Mira", "Brok Eisenfaust")
+    bot = gateway.baue(konfiguration)
+    mit_thread(bot)
+    fremde = erste_runde(konfiguration)
+    assert fremde.id != unsere_runde(konfiguration).id
+
+    asyncio.run(befehl(bot, "start")(FakeCtx(runde.mira)))
+    antworten(gefragt_wurde(runde.brok), runde.brok, "u-brok eisenfaust")
+
+    assert people.overview(fremde).personen == ()
 
 
 # -- Gegen das echte py-cord ------------------------------------------------------------

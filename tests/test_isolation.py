@@ -444,6 +444,9 @@ SCHREIBER = frozenset(
         "ausgabe.erzaehlung_zustellen",
         "erinnern.entscheiden",
         "erinnern.zuordnen",
+        # Schreibend, weil die Namensgleichheit ohne Rückfrage festschreibt (#76) — geprüft
+        # wird er deshalb wie die übrigen Schreiber mit einem eigenen Test weiter unten.
+        "erinnern.betreten",
         "lebenszyklus.loeschen",
         "lebenszyklus.freigeben",
     }
@@ -691,6 +694,27 @@ def test_knopf_und_menue_wirken_nur_in_der_eigenen_runde(zwei_runden):
     erinnern.zuordnen(a, "d-1", erinnern.KEINE)
     assert people.overview(a).personen[0].confirmed is None
     assert people.overview(b).personen[0].confirmed.name == f"Spielerin {MARKE[2]}"
+
+
+def test_die_zuordnung_beim_betreten_bleibt_in_ihrer_runde(zwei_runden):
+    """Der Weg aus #76 verknüpft eine Discord-Person mit einem Foundry-Konto — von selbst.
+
+    Damit ist er der schärfste der drei Zuordnungswege: hier klickt niemand, und eine
+    verwechselte Runde legte die Person der einen Gruppe auf ein Konto der anderen. Zur
+    Wahl stehen deshalb nur die Konten **dieser** Runde, und was nebenan gilt, bleibt.
+    """
+    _config, a, b, _ids = zwei_runden
+    people.confirm(a, {"d-1": ""})
+
+    stand = erinnern.betreten(a, "d-1")
+
+    assert stand.person is not None
+    assert [wer.name for wer in stand.spieler] == [f"Spielerin {MARKE[1]}"]
+    # Und wer drüben zugeordnet ist, wird von hier aus nicht angefasst — auch nicht unter
+    # derselben Discord-Kennung, die es in beiden Runden gibt.
+    assert erinnern.betreten(b, "d-1") == erinnern.Betreten()
+    assert people.overview(b).personen[0].confirmed.name == f"Spielerin {MARKE[2]}"
+    assert people.overview(a).personen[0].confirmed is None
 
 
 def test_einstellungen_gehoeren_der_runde(zwei_runden):
