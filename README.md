@@ -465,8 +465,15 @@ der Dekoder sieht Rauschen, wirft `OpusError: corrupted stream`, der Empfang sti
 Sitzung bekommt keine einzige Spur. Sich von DAVE abzumelden ist kein Ausweg — Discord
 antwortet mit `WebSocket closed with 4017` und verweigert die Sprachverbindung ganz.
 [Pycord-PR #3159](https://github.com/Pycord-Development/pycord/pull/3159) dreht die
-Reihenfolge um; genagelt wird auf den **Commit**, nicht auf den Branch. Zurück auf eine
-Veröffentlichung geht es, sobald dieser PR gemergt und ausgeliefert ist.
+Reihenfolge um; genagelt wird auf den **Commit**, nicht auf den Branch.
+
+Gezogen wird dieser Commit seit dem 2026-08-12 aus dem eigenen Fork
+[`mdopp/pycord`](https://github.com/mdopp/pycord) statt aus dem fremden PR-Branch: wird
+`fix/voice-rec-2` gelöscht oder umgeschrieben, scheitert sonst der Image-Bau (#152). Die
+README des Forks nennt Upstream-Stand, Datum und Grund. Zurück auf eine Veröffentlichung
+geht es, sobald #3159 gemergt **und** ausgeliefert ist — dann fällt der Fork weg. Damit
+das auffällt, fragt `scripts/pruefe_pycord_ausstieg.py` die Lage wöchentlich ab
+(`.github/workflows/pycord-ausstieg.yml`) und schlägt fehl, sobald sie kippt.
 
 **Die Senke erfüllt py-cords Empfangs-Protokoll von Hand.** Der Empfangs-Router verlangt
 `__sink_listeners__`, `walk_children`, `root` und `is_opus`; in 2.8.1 brachte das **keine**

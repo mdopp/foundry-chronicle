@@ -39,29 +39,42 @@ transcribe = ["faster-whisper>=1.1"]
 # (``dave.decrypt`` auf schon dekodiertem PCM), der Dekoder sieht Rauschen und wirft
 # ``OpusError: corrupted stream``; der Empfang stirbt daran und die Sitzung bekommt
 # keine einzige Spur. Pycord-PR #3159 dreht die Reihenfolge um — entschlüsseln, dann
-# dekodieren — ist aber offen und in keiner Veröffentlichung. Genagelt wird auf den
-# **Commit**, nicht auf ``fix/voice-rec-2``: ein Branch bewegt sich, und ein Bau, der
-# gestern ging und heute nicht mehr, kostet die nächste Runde ihre Aufnahme.
+# dekodieren — ist aber offen und in keiner Veröffentlichung.
 #
-# Zurück auf eine Veröffentlichung darf, wer Pycord-PR #3159 gemergt **und** in einem
-# py-cord-Release sieht — dann ersetzt dessen Fassung diese Zeile in beiden Extras.
+# **Woher der Stand kommt, und warum aus einem eigenen Fork (#152, Betreiber-Entscheidung
+# 2026-08-12).** ``326b72ac`` ist der Kopf von Pycord-PR #3159 (``fix/voice-rec-2``, vom
+# 2026-07-22) im Upstream ``Pycord-Development/pycord``. Gezogen wird er trotzdem aus
+# ``mdopp/pycord``, Branch ``foundry-chronicle/dave-voice-recv-3159``: ein fremder offener
+# PR-Branch kann gelöscht oder umgeschrieben werden, und dann scheitert der Image-Bau
+# (#145). Genagelt wird weiterhin auf den **Commit**, nicht auf den Branchnamen — ein
+# Branch bewegt sich, und ein Bau, der gestern ging und heute nicht mehr, kostet die
+# nächste Runde ihre Aufnahme. Die README des Forks trägt dieselbe Herkunft, damit der
+# Fork in drei Monaten kein Rätsel ist.
+#
+# **Ausstieg:** Pycord #3159 gemergt **und** in einer py-cord-Veröffentlichung enthalten →
+# beide Zeilen zurück auf eine Versionsangabe, Fork löschen. Damit das auffällt, ohne dass
+# jemand daran denken muss, fragt ``scripts/pruefe_pycord_ausstieg.py`` die Lage wöchentlich
+# ab (``.github/workflows/pycord-ausstieg.yml``) und schlägt fehl, sobald sie kippt; der
+# Beobachtungsposten bleibt #145. Im Testlauf wird nichts abgefragt — ein Test, der ans
+# Netz geht, ist keiner.
 discord = [
-    "py-cord[voice] @ git+https://github.com/Pycord-Development/pycord@326b72acc8d1d952ac002fe07ca65581cf5952bc",
+    "py-cord[voice] @ git+https://github.com/mdopp/pycord@326b72acc8d1d952ac002fe07ca65581cf5952bc",
     "davey>=0.1.6",
 ]
 # py-cord gehört hier dazu, obwohl nur der Bot es braucht: der Regressionstest
 # registriert unsere Senke gegen py-cords **echten** Empfangs-Router. Genau das haben die
 # Attrappen nicht gesehen — zweimal hintereinander fiel erst auf der Box auf, dass wir
 # das Protokoll der Bibliothek verfehlt hatten. Es ist reines Python plus zwei kleine
-# Räder; die CI wird davon nicht schwer. Derselbe festgenagelte Commit wie oben — eine
-# CI, die gegen eine andere Fassung prüft als das Image installiert, prüft die falsche.
+# Räder; die CI wird davon nicht schwer. Derselbe Fork und derselbe festgenagelte Commit
+# wie oben — eine CI, die gegen eine andere Fassung prüft als das Image installiert, prüft
+# die falsche.
 dev = [
     "pytest>=8.0",
     "pytest-cov>=5.0",
     "ruff>=0.6",
     "pre-commit>=3.7",
     "pyyaml>=6.0",
-    "py-cord[voice] @ git+https://github.com/Pycord-Development/pycord@326b72acc8d1d952ac002fe07ca65581cf5952bc",
+    "py-cord[voice] @ git+https://github.com/mdopp/pycord@326b72acc8d1d952ac002fe07ca65581cf5952bc",
 ]
 
 [build-system]
