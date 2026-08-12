@@ -112,6 +112,16 @@ schlicht den Audio-Zweig — es gibt keine zweite Pipeline zu pflegen. Das Dikta
 #19) ist derselbe Transkriptionskern, nur ohne die Discord-Vorstufen: ein Sprecher,
 eine Spur, Ergebnis wird zu Notizen.
 
+Den Übergang vom Transkript zur Notiz geht seit #140 der Abschluss selbst
+(Betreiber-Entscheidung 2026-08-12): `/chronik fertig` legt das zusammengeführte
+Gespräch in die Szenen, und zwar über die **Sitzungsuhr** — jede Äußerung fällt in die
+Szene ihres Startzeitpunkts. Voraussetzung ist, dass der Nullpunkt dieser Uhr in
+`recording.started_at` steht; er wird beim Start des Mitschnitts festgehalten, nie
+später geschätzt. Ein Auswahlweg in Discord ist bewusst verworfen. Was aus den Spuren
+kommt, wird bei jedem Lauf ersetzt (`note.origin`); was ein Mensch geschrieben hat,
+bleibt unangetastet. **Ein Diktat hat keine Sitzungsuhr** und wird deshalb nicht
+zugeordnet — für den Präsenzweg bleibt die Szenenfolge die einzige Zeitachse.
+
 **Foundry liefert die Zahlen, der Text die Erzählung.** Würfe, Schaden und Beute
 werden nie aus gesprochener oder getippter Sprache rekonstruiert, sondern aus dem
 Chat-Log eingesetzt. Das Modell ordnet und verknüpft; es rechnet und rät nicht.

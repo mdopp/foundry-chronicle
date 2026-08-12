@@ -54,11 +54,13 @@ def angesagt(config, *mitglieder):
     )
 
 
-def spur(config, sitzung_id, wer, *segmente, discord_user_id="egal"):
+def spur(config, sitzung_id, wer, *segmente, discord_user_id="egal", started_at=None):
     """Eine aufgenommene Spur samt Transkript — ``segmente`` sind (ms, ms, Text)."""
     kennung = None if discord_user_id is None else (wer.id if wer else discord_user_id)
     name = (wer.name if wer else discord_user_id).lower()
-    recordings.enqueue(runde(config), sitzung_id, f"{name}.wav", discord_user_id=kennung)
+    recordings.enqueue(
+        runde(config), sitzung_id, f"{name}.wav", discord_user_id=kennung, started_at=started_at
+    )
     scope = db.scoped(runde(config))
     try:
         service.store(scope, sitzung_id, name, tuple(segmente), STAND)
@@ -66,8 +68,8 @@ def spur(config, sitzung_id, wer, *segmente, discord_user_id="egal"):
         scope.close()
 
 
-def diktat(config, sitzung_id, *segmente):
-    recordings.enqueue(runde(config), sitzung_id, "memo.m4a")
+def diktat(config, sitzung_id, *segmente, discord_user_id=None):
+    recordings.enqueue(runde(config), sitzung_id, "memo.m4a", discord_user_id=discord_user_id)
     scope = db.scoped(runde(config))
     try:
         service.store(scope, sitzung_id, "memo", tuple(segmente), STAND)
@@ -192,6 +194,77 @@ def test_die_seite_zeigt_ohne_bot_spuren_kein_transkript(client, config, sitzung
     text = client.get(f"/sitzungen/{sitzung_id}").get_data(as_text=True)
 
     assert "Zusammengeführtes Transkript" not in text
+
+
+# --- Die selbsttätige Übernahme (#140) ----------------------------------------------
+
+BEGINN = "2026-08-06T20:00:00+00:00"
+
+
+def mitschnitt(config, sitzung_id, *, beginn=BEGINN):
+    """Zwei Spuren mit festgehaltenem Aufnahmebeginn — so kommt der Bot-Mitschnitt an."""
+    angesagt(config, MIRA, DAVEY)
+    spur(config, sitzung_id, MIRA, (0, 2000, "Wir gehen hinunter."), started_at=beginn)
+    spur(config, sitzung_id, DAVEY, (40000, 42000, "Hier riecht es nach Rauch."), started_at=beginn)
+
+
+def notiztexte(config, sitzung_id):
+    daten = notes.session(runde(config), sitzung_id)
+    return [notiz.text for szene in daten.scenes for notiz in szene.notes]
+
+
+def test_die_aussage_faellt_in_die_szene_ihres_startzeitpunkts(config, sitzung_id):
+    mitschnitt(config, sitzung_id)
+    notes.add_scene(runde(config), sitzung_id, title="Unten", at="2026-08-06T20:00:30+00:00")
+
+    assert merge.uebernehmen(runde(config), sitzung_id) == 2
+
+    szenen = notes.session(runde(config), sitzung_id).scenes
+    assert szenen[0].notes[0].text == "Mira: Wir gehen hinunter."
+    assert szenen[1].notes[0].text == "Davey: Hier riecht es nach Rauch."
+
+
+def test_ohne_festgehaltenen_beginn_wird_nichts_zugeordnet(config, sitzung_id):
+    """Keine Sitzungsuhr, keine Zuordnung — der Nullpunkt wird nicht geschätzt."""
+    angesagt(config, MIRA)
+    spur(config, sitzung_id, MIRA, (0, 2000, "Wir gehen hinunter."))
+
+    assert merge.uebernehmen(runde(config), sitzung_id) == 0
+    assert notiztexte(config, sitzung_id) == []
+
+
+def test_ein_diktat_im_thread_wird_nicht_auf_die_sitzungsuhr_gelegt(config, sitzung_id):
+    """Es trägt die Discord-Id seines Absenders und trotzdem keinen Aufnahmebeginn."""
+    mitschnitt(config, sitzung_id)
+    diktat(config, sitzung_id, (0, 2000, "Auf dem Heimweg faellt mir ein:"), discord_user_id="4009")
+
+    merge.uebernehmen(runde(config), sitzung_id)
+
+    assert "Auf dem Heimweg faellt mir ein:" not in " ".join(notiztexte(config, sitzung_id))
+
+
+def test_eine_sitzung_ohne_szene_kommt_ohne_notiz_davon(config, sitzung_id):
+    """Die erste Szene entsteht mit der Sitzung; ist sie fort, gibt es kein Ziel."""
+    mitschnitt(config, sitzung_id)
+    scope = db.scoped(runde(config))
+    try:
+        with scope:
+            scope.execute(
+                "DELETE FROM scene WHERE runde_id = ? AND session_id = ?",
+                (scope.runde_id, sitzung_id),
+            )
+    finally:
+        scope.close()
+
+    assert merge.uebernehmen(runde(config), sitzung_id) == 0
+
+
+def test_eine_ruhende_runde_bekommt_kein_gesprochenes_wort_mehr(config, sitzung_id, monkeypatch):
+    mitschnitt(config, sitzung_id)
+    monkeypatch.setattr(merge.lebenszyklus, "ruht", lambda _runde: True)
+
+    assert merge.uebernehmen(runde(config), sitzung_id) == 0
+    assert notiztexte(config, sitzung_id) == []
 
 
 # --- Marken und Abschnitte ----------------------------------------------------------

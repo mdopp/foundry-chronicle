@@ -266,7 +266,10 @@ def session_of_scene(runde: Runde, scene_id: int) -> int | None:
     return None if row is None else int(row["session_id"])
 
 
-def add_note(runde: Runde, scene_id: int, text: str, *, message_id: str = "") -> int | None:
+def add_note(
+    runde: Runde, scene_id: int, text: str, *, message_id: str = "", origin: str | None = None
+) -> int | None:
+    """``origin`` kennzeichnet Abgeleitetes — ``None`` heißt, ein Mensch hat es geschrieben."""
     inhalt = text.strip()
     if not inhalt:
         return None
@@ -281,7 +284,7 @@ def add_note(runde: Runde, scene_id: int, text: str, *, message_id: str = "") ->
         with scope:
             cursor = scope.execute(
                 "INSERT INTO note (runde_id, scene_id, text, created_at, updated_at, "
-                "discord_message_id) VALUES (?, ?, ?, ?, ?, ?)",
+                "discord_message_id, origin) VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (
                     scope.runde_id,
                     scene_id,
@@ -289,9 +292,30 @@ def add_note(runde: Runde, scene_id: int, text: str, *, message_id: str = "") ->
                     zeitpunkt,
                     zeitpunkt,
                     str(message_id).strip() or None,
+                    origin,
                 ),
             )
         return int(cursor.lastrowid)
+    finally:
+        scope.close()
+
+
+def drop_derived(runde: Runde, session_id: int, origin: str) -> int:
+    """Nimmt die abgeleiteten Notizen einer Sitzung fort — Geschriebenes bleibt stehen.
+
+    Der Weg, auf dem ein zweiter Abschluss nichts verdoppelt: was aus den Spuren kommt,
+    wird vor jedem Lauf verworfen und neu gelegt. Ersetzen statt Überspringen, damit eine
+    Spur, die erst später verschriftet wurde, noch in die Szenen findet.
+    """
+    scope = db.scoped(runde)
+    try:
+        with scope:
+            cursor = scope.execute(
+                "DELETE FROM note WHERE runde_id = ? AND origin = ? AND scene_id IN "
+                "(SELECT id FROM scene WHERE runde_id = ? AND session_id = ?)",
+                (scope.runde_id, origin, scope.runde_id, session_id),
+            )
+        return cursor.rowcount
     finally:
         scope.close()
 

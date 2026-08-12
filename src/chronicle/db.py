@@ -25,7 +25,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:  # pragma: no cover - nur für die Typprüfung
     from chronicle.runde import Runde
 
-SCHEMA_VERSION = 20
+SCHEMA_VERSION = 21
 
 # Der Name der ersten Runde: die Bestände der Entwicklungs-Instanz wandern hier hinein,
 # und eine frische Datenbank bekommt sie ebenfalls — die Oberfläche braucht bis zu ihrer
@@ -91,6 +91,8 @@ VERWORFENE_SCHLUESSEL = ("foundry_password",)
 NACHGETRAGEN = (
     ("recording", "deleted_at", "TEXT"),
     ("recording", "discord_user_id", "TEXT"),
+    ("recording", "started_at", "TEXT"),
+    ("note", "origin", "TEXT"),
     ("protocol", "delivered_at", "TEXT"),
     ("session", "thread_id", "TEXT"),
     ("note", "discord_message_id", "TEXT"),

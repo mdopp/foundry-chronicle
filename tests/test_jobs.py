@@ -5,10 +5,13 @@ import threading
 import pytest
 from conftest import GRENZE, runde, warte_bis
 
-from chronicle import db, jobs, lebenszyklus, notes
+from chronicle import db, jobs, lebenszyklus, notes, protocol, recordings
 from chronicle.config import Config
 from chronicle.foundry import service as foundry
 from chronicle.foundry.client import FoundryUnreachable
+from chronicle.transcribe import service as transcribe
+
+STAND = "2026-08-05T21:00:00+00:00"
 
 
 @pytest.fixture
@@ -187,6 +190,33 @@ def test_der_chronik_lauf_schreibt_chronik_und_rueckblick(stelle):
     finally:
         scope.close()
     assert arten == {"chronik", "rueckblick"}
+
+
+def test_der_lauf_traegt_das_transkript_selbst_in_die_szenen(stelle):
+    """Der Übergang aus #140: ohne ihn erreicht kein gesprochenes Wort die Chronik."""
+    gastgeber = runde(stelle)
+    sitzung_id = notes.create_session(gastgeber, played_on="2026-08-05", title="Keller")
+    aufnahme = recordings.enqueue(
+        gastgeber,
+        sitzung_id,
+        "mira.wav",
+        discord_user_id="4001",
+        started_at="2026-08-05T20:00:00+00:00",
+    )
+    # Die Spur ist schon durch die Verschriftung — hier geht es um den Schritt danach.
+    recordings.mark(gastgeber, aufnahme.id, recordings.FERTIG)
+    scope = db.scoped(gastgeber)
+    try:
+        transcribe.store(scope, sitzung_id, "mira", ((0, 2000, "Da unten steht eine Tür."),), STAND)
+    finally:
+        scope.close()
+
+    jobs.chronik(stelle, gastgeber, sitzung_id)
+
+    szene = notes.session(gastgeber, sitzung_id).scenes[0]
+    # Ohne Einwilligungseintrag steht der Spurname da und kein geratener Name.
+    assert [notiz.text for notiz in szene.notes] == ["mira: Da unten steht eine Tür."]
+    assert "Da unten steht eine Tür." in protocol.stored(gastgeber, sitzung_id).text
 
 
 def test_eine_verschwundene_sitzung_beendet_den_lauf_ehrlich(stelle):

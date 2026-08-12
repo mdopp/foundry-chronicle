@@ -366,6 +366,26 @@ def test_erst_ist_die_ansage_zu_ende_dann_beginnt_der_mitschnitt(
     assert aufnahme.laeuft
 
 
+def test_der_nullpunkt_der_sitzungsuhr_wird_festgehalten_und_nicht_geschaetzt(
+    konfiguration, sitzung_id, ohne_espeak
+):
+    """Ohne diesen Anker ließe sich keine Äußerung einer Szene zuordnen, ohne zu raten (#140).
+
+    Er entsteht **nach** der Ansage, weil erst dann mitgeschnitten wird — Millisekunde 0
+    der Spuren liegt auf diesem Moment und nicht auf dem Befehl davor.
+    """
+    stimme = FakeStimme()
+    aufnahme = asyncio.run(recorder.starten(konfiguration, stimme, unsere_runde(konfiguration)))
+    aufnahme.schreiben(MIRA, stille(48))
+    aufnahme.beenden()
+
+    (spur,) = recordings.pending(unsere_runde(konfiguration))
+    assert spur.started_at == aufnahme.begonnen_at
+    assert spur.started_at is not None
+    # Der Beginn liegt vor dem Einreihen: dazwischen liegt die ganze Aufnahme.
+    assert spur.started_at <= spur.uploaded_at
+
+
 def test_der_start_reicht_die_konfigurierte_adresse_des_sprachdienstes_durch(
     konfiguration, sitzung_id, monkeypatch
 ):

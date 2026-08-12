@@ -39,6 +39,7 @@ from chronicle.discord.ausgabe import anhaengen, erzaehlung_zustellen
 from chronicle.discord.rueckblick import deliver
 from chronicle.foundry.service import sync
 from chronicle.runde import Runde
+from chronicle.transcribe.merge import uebernehmen
 from chronicle.transcribe.service import run_queue
 
 logger = logging.getLogger(__name__)
@@ -299,9 +300,15 @@ def abgleich(config: Config, runde: Runde, *, passwort: str | None = None) -> st
 
 
 def chronik(config: Config, runde: Runde, session_id: int) -> str:
-    """Erst die wartenden Aufnahmen verschriften, dann komponieren — ein Lauf."""
+    """Erst die wartenden Aufnahmen verschriften, dann übernehmen, dann komponieren.
+
+    Die Übernahme steht zwischen beidem und nicht daneben: die Komposition liest Notizen,
+    und ein Transkript, das erst danach zur Notiz würde, käme eine Chronik zu spät. Genau
+    das war die Lücke aus #140.
+    """
     wartend = len(recordings.pending(runde))
     run_queue(config, runde)
+    uebernehmen(runde, session_id)
     ergebnis = compose_session(config, runde, session_id)
     if ergebnis is None:
         # Zwei Wege hierher, und der Unterschied gehört gesagt: die Sitzung ist fort — oder

@@ -140,6 +140,9 @@ def test_wanderung_bringt_die_bestaende_in_die_erste_runde(alte_datenbank):
     assert runde.guild_id is None
     assert [s.title for s in notes.sessions(runde)] == ["Der Keller"]
     assert notes.session(runde, 1).scenes[0].notes[0].text == "Sie stiegen hinab."
+    # Von Hand geschrieben, also ohne Herkunft — und damit nichts, was ein Lauf ersetzt.
+    assert notes.drop_derived(runde, 1, "transkript") == 0
+    assert notes.session(runde, 1).note_count == 1
     assert protocol.stored(runde, 1).text == "Die Chronik von damals."
     assert [e.name for g in register.overview(runde) for e in g.entries] == ["Mira"]
 
