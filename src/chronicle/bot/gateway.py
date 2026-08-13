@@ -207,8 +207,8 @@ UNERWARTET = "unerwarteter Fehler im Bot ({typ})."
 # im Satz. Ein zerrissener Text, den niemand als zerrissen erkennt, ist schlimmer als eine
 # fehlende Nachricht — also sagt der Abriss sich selbst an.
 ABGERISSEN = (
-    "⚠️ Der Text davor ist unvollständig: nur {zugestellt} von {ganz} Teilen kamen durch, "
-    "{fehlend} fehlen. Was fehlt, steht nicht hier — den Grund nennt das Log des Bots."
+    "⚠️ Der Text davor ist unvollständig: nur {zugestellt} von {ganz} Teilen {kam} durch, "
+    "{fehlend} {fehlt}. Was fehlt, steht nicht hier — den Grund nennt das Log des Bots."
 )
 
 BEFEHLE = (
@@ -678,6 +678,23 @@ async def _zustellen(hinaus, text: str | None, *, zuletzt: dict | None = None, *
             raise
 
 
+def _abrisssatz(zugestellt: int, ganz: int) -> str:
+    """»1 von 2 Teilen kamen durch, 1 fehlen« stand hier bis #208.
+
+    Der Satz erklärt einer Gruppe, warum ihr Text mitten im Wort endet, und ist damit der
+    öffentlichste dieses Bots — oft das Erste, was jemand von ihm bewusst liest. Ein Teil
+    ist der häufigste Abriss, nicht der seltene: geteilt wird erst ab zwei Stücken.
+    """
+    fehlend = ganz - zugestellt
+    return ABGERISSEN.format(
+        zugestellt=zugestellt,
+        ganz=ganz,
+        kam="kam" if zugestellt == 1 else "kamen",
+        fehlend=fehlend,
+        fehlt="fehlt" if fehlend == 1 else "fehlen",
+    )
+
+
 async def _abriss_melden(hinaus, jedes: dict, zugestellt: int, ganz: int) -> None:
     """Was schon draußen ist, als unvollständig kenntlich machen.
 
@@ -696,10 +713,7 @@ async def _abriss_melden(hinaus, jedes: dict, zugestellt: int, ganz: int) -> Non
         ganz - zugestellt,
     )
     with contextlib.suppress(Exception):
-        await hinaus(
-            ABGERISSEN.format(zugestellt=zugestellt, ganz=ganz, fehlend=ganz - zugestellt),
-            **jedes,
-        )
+        await hinaus(_abrisssatz(zugestellt, ganz), **jedes)
 
 
 async def _in_den_thread(bot, aufnahme: Aufnahme, text: str) -> bool:

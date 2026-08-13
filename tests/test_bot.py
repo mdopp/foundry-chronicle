@@ -1835,6 +1835,76 @@ def test_ein_stolperndes_trennen_nimmt_den_widerruf_nicht_mit(
     assert ctx.antworten[0].startswith("Das hat nicht geklappt:")
 
 
+def _stolpert_beim_trennen(kanal, monkeypatch):
+    """Der Kanal verbindet wie sonst, aber ``disconnect`` geht ans Netz und stirbt dort."""
+    echt = kanal.connect
+
+    async def verbindet():
+        verbindung = await echt()
+        verbindung.trennen_stolpert = True
+        return verbindung
+
+    monkeypatch.setattr(kanal, "connect", verbindet)
+
+
+def test_der_widerruf_kommt_auch_wenn_die_vorstellung_selbst_abreisst(
+    konfiguration, ohne_espeak, runde, monkeypatch
+):
+    """Zweig 1 von vieren: die Vorstellung bricht mittendrin ab, noch vor dem Mitschnitt.
+
+    Bis #208 war die Reihenfolge hier ungesichert — »trennen zuerst« kam durch, ohne dass
+    ein Test rot wurde. Gerade hier trägt sie: die halbe Ankündigung steht schon im Kanal,
+    daneben der Abriss-Hinweis, der von einer Aufnahme nichts zurücknimmt. Stolpert das
+    Trennen davor, bliebe sie für immer stehen.
+    """
+    unsere_runde(konfiguration)
+    _stolpert_beim_trennen(runde.kanal, monkeypatch)
+    echt_senden = runde.kanal.send
+    versuche = []
+
+    async def sendet(text):
+        versuche.append(text)
+        # Das **zweite** Stück: das erste steht dann schon im Kanal, und genau dann ist
+        # etwas zurückzunehmen.
+        if len(versuche) == 2:
+            raise RuntimeError("Discord hat abgelehnt")
+        await echt_senden(text)
+
+    monkeypatch.setattr(runde.kanal, "send", sendet)
+    bot = gateway.baue(konfiguration)
+
+    asyncio.run(befehl(bot, "start")(FakeCtx(runde.mira)))
+
+    gesagt = [text for text, _ in runde.kanal.geschrieben]
+    assert gesagt[-1] == gateway.WIDERRUF.format(
+        grund=gateway.UNERWARTET.format(typ="RuntimeError")
+    )
+    assert not runde.kanal.verbindung.getrennt
+    assert der_lauf(bot).aufnahme is None
+
+
+def test_der_widerruf_kommt_auch_wenn_der_empfangstest_nicht_anlaeuft(
+    konfiguration, ohne_espeak, runde, monkeypatch
+):
+    """Zweig 4 von vieren: dieselbe Reihenfolge im Empfangstest, hinter der Ankündigung.
+
+    Die Probe-Ankündigung steht öffentlich wie die vor einer Aufnahme; läuft danach nichts
+    an, wird sie zurückgenommen — und zwar bevor aufgeräumt wird, weil das Aufräumen ans
+    Netz geht und den Widerruf sonst mitnimmt.
+    """
+    unsere_runde(konfiguration)
+    _stolpert_beim_trennen(runde.kanal, monkeypatch)
+    bot = gateway.baue(konfiguration)
+
+    asyncio.run(befehl(bot, "test")(FakeCtx(runde.mira)))
+
+    gesagt = [text for text, _ in runde.kanal.geschrieben]
+    assert gesagt[0] == gateway.PROBE_VORSTELLUNG
+    assert gesagt[-1] == gateway.WIDERRUF.format(grund=recorder.OHNE_SITZUNG)
+    assert not runde.kanal.verbindung.getrennt
+    assert probespuren(konfiguration) == []
+
+
 def test_die_probe_vorstellung_passt_in_eine_nachricht():
     """Die Voraussetzung, unter der der Empfangstest keinen halben Text hinterlassen kann.
 
@@ -2459,10 +2529,23 @@ def test_ein_abgerissener_text_sagt_selbst_an_dass_er_abgerissen_ist(caplog):
         asyncio.run(gateway._zustellen(kanal.send, text))
 
     # Der Hinweis steht hinter dem, was ankam — und nennt beide Zahlen, wie das Log.
-    assert kanal.geschrieben[-1] == gateway.ABGERISSEN.format(
-        zugestellt=1, ganz=stuecke, fehlend=stuecke - 1
-    )
+    assert kanal.geschrieben[-1] == gateway._abrisssatz(1, stuecke)
     assert f"1 von {stuecke} Stücken zugestellt, {stuecke - 1} fehlen" in caplog.text
+
+
+def test_der_abrisssatz_stimmt_bei_einem_teil_wie_bei_vielen():
+    """Der öffentlichste Satz des Bots — und bis #208 stand darin »1 von 2 Teilen kamen
+    durch, 1 fehlen«.
+
+    Ein einzelnes fehlendes Stück ist dabei nicht der Randfall, sondern der häufigste:
+    geteilt wird ab zwei Stücken, und meistens sind es genau zwei.
+    """
+    einer = gateway._abrisssatz(1, 2)
+    assert "1 von 2 Teilen kam durch, 1 fehlt." in einer
+    assert "kamen" not in einer and "fehlen" not in einer
+
+    mehrere = gateway._abrisssatz(2, 5)
+    assert "2 von 5 Teilen kamen durch, 3 fehlen." in mehrere
 
 
 def test_scheitert_schon_das_erste_stueck_bleibt_es_beim_alles_oder_nichts(caplog):
