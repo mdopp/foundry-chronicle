@@ -48,7 +48,7 @@ Umgebung des Containers `chronik` eintragen und den Dienst neu starten:
 
 ```yaml
       - name: CHRONICLE_TRUSTED_PROXIES
-        value: "192.168.178.100"
+        value: "192.0.2.10"
 ```
 
 Kommagetrennt sind mehrere Einträge erlaubt, Adressen wie Netze (`10.0.0.0/8`, `::1`).
