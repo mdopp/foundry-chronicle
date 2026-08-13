@@ -17,8 +17,10 @@ import pytest
 from conftest import runde as erste_runde
 from test_bot import (
     TOKEN,
+    FakeAnhang,
     FakeAntwort,
     FakeBot,
+    FakeButton,
     FakeIntents,
     FakeMitglied,
     FakePCMAudio,
@@ -62,15 +64,6 @@ class FakeEmbed:
     @classmethod
     def from_dict(cls, gebaut):
         return cls(gebaut)
-
-
-class FakeButton:
-    def __init__(self, *, label="", row=0, custom_id="", disabled=False, **rest):
-        self.label = label
-        self.row = row
-        self.custom_id = custom_id
-        self.disabled = disabled
-        self.callback = None
 
 
 class FakeCtx:
@@ -129,6 +122,7 @@ def pycord(monkeypatch):
     modul.HTTPException = FakeHTTPException
     modul.Embed = FakeEmbed
     modul.SelectOption = FakeSelectOption
+    modul.Attachment = FakeAnhang
     senken = types.ModuleType("discord.sinks")
     senken.Sink = FakeSenke
     modul.sinks = senken

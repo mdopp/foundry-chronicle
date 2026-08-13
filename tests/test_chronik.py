@@ -15,14 +15,15 @@ import threading
 import time
 import types
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
 
 import pytest
 from conftest import GRENZE, systemsprache
 from conftest import runde as erste_runde
 from test_bot import (
     TOKEN,
+    FakeAnhang,
     FakeBot,
+    FakeButton,
     FakeGilde,
     FakeIntents,
     FakeMitglied,
@@ -30,14 +31,16 @@ from test_bot import (
     FakePermissions,
     FakeSenke,
     FakeSprachkanal,
+    FakeView,
     sprachdaten,
     spricht,
     stille,
 )
 from test_bot import FakeCtx as FakeSprechCtx
+from test_dokument import BEISPIEL, DRITTER_ABEND
 
 import chronicle.bot.__main__ as bot_eintritt
-from chronicle import db, jobs, lebenszyklus, notes, recordings, settings, zugang
+from chronicle import db, dokument, jobs, lebenszyklus, notes, recordings, settings, zugang
 from chronicle import runde as runden
 from chronicle.bot import ansage, chronik, einrichten, erinnern, gateway, recorder
 from chronicle.config import Config
@@ -45,6 +48,7 @@ from chronicle.discord import ausgabe, rueckblick
 from chronicle.foundry import client as foundry_client
 from chronicle.foundry import service as foundry_service
 from chronicle.foundry.client import FoundryUnreachable
+from chronicle.transcribe import service as transcribe_service
 
 GILDE = "1101"
 FREMDE_GILDE = "9909"
@@ -81,16 +85,6 @@ class FakeModal:
         self.title = title
 
 
-class FakeAnhang:
-    def __init__(self, filename, inhalt=b"ton-ton-ton", groesse=None):
-        self.filename = filename
-        self.size = len(inhalt) if groesse is None else groesse
-        self._inhalt = inhalt
-
-    async def save(self, ziel):
-        Path(ziel).write_bytes(self._inhalt)
-
-
 class FakeThread:
     def __init__(self, kennung, name):
         self.id = kennung
@@ -123,14 +117,16 @@ class FakeCtx:
         self.channel_id = self.channel.id
         self.user = types.SimpleNamespace(id=wer)
         self.antworten: list[str] = []
+        self.ansichten: list = []
         self.modale: list[FakeModal] = []
         self.aufgeschoben = False
 
     async def defer(self, **rest):
         self.aufgeschoben = True
 
-    async def respond(self, text, **rest):
+    async def respond(self, text, *, view=None, **rest):
         self.antworten.append(text)
+        self.ansichten.append(view)
 
     async def send_modal(self, modal):
         self.modale.append(modal)
@@ -141,16 +137,20 @@ class FakeAntwort:
 
     def __init__(self):
         self.gesendet: list[str] = []
+        self.bearbeitet: list[dict] = []
         self.aufgeschoben = False
 
     async def send_message(self, text, **rest):
         self.gesendet.append(text)
 
+    async def edit_message(self, *, content=None, embed=None, view=None):
+        self.bearbeitet.append({"content": content, "view": view})
+
     async def defer(self, **rest):
         self.aufgeschoben = True
 
     def is_done(self) -> bool:
-        return self.aufgeschoben or bool(self.gesendet)
+        return self.aufgeschoben or bool(self.gesendet) or bool(self.bearbeitet)
 
 
 class FakeNachreichen:
@@ -227,6 +227,7 @@ def pycord(monkeypatch):
     modul.Permissions = FakePermissions
     modul.PCMAudio = FakePCMAudio
     modul.HTTPException = FakeHTTPException
+    modul.Attachment = FakeAnhang
     senken = types.ModuleType("discord.sinks")
     senken.Sink = FakeSenke
     modul.sinks = senken
@@ -236,6 +237,8 @@ def pycord(monkeypatch):
     oberflaeche = types.ModuleType("discord.ui")
     oberflaeche.Modal = FakeModal
     oberflaeche.InputText = FakeInputText
+    oberflaeche.View = FakeView
+    oberflaeche.Button = FakeButton
     modul.ui = oberflaeche
     monkeypatch.setitem(sys.modules, "discord", modul)
     monkeypatch.setattr(FakeBot, "erzeugt", [])
@@ -327,6 +330,7 @@ def test_der_bot_bringt_die_chronik_befehle_mit(bot):
         "fertig",
         "abgleich",
         "nacherzaehlung",
+        "einlesen",
         "loeschen",
     }
     assert gateway.BEFEHL_SZENE in bot.befehle
@@ -1793,3 +1797,193 @@ def test_ein_belegter_lauf_schiebt_die_frist_des_gemerkten_passworts_nicht_weite
 
     assert ctx.modale == [], "wer selbst hinterlegt hat, wird nicht noch einmal gefragt"
     assert zugang._gemerkt[unsere.id].ablauf == faellig
+
+
+# -- Ein vorhandenes Notizdokument einlesen ---------------------------------------------
+
+
+def einlesen_fahren(bot, text=BEISPIEL, *, name="notizen.md", groesse=None, knopf=None):
+    """``/chronik einlesen`` samt dem Knopf, der seit #169 davor steht.
+
+    ``knopf`` wählt, was danach geklickt wird — ``None`` heißt: gar nichts, und dann darf
+    auch nichts entstanden sein.
+    """
+    ctx = FakeCtx()
+    datei = FakeAnhang(name, inhalt=text.encode("utf-8"), groesse=groesse)
+    asyncio.run(chronikbefehl(bot, "einlesen")(ctx, datei))
+    klick = FakeInteraction(ctx.channel)
+    ansicht = ctx.ansichten[-1]
+    if knopf is not None and ansicht is not None:
+        asyncio.run(ansicht.items[0 if knopf == "ja" else 1].callback(klick))
+    return ctx, klick
+
+
+def abende(runde):
+    return [sitzung.played_on for sitzung in notes.sessions(runde)]
+
+
+def sitzung_vom(runde, datum):
+    return [sitzung for sitzung in notes.sessions(runde) if sitzung.played_on == datum][0].id
+
+
+def test_einlesen_zeigt_erst_die_vorschau_und_legt_nichts_an(stelle, bot):
+    """Ein Dokument kann fünfzehn Abende tragen — ein Fehlgriff legte fünfzehn Sitzungen an."""
+    _config, unsere = stelle
+
+    ctx, _klick = einlesen_fahren(bot)
+
+    (vorschau,) = ctx.antworten
+    for datum in ("2026-03-12", "2026-03-26", "2026-04-09"):
+        assert datum in vorschau
+    assert "Ankunft in Hohenfels" in vorschau
+    assert chronik.DOKUMENT_FRAGE in vorschau
+    assert [knopf.label for knopf in ctx.ansichten[-1].items] == [
+        chronik.DOKUMENT_JA,
+        chronik.DOKUMENT_NEIN,
+    ]
+    # Und bis hierher steht keine Zeile in der Chronik.
+    assert notes.sessions(unsere) == ()
+
+
+def test_erst_der_knopf_legt_die_sitzungen_an(stelle, bot):
+    _config, unsere = stelle
+
+    _ctx, klick = einlesen_fahren(bot, knopf="ja")
+
+    assert abende(unsere) == ["2026-04-09", "2026-03-26", "2026-03-12"]
+    (bearbeitet,) = klick.response.bearbeitet
+    assert bearbeitet["content"] == chronik.DOKUMENT_ANGELEGT.format(sitzungen="3 Sitzungen")
+    assert bearbeitet["view"] is None
+    erste = notes.session(unsere, sitzung_vom(unsere, "2026-03-12"))
+    assert [szene.title for szene in erste.scenes] == [
+        "Der Regen und der Wirt",
+        "Das Gespräch am Kamin",
+    ]
+
+
+def test_abbrechen_legt_nichts_an(stelle, bot):
+    _config, unsere = stelle
+
+    _ctx, klick = einlesen_fahren(bot, knopf="nein")
+
+    assert notes.sessions(unsere) == ()
+    assert klick.response.bearbeitet[0]["content"] == chronik.DOKUMENT_ABGEBROCHEN
+
+
+def test_dieselbe_datei_zweimal_verdoppelt_den_bestand_nicht(stelle, bot):
+    _config, unsere = stelle
+    einlesen_fahren(bot, knopf="ja")
+
+    ctx, _klick = einlesen_fahren(bot, knopf="ja")
+
+    assert abende(unsere) == ["2026-04-09", "2026-03-26", "2026-03-12"]
+    (antwort,) = ctx.antworten
+    assert "2026-03-12" in antwort and chronik.DOKUMENT_FRAGE not in antwort
+    assert ctx.ansichten == [None], "ohne neuen Abend gibt es nichts zu bestätigen"
+
+
+def test_ein_dokument_ohne_datum_wird_nicht_geraten(stelle, bot):
+    _config, unsere = stelle
+
+    ctx, _klick = einlesen_fahren(bot, "# Die Sturmklingen\n\n## Der Keller\n\nEs war dunkel.\n")
+
+    (antwort,) = ctx.antworten
+    assert "12.03.2026" in antwort and "2026-03-12" in antwort
+    assert notes.sessions(unsere) == ()
+    assert ctx.ansichten == [None]
+
+
+def test_eine_zu_grosse_datei_bleibt_liegen(stelle, bot):
+    _config, unsere = stelle
+
+    ctx, _klick = einlesen_fahren(bot, groesse=dokument.MAX_BYTES + 1)
+
+    assert ctx.antworten == [
+        chronik.DOKUMENT_ZU_GROSS.format(
+            name="notizen.md", grenze=dokument.MAX_BYTES // (1024 * 1024)
+        )
+    ]
+    assert notes.sessions(unsere) == ()
+
+
+def test_was_kein_notizdokument_ist_wird_nicht_gelesen(stelle, bot):
+    _config, unsere = stelle
+
+    ctx, _klick = einlesen_fahren(bot, name="weltkarte.png")
+
+    assert "weltkarte.png" in ctx.antworten[0]
+    assert notes.sessions(unsere) == ()
+
+
+def test_eine_gilde_ohne_runde_liest_nichts_ein(stelle, bot):
+    """Die Gilde bestimmt die Runde — auch hier gibt es keinen Rückfall auf »die erste«."""
+    _config, unsere = stelle
+    ctx = FakeCtx(guild_id=FREMDE_GILDE)
+
+    asyncio.run(
+        chronikbefehl(bot, "einlesen")(ctx, FakeAnhang("notizen.md", inhalt=BEISPIEL.encode()))
+    )
+
+    assert chronik.KEINE_RUNDE in ctx.antworten[0]
+    assert notes.sessions(unsere) == ()
+
+
+def test_ein_dokument_im_thread_faellt_nicht_mehr_still_durch(stelle, bot):
+    """Der Fall aus #169: weder Notiz noch Diktat — und bis dahin sagte niemand etwas."""
+    _config, unsere = stelle
+    _ctx, thread = sitzung_starten(bot)
+
+    nachricht = melden(
+        bot,
+        FakeNachricht(7407, "", kanal=thread.id, anhaenge=(FakeAnhang("notizen.md"),)),
+    )
+
+    assert nachricht.antworten == [chronik.DOKUMENT_IM_THREAD.format(name="notizen.md")]
+    assert recordings.pending(unsere) == ()
+    sitzung = notes.session_of_thread(unsere, str(thread.id))
+    assert notes.session(unsere, sitzung).note_count == 0
+
+
+def _verschriftetes_diktat(unsere, sitzung):
+    """Eine Spur, die schon Text ist — ohne sie käme ``merge`` gar nicht bis zum Verwerfen."""
+    spur = recordings.enqueue(
+        unsere, sitzung, "memo.m4a", discord_user_id="4001", message_at="2026-04-09T20:00:00+00:00"
+    )
+    recordings.mark(unsere, spur.id, recordings.FERTIG)
+    scope = db.scoped(unsere)
+    try:
+        transcribe_service.store(
+            scope, sitzung, "memo", ((0, 1000, "Diktiert am Heimweg."),), "2026-04-09T20:05:00"
+        )
+    finally:
+        scope.close()
+
+
+async def _fertig_und_warten(bot, unsere, ctx):
+    await chronikbefehl(bot, "fertig")(ctx)
+    await _bis_der_lauf_durch_ist(unsere)
+
+
+def test_ein_zweiter_abschluss_loescht_das_eingelesene_nicht(stelle, bot):
+    """Die Falle aus #169: ``merge`` verwirft vor jedem Lauf alles seiner Herkunft.
+
+    Trüge das Eingelesene die Herkunft des Transkripts, wäre es nach ``/chronik fertig``
+    fort — und anders als ein Transkript entsteht es nicht neu. Der Lauf läuft hier
+    wirklich, zweimal, und mit einer verschrifteten Spur in der Sitzung: ohne sie kehrte
+    ``merge.uebernehmen`` vorher um und der Test bliebe grün, egal was hier steht.
+    """
+    _config, unsere = stelle
+    settings.save_foundry_quelle(unsere, settings.TESTWELT)
+    einlesen_fahren(bot, knopf="ja")
+    sitzung = notes.latest_session(unsere).id
+    _verschriftetes_diktat(unsere, sitzung)
+
+    for _ in range(2):
+        asyncio.run(_fertig_und_warten(bot, unsere, FakeCtx(kanal=types.SimpleNamespace(id=4711))))
+
+    texte = [text for _position, text in notizen(unsere, sitzung)]
+    assert DRITTER_ABEND in texte
+    # Und die Gegenprobe: das Abgeleitete war wirklich im Spiel und steht genau einmal da.
+    assert [text for text in texte if "Diktiert am Heimweg." in text] == [
+        "memo: Diktiert am Heimweg."
+    ]

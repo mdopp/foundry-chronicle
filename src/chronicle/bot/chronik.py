@@ -27,11 +27,11 @@ Drei Regeln stehen über allem:
 from __future__ import annotations
 
 import logging
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from chronicle import jobs, lebenszyklus, notes, recordings, settings, zugang
+from chronicle import dokument, jobs, lebenszyklus, notes, recordings, settings, zugang
 from chronicle import runde as runden
 from chronicle.bot import BotFehler
 from chronicle.config import Config
@@ -107,6 +107,54 @@ LEER = (
     "»{name}« kam ohne Ton an — null Bytes. Ich reihe sie nicht ein; schick sie einfach "
     "noch einmal. An der Sitzung fehlt sonst nichts."
 )
+
+# Eine Markdown-Datei im Thread ist weder Notiz noch Diktat. Sie fiel bis #169 still
+# durch — und Stille ist hier das Schlechteste: die Runde hält den Altbestand für abgelegt.
+DOKUMENT_IM_THREAD = (
+    "»{name}« sieht nach Notizen aus und nicht nach einer Aufnahme — hier im Thread mache "
+    "ich daraus nichts. `/chronik einlesen` nimmt so eine Datei im Kanal der Runde "
+    "entgegen und legt daraus Sitzungen an; vorher zeigt es, was entstünde."
+)
+
+DOKUMENT_KEINE_DATEI = (
+    "»{name}« lese ich nicht: ich nehme Notizen als Markdown- oder Textdatei ({endungen})."
+)
+
+DOKUMENT_ZU_GROSS = "»{name}« ist größer als {grenze} MB — so viel Text lese ich nicht ein."
+
+DOKUMENT_UNLESBAR = (
+    "»{name}« ist kein Text, den ich lesen kann — erwartet wird UTF-8. Angelegt habe ich nichts."
+)
+
+# Kein Fehlschlag, sondern die häufigste Ursache: die Abende stehen ohne Datum da. Der
+# Satz nennt die beiden Schreibweisen, die sicher gelesen werden — geraten wird keine.
+DOKUMENT_OHNE_ABENDE = (
+    "In »{name}« finde ich keinen Abend. Eine Sitzung erkenne ich an einer Überschrift mit "
+    "Datum — `## 12.03.2026` oder `## 2026-03-12`. Angelegt habe ich nichts."
+)
+
+DOKUMENT_VORSCHAU = "**Aus »{name}« würde ich {sitzungen} anlegen:**"
+
+DOKUMENT_ABEND = "• **{datum}**{titel} — {szenen}"
+
+DOKUMENT_OHNE_DATUM = (
+    "Ohne Datum in der Überschrift und deshalb ausgelassen: {liste}. Trag dort eines nach "
+    "und schick die Datei noch einmal — raten tue ich es nicht."
+)
+
+DOKUMENT_SCHON_DA = "Das steht schon da und bleibt, wie es ist: {liste}."
+
+DOKUMENT_FRAGE = "Soll ich das so anlegen? Bis du bestätigst, ist nichts geschrieben."
+
+DOKUMENT_JA = "Ja, anlegen"
+DOKUMENT_NEIN = "Abbrechen"
+
+DOKUMENT_ANGELEGT = (
+    "{sitzungen} angelegt. Sie stehen ab jetzt in der Chronik und `/suche` findet, was "
+    "darin vorkommt."
+)
+
+DOKUMENT_ABGEBROCHEN = "Gut, ich habe nichts angelegt."
 
 NICHT_ABGELEGT = (
     "Das konnte ich nicht ablegen: {grund} Schreib es noch einmal — bleibt es dabei, "
@@ -199,6 +247,30 @@ class Anhang:
     filename: str
     size: int
     speichern: Callable[[Path], Awaitable[None]]
+
+
+@dataclass(frozen=True)
+class Notizdatei:
+    """Ein angehängtes Notizdokument: Name, Größe, und wie man seinen Text bekommt.
+
+    Wie ``Anhang``, nur andersherum gelesen: ein Diktat wird auf die Platte gelegt und
+    später verschriftet, ein Dokument wird sofort gelesen und danach nicht mehr gebraucht.
+    """
+
+    filename: str
+    size: int
+    lesen: Callable[[], Awaitable[bytes]]
+
+
+@dataclass(frozen=True)
+class Vorschau:
+    """Was aus einem Dokument entstünde — und was dafür noch zu bestätigen ist.
+
+    Ohne ``abende`` gibt es nichts zu bestätigen: dann sagt ``text``, warum.
+    """
+
+    text: str
+    abende: tuple[dokument.Abend, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -439,6 +511,10 @@ async def _diktat(
     return DIKTAT
 
 
+def ist_notizdokument(dateiname: str) -> bool:
+    return Path(dateiname).suffix.lower() in dokument.SUFFIXES
+
+
 async def aufnehmen(
     config: Config, runde: Runde, session_id: int, nachricht: Nachricht
 ) -> tuple[str, ...]:
@@ -447,16 +523,101 @@ async def aufnehmen(
     Zurück kommt nur, was gesagt werden muss. Eine abgelegte Notiz sagt nichts: die
     Nachricht steht im Thread und **ist** die Notiz; eine Quittung darunter wäre die zweite
     Hälfte jedes Satzes eines ganzen Abends.
+
+    Ein **Dokument** ist hier keines von beidem und wird deshalb nur beantwortet: es deckt
+    mehrere Abende ab und gehört in keinen einzelnen Thread (#169).
     """
     meldungen = [
         await _diktat(config, runde, session_id, anhang, nachricht)
         for anhang in nachricht.anhaenge
         if ist_diktat(anhang.filename)
     ]
+    meldungen += [
+        DOKUMENT_IM_THREAD.format(name=anhang.filename)
+        for anhang in nachricht.anhaenge
+        if ist_notizdokument(anhang.filename)
+    ]
     if nachricht.text.strip():
         szene = notes.scene_at(runde, session_id, nachricht.zeitpunkt)
         notes.add_note(runde, szene, nachricht.text, message_id=nachricht.id)
     return tuple(meldungen)
+
+
+def _anzahl(wieviele: int, einzahl: str, mehrzahl: str) -> str:
+    """``jobs.mehrzahl`` hängt ein ``n`` an — das trägt »Szene«, aber nicht »Sitzung«."""
+    return f"{wieviele} {einzahl if wieviele == 1 else mehrzahl}"
+
+
+def _szenenzahl(abend: dokument.Abend) -> str:
+    # Auch ein Abend ohne eigene Überschriften bekommt eine Szene — die, die mit der
+    # Sitzung entsteht und seinen Text trägt.
+    return _anzahl(max(len(abend.szenen), 1), "Szene", "Szenen")
+
+
+def _abendzeile(abend: dokument.Abend) -> str:
+    return DOKUMENT_ABEND.format(
+        datum=abend.datum,
+        titel=f" — {abend.titel}" if abend.titel else "",
+        szenen=_szenenzahl(abend),
+    )
+
+
+def _abendliste(abende: Sequence[dokument.Abend]) -> str:
+    return ", ".join(abend.datum for abend in abende)
+
+
+async def dokument_vorschau(runde: Runde, datei: Notizdatei) -> Vorschau:
+    """Was aus dem Dokument entstünde — **ohne** dass etwas entsteht.
+
+    Ein Dokument kann fünfzehn Abende tragen; ein Fehlgriff beim Aufteilen legte sonst
+    fünfzehn falsche Sitzungen an, die einzeln wieder wegzuräumen wären. Geschrieben wird
+    deshalb erst, was ``dokument_anlegen`` bestätigt bekommt.
+    """
+    if not ist_notizdokument(datei.filename):
+        return Vorschau(
+            DOKUMENT_KEINE_DATEI.format(name=datei.filename, endungen=", ".join(dokument.SUFFIXES))
+        )
+    if datei.size > dokument.MAX_BYTES:
+        return Vorschau(
+            DOKUMENT_ZU_GROSS.format(
+                name=datei.filename, grenze=dokument.MAX_BYTES // (1024 * 1024)
+            )
+        )
+    roh = await datei.lesen()
+    try:
+        text = roh.decode("utf-8")
+    except UnicodeDecodeError:
+        return Vorschau(DOKUMENT_UNLESBAR.format(name=datei.filename))
+    aufteilung = dokument.lesen(text)
+    frisch = dokument.neu(runde, aufteilung.abende)
+    schon = tuple(abend for abend in aufteilung.abende if abend not in frisch)
+    nachsatz = []
+    if aufteilung.ohne_datum:
+        nachsatz.append(
+            DOKUMENT_OHNE_DATUM.format(
+                liste=", ".join(f"»{kopf}«" for kopf in aufteilung.ohne_datum)
+            )
+        )
+    if schon:
+        nachsatz.append(DOKUMENT_SCHON_DA.format(liste=_abendliste(schon)))
+    if not frisch:
+        return Vorschau(" ".join((DOKUMENT_OHNE_ABENDE.format(name=datei.filename), *nachsatz)))
+    kopf = DOKUMENT_VORSCHAU.format(
+        name=datei.filename, sitzungen=_anzahl(len(frisch), "Sitzung", "Sitzungen")
+    )
+    zeilen = "\n".join(_abendzeile(abend) for abend in frisch)
+    return Vorschau("\n".join((kopf, zeilen, " ".join((*nachsatz, DOKUMENT_FRAGE)))), frisch)
+
+
+def dokument_anlegen(runde: Runde, abende: Sequence[dokument.Abend]) -> str:
+    """Das Bestätigte anlegen — und im Log steht keine Zeile aus dem Dokument.
+
+    Weder der Dateiname noch eine Überschrift: beides kommt von der Gruppe und kann jeden
+    Klarnamen enthalten. Wie viele Abende entstanden sind, sagt genug.
+    """
+    angelegt = dokument.anlegen(runde, abende)
+    logger.info("Notizdokument eingelesen: %s Sitzungen angelegt.", angelegt)
+    return DOKUMENT_ANGELEGT.format(sitzungen=_anzahl(angelegt, "Sitzung", "Sitzungen"))
 
 
 def notiz_aendern(runde: Runde, message_id: str, text: str) -> bool:

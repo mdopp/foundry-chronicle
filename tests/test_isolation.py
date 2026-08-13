@@ -30,6 +30,7 @@ from conftest import warte_auf_laeufe
 from chronicle import (
     consent,
     db,
+    dokument,
     instanz,
     jobs,
     lebenszyklus,
@@ -67,6 +68,7 @@ from chronicle.transcribe import service as transcribe_service
 # höher.
 SCHICHT = (
     notes,
+    dokument,
     protocol,
     recordings,
     search,
@@ -306,6 +308,7 @@ ABFRAGEN = {
     "notes.session_of_scene": lambda c, r, i: notes.session_of_scene(r, i["szene"]),
     "notes.session_of_thread": lambda c, r, i: notes.session_of_thread(r, i["thread"]),
     "notes.thread_of_session": lambda c, r, i: notes.thread_of_session(r, i["sitzung"]),
+    "dokument.neu": lambda c, r, i: dokument.neu(r, ()),
     "notes.scene_at": lambda c, r, i: notes.scene_at(r, i["sitzung"], "2026-05-01T20:00:00+00:00"),
     "notes.today": lambda c, r, i: notes.today(),
     "protocol.stored": lambda c, r, i: protocol.stored(r, i["sitzung"]),
@@ -415,6 +418,8 @@ SCHREIBER = frozenset(
         "notes.create_session",
         "notes.add_scene",
         "notes.add_note",
+        "notes.rename_scene",
+        "dokument.anlegen",
         "notes.update_note",
         "notes.remove_note",
         "notes.drop_derived",
@@ -568,9 +573,11 @@ def test_gleichnamiger_registereintrag_steht_zweimal(zwei_runden):
 
 
 def test_notiz_landet_nicht_in_der_fremden_szene(zwei_runden):
-    config, a, _b, ids = zwei_runden
+    config, a, b, ids = zwei_runden
     assert notes.add_note(a, ids[2]["szene"], "Fremde Szene") is None
     assert notes.add_scene(a, ids[2]["sitzung"]) is None
+    assert notes.rename_scene(a, ids[2]["szene"], "Umbenannt") is False
+    assert notes.session(b, ids[2]["sitzung"]).scenes[0].title is None
     assert notes.session(a, ids[2]["sitzung"]) is None
     assert notes.session_of_scene(a, ids[2]["szene"]) is None
 
@@ -625,6 +632,34 @@ def test_das_transkript_wandert_nur_in_die_eigenen_szenen(zwei_runden):
 
     assert notes.drop_derived(a, ids[2]["sitzung"], merge.TRANSKRIPT) == 0
     assert MARKE[2] in _notiztexte(b, ids[2]["sitzung"])
+
+
+DOKUMENT = "## 12.03.2026 — Der Keller\n\n### Die Luke\n\nDahinter lag {marke}.\n"
+
+
+def _mit_titel(runde, titel):
+    return [sitzung for sitzung in notes.sessions(runde) if sitzung.title == titel]
+
+
+def test_ein_eingelesenes_dokument_bleibt_in_seiner_runde(zwei_runden):
+    """Der Altbestand einer Gruppe geht in **ihre** Chronik — und in keine daneben.
+
+    Und die Wiedererkennung trennt mit: derselbe Abschnitt, in A schon eingelesen, gilt in
+    B trotzdem als neu. Ohne diese Schranke unterdrückte die eine Runde das Einlesen der
+    anderen — eine Gruppe bekäme ihre eigenen Notizen nicht angelegt, weil eine fremde
+    dieselbe Datei schon hatte.
+    """
+    _config, a, b, _ids = zwei_runden
+    abende = dokument.lesen(DOKUMENT.format(marke=MARKE[1])).abende
+
+    assert dokument.anlegen(a, abende) == 1
+
+    assert dokument.neu(a, abende) == ()
+    assert dokument.neu(b, abende) == abende
+
+    (angelegt,) = _mit_titel(a, "Der Keller")
+    assert MARKE[1] in _notiztexte(a, angelegt.id)
+    assert _mit_titel(b, "Der Keller") == []
 
 
 def test_aufnahme_der_fremden_runde_bleibt_unberuehrt(zwei_runden):
