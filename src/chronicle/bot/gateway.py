@@ -61,6 +61,7 @@ KENNUNG_BETRETEN = "betreten"
 KENNUNG_KANAL = "kanal"
 KENNUNG_QUELLE = "quelle"
 KENNUNG_LOESCHEN = "loeschen"
+KENNUNG_EINLESEN = "einlesen"
 
 NICHT_INSTALLIERT = (
     "py-cord ist nicht installiert — im Image ist es dabei, "
@@ -227,6 +228,8 @@ BEFEHLE = (
     "Passwort.\n"
     "• `/chronik nacherzaehlung` — mehrere Sitzungen als Prosa; belegt und erzählt bleiben "
     "getrennt.\n"
+    "• `/chronik einlesen` — ein vorhandenes Notizdokument hängt ihr hier an, ich mache "
+    "Sitzungen und Szenen daraus. Vorher zeige ich, was entstünde.\n"
     "• `/suche <Wort>` — ich sehe in Notizen, Diktaten, Chroniken und Register nach; jeder "
     "Treffer führt zurück an seine Stelle.\n"
     "• `/wer <Name>` — was im Register über einen Namen steht.\n"
@@ -1559,6 +1562,44 @@ def _loeschansicht(config: Config, runde):
     return Loeschansicht()
 
 
+def _einleseansicht(config: Config, runde, abende):
+    """Ein Knopf vor fünfzehn Sitzungen: erst zeigen, dann auf Zuruf schreiben.
+
+    Wie die Löschansicht entscheidet auch dieser Knopf gegen den Stand von jetzt: die
+    Ansicht lebt eine Viertelstunde, in der die Runde gelöscht und ihre Kennung neu
+    vergeben sein kann — der Altbestand der einen Gruppe landete sonst bei einer fremden.
+    """
+    discord = _discord()
+
+    ja = discord.ui.Button(label=chronik.DOKUMENT_JA, custom_id=f"{KENNUNG_EINLESEN}:{runde.id}:ja")
+    nein = discord.ui.Button(
+        label=chronik.DOKUMENT_NEIN, custom_id=f"{KENNUNG_EINLESEN}:{runde.id}:nein"
+    )
+
+    @_geklickt
+    async def bestaetigt(interaction) -> None:
+        gemeint = await _noch_dieselbe(config, interaction, runde)
+        if gemeint is None:
+            return
+        meldung = chronik.dokument_anlegen(gemeint, abende)
+        await interaction.response.edit_message(content=meldung, view=None)
+
+    @_geklickt
+    async def verworfen(interaction) -> None:
+        await interaction.response.edit_message(content=chronik.DOKUMENT_ABGEBROCHEN, view=None)
+
+    ja.callback = bestaetigt
+    nein.callback = verworfen
+
+    class Einleseansicht(discord.ui.View):
+        def __init__(self) -> None:
+            super().__init__(timeout=erinnern.FRIST)
+            self.add_item(ja)
+            self.add_item(nein)
+
+    return Einleseansicht()
+
+
 def _embed(gebaut: dict | None):
     return None if gebaut is None else _discord().Embed.from_dict(gebaut)
 
@@ -1851,6 +1892,16 @@ def _feld(discord, beschreibung: str):
     return discord.Option(str, description=beschreibung, default="", required=False)
 
 
+def _datei(discord, beschreibung: str):
+    """Ein Pflicht-Anhang eines Slash-Befehls — als Vorgabewert, aus dem Grund aus ``_feld``."""
+    return discord.Option(discord.Attachment, description=beschreibung, required=True)
+
+
+def _notizdatei(anhang) -> chronik.Notizdatei:
+    """Discords Anhang, so weit das Einlesen ihn braucht — gelesen wird erst auf Zuruf."""
+    return chronik.Notizdatei(filename=anhang.filename, size=anhang.size, lesen=anhang.read)
+
+
 def baue(config: Config):
     """Der Bot mit seinen Befehlen und dem Thread, der die Sitzung ist — ohne Verbindung."""
     discord = _discord()
@@ -2058,6 +2109,26 @@ def baue(config: Config):
             ),
             ephemeral=True,
         )
+
+    @chronikgruppe.command(
+        name="einlesen", description="Ein vorhandenes Notizdokument als Sitzungen anlegen"
+    )
+    @antwortet
+    async def chronik_einlesen(
+        ctx,
+        datei=_datei(discord, "Das Notizdokument, ein Abschnitt je Abend"),  # noqa: B008
+    ) -> None:
+        """Im Kanal der Runde und nicht im Thread: ein Dokument deckt mehrere Abende ab.
+
+        Angelegt wird hier noch nichts — der Befehl antwortet mit der Vorschau und einem
+        Knopf darunter. Aufgeschoben wird davor: das Herunterladen der Datei geht ans Netz,
+        und die drei Sekunden, die Discord der ersten Antwort lässt, reichen dafür nicht.
+        """
+        runde = chronik.runde_verlangen(config, ctx.guild_id)
+        await ctx.defer(ephemeral=True)
+        vorschau = await chronik.dokument_vorschau(runde, _notizdatei(datei))
+        ansicht = _einleseansicht(config, runde, vorschau.abende) if vorschau.abende else None
+        await _zustellen(ctx.respond, vorschau.text, zuletzt={"view": ansicht}, ephemeral=True)
 
     @chronikgruppe.command(
         name="loeschen", description="Alles von dieser Runde löschen, nach Rückfrage"

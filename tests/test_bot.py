@@ -1282,6 +1282,28 @@ class FakeSelect:
         self.callback = None
 
 
+class FakeAnhang:
+    def __init__(self, filename, inhalt=b"ton-ton-ton", groesse=None):
+        self.filename = filename
+        self.size = len(inhalt) if groesse is None else groesse
+        self._inhalt = inhalt
+
+    async def save(self, ziel):
+        Path(ziel).write_bytes(self._inhalt)
+
+    async def read(self):
+        return self._inhalt
+
+
+class FakeButton:
+    def __init__(self, *, label="", row=0, custom_id="", disabled=False, **rest):
+        self.label = label
+        self.row = row
+        self.custom_id = custom_id
+        self.disabled = disabled
+        self.callback = None
+
+
 class FakeView:
     def __init__(self, *, timeout=None):
         self.timeout = timeout
@@ -1326,6 +1348,7 @@ def pycord(monkeypatch):
     modul.Permissions = FakePermissions
     modul.PCMAudio = FakePCMAudio
     modul.SelectOption = FakeSelectOption
+    modul.Attachment = FakeAnhang
     senken = types.ModuleType("discord.sinks")
     senken.Sink = FakeSenke
     modul.sinks = senken

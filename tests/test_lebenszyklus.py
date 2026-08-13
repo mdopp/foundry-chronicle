@@ -24,9 +24,19 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
-from test_bot import FakeBot, FakeIntents, FakePCMAudio, FakePermissions, FakeRechte, FakeSenke
+from test_bot import (
+    FakeAnhang,
+    FakeBot,
+    FakeButton,
+    FakeIntents,
+    FakePCMAudio,
+    FakePermissions,
+    FakeRechte,
+    FakeSenke,
+    FakeView,
+)
 from test_chronik import FakeHTTPException, FakeInputText, FakeModal
-from test_erinnern import FakeButton, FakeEmbed, FakeSelect, FakeSelectOption, FakeView
+from test_erinnern import FakeEmbed, FakeSelect, FakeSelectOption
 
 from chronicle import (
     consent,
@@ -204,6 +214,7 @@ def pycord(monkeypatch):
     modul.HTTPException = FakeHTTPException
     modul.Embed = FakeEmbed
     modul.SelectOption = FakeSelectOption
+    modul.Attachment = FakeAnhang
     senken = types.ModuleType("discord.sinks")
     senken.Sink = FakeSenke
     modul.sinks = senken

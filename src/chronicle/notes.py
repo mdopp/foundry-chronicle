@@ -228,6 +228,27 @@ def add_scene(runde: Runde, session_id: int, *, title: str = "", at: str = "") -
         scope.close()
 
 
+def rename_scene(runde: Runde, scene_id: int, title: str) -> bool:
+    """Benennt eine Szene nach — für die erste, die mit der Sitzung schon entstanden ist.
+
+    Sie steht am Anfang jeder Sitzung und hat keinen Namen; wer eine fertige Gliederung
+    einliest (``chronicle.dokument``), hätte sonst eine leere Szene vor der ersten.
+    """
+    sauber = title.strip()
+    if not sauber:
+        return False
+    scope = db.scoped(runde)
+    try:
+        with scope:
+            cursor = scope.execute(
+                "UPDATE scene SET title = ? WHERE runde_id = ? AND id = ?",
+                (sauber, scope.runde_id, scene_id),
+            )
+        return cursor.rowcount > 0
+    finally:
+        scope.close()
+
+
 def scene_at(runde: Runde, session_id: int, moment: str) -> int | None:
     """In welche Szene eine Notiz dieses Zeitpunkts gehört.
 
