@@ -371,9 +371,16 @@ gibt es nicht mehr.)
 
 Gegenrichtung: der Rückblick geht **in den Gruppenkanal**, nicht in den Briefkasten. Er
 wird unmittelbar vor der nächsten Sitzung gelesen, und dort ist die Gruppe ohnehin.
-Welcher Kanal, sagt *Einstellungen → Zustellkanal für den Rückblick* (z. B. `chronik`);
-**leer heißt: keine Zustellung.** Einen Zeitpunkt gibt es nicht, auf den sich zielen ließe
-— das System kennt keinen Sitzungskalender.
+Welcher Kanal, sagt die Gruppe selbst mit **`/setup` in Discord** (Feld *Zustellkanal*);
+**keiner ist eine gültige Wahl und heißt: keine Zustellung.** Einen Zeitpunkt gibt es
+nicht, auf den sich zielen ließe — das System kennt keinen Sitzungskalender.
+
+**Kommt die Zustellung nicht durch, wird es gesagt** (#182): der Satz hängt an der
+Antwort auf `/chronik fertig` und an der Karte des nächtlichen Laufs, also dort, wo die
+Gruppe ohnehin liest. Der nicht auflösbare Wert bleibt aus dieser Nachricht heraus und
+steht nur im Log des Betreibers — eine Kanal-Kennung ist nichts, was in eine
+Gruppennachricht gehört. Bis dahin scheiterte die Zustellung **still**, und niemand in
+der Runde konnte es merken.
 
 Zugestellt wird am Ende der Komposition:
 
