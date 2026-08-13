@@ -1661,6 +1661,122 @@ def test_start_ohne_sitzung_trennt_wieder(konfiguration, ohne_espeak, runde):
     assert runde.kanal.verbindung.getrennt
 
 
+def test_ein_gescheiterter_start_nimmt_die_vorstellung_dort_zurueck_wo_sie_steht(
+    konfiguration, ohne_espeak, runde
+):
+    """Die Absage ist ephemer, die Ankündigung ist öffentlich — das war die Lücke (#189).
+
+    Ohne den Widerruf liest die Runde »gleich schneide ich mit« und spielt den Abend in
+    dem Glauben, er werde festgehalten. Nur wer den Befehl tippte, erführe je das
+    Gegenteil.
+    """
+    unsere_runde(konfiguration)
+    bot = gateway.baue(konfiguration)
+    ctx = FakeCtx(runde.mira)
+
+    asyncio.run(befehl(bot, "start")(ctx))
+
+    gesagt = [text for text, _ in runde.kanal.geschrieben]
+    widerruf = gesagt[-1]
+    assert "".join(gesagt[:-1]) == gateway.VORSTELLUNG
+    assert widerruf == gateway.WIDERRUF.format(grund=recorder.OHNE_SITZUNG)
+    assert "ich schneide nicht mit" in widerruf
+    assert not runde.kanal.verbindung.schneidet
+    assert runde.kanal.verbindung.getrennt
+    assert der_lauf(bot).aufnahme is None
+
+
+def test_der_widerruf_nennt_bei_einem_unerwarteten_fehler_nur_die_art(
+    konfiguration, sitzung_id, ohne_espeak, runde, monkeypatch
+):
+    """Der Kanal ist der öffentlichste Ort dieses Bots — dort steht keine Innerei."""
+
+    async def stolpert(*args, **rest):
+        raise RuntimeError("sqlite3://runde-7?token=geheim")
+
+    monkeypatch.setattr(recorder, "starten", stolpert)
+    bot = gateway.baue(konfiguration)
+    ctx = FakeCtx(runde.mira)
+
+    asyncio.run(befehl(bot, "start")(ctx))
+
+    widerruf = runde.kanal.geschrieben[-1][0]
+    assert gateway.UNERWARTET.format(typ="RuntimeError") in widerruf
+    assert "geheim" not in widerruf
+    assert runde.kanal.verbindung.getrennt
+
+
+def test_ohne_zugestellte_vorstellung_wird_gar_nicht_erst_angesagt(
+    konfiguration, sitzung_id, ohne_espeak, runde, monkeypatch
+):
+    """Die andere Richtung derselben Regel: kein Mitschnitt ohne die lesbare Hälfte.
+
+    Die Vorstellung nennt den Ausweg, solange noch nichts läuft. Kommt sie nicht durch,
+    darf die hörbare Ansage gar nicht erst spielen — sonst schnitte der Bot mit, ohne dass
+    je jemand lesen konnte, wie man da herauskommt.
+    """
+
+    async def abgewiesen(text, **rest):
+        raise RuntimeError("Discord hat abgelehnt")
+
+    monkeypatch.setattr(runde.kanal, "send", abgewiesen)
+    bot = gateway.baue(konfiguration)
+    ctx = FakeCtx(runde.mira)
+
+    asyncio.run(befehl(bot, "start")(ctx))
+
+    assert runde.kanal.verbindung.gespielt == []
+    assert not runde.kanal.verbindung.schneidet
+    assert runde.kanal.verbindung.getrennt
+    assert der_lauf(bot).aufnahme is None
+    assert consent.for_session(unsere_runde(konfiguration), sitzung_id) == ()
+    assert ctx.antworten[0].startswith("Das hat nicht geklappt:")
+    # Und kein Widerruf: im Kanal steht nichts, was zurückzunehmen wäre.
+    assert runde.kanal.geschrieben == []
+
+
+def test_wer_nach_einem_gescheiterten_start_dazukommt_wird_nicht_aufgenommen(
+    konfiguration, ohne_espeak, runde
+):
+    """Der Nachzügler zur Aufnahme, die es nicht gibt: keine Ansage, kein Protokoll."""
+    unsere_runde(konfiguration)
+    bot = gateway.baue(konfiguration)
+    asyncio.run(befehl(bot, "start")(FakeCtx(runde.mira)))
+    gespielt_vorher = len(runde.kanal.verbindung.gespielt)
+    spaet = FakeMitglied(int(SPAET.id), SPAET.name)
+
+    asyncio.run(bot.ereignisse["on_voice_state_update"](spaet, zustand(), zustand(runde.kanal)))
+
+    assert len(runde.kanal.verbindung.gespielt) == gespielt_vorher
+    assert not runde.kanal.verbindung.schneidet
+    assert der_lauf(bot).aufnahme is None
+
+
+def test_der_widerruf_haelt_den_urspruenglichen_fehler_nicht_auf(
+    konfiguration, ohne_espeak, runde, monkeypatch, caplog
+):
+    """Ein zweites Mal abgewiesener Kanal darf die Absage an den Aufrufer nicht schlucken."""
+    unsere_runde(konfiguration)
+    echt = runde.kanal.send
+    anfang = gateway.WIDERRUF.split("{")[0]
+
+    async def alles_ausser_dem_widerruf(text, **rest):
+        if text.startswith(anfang):
+            raise RuntimeError("Discord hat abgelehnt")
+        await echt(text, **rest)
+
+    monkeypatch.setattr(runde.kanal, "send", alles_ausser_dem_widerruf)
+    bot = gateway.baue(konfiguration)
+    ctx = FakeCtx(runde.mira)
+
+    with caplog.at_level(logging.ERROR):
+        asyncio.run(befehl(bot, "start")(ctx))
+
+    assert recorder.OHNE_SITZUNG in ctx.antworten[0]
+    assert runde.kanal.verbindung.getrennt
+    assert "Widerruf" in caplog.text
+
+
 def test_die_senke_schreibt_je_sprecher_eine_spur(konfiguration, sitzung_id, ohne_espeak, runde):
     bot = gateway.baue(konfiguration)
     asyncio.run(befehl(bot, "start")(FakeCtx(runde.mira)))
@@ -1981,6 +2097,11 @@ def test_der_empfangstest_ohne_sitzung_trennt_wieder(
     assert recorder.OHNE_SITZUNG in ctx.antworten[0]
     assert runde.kanal.verbindung.getrennt
     assert der_lauf(bot).probe is False
+    # Auch diese Ankündigung steht öffentlich im Kanal und kündigt zehn Sekunden Aufnahme
+    # an — sie darf so wenig allein stehenbleiben wie die vor einer Sitzung.
+    gesagt = [text for text, _ in runde.kanal.geschrieben]
+    assert "".join(gesagt[:-1]) == gateway.PROBE_VORSTELLUNG
+    assert gesagt[-1] == gateway.WIDERRUF.format(grund=recorder.OHNE_SITZUNG)
 
 
 def test_die_ruhende_runde_wird_auch_nicht_geprueft(
