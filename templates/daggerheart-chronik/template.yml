@@ -56,8 +56,13 @@ spec:
         value: "/data"
       - name: CHRONICLE_RECORDINGS_DIR
         value: "/aufnahmen"
-      # Die Haustür steht am Proxy (ADR 0001). Ohne Remote-User antwortet der Dienst 403,
-      # damit ein direkter Zugriff aus dem LAN die Anmeldung nicht überspringt.
+      # Die Haustür steht am Proxy (ADR 0001). Ohne Remote-User antwortet der Dienst 403.
+      # Seit #190 reicht die Kopfzeile allein nicht: der Port liegt im Host-Netz offen,
+      # und wer ihn erreicht, schreibt sie sich selbst hin. Geglaubt wird sie — und
+      # Remote-Groups mit ihr — nur von einem Absender, der eine Adresse **dieser
+      # Maschine** trägt; genau das tut der Proxy, der hier daneben läuft. Steht er
+      # einmal woanders, trägt CHRONICLE_TRUSTED_PROXIES seine Adresse nach (siehe
+      # README »Wenn die Seite 403 sagt, obwohl die Anmeldung geklappt hat«).
       - name: CHRONICLE_REQUIRE_REMOTE_USER
         value: "1"
       # Den *Wert* liest seit #157 niemand mehr — die Protokollseite, auf die er zeigte,

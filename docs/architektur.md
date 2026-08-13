@@ -165,8 +165,10 @@ passiert ist** — und Teile davon nacherzählen können.
   Betreiber-Seite mit Bot-Token, Ollama und der Verwaltungsgruppe.
 - **Die Haustür stellt die Plattform:** Subdomain hinter Authelia-Forward-Auth
   (ServiceBay-ADR 0001). Die Seite selbst kennt kein Login und keine Konten — sie
-  erzwingt nur den `Remote-User`-Header. Sie bleibt in Kraft, weil dort ein Geheimnis
-  liegt.
+  erzwingt den `Remote-User`-Header und glaubt ihn nur, wenn der Aufruf von **dieser
+  Maschine** kommt, wo der Proxy läuft (#190). Ohne das zweite Stück war die Haustür
+  keine: der Port liegt im Host-Netz offen, und die Kopfzeile schreibt sich jeder selbst.
+  Sie bleibt in Kraft, weil dort ein Geheimnis liegt.
 - Die **Personen-Zuordnung** Discord ↔ Foundry entsteht einmalig, und zwar **beim
   Betreten des Sprachkanals** (#76), damit jede Äußerung von Anfang an einer Figur
   gehört. Ohne Rückfrage gesetzt wird sie nur bei **1:1 gleichem Namen** — der Discord-Name

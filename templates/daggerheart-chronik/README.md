@@ -13,7 +13,11 @@ verwalten darf.
 
 Die Seite ist serverseitig gerendertes HTML **ohne eigenes Login** — angemeldet wird an
 Authelia, der Proxy setzt `Remote-User`, und ein Request ohne diesen Header wird
-abgewiesen. Das ist kein Erbstück aus der Zeit der großen Oberfläche: auf dieser Seite
+abgewiesen. **Die Kopfzeile allein ist dabei kein Beleg** (#190): der Port liegt im
+Host-Netz offen, und wer ihn direkt erreicht, schreibt sie sich selbst hin. Geglaubt
+wird sie — und `Remote-Groups` mit ihr — nur einem Absender, der eine Adresse *dieser
+Maschine* trägt; das ist genau der Proxy, der auf derselben Box läuft. Aus dem übrigen
+LAN kommt niemand mehr an den Bot-Token, auch nicht mit erfundenen Kopfzeilen. Das ist kein Erbstück aus der Zeit der großen Oberfläche: auf dieser Seite
 liegt der Bot-Token, ServiceBay-ADR 0001 gilt für sie also unverändert. Subdomain,
 Proxy-Route und die `auth`-Abhängigkeit bleiben deshalb.
 
@@ -33,6 +37,25 @@ eine Gruppe; Vorgabe ist `daggerheart`, die Domain kommt zur Installationszeit a
 
 `DATA_DIR` und `PUBLIC_DOMAIN` sind globale ServiceBay-Variablen und werden hier nicht
 noch einmal deklariert.
+
+### Wenn die Seite 403 sagt, obwohl die Anmeldung geklappt hat
+
+Dann kommt der Proxy nicht mehr von dieser Box — er ist umgezogen, oder er wählt über
+einen Zwischenweg an, der eine fremde Absenderadresse zeigt. Welche Adresse abgewiesen
+wurde, steht im Log des Containers (`Anmeldung von … verworfen`). Diese Adresse in die
+Umgebung des Containers `chronik` eintragen und den Dienst neu starten:
+
+```yaml
+      - name: CHRONICLE_TRUSTED_PROXIES
+        value: "192.168.178.100"
+```
+
+Kommagetrennt sind mehrere Einträge erlaubt, Adressen wie Netze (`10.0.0.0/8`, `::1`).
+**Gesetzt ersetzt der Wert die errechnete Antwort** — dann zählt nur noch, was dort
+steht, Loopback eingeschlossen; wer beides braucht, schreibt beides hin. Leer bleibt es
+bei der Maschine selbst, und genau so ist es hier gemeint: die Box hängt an DHCP, eine
+abgeschriebene Adresse wäre nach der nächsten Lease dieselbe Aussperrung. Ein neues
+Abbild braucht es dafür nicht, nur diese Zeile und einen Neustart.
 
 ## Eingerichtet wird nach dem ersten Start, nicht im Assistenten
 
@@ -175,6 +198,10 @@ Nach dem Deploy gehört zur Abnahme:
 - `/healthz` liefert 200 — am Proxy vorbei, es ist das Install-Gate der Box.
 - Die Subdomain antwortet unauthentifiziert mit 302 auf `auth.<domain>`, und ein Request
   ohne `Remote-User` wird mit 403 abgelehnt.
+- **Und mit erfundenem `Remote-User` auch:** von einem anderen Rechner im LAN direkt auf
+  `http://<box>:<port>/` mit gesetzter Kopfzeile — die Antwort muss 403 sein, nicht 302.
+  Das ist der Fall, den #190 geschlossen hat; von der Box selbst aus ist er nicht
+  prüfbar, weil dort jeder Aufruf zu Recht als eigener zählt.
 - Angemeldet führt die Wurzel `/` auf `/einstellungen` — der Proxy zeigt auf die Wurzel,
   und dort lag bis #157 die Sitzungsliste; ein 404 an der Haustür wäre eine schlechte
   Auskunft. `/status` führt mit 301 an dieselbe Stelle.
