@@ -47,6 +47,7 @@ from chronicle import (
     people,
     recordings,
     register,
+    search,
     settings,
     zugang,
 )
@@ -1115,6 +1116,360 @@ def test_das_register_der_geloeschten_runde_ist_nicht_mehr_zu_finden(konfigurati
     lebenszyklus.loeschen(konfiguration, unsere)
 
     assert runden.fuer_gilde(konfiguration.database_path, GILDE) is None
+
+
+# -- Eine einzelne Sitzung ----------------------------------------------------------------
+#
+# Der kleine Weg neben dem großen (#171). Er ist genauso endgültig und trägt dieselben
+# Tondateien fort, also gilt hier dasselbe wie oben: die Frage sagt vorher, was verschwindet,
+# der Klick prüft Runde und Recht noch einmal, und was danebensteht, bleibt unberührt.
+
+
+def sitzungsbefehl(bot, ctx):
+    asyncio.run(bot.gruppen[gateway.GRUPPE_CHRONIK].befehle["sitzung-loeschen"](ctx))
+    return ctx
+
+
+def sitzung_waehlen(ctx, session_id, *, wer=LEITUNG):
+    """Die Wahl im Menü — sie zeigt die Rückfrage und löscht noch nichts."""
+    (menue,) = ctx.ansichten[-1].items
+    menue.values = [str(session_id)]
+    klick = FakeInteraction(wer=wer)
+    asyncio.run(menue.callback(klick))
+    return klick
+
+
+def sitzung_bestaetigen(klick, *, wer=LEITUNG, ja=True):
+    knopf = klick.response.bearbeitet[-1]["view"].items[0 if ja else 1]
+    zweiter = FakeInteraction(wer=wer)
+    asyncio.run(knopf.callback(zweiter))
+    return zweiter
+
+
+def zweiter_abend(config, runde, marke):
+    """Eine zweite Sitzung derselben Runde — die, die stehen bleiben muss."""
+    sitzung = notes.create_session(runde, played_on="2026-05-08", title=f"Zweiter Abend {marke}")
+    szene = notes.session(runde, sitzung).scenes[0]
+    notes.add_note(runde, szene.id, f"Am zweiten Abend ging es um {marke}.")
+    spur = config.recordings_dir / f"sitzung{sitzung}-20260508T200000-Mira.wav"
+    spur.write_bytes(b"ton")
+    recordings.enqueue(runde, sitzung, spur.name, discord_user_id=MIRA.id)
+    return {"sitzung": sitzung, "spur": spur}
+
+
+def test_der_knopf_loescht_die_sitzung_mit_ihren_tondateien(konfiguration, bot):
+    """Der ganze Weg: Befehl, Wahl, Rückfrage, Knopf — und daneben bleibt alles stehen.
+
+    Zwei Sorten Tondatei gehen mit: die eingereihte mit ihrer Zeile und die, die es nie
+    wurde. Letztere liegt die ganze Sitzung über auf der Platte und wird erst am Ende
+    eingereiht; ohne den Griff ins Verzeichnis bliebe sie liegen, und niemand fände sie je.
+    """
+    unsere = runden.anlegen(konfiguration.database_path, GILDENAME, guild_id=GILDE)
+    ids = fuellen(konfiguration, unsere, "alpha")
+    bleibt = zweiter_abend(konfiguration, unsere, "alpha")
+    verwaist = konfiguration.recordings_dir / f"sitzung{ids['sitzung']}-20260501T200000-Mira.wav"
+    verwaist.write_bytes(b"ton")
+    nachbar = runden.anlegen(konfiguration.database_path, "Nachbarn", guild_id=NACHBARGILDE)
+    daneben = fuellen(konfiguration, nachbar, "beta")
+
+    ctx = sitzungsbefehl(bot, FakeCtx(gilde=FakeGilde()))
+    fertig = sitzung_bestaetigen(sitzung_waehlen(ctx, ids["sitzung"]))
+
+    assert "ist fort" in fertig.response.bearbeitet[-1]["content"]
+    assert notes.session(unsere, ids["sitzung"]) is None
+    assert not ids["spur"].exists() and not verwaist.exists()
+    # Der zweite Abend derselben Runde und die Nachbarrunde merken nichts davon.
+    assert notes.session(unsere, bleibt["sitzung"]).title == "Zweiter Abend alpha"
+    assert bleibt["spur"].exists()
+    assert notes.session(nachbar, daneben["sitzung"]).title == "Sitzung beta"
+    assert daneben["spur"].exists()
+
+
+def test_die_frage_sagt_dass_die_tondateien_mitgehen(konfiguration, bot):
+    """Das ist der Satz, um den es geht: an einer Sitzung hängen Stimmen echter Menschen.
+
+    Ob welche da sind, sieht man ihr von außen nicht an — also steht es in der Frage, mit
+    Zahl, und daneben, was **nicht** mitgeht.
+    """
+    unsere = runden.anlegen(konfiguration.database_path, GILDENAME, guild_id=GILDE)
+    ids = fuellen(konfiguration, unsere, "alpha")
+
+    ctx = sitzungsbefehl(bot, FakeCtx(gilde=FakeGilde()))
+    klick = sitzung_waehlen(ctx, ids["sitzung"])
+
+    frage = klick.response.bearbeitet[-1]["content"]
+    assert "Sitzung alpha" in frage
+    assert "1 Aufnahme" in frage and "1 Tondatei" in frage
+    assert "1 Szene mit 1 Notiz" in frage
+    assert "keine Sicherung" in frage
+    assert "Nachweis" in frage
+    # Und die Wahl allein hat noch nichts angefasst.
+    assert notes.session(unsere, ids["sitzung"]) is not None
+    assert ids["spur"].exists()
+
+
+def test_ohne_tondatei_verspricht_die_frage_keine(konfiguration, bot):
+    """Nach der Aufbewahrungsfrist bleibt die Zeile und der Ton ist fort — das ist ein
+    anderer Satz, und ihn zu verwechseln hieße, eine Löschung zu versprechen, die längst
+    geschehen ist."""
+    unsere = runden.anlegen(konfiguration.database_path, GILDENAME, guild_id=GILDE)
+    ids = fuellen(konfiguration, unsere, "alpha")
+    ids["spur"].unlink()
+
+    ctx = sitzungsbefehl(bot, FakeCtx(gilde=FakeGilde()))
+    frage = sitzung_waehlen(ctx, ids["sitzung"]).response.bearbeitet[-1]["content"]
+
+    assert "1 Aufnahme" in frage
+    assert "Tondateien liegen dazu keine mehr" in frage
+
+
+def test_abbrechen_laesst_die_sitzung_stehen(konfiguration, bot):
+    unsere = runden.anlegen(konfiguration.database_path, GILDENAME, guild_id=GILDE)
+    ids = fuellen(konfiguration, unsere, "alpha")
+
+    ctx = sitzungsbefehl(bot, FakeCtx(gilde=FakeGilde()))
+    zurueck = sitzung_bestaetigen(sitzung_waehlen(ctx, ids["sitzung"]), ja=False)
+
+    assert zurueck.response.bearbeitet[-1]["content"] == chronik.SITZUNG_ABGEBROCHEN
+    assert notes.session(unsere, ids["sitzung"]) is not None
+    assert ids["spur"].exists()
+
+
+def test_der_nachweis_der_ansage_ueberlebt_seine_sitzung(konfiguration, bot):
+    """Anders als beim Löschen der ganzen Runde: hier gibt es die Runde weiter.
+
+    Was belegt, dass im Sprachkanal angesagt wurde, ist genau dann etwas wert, wenn das
+    daraus Gemachte noch irgendwo liegt — und das tut es, in Discord. Wer den Nachweis
+    nicht mehr will, löscht die Runde; dort geht er mit.
+    """
+    unsere = runden.anlegen(konfiguration.database_path, GILDENAME, guild_id=GILDE)
+    ids = fuellen(konfiguration, unsere, "alpha")
+
+    ctx = sitzungsbefehl(bot, FakeCtx(gilde=FakeGilde()))
+    sitzung_bestaetigen(sitzung_waehlen(ctx, ids["sitzung"]))
+
+    assert zeilen(konfiguration, "consent_event", unsere.id) == 1
+    assert zeilen(konfiguration, "consent_member", unsere.id) == 1
+    connection = db.connect(konfiguration.database_path)
+    try:
+        offen = connection.execute(
+            "SELECT session_id FROM consent_event WHERE runde_id = ?", (unsere.id,)
+        ).fetchone()
+    finally:
+        connection.close()
+    assert offen["session_id"] is None
+
+
+def indexzeilen(config, runde_id):
+    connection = db.connect(config.database_path)
+    try:
+        return [
+            (zeile["kind"], zeile["session_id"], zeile["text"])
+            for zeile in connection.execute(
+                "SELECT kind, session_id, text FROM search_index WHERE runde_id = ?", (runde_id,)
+            )
+        ]
+    finally:
+        connection.close()
+
+
+def register_erwaehnen(runde, name, sitzungen):
+    """Ein Registereintrag, der in mehreren Sitzungen vorkommt — bestätigt wie im Betrieb.
+
+    Der Weg über ``decide`` und nicht über ein INSERT von Hand: erst die Bestätigung
+    schreibt den Eintrag in den Suchindex, und **dabei** merkt er sich die erste Sitzung, in
+    der er vorkommt. Genau die wird gleich gelöscht.
+    """
+    scope = db.scoped(runde)
+    try:
+        with scope:
+            eintrag = int(
+                scope.execute(
+                    "INSERT INTO register_entry (runde_id, kind, name, description, state, "
+                    "suggested_at) VALUES (?, 'ort', ?, 'Ein tiefer Keller', 'vorschlag', "
+                    "'2026-05-01T21:00:00') RETURNING id",
+                    (scope.runde_id, name),
+                ).fetchone()["id"]
+            )
+            for sitzung in sitzungen:
+                scope.execute(
+                    "INSERT INTO register_mention (runde_id, entry_id, session_id, scene_id) "
+                    "VALUES (?, ?, ?, NULL)",
+                    (scope.runde_id, eintrag, sitzung),
+                )
+    finally:
+        scope.close()
+    register.decide(runde, {eintrag: register.Entscheidung(ja=True)})
+    return eintrag
+
+
+def _index_arten(config, runde_id):
+    return [(art, wo) for art, wo, _text in indexzeilen(config, runde_id)]
+
+
+def test_die_geloeschte_sitzung_steht_nicht_mehr_im_suchindex(konfiguration, bot):
+    """Der Index hängt an keinem Fremdschlüssel — eine fts5-Tabelle kennt keinen —, und die
+    Löschtrigger der Quelltabellen feuern bei einer Kaskade nicht.
+
+    Dass `/suche` nichts mehr findet, beweist das **nicht**: sie verbindet über die Sitzung
+    und liefe schon deshalb ins Leere. Stehen bliebe trotzdem der Text — Notizen und Diktate
+    eines Abends, der der Gruppe als gelöscht gemeldet wurde. Geprüft wird deshalb die
+    Tabelle selbst.
+
+    Das Register geht **nicht** mit: es gehört der Runde und überlebt jeden Abend. Im Index
+    steht bei ihm die erste Sitzung, in der er vorkommt — ist genau die fort, bekommt er
+    seine nächste, sonst wäre er von da an nicht mehr zu finden.
+    """
+    unsere = runden.anlegen(konfiguration.database_path, GILDENAME, guild_id=GILDE)
+    ids = fuellen(konfiguration, unsere, "alpha")
+    bleibt = zweiter_abend(konfiguration, unsere, "alpha")
+    register_erwaehnen(unsere, "Der Keller alpha", (ids["sitzung"], bleibt["sitzung"]))
+    assert ("register", ids["sitzung"]) in _index_arten(konfiguration, unsere.id)
+    assert ("notiz", ids["sitzung"]) in _index_arten(konfiguration, unsere.id)
+
+    ctx = sitzungsbefehl(bot, FakeCtx(gilde=FakeGilde()))
+    sitzung_bestaetigen(sitzung_waehlen(ctx, ids["sitzung"]))
+
+    uebrig = indexzeilen(konfiguration, unsere.id)
+    assert [wo for _art, wo, _text in uebrig if wo == ids["sitzung"]] == []
+    assert not [text for _art, _wo, text in uebrig if "Im Keller stand alpha" in text]
+    # Der Registereintrag ist auf den zweiten Abend gerückt und bleibt damit auffindbar.
+    assert ("register", bleibt["sitzung"]) in _index_arten(konfiguration, unsere.id)
+    assert search.find(unsere, "Keller").groups
+    assert notes.session(unsere, bleibt["sitzung"]) is not None
+
+
+def test_eine_sitzung_zu_loeschen_ist_kein_befehl_fuer_jedes_mitglied(konfiguration, bot):
+    """Sie ist eine Berichtigung und nicht das Ende der Runde — also die Schranke der
+    Verwaltung, dieselbe wie vor `/setup`. Gerechnet wird sie an allen drei Stellen: sonst
+    stellt die Leitung die Frage und irgendwer klickt sie weg."""
+    unsere = runden.anlegen(konfiguration.database_path, GILDENAME, guild_id=GILDE)
+    ids = fuellen(konfiguration, unsere, "alpha")
+
+    ctx = sitzungsbefehl(bot, FakeCtx(gilde=FakeGilde(), autor=MITGLIED))
+    assert ctx.antworten == [einrichten.NUR_VERWALTUNG]
+    assert ctx.ansichten == [None]
+
+    erlaubt = sitzungsbefehl(bot, FakeCtx(gilde=FakeGilde()))
+    am_menue = sitzung_waehlen(erlaubt, ids["sitzung"], wer=MITGLIED)
+    assert am_menue.response.bearbeitet[-1]["content"] == einrichten.NUR_VERWALTUNG
+
+    klick = sitzung_waehlen(erlaubt, ids["sitzung"])
+    am_knopf = sitzung_bestaetigen(klick, wer=MITGLIED)
+    assert am_knopf.response.bearbeitet[-1]["content"] == einrichten.NUR_VERWALTUNG
+    assert notes.session(unsere, ids["sitzung"]) is not None
+    assert ids["spur"].exists()
+
+
+def test_ein_altes_menue_loescht_in_der_frischen_runde_nichts(konfiguration, bot):
+    """``runde.id`` wird nach einer Löschung neu vergeben, die Ansicht lebt länger — und
+    eine Sitzungskennung von vorhin träfe drüben irgendeinen Abend."""
+    unsere = runden.anlegen(konfiguration.database_path, GILDENAME, guild_id=GILDE)
+    ids = fuellen(konfiguration, unsere, "alpha")
+    ctx = sitzungsbefehl(bot, FakeCtx(gilde=FakeGilde()))
+
+    lebenszyklus.loeschen(konfiguration, unsere)
+    nachbar = runden.anlegen(konfiguration.database_path, "Nachbarn", guild_id=NACHBARGILDE)
+    daneben = fuellen(konfiguration, nachbar, "beta")
+    assert nachbar.id == unsere.id
+    klick = sitzung_waehlen(ctx, ids["sitzung"])
+
+    assert klick.response.bearbeitet[-1]["content"] == chronik.VERALTET
+    assert notes.session(nachbar, daneben["sitzung"]) is not None
+
+
+def test_ein_zweiter_knopf_loescht_nicht_noch_einmal(konfiguration, bot):
+    """Zwei offene Rückfragen auf dieselbe Sitzung — die zweite sagt es, statt ein »fort«
+    über etwas zu setzen, das schon fort war."""
+    unsere = runden.anlegen(konfiguration.database_path, GILDENAME, guild_id=GILDE)
+    ids = fuellen(konfiguration, unsere, "alpha")
+    erste = sitzung_waehlen(sitzungsbefehl(bot, FakeCtx(gilde=FakeGilde())), ids["sitzung"])
+    zweite = sitzung_waehlen(sitzungsbefehl(bot, FakeCtx(gilde=FakeGilde())), ids["sitzung"])
+
+    sitzung_bestaetigen(erste)
+    nochmal = sitzung_bestaetigen(zweite)
+
+    assert nochmal.response.bearbeitet[-1]["content"] == chronik.SITZUNG_SCHON_FORT
+
+
+def test_im_log_der_sitzungsloeschung_steht_kein_name_und_kein_titel(konfiguration, bot, caplog):
+    """Der Titel kommt von der Gruppe und trägt oft genug einen Klarnamen; wer geklickt hat,
+    geht das Log des Betreibers nichts an — anders als beim Löschen der ganzen Runde bleibt
+    die Runde ja stehen, in der es stünde."""
+    caplog.set_level(logging.INFO)
+    unsere = runden.anlegen(konfiguration.database_path, GILDENAME, guild_id=GILDE)
+    ids = fuellen(konfiguration, unsere, "alpha")
+
+    ctx = sitzungsbefehl(bot, FakeCtx(gilde=FakeGilde()))
+    sitzung_bestaetigen(sitzung_waehlen(ctx, ids["sitzung"]))
+
+    assert "Sitzung gelöscht" in caplog.text
+    assert "Sitzung alpha" not in caplog.text
+    assert LEITUNG.display_name not in caplog.text
+    assert str(LEITUNG.id) not in caplog.text
+    assert MIRA.name not in caplog.text
+
+
+def test_ohne_sitzung_gibt_es_nichts_zu_waehlen(konfiguration, bot):
+    runden.anlegen(konfiguration.database_path, GILDENAME, guild_id=GILDE)
+
+    ctx = sitzungsbefehl(bot, FakeCtx(gilde=FakeGilde()))
+
+    assert ctx.antworten == [chronik.SITZUNG_KEINE]
+    assert ctx.ansichten == [None]
+
+
+def test_das_menue_zeigt_die_juengsten_und_sagt_es(konfiguration, bot):
+    """Discord nimmt 25 Zeilen. Die älteren wegzulassen ist unvermeidlich — sie
+    stillschweigend wegzulassen wäre die Auskunft, es gebe sie nicht."""
+    unsere = runden.anlegen(konfiguration.database_path, GILDENAME, guild_id=GILDE)
+    for tag in range(1, chronik.SITZUNG_ZUR_WAHL + 3):
+        notes.create_session(unsere, played_on=f"2026-05-{tag:02d}", title=f"Abend {tag}")
+
+    ctx = sitzungsbefehl(bot, FakeCtx(gilde=FakeGilde()))
+
+    (menue,) = ctx.ansichten[-1].items
+    assert len(menue.options) == chronik.SITZUNG_ZUR_WAHL
+    assert menue.options[0].label.startswith("2026-05-27")
+    assert f"{chronik.SITZUNG_ZUR_WAHL} jüngsten" in ctx.antworten[-1]
+
+
+def test_die_sitzung_wird_neben_der_ereignisschleife_geloescht(konfiguration, bot, monkeypatch):
+    """Tondateien und Zeilen einer langen Sitzung dauern; solange die Schleife rechnet,
+    antwortet der Bot niemandem."""
+    unsere = runden.anlegen(konfiguration.database_path, GILDENAME, guild_id=GILDE)
+    ids = fuellen(konfiguration, unsere, "alpha")
+    faeden = []
+    echt = notes.delete_session
+
+    def merken(config, runde, session_id):
+        faeden.append(threading.get_ident())
+        return echt(config, runde, session_id)
+
+    monkeypatch.setattr(notes, "delete_session", merken)
+
+    ctx = sitzungsbefehl(bot, FakeCtx(gilde=FakeGilde()))
+    sitzung_bestaetigen(sitzung_waehlen(ctx, ids["sitzung"]))
+
+    assert len(faeden) == 1
+    assert threading.get_ident() not in faeden
+
+
+def test_die_ruhende_runde_loescht_keine_einzelne_sitzung(konfiguration, bot):
+    """Sie ist verabschiedet und wartet auf ihre Frist. Wer sie ganz loswerden will, hat
+    dafür `/chronik loeschen` — dort ist eine ruhende ausdrücklich zugelassen."""
+    unsere = runden.anlegen(konfiguration.database_path, GILDENAME, guild_id=GILDE)
+    ids = fuellen(konfiguration, unsere, "alpha")
+    austritt(bot, FakeGilde())
+
+    ctx = sitzungsbefehl(bot, FakeCtx(gilde=FakeGilde()))
+
+    assert (
+        lebenszyklus.frist_datum(runden.get(konfiguration.database_path, unsere.id))
+        in (ctx.antworten[-1])
+    )
+    assert ctx.ansichten == [None]
+    assert ids["spur"].exists()
 
 
 # -- Wer darf das -----------------------------------------------------------------------

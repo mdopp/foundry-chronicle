@@ -62,6 +62,7 @@ KENNUNG_KANAL = "kanal"
 KENNUNG_QUELLE = "quelle"
 KENNUNG_LOESCHEN = "loeschen"
 KENNUNG_EINLESEN = "einlesen"
+KENNUNG_SITZUNG = "sitzung"
 
 NICHT_INSTALLIERT = (
     "py-cord ist nicht installiert — im Image ist es dabei, "
@@ -237,6 +238,8 @@ BEFEHLE = (
     "• `/zuordnung` — wer von euch welchen Foundry-Spieler spielt.\n"
     "• `/setup` — Foundry, Kanal, Uhrzeit, Zone und Quelle ändern; nur für die "
     "Verwaltung.\n"
+    "• `/chronik sitzung-loeschen` — **eine** Sitzung samt ihren Aufnahmen löschen, nach "
+    "Rückfrage; nur für die Verwaltung.\n"
     "• `/chronik loeschen` — alles von dieser Runde löschen, nach Rückfrage; nur für die "
     "Administration.\n"
     "• `/aufnahme hilfe` — alles noch einmal in Ruhe.\n"
@@ -1578,6 +1581,99 @@ def _loeschansicht(config: Config, runde):
     return Loeschansicht()
 
 
+def _sitzungsloeschansicht(config: Config, runde, session_id: int):
+    """Die Rückfrage vor **einer** Sitzung — dieselben zwei Knöpfe wie vor der ganzen Runde.
+
+    Und dieselben zwei Prüfungen beim Klick: die Runde, weil ihre Kennung inzwischen einer
+    fremden Gilde gehören kann, und das Recht, weil die Frage die Verwaltung stellt und
+    klicken könnte jeder, der die Nachricht sieht. Dass die Sitzung noch da ist, prüft der
+    Löschweg selbst — er sagt es, statt ein »fort« über etwas zu setzen, das schon fort war.
+    """
+    discord = _discord()
+
+    ja = discord.ui.Button(
+        label=chronik.SITZUNG_JA, custom_id=f"{KENNUNG_SITZUNG}:{runde.id}:{session_id}:ja"
+    )
+    nein = discord.ui.Button(
+        label=chronik.SITZUNG_NEIN, custom_id=f"{KENNUNG_SITZUNG}:{runde.id}:{session_id}:nein"
+    )
+
+    @_geklickt
+    async def bestaetigt(interaction) -> None:
+        if not _darf_verwalten(getattr(interaction, "user", None)):
+            await interaction.response.edit_message(content=einrichten.NUR_VERWALTUNG, view=None)
+            return
+        gemeint = await _noch_dieselbe(config, interaction, runde)
+        if gemeint is None:
+            return
+        # Tondateien und Zeilen einer langen Sitzung: das dauert und gehört nicht auf die
+        # Ereignisschleife — solange sie rechnet, antwortet der Bot niemandem.
+        meldung = await asyncio.to_thread(chronik.sitzung_geloescht, config, gemeint, session_id)
+        await interaction.response.edit_message(content=meldung, view=None)
+
+    @_geklickt
+    async def verworfen(interaction) -> None:
+        await interaction.response.edit_message(content=chronik.SITZUNG_ABGEBROCHEN, view=None)
+
+    ja.callback = bestaetigt
+    nein.callback = verworfen
+
+    class Sitzungsloeschansicht(discord.ui.View):
+        def __init__(self) -> None:
+            super().__init__(timeout=erinnern.FRIST)
+            self.add_item(ja)
+            self.add_item(nein)
+
+    return Sitzungsloeschansicht()
+
+
+def _sitzungswahlansicht(config: Config, runde, zeilen):
+    """Ein Menü der Sitzungen — die Wahl **zeigt**, was verschwände, und löscht nichts.
+
+    Zwei Schritte, weil es keinen dritten Versuch gibt: die Wahl benennt die Sitzung, die
+    Rückfrage danach benennt, was an ihr hängt — bis hin zu den Tondateien. Ein Menü, das
+    beim Loslassen löschte, wäre ein Vertipper vom Verlust entfernt.
+    """
+    discord = _discord()
+
+    menue = discord.ui.Select(
+        placeholder=chronik.SITZUNG_WAEHLEN,
+        custom_id=f"{KENNUNG_SITZUNG}:{runde.id}",
+        options=[
+            discord.SelectOption(
+                label=erinnern.gekuerzt(schrift, erinnern.KNOPF_GRENZE), value=wert
+            )
+            for schrift, wert in zeilen
+        ],
+    )
+
+    @_geklickt
+    async def gewaehlt(interaction) -> None:
+        if not _darf_verwalten(getattr(interaction, "user", None)):
+            await interaction.response.edit_message(content=einrichten.NUR_VERWALTUNG, view=None)
+            return
+        gemeint = await _noch_dieselbe(config, interaction, runde)
+        if gemeint is None:
+            return
+        sitzung = int(menue.values[0])
+        frage = chronik.sitzungsfrage(config, gemeint, sitzung)
+        if frage is None:
+            await interaction.response.edit_message(content=chronik.SITZUNG_SCHON_FORT, view=None)
+            return
+        await interaction.response.edit_message(
+            content=frage, view=_sitzungsloeschansicht(config, gemeint, sitzung)
+        )
+
+    menue.callback = gewaehlt
+
+    class Sitzungswahlansicht(discord.ui.View):
+        def __init__(self) -> None:
+            super().__init__(timeout=erinnern.FRIST)
+            self.add_item(menue)
+
+    return Sitzungswahlansicht()
+
+
 def _einleseansicht(config: Config, runde, abende):
     """Ein Knopf vor fünfzehn Sitzungen: erst zeigen, dann auf Zuruf schreiben.
 
@@ -2153,6 +2249,30 @@ def baue(config: Config):
         vorschau = await chronik.dokument_vorschau(runde, _notizdatei(datei))
         ansicht = _einleseansicht(config, runde, vorschau.abende) if vorschau.abende else None
         await _zustellen(ctx.respond, vorschau.text, zuletzt={"view": ansicht}, ephemeral=True)
+
+    @chronikgruppe.command(
+        name="sitzung-loeschen", description="Eine einzelne Sitzung löschen, nach Rückfrage"
+    )
+    @antwortet
+    async def chronik_sitzung_loeschen(ctx) -> None:
+        """Der kleine Weg neben ``/chronik loeschen``: ein Abend statt der ganzen Runde.
+
+        Die Schranke ist die der Verwaltung und nicht die der Administration: eine Sitzung
+        fortzunehmen ist eine Berichtigung — den überzähligen Abend aus einem eingelesenen
+        Dokument, den Testabend vom Einrichten —, und wer die Runde einrichtet, berichtigt
+        sie auch. Die ganze Runde bleibt die strengere Frage, denn sie ist die, nach der
+        nichts mehr da ist. Gerechnet wird noch einmal am Menü und am Knopf.
+
+        Eine ruhende Runde kommt hier nicht durch: sie ist verabschiedet, und wer sie ganz
+        loswerden will, hat dafür ``/chronik loeschen``.
+        """
+        if not _darf_verwalten(getattr(ctx, "author", None)):
+            await _zustellen(ctx.respond, einrichten.NUR_VERWALTUNG, ephemeral=True)
+            return
+        runde = chronik.runde_verlangen(config, ctx.guild_id)
+        wahl = chronik.sitzungswahl(runde)
+        ansicht = _sitzungswahlansicht(config, runde, wahl.zeilen) if wahl.zeilen else None
+        await _zustellen(ctx.respond, wahl.text, zuletzt={"view": ansicht}, ephemeral=True)
 
     @chronikgruppe.command(
         name="loeschen", description="Alles von dieser Runde löschen, nach Rückfrage"

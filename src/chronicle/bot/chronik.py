@@ -183,6 +183,65 @@ DOKUMENT_NICHTS_NEU = (
     "dadurch nichts da."
 )
 
+# -- Eine einzelne Sitzung wieder loswerden ----------------------------------------------
+#
+# Bis #171 gab es darunter nichts: `/chronik loeschen` nahm die ganze Runde, und ein
+# Fehlgriff beim Einlesen war unwiderruflich. Das hier ist der kleine Weg daneben — und er
+# ist genauso endgültig, weil an einer Sitzung Tondateien hängen. Deshalb dieselbe Bauform:
+# erst zeigen, was verschwände, dann fragen, dann löschen.
+
+# Discord nimmt 25 Zeilen je Menü. Eine Runde hat schnell mehr Sitzungen; zur Wahl stehen
+# dann die jüngsten, und das wird gesagt, statt die älteren stillschweigend wegzulassen.
+SITZUNG_ZUR_WAHL = 25
+
+SITZUNG_KEINE = (
+    "Hier ist noch keine Sitzung geschrieben — zu löschen gibt es nichts. "
+    "`/chronik start` beginnt die erste."
+)
+
+SITZUNG_WAHL = (
+    "**Eine einzelne Sitzung löschen.** Wähl unten aus, welche; ich zeige dann, was an ihr "
+    "hängt, und frage noch einmal nach. Bis dahin ist nichts gelöscht.{rest}"
+)
+
+SITZUNG_WAHL_GEKUERZT = (
+    " Zur Wahl stehen die {anzahl} jüngsten — mehr zeigt Discord in einem Menü nicht."
+)
+
+SITZUNG_WAEHLEN = "Welche Sitzung soll fort?"
+
+SITZUNG_FRAGE = (
+    "**»{sitzung}« verschwindet, endgültig und sofort:**\n"
+    "{liste}\n"
+    "**Das bleibt:** die übrigen Sitzungen dieser Runde und das Register — und der "
+    "Nachweis, dass im Sprachkanal angesagt wurde. Der belegt etwas über Menschen, und "
+    "diese Runde gibt es weiter; wer ihn nicht mehr will, löscht die ganze Runde. Was ich "
+    "euch schon zugestellt habe, liegt ohnehin in Discord, dorthin reicht mein Löschen "
+    "nicht.\n"
+    "Es gibt keine Sicherung, aus der ich das zurückhole. Was ihr behalten wollt, ladet "
+    "vorher herunter."
+)
+
+SITZUNG_ZEILE_NOTIZEN = "• {szenen} mit {notizen}"
+SITZUNG_ZEILE_TON = "• {spuren} — davon liegen {dateien} noch hier, auch die gehen"
+SITZUNG_ZEILE_OHNE_TON = "• {spuren} — Tondateien liegen dazu keine mehr"
+SITZUNG_ZEILE_VERSCHRIFTET = "• {transkripte} aus diesen Spuren"
+SITZUNG_ZEILE_GESCHRIEBEN = "• {protokolle} daraus: Chronik und Rückblick"
+
+SITZUNG_JA = "Ja, diese Sitzung löschen"
+SITZUNG_NEIN = "Abbrechen"
+
+SITZUNG_FERTIG = "»{sitzung}« ist fort, mit allem, was daran hing.{ton}"
+SITZUNG_FERTIG_TON = " {dateien} sind von der Platte gelöscht."
+SITZUNG_ABGEBROCHEN = "Nichts gelöscht. Es bleibt alles, wie es war."
+
+# Der Knopf lebt eine Viertelstunde. In der Zeit kann dieselbe Sitzung schon gelöscht sein
+# — von einer zweiten Ansicht oder von jemand anderem.
+SITZUNG_SCHON_FORT = (
+    "Diese Sitzung gibt es nicht mehr; gelöscht habe ich gerade nichts. "
+    "`/chronik sitzung-loeschen` zeigt, was noch da ist."
+)
+
 NICHT_ABGELEGT = (
     "Das konnte ich nicht ablegen: {grund} Schreib es noch einmal — bleibt es dabei, "
     "steht der Grund im Log des Bots."
@@ -328,6 +387,17 @@ class Vorschau:
 
     text: str
     abende: tuple[dokument.Abend, ...] = ()
+
+
+@dataclass(frozen=True)
+class Sitzungswahl:
+    """Die Sitzungen zur Auswahl — und der Satz darüber. Ohne ``zeilen`` sagt ``text``, warum.
+
+    Wie ``Vorschau``: die Ansicht entsteht nur, wenn es etwas zu wählen gibt.
+    """
+
+    text: str
+    zeilen: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -680,15 +750,104 @@ def dokument_anlegen(runde: Runde, abende: Sequence[dokument.Abend]) -> str:
 
     Gegen den Bestand geprüft wird **hier** und nicht nur in der Vorschau: die Vorschau
     friert ihre Abende ein und ist ephemer, also ruft auf, wer unsicher ist, ob sie durchkam
-    — zwei offene Vorschauen desselben Dokuments legten den Abend sonst zweimal an. Und eine
-    einzelne Sitzung wieder loszuwerden gibt es nicht; ``/chronik loeschen`` nimmt die ganze
-    Runde.
+    — zwei offene Vorschauen desselben Dokuments legten den Abend sonst zweimal an. Einen
+    Abend zu viel wird man seit #171 auch wieder los: ``/chronik sitzung-loeschen`` nimmt
+    genau ihn, statt der ganzen Runde.
     """
     angelegt = dokument.anlegen(runde, dokument.neu(runde, abende))
     logger.info("Notizdokument eingelesen: %s Sitzungen angelegt.", angelegt)
     if not angelegt:
         return DOKUMENT_NICHTS_NEU
     return DOKUMENT_ANGELEGT.format(sitzungen=_anzahl(angelegt, "Sitzung", "Sitzungen"))
+
+
+def _wahlschrift(sitzung: notes.Session) -> str:
+    """Wie eine Sitzung im Menü steht: ihr Abend, und ihr Titel, wenn sie einen hat."""
+    titel = (sitzung.title or "").strip()
+    return f"{sitzung.played_on} — {titel}" if titel else f"Sitzung vom {sitzung.played_on}"
+
+
+def sitzungswahl(runde: Runde) -> Sitzungswahl:
+    """Die Sitzungen dieser Runde zur Wahl — die jüngsten zuerst.
+
+    Über den Thread ginge es nicht: eine eingelesene Sitzung hat keinen, und genau die ist
+    der Fall, aus dem dieser Befehl entstanden ist (#169/#171). Über ein Datum ginge es
+    auch nicht eindeutig — zwei Abende an einem Tag sind selten, aber möglich, und was
+    endgültig löscht, darf nicht raten.
+    """
+    alle = notes.sessions(runde)
+    if not alle:
+        return Sitzungswahl(text=SITZUNG_KEINE)
+    zeilen = tuple((_wahlschrift(sitzung), str(sitzung.id)) for sitzung in alle[:SITZUNG_ZUR_WAHL])
+    rest = SITZUNG_WAHL_GEKUERZT.format(anzahl=len(zeilen)) if len(alle) > len(zeilen) else ""
+    return Sitzungswahl(text=SITZUNG_WAHL.format(rest=rest), zeilen=zeilen)
+
+
+def _sitzungszeilen(umfang: notes.Contents) -> str:
+    """Was an dieser Sitzung hängt, Zeile für Zeile — die Tondateien ausdrücklich.
+
+    Sie sind der Grund, warum diese Frage überhaupt gestellt wird: an ihnen hängen die
+    Stimmen echter Menschen, und ob welche da sind, sieht man einer Sitzung von außen nicht
+    an. Was es nicht gibt, steht nicht da — eine Zeile »0 Aufnahmen« sagt nichts.
+    """
+    zeilen = [
+        SITZUNG_ZEILE_NOTIZEN.format(
+            szenen=_anzahl(umfang.session.scene_count, "Szene", "Szenen"),
+            notizen=_anzahl(umfang.session.note_count, "Notiz", "Notizen"),
+        )
+    ]
+    if umfang.recordings:
+        spuren = _anzahl(umfang.recordings, "Aufnahme", "Aufnahmen")
+        zeilen.append(
+            SITZUNG_ZEILE_TON.format(
+                spuren=spuren, dateien=_anzahl(umfang.audio, "Tondatei", "Tondateien")
+            )
+            if umfang.audio
+            else SITZUNG_ZEILE_OHNE_TON.format(spuren=spuren)
+        )
+    if umfang.transcripts:
+        zeilen.append(
+            SITZUNG_ZEILE_VERSCHRIFTET.format(
+                transkripte=_anzahl(umfang.transcripts, "Verschriftung", "Verschriftungen")
+            )
+        )
+    if umfang.protocols:
+        zeilen.append(
+            SITZUNG_ZEILE_GESCHRIEBEN.format(
+                protokolle=_anzahl(umfang.protocols, "geschriebener Text", "geschriebene Texte")
+            )
+        )
+    return "\n".join(zeilen)
+
+
+def sitzungsfrage(config: Config, runde: Runde, session_id: int) -> str | None:
+    """Was diese Sitzung kostet — gefragt, bevor irgendetwas geschieht. ``None``: schon fort."""
+    umfang = notes.session_contents(config, runde, session_id)
+    if umfang is None:
+        return None
+    return SITZUNG_FRAGE.format(sitzung=sitzungsname(umfang.session), liste=_sitzungszeilen(umfang))
+
+
+def sitzung_geloescht(config: Config, runde: Runde, session_id: int) -> str:
+    """Die Sitzung fortnehmen und sagen, was fort ist.
+
+    Im Log stehen **Zahlen und sonst nichts** — kein Titel, keine Kennung, kein Name. Der
+    Titel kommt von der Gruppe und trägt oft genug einen Klarnamen; anders als beim Löschen
+    der ganzen Runde gibt es hier auch niemanden zu vermerken, der es veranlasst hat: die
+    Runde bleibt stehen, und wer in ihr was tut, geht das Log des Betreibers nichts an.
+    """
+    umfang = notes.delete_session(config, runde, session_id)
+    if umfang is None:
+        return SITZUNG_SCHON_FORT
+    logger.info(
+        "Sitzung gelöscht: %s Notizen und %s Tondateien entfernt.",
+        umfang.session.note_count,
+        umfang.audio,
+    )
+    ton = SITZUNG_FERTIG_TON.format(dateien=_anzahl(umfang.audio, "Tondatei", "Tondateien"))
+    return SITZUNG_FERTIG.format(
+        sitzung=sitzungsname(umfang.session), ton=ton if umfang.audio else ""
+    )
 
 
 @dataclass(frozen=True)
