@@ -284,6 +284,53 @@ def test_ohne_kennung_ist_eine_sitzung_nicht_die_gemeinte(tmp_path):
     assert notes.gemeinte_sitzung(runde, str(sitzung)) is None
 
 
+def test_die_leere_kennung_traegt_die_wache_allein(tmp_path):
+    """``NULL`` allein nagelt die Wache nicht fest: ``NULL = ''`` ist in SQL nie wahr, der
+    Vergleich fiele also auch ohne sie durch. Beim leeren String trägt sie allein."""
+    pfad = tmp_path / "chronicle.sqlite3"
+    db.init(pfad)
+    runde = runden.erste(pfad)
+    sitzung = notes.create_session(runde, played_on="2026-05-01", title="Erster Abend")
+    connection = db.connect(pfad)
+    try:
+        connection.execute("UPDATE session SET token = ''")
+        connection.commit()
+    finally:
+        connection.close()
+
+    assert notes.gemeinte_sitzung(runde, f"{sitzung}:") is None
+
+
+def test_die_wanderung_holt_auch_die_leere_kennung_nach(tmp_path):
+    """Sonst bliebe die Zeile für immer unlöschbar und meldete »schon fort«, obwohl sie steht."""
+    pfad = tmp_path / "chronicle.sqlite3"
+    db.init(pfad)
+    runde = runden.erste(pfad)
+    notes.create_session(runde, played_on="2026-05-01", title="Erster Abend")
+    connection = db.connect(pfad)
+    try:
+        connection.execute("UPDATE session SET token = ''")
+        connection.commit()
+    finally:
+        connection.close()
+
+    db.init(pfad)
+
+    sitzung = notes.sessions(runde)[0]
+    assert sitzung.token
+    assert notes.gemeinte_sitzung(runde, notes.sitzungsmarke(sitzung)) is not None
+
+
+def test_eine_gebastelte_marke_wird_abgewiesen_statt_zu_werfen(tmp_path):
+    """``"²".isdigit()`` ist wahr, ``int("²")`` wirft — und den Wert setzt ein Discord-Client."""
+    pfad = tmp_path / "chronicle.sqlite3"
+    db.init(pfad)
+    runde = runden.erste(pfad)
+
+    for marke in ("²:abc", "9999999999999999999999:abc", "٣:abc", "1²:abc"):
+        assert notes.gemeinte_sitzung(runde, marke) is None
+
+
 def test_scope_laesst_eine_abfrage_mit_runde_durch(tmp_path):
     pfad = tmp_path / "chronicle.sqlite3"
     runde = runden.erste(pfad)

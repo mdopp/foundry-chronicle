@@ -479,7 +479,10 @@ def gemeinte_sitzung(runde: Runde, marke: str) -> Session | None:
     Nummern-Gleichheit zurück, und das ist genau der Fehler, gegen den die Kennung steht.
     """
     kennung, _, wert = str(marke).partition(":")
-    if not wert or not kennung.isdigit():
+    # ``isdigit`` sagt auch zu »²« ja, und ``int`` wirft dann. Eine Marke kommt aus einer
+    # Discord-Interaktion, deren Wert ein Client frei setzt — abgewiesen wird sie hier,
+    # nicht von einer Ausnahme drei Zeilen später.
+    if not wert or not (kennung.isascii() and kennung.isdigit()) or len(kennung) > 18:
         return None
     scope = db.scoped(runde)
     try:
