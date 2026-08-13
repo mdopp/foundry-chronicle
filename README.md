@@ -259,6 +259,18 @@ Teilnehmerliste, Zeitachse, und die Runde tippt ohnehin dort. Darin gilt:
   derselbe server-eigene Lauf, dieselbe Meldung im Kanal — ein dritter Auslöser, kein
   dritter Weg. Eine ruhende Runde bekommt auch hier nichts.
 
+**Ein vorhandener Notizbestand kommt nachträglich herein.** Wer schon länger spielt und
+seine Notizen in **einem** Markdown-Dokument hat — ein Abschnitt je Abend —, hängt es an
+`/chronik einlesen` an, **im Kanal der Runde** und nicht im Thread: ein Dokument deckt
+mehrere Abende ab und gehört in keinen einzelnen. Aufgeteilt wird an den Überschriften,
+und zwar relativ statt fest: die Abende trennt die oberste Ebene, deren Überschriften ein
+**Datum** tragen, alles darunter die Szenen — dasselbe Dokument mit `#` je Abend ergibt
+dieselben Sitzungen wie eines mit `##`-Abenden unter einem `#`-Vorspann. Der Text wird
+übernommen, wie er dasteht: kein Modell, keine Zusammenfassung, kein geratenes Datum — eine
+Überschrift ohne lesbares Datum wird benannt und übersprungen. Der Bot zeigt erst, **was
+entstünde**; ohne Bestätigung entsteht nichts, und dieselbe Datei ein zweites Mal
+hochgeladen verdoppelt den Bestand nicht ([#169](../../issues/169)).
+
 **Nachträgliches Erfassen geht.** Eine Nachricht Tage später im Thread gehört weiter zu
 dieser Sitzung, und in welche **Szene** sie fällt, entscheidet ihr eigener Zeitpunkt: die
 letzte Trennlinie *vor* ihr. Eine bearbeitete Nachricht ändert ihre Notiz, eine gelöschte
