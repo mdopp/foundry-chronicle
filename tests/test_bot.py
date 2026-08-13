@@ -1731,8 +1731,81 @@ def test_ohne_zugestellte_vorstellung_wird_gar_nicht_erst_angesagt(
     assert der_lauf(bot).aufnahme is None
     assert consent.for_session(unsere_runde(konfiguration), sitzung_id) == ()
     assert ctx.antworten[0].startswith("Das hat nicht geklappt:")
-    # Und kein Widerruf: im Kanal steht nichts, was zurückzunehmen wäre.
+    # Im Kanal steht nichts — auch kein Widerruf. Versucht wird er trotzdem: dieser Kanal
+    # weist jede Nachricht ab, also verfällt er ins Log statt vor einer leeren Wand zu
+    # stehen. Wo nur ein Teil scheitert, kommt er an — der Test darunter fährt das.
     assert runde.kanal.geschrieben == []
+
+
+def test_die_halb_zugestellte_vorstellung_wird_auch_zurueckgenommen(
+    konfiguration, sitzung_id, ohne_espeak, runde, monkeypatch
+):
+    """Der Normalfall, nicht der Randfall — die Vorstellung geht in zwei Nachrichten hinaus.
+
+    Der tragende Satz »Erst danach schneide ich mit« steht im **ersten** Stück. Scheitert
+    erst das zweite, hängt ``_abriss_melden`` nur an, dass der Text unvollständig sei —
+    von einer angekündigten Aufnahme nimmt das nichts zurück. Wer allein den Kanal sieht,
+    liest weiter, dass gleich mitgeschnitten wird, und das ist genau die Lücke aus #189.
+    """
+    stuecke = grenzen.teile(gateway.VORSTELLUNG)
+    # Sonst prüfte dieser Test unbemerkt denselben Alles-oder-nichts-Fall wie der davor.
+    assert len(stuecke) > 1
+    echt = runde.kanal.send
+
+    async def nur_das_erste_stueck(text, **rest):
+        if text == stuecke[1]:
+            raise RuntimeError("Discord hat abgelehnt")
+        await echt(text, **rest)
+
+    monkeypatch.setattr(runde.kanal, "send", nur_das_erste_stueck)
+    bot = gateway.baue(konfiguration)
+    ctx = FakeCtx(runde.mira)
+
+    asyncio.run(befehl(bot, "start")(ctx))
+
+    gesagt = [text for text, _ in runde.kanal.geschrieben]
+    assert gesagt[0] == stuecke[0]
+    assert gesagt[-1] == gateway.WIDERRUF.format(
+        grund=gateway.UNERWARTET.format(typ="RuntimeError")
+    )
+    assert runde.kanal.verbindung.gespielt == []
+    assert not runde.kanal.verbindung.schneidet
+    assert runde.kanal.verbindung.getrennt
+    assert der_lauf(bot).aufnahme is None
+    assert consent.for_session(unsere_runde(konfiguration), sitzung_id) == ()
+    assert ctx.antworten[0].startswith("Das hat nicht geklappt:")
+
+
+def test_ein_stolperndes_trennen_nimmt_den_widerruf_nicht_mit(
+    konfiguration, ohne_espeak, runde, monkeypatch
+):
+    """Der Widerruf ist die Zusage an die Aufgenommenen, das Trennen nur Aufräumen.
+
+    ``disconnect`` geht ans Netz und kann werfen. Stand es vor dem Widerruf, blieb die
+    Ankündigung im Kanal stehen, sobald es das tat — der Bot saß dann obendrein noch da.
+    Deshalb wird erst geredet und danach aufgeräumt.
+    """
+    unsere_runde(konfiguration)
+    echt_verbinden = runde.kanal.connect
+
+    async def verbindet_und_stolpert_beim_trennen():
+        verbindung = await echt_verbinden()
+        verbindung.trennen_stolpert = True
+        return verbindung
+
+    monkeypatch.setattr(runde.kanal, "connect", verbindet_und_stolpert_beim_trennen)
+    bot = gateway.baue(konfiguration)
+    ctx = FakeCtx(runde.mira)
+
+    asyncio.run(befehl(bot, "start")(ctx))
+
+    gesagt = [text for text, _ in runde.kanal.geschrieben]
+    assert "".join(gesagt[:-1]) == gateway.VORSTELLUNG
+    assert gesagt[-1] == gateway.WIDERRUF.format(grund=recorder.OHNE_SITZUNG)
+    assert not runde.kanal.verbindung.getrennt
+    assert not runde.kanal.verbindung.schneidet
+    assert der_lauf(bot).aufnahme is None
+    assert ctx.antworten[0].startswith("Das hat nicht geklappt:")
 
 
 def test_wer_nach_einem_gescheiterten_start_dazukommt_wird_nicht_aufgenommen(

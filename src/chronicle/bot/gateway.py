@@ -2105,17 +2105,24 @@ def baue(config: Config):
         ziel = _vorstellungsziel(ctx, kanal)
         try:
             await _zustellen(ziel.send, VORSTELLUNG)
-        except BaseException:
+        except BaseException as fehler:
             # Die Vorstellung ist die lesbare Hälfte der Einwilligung: sie nennt den
             # Ausweg, und zwar solange noch nichts mitgeschnitten wird. Kam sie nicht
-            # durch, wird nicht gestartet — und zurückzunehmen gibt es nichts.
+            # durch, wird nicht gestartet. Zurückzunehmen ist trotzdem etwas: sie ist
+            # länger als eine Discord-Nachricht, und scheitert erst das zweite Stück,
+            # steht »gleich schneide ich mit« bereits im Kanal — mit dem Abriss-Hinweis
+            # daneben, der von einer Aufnahme nichts zurücknimmt. Der Widerruf tut es.
+            # Kam wirklich nichts an, ist der Kanal ohnehin zu und er verfällt ins Log.
+            await _widerrufen(ziel, fehler)
             await stimme.trennen()
             raise
         try:
             lauf.aufnahme = await recorder.starten(config, stimme, runde)
         except BaseException as fehler:
-            await stimme.trennen()
+            # Erst der Widerruf, dann das Aufräumen: ``trennen`` geht ans Netz und kann
+            # selbst stolpern — danach käme er nie, und die Ankündigung bliebe stehen.
             await _widerrufen(ziel, fehler)
+            await stimme.trennen()
             raise
         lauf.stimme = stimme
         await _zustellen(ctx.respond, recorder.GESTARTET, ephemeral=True)
@@ -2161,7 +2168,12 @@ def baue(config: Config):
             ziel = _vorstellungsziel(ctx, kanal)
             try:
                 await _zustellen(ziel.send, PROBE_VORSTELLUNG)
-            except BaseException:
+            except BaseException as fehler:
+                # Wie bei ``/aufnahme start``: was von einer geteilten Ankündigung schon
+                # dasteht, wird zurückgenommen. Heute passt dieser Text in eine Nachricht,
+                # aber er zieht Ausweg und Frist aus denselben Quellen wie die Vorstellung
+                # und wächst mit ihnen.
+                await _widerrufen(ziel, fehler)
                 await stimme.trennen()
                 raise
             try:
@@ -2170,9 +2182,10 @@ def baue(config: Config):
                 # ``pruefen`` trennt selbst, sobald es mitschneidet; das hier fängt den
                 # Abbruch davor — ohne es säße der Bot nach einer fehlenden Sitzung im Kanal.
                 # Und die Ankündigung steht öffentlich wie die vor einer Aufnahme, also
-                # wird sie auch hier zurückgenommen statt nur dem Aufrufer abgesagt.
-                await stimme.trennen()
+                # wird sie auch hier zurückgenommen statt nur dem Aufrufer abgesagt — und
+                # zwar vor dem Trennen, das selbst stolpern und ihn mitnehmen kann.
                 await _widerrufen(ziel, fehler)
+                await stimme.trennen()
                 raise
         finally:
             lauf.probe = False
