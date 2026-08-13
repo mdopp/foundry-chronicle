@@ -25,7 +25,17 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:  # pragma: no cover - nur für die Typprüfung
     from chronicle.runde import Runde
 
-SCHEMA_VERSION = 26
+SCHEMA_VERSION = 27
+
+# Der Zeiger, den der Diktat-Lauf je Runde führt — ``chronicle.discord.service`` nennt ihn
+# ebenso. Er steht auch hier, weil die Wanderung ihn einmal verwerfen muss und die
+# Datenschicht nichts aus dem Discord-Teil importiert.
+BRIEFKASTEN_ZEIGER = "discord_cursor"
+
+# Ab diesem Stand ist er einmal verworfen worden (#192, siehe ``_briefkastenzeiger_verwerfen``);
+# eine ältere Datenbank hat den Durchlauf noch vor sich. Bewusst eine eigene Zahl und nicht
+# ``SCHEMA_VERSION``: die nächste Hebung soll ihn nicht ein zweites Mal auslösen.
+ZEIGER_VERWORFEN_AB = 27
 
 # Der Name der ersten Runde: die Bestände der Entwicklungs-Instanz wandern hier hinein,
 # und eine frische Datenbank bekommt sie ebenfalls — die Oberfläche braucht bis zu ihrer
@@ -326,6 +336,30 @@ def _umziehen(connection: sqlite3.Connection, runde_id: int) -> None:
         connection.execute("DELETE FROM meta WHERE key = ?", (schluessel,))
 
 
+def _briefkastenzeiger_verwerfen(connection: sqlite3.Connection) -> None:
+    """Der Zeiger des Diktat-Briefkastens fällt einmal weg — er zeigte womöglich woanders hin.
+
+    Bis #192 wurde der Briefkasten über **alle** Gilden des Bots gesucht; jede Runde außer
+    der ersten las damit einen fremden. Der Zeiger, den sie dabei mitführte, ist eine
+    Discord-Kennung, und die trägt ihre Zeit in sich: nach der Berichtigung liest die Runde
+    ihren eigenen Kanal, aber nur, was *jünger* ist als dieser fremde Zeiger — und das sind
+    ihre eigenen Einwürfe nie. Die Berichtigung bliebe für genau die Runden wirkungslos,
+    für die sie gemacht ist.
+
+    Doppelt abgelegt wird dadurch nichts: die Kennung jeder erledigten Nachricht steht in
+    ``discord_intake``, und die ist die Garantie, nicht der Zeiger. Der erste Lauf danach
+    kostet einen Abruf mehr.
+
+    Was schon abgelegt wurde, bleibt liegen — wo eine Notiz herkam, steht nirgends, also
+    kann diese Wanderung fremde nicht von eigenen unterscheiden. Fortnehmen kann das nur
+    die Gruppe selbst.
+    """
+    zeile = connection.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()
+    if zeile is None or int(zeile["value"]) >= ZEIGER_VERWORFEN_AB:
+        return
+    connection.execute("DELETE FROM runde_meta WHERE key = ?", (BRIEFKASTEN_ZEIGER,))
+
+
 def _geheimnisse_verwerfen(connection: sqlite3.Connection) -> None:
     """Ein nicht mehr gepflegter Wert wird gelöscht, nicht stehen gelassen."""
     for schluessel in VERWORFENE_SCHLUESSEL:
@@ -411,6 +445,10 @@ def init(database_path: Path) -> None:
         _kennung_nachtragen(connection)
         _sitzungskennung_nachtragen(connection)
         _umziehen(connection, erste_runde_id(connection))
+        # Nach dem Umzug: ein Zeiger aus der Zeit vor dem Runden-Modell liegt bis dahin
+        # noch in ``meta``. Und vor ``suchindex.sql``, das den Schema-Stand hebt — daran
+        # erkennt der Durchlauf, dass er schon war.
+        _briefkastenzeiger_verwerfen(connection)
         _geheimnisse_verwerfen(connection)
         # Der Suchindex wird abgeleitet und deshalb zuletzt neu gebaut — er liest Spalten,
         # die die Wanderung erst angelegt hat.

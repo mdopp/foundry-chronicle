@@ -155,24 +155,6 @@ class DiscordClient:
             raise DiscordUnreachable(f"{pfad} hat keine {was} geliefert")
         return rumpf
 
-    def channel_id(self, name: str) -> str | None:
-        """Der eine Kanal, gefunden über die Namenskonvention.
-
-        Wer darin schreiben darf, darf diktieren — die Autorisierung ist Discords
-        eigenes Rechtemodell, hier gibt es keine zweite Liste.
-        """
-        logger.info("Discord: suche Kanal #%s", name)
-        for gilde in self._liste("/users/@me/guilds", "Gildenliste"):
-            kennung = gilde.get("id") if isinstance(gilde, Mapping) else None
-            if not kennung:
-                continue
-            for kanal in self._liste(f"/guilds/{kennung}/channels", "Kanalliste"):
-                if not isinstance(kanal, Mapping) or not kanal.get("id"):
-                    continue
-                if kanal.get("name") == name and kanal.get("type") == GUILD_TEXT:
-                    return str(kanal["id"])
-        return None
-
     def guild_channel_id(self, guild_id: str, kanal: str) -> str | None:
         """Der Textkanal **einer** Gilde — angegeben als Id oder als Name.
 
@@ -184,6 +166,14 @@ class DiscordClient:
         erreichbar wie ein fremder Name. Sonst stünde der Rückblick der einen Runde im
         Kanal einer anderen — ein Leck, das niemand bemerkte, weil es aussieht wie eine
         gelungene Zustellung.
+
+        Eine Suche **über** die Gilden gibt es hier nicht mehr: sie war der Fehler in
+        Schreib- (#182) und Leserichtung (#192), und in Leserichtung wog sie schwerer —
+        ein Diktat aus einer fremden Gilde wird verschriftet und steht danach in der
+        Chronik einer Gruppe, die es nie gesprochen hat.
+
+        Wer darin schreiben darf, darf diktieren — die Autorisierung ist Discords eigenes
+        Rechtemodell, hier gibt es keine zweite Liste.
         """
         logger.info("Discord: suche Kanal %s in Gilde %s", kanal, guild_id)
         gilden = self._liste("/users/@me/guilds", "Gildenliste")

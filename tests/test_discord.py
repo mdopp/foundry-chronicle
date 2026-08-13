@@ -1,8 +1,13 @@
 """Der Diktat-Kanal — gegen ein nachgebautes Discord, ohne Netz.
 
-Kein Test spricht mit discord.com. Das Gegenüber ist ein paar Zeilen Wörterbuch: eine
-Gilde, zwei Kanäle, Nachrichten im Speicher. Der Token in diesen Tests ist erfunden und
-steht nur hier.
+Kein Test spricht mit discord.com. Das Gegenüber ist ein paar Zeilen Wörterbuch: zwei
+Gilden, ein paar Kanäle, Nachrichten im Speicher. Der Token in diesen Tests ist erfunden
+und steht nur hier.
+
+**Zwei** Gilden, und in beiden ein ``#diktat`` — seit #192 ist das die tragende Form
+dieser Suite: die fremde steht in der Gildenliste zuerst, und ihr Briefkasten beantwortet
+keinen Abruf. Eine Suche über alle Gilden fände dort die erstbeste und fiele hier über
+jeden zweiten Test. Der Briefkasten gehört der Gilde der Runde, und nur ihr.
 """
 
 from __future__ import annotations
@@ -14,7 +19,8 @@ import requests
 from conftest import runde
 
 import chronicle.discord.__main__ as entry
-from chronicle import db, notes, recordings, settings
+from chronicle import db, lebenszyklus, notes, recordings, settings
+from chronicle import runde as runden
 from chronicle.config import Config
 from chronicle.discord import service
 from chronicle.discord.client import (
@@ -31,6 +37,9 @@ TOKEN = "bot-token-nur-fuer-den-test"
 GILDE = "g-runde"
 DIKTAT_KANAL = "c-diktat"
 GRUPPEN_KANAL = "c-allgemein"
+
+FREMDE_GILDE = "g-nachbarn"
+FREMDER_KANAL = "c-nachbardiktat"
 
 CDN = "https://cdn.discord.example"
 
@@ -75,6 +84,10 @@ class FakeDiscord:
     ``echo`` legt die Antwort des Bots als neue Nachricht in den Kanal — so, wie es
     im echten Discord passiert. Das braucht genau ein Test; sonst wäre in jedem
     anderen der Zeiger schwer zu lesen.
+
+    Der Bot steht in zwei Gilden, die fremde zuerst genannt, und auch sie hat ein
+    ``#diktat``. Wer über die Gilden hinaus suchte, fände ihres — und stünde vor einem
+    Briefkasten, der keinen Abruf beantwortet.
     """
 
     def __init__(self, *nachrichten, kanal="diktat", dateien=None, echo=False):
@@ -93,7 +106,11 @@ class FakeDiscord:
         self.kopfzeilen.append((url, kwargs.get("headers", {})))
         pfad = url[len(API) :]
         if pfad == "/users/@me/guilds":
-            return Antwort([{"id": GILDE, "name": "Die Runde"}])
+            return Antwort(
+                [{"id": FREMDE_GILDE, "name": "Die Nachbarn"}, {"id": GILDE, "name": "Die Runde"}]
+            )
+        if pfad == f"/guilds/{FREMDE_GILDE}/channels":
+            return Antwort([{"id": FREMDER_KANAL, "name": self.kanal, "type": 0}])
         if pfad == f"/guilds/{GILDE}/channels":
             return Antwort(
                 [
@@ -146,6 +163,10 @@ def config(tmp_path):
         recordings_dir=tmp_path / "aufnahmen",
     )
     db.init(gesetzt.database_path)
+    # Die Runde dieser Tests hängt an ihrer Gilde. Ohne sie gibt es keinen Briefkasten:
+    # gesucht wird der Kanal in *ihrer* Gilde, nicht in irgendeiner, in der der Bot auch
+    # steht (#192). Ein eigener Test hält den Fall ohne Gilde fest.
+    lebenszyklus.verwaiste_uebernehmen(gesetzt, (lebenszyklus.Gilde(GILDE, "Die Runde"),))
     return gesetzt
 
 
@@ -162,18 +183,66 @@ def leeren(config, api):
     return run(config, runde(config), client=klient(config, api))
 
 
-# --- Der Kanal: genau einer, gefunden über den Namen ---------------------------------
+# --- Der Kanal: genau einer, gefunden über den Namen, in der eigenen Gilde -----------
 
 
-def test_gelesen_wird_genau_der_kanal_der_so_heisst(config):
-    api = FakeDiscord()
-    assert klient(config, api).channel_id(service.KANAL) == DIKTAT_KANAL
+def test_geleert_wird_der_briefkasten_der_eigenen_gilde(config, sitzung_id):
+    """Beide Gilden haben ein ``#diktat``; die fremde steht zuerst in der Liste.
+
+    Bis #192 gewann sie damit — und ihre Einwürfe landeten in dieser Chronik. Der Beleg,
+    dass sie es nicht mehr tut, ist der Abruf selbst: der Briefkasten der Nachbarn
+    beantwortet keinen, ein Griff dorthin flöge auf.
+    """
+    api = FakeDiscord(nachricht("100", text="Die Wirtin hat gelogen."))
+
+    leeren(config, api)
+
+    angefasst = {url for url, _ in api.kopfzeilen if "/channels/" in url}
+    assert angefasst and all(FREMDER_KANAL not in url for url in angefasst)
+    assert any(url.startswith(f"{API}/channels/{DIKTAT_KANAL}/messages") for url in angefasst)
+    szene = notes.session(runde(config), sitzung_id).scenes[-1]
+    assert [eintrag.text for eintrag in szene.notes] == ["Die Wirtin hat gelogen."]
 
 
-def test_ohne_den_kanal_sagt_der_lauf_das_statt_still_zu_stehen(config):
+def test_ohne_gilde_wird_kein_briefkasten_geraten(tmp_path, caplog):
+    """Die Runde aus der Zeit der Weboberfläche hängt an keiner Gilde.
+
+    Sie hat damit keinen Briefkasten — und bekommt keinen geliehen. Geraten wäre hier das
+    Leck selbst: der geratene Kanal gehört einer fremden Gruppe, und was darin liegt,
+    würde verschriftet und stünde danach in dieser Chronik.
+    """
+    ohne = Config(
+        discord_bot_token=TOKEN,
+        data_dir=tmp_path / "daten",
+        recordings_dir=tmp_path / "aufnahmen",
+    )
+    db.init(ohne.database_path)
+    api = FakeDiscord(nachricht("100", text="Die Wirtin hat gelogen."))
+
+    with caplog.at_level("WARNING"):
+        meldungen = run(ohne, runden.erste(ohne.database_path), client=klient(ohne, api))
+
+    assert meldungen == (service.OHNE_GILDE,)
+    assert api.kopfzeilen == []
+    assert "keiner Gilde" in caplog.text
+
+
+def test_ohne_den_kanal_sagt_der_lauf_das_statt_still_zu_stehen(config, caplog):
+    """Kein ``#diktat`` in der eigenen Gilde — auch dann keines aus einer fremden.
+
+    Der Satz an die Gruppe nennt die Gilde nicht: als Kennung sagt sie niemandem etwas,
+    und die einer fremden wäre das eine, was hier nicht hinausgehen soll. Der Betreiber
+    findet sie im Log.
+    """
     api = FakeDiscord(nachricht("100", text="Hallo"), kanal="plauderei")
-    assert leeren(config, api) == (service.KEIN_KANAL,)
+
+    with caplog.at_level("WARNING"):
+        meldungen = leeren(config, api)
+
+    assert meldungen == (service.KEIN_KANAL,)
     assert api.antworten == []
+    assert FREMDE_GILDE not in service.KEIN_KANAL
+    assert GILDE in caplog.text
 
 
 # --- Der Kanal einer Gilde: über die Id oder den Namen, aber nie über die Gilde hinaus --
@@ -210,6 +279,7 @@ def test_ohne_token_laeuft_der_stapel_trotzdem_und_sagt_es(tmp_path):
 def test_ein_in_der_oberflaeche_gesetzter_token_reicht(tmp_path, monkeypatch):
     config = Config(data_dir=tmp_path / "daten", recordings_dir=tmp_path / "aufnahmen")
     db.init(config.database_path)
+    lebenszyklus.verwaiste_uebernehmen(config, (lebenszyklus.Gilde(GILDE, "Die Runde"),))
     settings.save(runde(config), {"discord_bot_token": TOKEN})
     notes.create_session(runde(config), played_on="2026-08-06")
     api = FakeDiscord(nachricht("100", text="Die Wirtin hat gelogen."))
@@ -458,7 +528,7 @@ def test_ein_kaputtes_discord_ist_eine_verstaendliche_meldung_ohne_token(config)
             raise requests.ConnectionError(f"Bot {TOKEN} abgelehnt")
 
     with pytest.raises(DiscordUnreachable) as fehler:
-        klient(config, Weg()).channel_id(service.KANAL)
+        klient(config, Weg()).guild_channel_id(GILDE, service.KANAL)
 
     assert "ConnectionError" in str(fehler.value)
     assert TOKEN not in str(fehler.value)
@@ -470,7 +540,7 @@ def test_eine_antwort_ohne_json_ist_keine_kanalliste(config):
             return Antwort()
 
     with pytest.raises(DiscordUnreachable):
-        klient(config, Stumm()).channel_id(service.KANAL)
+        klient(config, Stumm()).guild_channel_id(GILDE, service.KANAL)
 
 
 def test_eine_unerwartete_antwort_ist_keine_nachrichtenliste(config):

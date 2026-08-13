@@ -78,6 +78,7 @@ def alte_datenbank(tmp_path):
         VALUES ('ollama_url', 'http://alt.example:11434');
         INSERT INTO settings (key, value) VALUES ('ollama_model', 'gemma4:12b');
         INSERT INTO meta (key, value) VALUES ('discord_cursor', '4711');
+        INSERT INTO meta (key, value) VALUES ('foundry_last_error', 'Foundry war aus.');
         """
     )
     connection.commit()
@@ -167,7 +168,9 @@ def test_wanderung_sortiert_die_schluesselraeume(alte_datenbank):
     finally:
         connection.close()
     assert gepflegt == {"foundry_url"}
-    assert merk == {"discord_cursor": "4711"}
+    # Der Zeiger des Briefkastens wandert mit — und fällt gleich danach weg, weil er auf
+    # eine fremde Gilde gezeigt haben kann (#192). Ein eigener Test hält das fest.
+    assert merk == {"foundry_last_error": "Foundry war aus."}
 
 
 def test_wanderung_ist_idempotent(alte_datenbank):
@@ -178,6 +181,80 @@ def test_wanderung_ist_idempotent(alte_datenbank):
     assert len(runden.alle(alte_datenbank)) == 1
     assert len(notes.sessions(runde)) == 1
     assert db.current_schema_version(alte_datenbank) == db.SCHEMA_VERSION
+
+
+def _zeiger_setzen(runde, wert):
+    scope = db.scoped(runde)
+    try:
+        with scope:
+            scope.execute(
+                "INSERT INTO runde_meta (runde_id, key, value) VALUES (?, ?, ?) "
+                "ON CONFLICT (runde_id, key) DO UPDATE SET value = excluded.value",
+                (scope.runde_id, db.BRIEFKASTEN_ZEIGER, wert),
+            )
+    finally:
+        scope.close()
+
+
+def _zeiger(pfad):
+    connection = db.connect(pfad)
+    try:
+        return {
+            zeile["runde_id"]: zeile["value"]
+            for zeile in connection.execute(
+                "SELECT runde_id, value FROM runde_meta WHERE key = ?", (db.BRIEFKASTEN_ZEIGER,)
+            )
+        }
+    finally:
+        connection.close()
+
+
+def _stand_setzen(pfad, stand):
+    """Der Schema-Stand einer laufenden Instanz von vorher — die Wanderung liest ihn."""
+    connection = db.connect(pfad)
+    try:
+        with connection:
+            connection.execute(
+                "UPDATE meta SET value = ? WHERE key = 'schema_version'", (str(stand),)
+            )
+    finally:
+        connection.close()
+
+
+def test_der_briefkastenzeiger_faellt_einmal_weg(tmp_path):
+    """Ein Zeiger aus der Zeit vor #192 kann in eine fremde Gilde zeigen.
+
+    Discord-Kennungen tragen ihre Zeit in sich: ein junger Zeiger aus einem fremden
+    Briefkasten hielte nach der Berichtigung alle eigenen Einwürfe für schon gelesen, und
+    die Runde bekäme ihren eigenen Kanal nie zu sehen. Er fällt deshalb einmal weg.
+
+    Ohne den Aufruf in ``init`` bliebe die Suite grün — jeder Test beginnt bei einer
+    frischen Datenbank, und die hat nie einen Zeiger von vorher (#195).
+    """
+    pfad = tmp_path / "chronicle.sqlite3"
+    db.init(pfad)
+    eine = runden.erste(pfad)
+    andere = runden.anlegen(pfad, "Die Andere", guild_id="4242")
+    _zeiger_setzen(eine, "4711")
+    _zeiger_setzen(andere, "4712")
+    _stand_setzen(pfad, db.ZEIGER_VERWORFEN_AB - 1)
+
+    db.init(pfad)
+
+    assert _zeiger(pfad) == {}
+    assert db.current_schema_version(pfad) == db.SCHEMA_VERSION
+
+
+def test_ein_zeiger_von_danach_bleibt_stehen(tmp_path):
+    """Einmal heißt einmal: ein zweiter Start nimmt einer Runde nicht ihren Stand fort."""
+    pfad = tmp_path / "chronicle.sqlite3"
+    db.init(pfad)
+    eine = runden.erste(pfad)
+    _zeiger_setzen(eine, "4711")
+
+    db.init(pfad)
+
+    assert _zeiger(pfad) == {eine.id: "4711"}
 
 
 def _kennungen_entfernen(pfad):

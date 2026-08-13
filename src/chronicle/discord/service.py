@@ -1,8 +1,16 @@
 """Den Briefkasten leeren: Audio wird Spur, Text wird Notiz, beides quittiert.
 
-Genau **ein** Kanal, nach Namenskonvention ``#diktat``. Autorisierung ist Discords
-eigenes Rechtemodell: wer dort schreiben darf, darf diktieren. Geantwortet wird nur auf
-Nachrichten in diesem Kanal und dort auf jede höchstens einmal.
+Genau **ein** Kanal, nach Namenskonvention ``#diktat`` — und zwar der **in der Gilde
+dieser Runde**. Autorisierung ist Discords eigenes Rechtemodell: wer dort schreiben darf,
+darf diktieren. Geantwortet wird nur auf Nachrichten in diesem Kanal und dort auf jede
+höchstens einmal.
+
+Dass die Gilde dazugehört, ist der Punkt und keine Genauigkeit nebenbei (#192): »diktat«
+heißt in jeder zweiten Gilde ein Kanal, und eine Suche über alle Gilden des Bots fand die
+erstbeste. Bei mehreren Runden auf einer Instanz las damit **jede** denselben Briefkasten
+— fremdes gesprochenes und geschriebenes Wort landete in einer Chronik, in die es nicht
+gehört, und der Zeiger der lesenden Runde rückte über Nachrichten, die ihr nicht gehören.
+Eine Runde ohne Gilde hat keinen Briefkasten; dort wird nicht geraten, sondern gesagt.
 
 Ein zweiter Lauf darf nichts verdoppeln. Dafür stehen zwei Dinge in der Datenbank: der
 **Zeiger** auf die zuletzt abgeholte Nachricht — er spart das erneute Holen — und die
@@ -45,7 +53,14 @@ OHNE_SITZUNG = "Noch keine Sitzung angelegt — das Diktat wartet, bis es eine g
 ZU_GROSS = "»{name}« ist größer als {grenze} MB und bleibt liegen."
 
 NICHT_EINGERICHTET = "Kein Bot-Token — der Diktat-Kanal ist nicht eingerichtet."
-KEIN_KANAL = f"Kein Kanal #{KANAL} — der Bot sieht ihn nicht, oder er heißt anders."
+# Die Gilde steht bewusst nicht drin: sie sagt der Gruppe nichts, und die Kennung einer
+# fremden wäre das eine, was hier nicht hinausgehen soll. Ins Log gehört sie, dorthin
+# sieht der Betreiber.
+KEIN_KANAL = f"Kein Kanal #{KANAL} in eurer Gilde — der Bot sieht ihn nicht, oder er heißt anders."
+OHNE_GILDE = (
+    f"Diese Runde hängt an keiner Discord-Gilde — einen Briefkasten #{KANAL} hat sie damit "
+    "nirgends. Richte sie mit `/setup` in eurer Gilde ein."
+)
 LEER = "Nichts im Briefkasten."
 
 
@@ -188,9 +203,21 @@ def run(config: Config, runde: Runde, *, client: DiscordClient | None = None) ->
     if not zugang.discord_configured:
         return (NICHT_EINGERICHTET,)
 
+    if not runde.guild_id:
+        logger.warning(
+            "Runde %s hängt an keiner Gilde — der Briefkasten wird nicht geleert.", runde.id
+        )
+        return (OHNE_GILDE,)
+
     bot = client if client is not None else DiscordClient(zugang)
-    kanal = bot.channel_id(KANAL)
+    kanal = bot.guild_channel_id(runde.guild_id, KANAL)
     if kanal is None:
+        logger.warning(
+            "Kein Kanal #%s in Gilde %s — der Briefkasten der Runde %s bleibt zu.",
+            KANAL,
+            runde.guild_id,
+            runde.id,
+        )
         return (KEIN_KANAL,)
 
     abgeholt = cursor(runde)
