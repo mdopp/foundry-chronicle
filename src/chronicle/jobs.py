@@ -5,18 +5,31 @@ deshalb dem Server und nicht dem Browser: das Absenden legt die Zeile an und keh
 zurück, ein Neuladen der Seite liest denselben Zustand wieder, und das Schließen des
 Reiters hält nichts an.
 
-Getragen wird der Lauf von einem Faden im Web-Prozess. Das reicht hier: es läuft je Art
-höchstens einer, der Prozess ist einer (``waitress`` bedient mehrere Fäden aus einem
-Prozess), und der Zustand steht ohnehin in der SQLite und nicht im Speicher. Ein eigener
-Arbeiterprozess wäre eine zweite Betriebseinheit für zwei Knöpfe.
+Getragen wird der Lauf von einem Faden — im Webdienst oder im Aufnahme-Bot, je nachdem,
+wer angestoßen hat. Der Zustand steht ohnehin in der SQLite und nicht im Speicher.
 
 Zwei gleichzeitige Läufe derselben Art gibt es nicht: sie schrieben dieselben Zeilen, und
 die zweite Chronik überschriebe die erste mitten im Satz. Ein zweiter Anstoß bekommt
 deshalb den laufenden zurück.
 
 Stirbt der Prozess mitten im Lauf, bleibt die Zeile auf ``laeuft`` stehen. Beim nächsten
-Blick wird sie ehrlich als unterbrochen vermerkt statt für immer zu laufen — welche Läufe
-wirklich noch laufen, weiß dieser Prozess, und er ist der einzige, der Zeilen anlegt.
+Blick wird sie ehrlich als unterbrochen vermerkt statt für immer zu laufen. Welcher das
+ist, steht in der Zeile und nicht im Speicher eines Prozesses: **die ausgelieferte
+Vorlage stellt zwei Container auf dieselbe Datei** — die Seite mit dem nächtlichen Lauf
+und ``python -m chronicle.bot``. Beide legen Zeilen an, und keiner sieht die Merkliste
+des anderen. Die frühere Annahme »Zeilen legt nur der Web-Prozess an« machte aus jedem
+laufenden Lauf des einen einen »unterbrochenen« im Auge des anderen (#178).
+
+Getragen wird die Unterscheidung von zwei Spalten. ``besitzer`` ist ein Zufallswert je
+Prozess**start** — nicht die Prozess-Id, denn die vergibt die Box nach einem Neustart
+wieder, und ein Neustart ist genau der Fall, um den es geht. ``herzschlag`` ist das
+Lebenszeichen, das der laufende Auftrag alle ``HERZSCHLAG`` Sekunden in seine eigene
+Zeile schreibt. Damit sagt jede ``laeuft``-Zeile von selbst, was sie ist: meine und noch
+in der Merkliste (läuft), meine und nicht mehr darin (verloren), eine fremde mit frischem
+Lebenszeichen (läuft anderswo) oder eine fremde, die seit ``VERSTUMMT`` schweigt
+(abgestürzt). Der Preis ist, dass ein wirklich abgestürzter fremder Lauf die Maschine
+noch anderthalb Minuten hält — deutlich billiger als der Satz, der Dienst sei neu
+gestartet, während der Lauf in voller Fahrt ist.
 
 Die Stapel-Einstiege (``python -m chronicle.compose`` und Geschwister) rufen dieselben
 Funktionen auf. Ein Knopf ist der zweite Auslöser, nicht der zweite Weg.
@@ -29,8 +42,9 @@ import sqlite3
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from uuid import uuid4
 
 from chronicle import db, lebenszyklus, recordings, register
 from chronicle.compose.service import compose_session, erzaehlen, recap_session
@@ -57,6 +71,16 @@ GESCHEITERT = "gescheitert"
 # muss, bis kein Lauf mehr nebenher zu Ende geht.
 FADEN = "chronicle-lauf-"
 
+# Der Faden, der für einen laufenden Auftrag das Lebenszeichen schreibt.
+PULS = "chronicle-puls-"
+
+# Wie oft ein laufender Auftrag sein Lebenszeichen in die eigene Zeile schreibt, und wie
+# lange ein fremder Prozess darauf wartet, bevor er die Zeile für verwaist hält. Der
+# Abstand ist mit Absicht groß: eine kurze Lastspitze oder ein hängender SQLite-Schreiber
+# darf keinen laufenden Lauf als abgestürzt erscheinen lassen.
+HERZSCHLAG = 20.0
+VERSTUMMT = timedelta(seconds=90)
+
 UNTERBROCHEN = (
     "Der Lauf wurde unterbrochen, weil der Dienst zwischendurch neu gestartet ist. "
     "Einfach noch einmal anstoßen."
@@ -66,7 +90,19 @@ OHNE_SITZUNG = "Diese Sitzung gibt es nicht mehr."
 
 OHNE_BEREICH = "In diesem Bereich liegt keine Sitzung mehr — nachzuerzählen gibt es nichts."
 
-BELEGT = "Eine andere Runde ist gerade dran — der Lauf beginnt, sobald sie durch ist."
+# Es gibt keine Warteschlange, und der Satz verspricht auch keine mehr: ``start`` legt in
+# diesem Fall **keine** Zeile an und merkt sich nichts. Wer wartet, wartet auf nichts —
+# deshalb steht hier, was wirklich zu tun ist (#179). Und wer im Weg steht, ist oft die
+# eigene Runde mit einem Lauf anderer Art; »eine andere Runde« war dann schlicht falsch.
+BELEGT = (
+    "Eine andere Runde ist gerade an der Maschine. Der Lauf beginnt nicht von allein — "
+    "bitte später noch einmal anstoßen."
+)
+
+BELEGT_EIGEN = (
+    "In dieser Runde läuft gerade schon ein anderer Lauf. Der neue beginnt nicht von "
+    "allein — bitte anstoßen, sobald der erste durch ist."
+)
 
 NICHT_DURCHGEKOMMEN = "Der Lauf ist nicht durchgekommen: {grund}"
 
@@ -76,9 +112,14 @@ STEHT_OHNE_MODELL = (
 )
 VERSCHRIFTET = "{anzahl} Aufnahme{mehr} verschriftet. "
 
-# Welche Läufe in diesem Prozess noch laufen. Zeilen legt nur der Web-Prozess an, und den
-# gibt es einmal — eine ``laeuft``-Zeile, die hier fehlt, hat also einen Neustart nicht
-# überlebt.
+# Wer dieser Prozess ist — für die Dauer genau eines Starts. Ein Zufallswert und nicht
+# die Prozess-Id: die vergibt die Box nach einem Neustart wieder, und dann hielte der
+# neue Prozess die Zeilen des alten für seine eigenen.
+_ICH = uuid4().hex
+
+# Welche Läufe in **diesem** Prozess noch laufen. Was hier steht, läuft; was fehlt und uns
+# gehört, hat einen Neustart nicht überlebt. Über fremde Zeilen sagt diese Liste nichts —
+# dafür ist der Herzschlag da.
 _laufend: set[int] = set()
 _schloss = threading.RLock()
 
@@ -116,6 +157,11 @@ def _now() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds")
 
 
+def _lebenszeichen() -> str:
+    """Feiner als ``_now``: zwei Schläge dürfen sich nicht auf dieselbe Sekunde runden."""
+    return datetime.now(UTC).isoformat(timespec="milliseconds")
+
+
 def _job(row: sqlite3.Row) -> Job:
     return Job(
         id=row["id"],
@@ -130,15 +176,38 @@ def _job(row: sqlite3.Row) -> Job:
     )
 
 
-# Bewusst über alle Runden: dass ein Lauf abgestürzt ist, weiß dieser Prozess an seiner
-# Merkliste und nicht an einer Runde. Eine stehengebliebene ``laeuft``-Zeile einer fremden
-# Runde blockierte sonst die Maschine für alle.
+def _verwaist(zeile: sqlite3.Row, grenze: datetime) -> bool:
+    """Gehört diese ``laeuft``-Zeile niemandem mehr?
+
+    Die drei Fälle in der Reihenfolge, in der sie sich sicher entscheiden lassen: was in
+    der eigenen Merkliste steht, läuft hier und jetzt. Was uns gehört und **nicht** darin
+    steht, hat einen Neustart nicht überlebt — der Zufallswert in ``besitzer`` stammt
+    dann noch von dieser Prozess-Inkarnation, kann es aber nicht, also ist es ein Rest.
+    Alles übrige gehört einem anderen Prozess, und über den entscheidet allein sein
+    Lebenszeichen. Eine Zeile ohne beides ist von vor dieser Spalte und damit alt.
+    """
+    if int(zeile["id"]) in _laufend:
+        return False
+    if zeile["besitzer"] == _ICH:
+        return True
+    herzschlag = zeile["herzschlag"]
+    if not herzschlag:
+        return True
+    return datetime.fromisoformat(herzschlag) < grenze
+
+
+# Bewusst über alle Runden: ob ein Lauf abgestürzt ist, hängt am Prozess und nicht an
+# einer Runde. Eine stehengebliebene ``laeuft``-Zeile einer fremden Runde blockierte sonst
+# die Maschine für alle.
 def _aufraeumen(database_path: Path) -> None:
     connection = db.connect(database_path)
     try:
         with _schloss:
-            offen = connection.execute("SELECT id FROM job WHERE state = ?", (LAEUFT,)).fetchall()
-            verwaist = [int(zeile["id"]) for zeile in offen if int(zeile["id"]) not in _laufend]
+            offen = connection.execute(
+                "SELECT id, besitzer, herzschlag FROM job WHERE state = ?", (LAEUFT,)
+            ).fetchall()
+            grenze = datetime.now(UTC) - VERSTUMMT
+            verwaist = [int(zeile["id"]) for zeile in offen if _verwaist(zeile, grenze)]
             if not verwaist:
                 return
             zeitpunkt = _now()
@@ -204,7 +273,9 @@ def start(
     Läuft in dieser Runde schon einer derselben Art, kommt der zurück — ein zweiter Klick
     ist keine zweite Chronik. Läuft irgendwo sonst einer, beginnt hier keiner: es gibt eine
     CPU und ein Ollama, und zwei Läufe nebeneinander machen beide langsam. Der Aufrufer
-    bekommt dann ``None`` und sagt es ehrlich statt eine Warteschlange zu erfinden.
+    bekommt dann ``None``, holt sich mit ``belegt`` den passenden Satz und sagt es ehrlich
+    statt eine Warteschlange zu erfinden — es wird hier **nichts** gemerkt und nichts
+    nachgeholt.
     """
     _aufraeumen(config.database_path)
     connection = db.connect(config.database_path)
@@ -219,9 +290,17 @@ def start(
             zeitpunkt = _now()
             with connection:
                 zeiger = connection.execute(
-                    "INSERT INTO job (runde_id, kind, session_id, state, started_at) "
-                    "VALUES (?, ?, ?, ?, ?)",
-                    (runde.id, kind, session_id, LAEUFT, zeitpunkt),
+                    "INSERT INTO job (runde_id, kind, session_id, state, started_at, "
+                    "besitzer, herzschlag) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        runde.id,
+                        kind,
+                        session_id,
+                        LAEUFT,
+                        zeitpunkt,
+                        _ICH,
+                        _lebenszeichen(),
+                    ),
                 )
             job_id = int(zeiger.lastrowid)
             _laufend.add(job_id)
@@ -242,6 +321,37 @@ def start(
         state=LAEUFT,
         started_at=zeitpunkt,
     )
+
+
+def belegt(runde: Runde) -> str:
+    """Warum hier gerade kein Lauf begann — im Wortlaut für den, der angestoßen hat.
+
+    Der Unterschied ist keine Feinheit: die eigene Runde blockiert sich häufig selbst, ein
+    laufender ``abgleich`` etwa den Abschluss. »Eine andere Runde« zu melden schickt die
+    Gruppe dann auf die Suche nach einer fremden Gruppe, die es nicht gibt.
+    """
+    return BELEGT_EIGEN if running(runde) else BELEGT
+
+
+def _pulsen(database_path: Path, job_id: int, halt: threading.Event) -> None:
+    """Das Lebenszeichen des laufenden Auftrags — in einem eigenen Faden.
+
+    Nicht im Arbeitsfaden: der steckt stundenlang in einer Verschriftung, und genau
+    währenddessen muss der Nachbarprozess sehen, dass hier noch jemand atmet.
+    """
+    while not halt.wait(HERZSCHLAG):
+        connection = db.connect(database_path)
+        try:
+            with connection:
+                connection.execute(
+                    "UPDATE job SET herzschlag = ? WHERE id = ?", (_lebenszeichen(), job_id)
+                )
+        # Ein verpasster Schlag darf den Lauf nicht mitnehmen; bis ``VERSTUMMT`` bleibt
+        # Platz für mehrere.
+        except Exception as fehler:  # noqa: BLE001
+            logger.warning("Lebenszeichen für Lauf %s nicht geschrieben: %s", job_id, fehler)
+        finally:
+            connection.close()
 
 
 def _abschliessen(
@@ -268,6 +378,13 @@ def _abschliessen(
 
 
 def _ausfuehren(config: Config, job_id: int, runner: Callable[[], str]) -> None:
+    halt = threading.Event()
+    threading.Thread(
+        target=_pulsen,
+        args=(config.database_path, job_id, halt),
+        name=f"{PULS}{job_id}",
+        daemon=True,
+    ).start()
     try:
         meldung = runner()
     except JobError as fehler:
@@ -284,6 +401,8 @@ def _ausfuehren(config: Config, job_id: int, runner: Callable[[], str]) -> None:
         )
     else:
         _abschliessen(config.database_path, job_id, FERTIG, result=meldung)
+    finally:
+        halt.set()
 
 
 def abgleich(config: Config, runde: Runde, *, passwort: str | None = None) -> str:

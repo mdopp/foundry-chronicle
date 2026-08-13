@@ -735,7 +735,7 @@ def nacherzaehlung_starten(
         ),
     )
     if auftrag is None:
-        return jobs.BELEGT
+        return jobs.belegt(runde)
     return ERZAEHLT.format(von=erste.played_on, bis=letzte.played_on)
 
 
@@ -770,7 +770,7 @@ def abgleich_starten(
         jobs.ABGLEICH,
         _mit_meldung(lambda: jobs.abgleich(config, runde, passwort=passwort), melden),
     )
-    return ABGLEICH if auftrag is not None else jobs.BELEGT
+    return ABGLEICH if auftrag is not None else jobs.belegt(runde)
 
 
 def abschluss_starten(
@@ -808,4 +808,4 @@ def abschluss_starten(
         _mit_meldung(lambda: jobs.abschluss(config, runde, session_id, passwort=passwort), melden),
         session_id=session_id,
     )
-    return abschlussmeldung(runde, session_id) if auftrag is not None else jobs.BELEGT
+    return abschlussmeldung(runde, session_id) if auftrag is not None else jobs.belegt(runde)

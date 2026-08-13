@@ -331,6 +331,7 @@ ABFRAGEN = {
     "consent.for_session": lambda c, r, i: consent.for_session(r, i["sitzung"]),
     "jobs.latest": lambda c, r, i: jobs.latest(r, jobs.NACHTLAUF),
     "jobs.running": lambda c, r, i: jobs.running(r),
+    "jobs.belegt": lambda c, r, i: jobs.belegt(r),
     "jobs.mehrzahl": lambda c, r, i: jobs.mehrzahl(2),
     "nightly.offen": lambda c, r, i: nightly.offen(r),
     "nightly.letzter": lambda c, r, i: nightly.letzter(r),
