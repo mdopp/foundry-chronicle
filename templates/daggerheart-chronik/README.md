@@ -143,9 +143,26 @@ vorher. Gelöscht wird dabei nur die Audiodatei — die Zeile in der SQLite blei
 ## Rollout
 
 Das Image wird von der CI des Repos nach GHCR veröffentlicht, und zwar erst, wenn die
-Tests grün sind. Für einen Rollout `CHRONICLE_IMAGE_TAG` auf einen festen Tag setzen —
-`sha-<kurz>` oder die Release-Version —, dann pullen, dann neu starten und danach den
-laufenden Digest gegen den erwarteten prüfen.
+Tests grün sind. Für einen Rollout `CHRONICLE_IMAGE_TAG` auf einen festen Tag setzen,
+dann pullen, dann neu starten und danach den laufenden Digest gegen den erwarteten
+prüfen. Welcher Tag das ist, sagt das Repo:
+
+```
+python scripts/bestimme_image_tag.py              # sha-1234567 — der aktuelle Stand
+python scripts/bestimme_image_tag.py --zurueck 1  # der Stand davor — der Weg zurück
+```
+
+**Abgeleitet und nicht abgetippt**, weil `sha-` plus die Kurzform von `HEAD` regelmäßig
+danebengreift: `build-images.yml` ist pfadgefiltert, ein reiner Doku- oder
+Template-Commit veröffentlicht kein Image. Das Skript geht deshalb bis zum jüngsten
+Commit zurück, der wirklich einen Bau ausgelöst hat.
+
+**`latest` ist keine Einstellung, sondern eine fehlende.** Damit gibt es keinen Tag, der
+den Stand von vorgestern benennt — ein misslungenes Rollout wäre nur über einen Revert
+auf `main` und einen neuen Bau zu heilen. Mit einem festen Tag ist der Weg zurück eine
+Zeile im Spec: `--zurueck 1` fragen, eintragen, neu starten. Dass `AutoUpdate=registry`
+bei diesem Dienst ohnehin nicht greift, kommt dazu — mit `latest` liest niemand am Spec
+ab, welcher Stand läuft.
 
 Nach dem Deploy gehört zur Abnahme:
 

@@ -106,6 +106,16 @@ def test_der_aufnahme_bot_laeuft_als_zweiter_container(manifest: dict) -> None:
     assert "ports" not in container["bot"]
 
 
+def test_das_image_wird_nicht_fest_verdrahtet(rohtext: str) -> None:
+    # Der Tag gehört an die Variable, damit ein Rollout einen festen Stand ansteuern kann
+    # (#173). Ein hart eingetragenes ':latest' im Manifest nähme genau das wieder weg —
+    # und mit ihm den Weg zurück, denn 'latest' benennt keinen früheren Stand.
+    assert (
+        re.findall(r"^\s*image: \S+:(\S+)$", rohtext, re.MULTILINE)
+        == ["{{CHRONICLE_IMAGE_TAG}}"] * 2
+    )
+
+
 def test_keine_wirkungslose_karten_durchreichung(manifest: dict) -> None:
     # ``podman kube play`` (5.8.2) verwirft ``resources.limits`` für eine Pod-Spezifikation
     # still — der Pod startet ohne Karte, ohne dass etwas fehlschlägt (servicebay#2517).
