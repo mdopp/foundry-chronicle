@@ -1728,6 +1728,9 @@ def _einleseansicht(config: Config, runde, abende):
     zweiter Klick gar nicht erst hier ankommt. Die Löschansicht braucht das nicht, weil die
     gelöschte Runde jeden weiteren Klick von selbst ins Leere laufen lässt; hier bleibt die
     Runde stehen, also muss der Knopf es selbst tun.
+
+    Gerechnet wird auch das Recht, und nicht nur am Befehl: die Vorschau steht als Nachricht
+    da, und klicken könnte jeder, der sie sieht.
     """
     discord = _discord()
 
@@ -1738,6 +1741,9 @@ def _einleseansicht(config: Config, runde, abende):
 
     @_geklickt
     async def bestaetigt(interaction) -> None:
+        if not _darf_loeschen(getattr(interaction, "user", None)):
+            await interaction.response.edit_message(content=einrichten.NUR_ADMIN, view=None)
+            return
         gemeint = await _noch_dieselbe(config, interaction, runde)
         if gemeint is None:
             return
@@ -2313,10 +2319,26 @@ def baue(config: Config):
     ) -> None:
         """Im Kanal der Runde und nicht im Thread: ein Dokument deckt mehrere Abende ab.
 
+        **Die Schranke ist die des Löschens** (Betreiber-Entscheidung, 2026-08-13). Es geht
+        dabei nicht um die Menge — dass ein Dokument fünfzehn Abende trägt, ist der
+        auffällige, aber nicht der tragende Grund. Tragend ist: wer die Chronik einer
+        Kampagne rückwirkend umschreibt, greift genauso tief in sie ein wie wer sie
+        fortnimmt, und rückgängig gibt es das nur einzeln, Sitzung für Sitzung. Ein
+        Eingriff in die Vergangenheit einer Kampagne verdient deshalb dieselbe Schwelle
+        wie ihre Zerstörung.
+
+        Die Vorschau darunter ersetzt sie nicht: sie fängt das **Versehen** ab — ohne
+        Bestätigung entsteht nichts —, aber nicht die **Absicht**. Genau diese
+        Unterscheidung hat schon bei #171 die Schranke bestimmt.
+
         Angelegt wird hier noch nichts — der Befehl antwortet mit der Vorschau und einem
         Knopf darunter. Aufgeschoben wird davor: das Herunterladen der Datei geht ans Netz,
         und die drei Sekunden, die Discord der ersten Antwort lässt, reichen dafür nicht.
+        Gerechnet wird noch einmal am Knopf.
         """
+        if not _darf_loeschen(getattr(ctx, "author", None)):
+            await _zustellen(ctx.respond, einrichten.NUR_ADMIN, ephemeral=True)
+            return
         runde = chronik.runde_verlangen(config, ctx.guild_id)
         await ctx.defer(ephemeral=True)
         vorschau = await chronik.dokument_vorschau(runde, _notizdatei(datei))
