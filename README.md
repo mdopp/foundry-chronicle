@@ -348,7 +348,12 @@ einem einfällt — geholt wird, wenn der Dienst das nächste Mal läuft.
 python -m chronicle.discord     # den Kanal #diktat leeren — vor der Transkription
 ```
 
-Der Bot liest **genau einen** Kanal, nach Namenskonvention `#diktat`. Eine Sprachnachricht
+Der Bot liest **genau einen** Kanal, nach Namenskonvention `#diktat` — und zwar den **in
+der Gilde dieser Runde**. Gesucht wird nie darüber hinaus: »diktat« heißt in jeder zweiten
+Gilde ein Kanal, und ein Einwurf aus einer fremden würde verschriftet und stünde danach in
+einer Chronik, in die er nicht gehört ([#192](../../issues/192)). Eine Runde ohne Gilde hat
+damit keinen Briefkasten; sie bekommt keinen geliehen, sondern eine Meldung. Eine
+Sprachnachricht
 dort reiht sich in dieselbe Warteschlange ein wie ein Upload; eine Textnachricht wird zur
 Notiz der zuletzt angelegten Sitzung. Beides quittiert der Bot mit ✅ und **einer** Antwort;
 was weder Audio noch Text ist, bekommt ein ⚠ und bleibt liegen. Gibt es noch keine Sitzung,

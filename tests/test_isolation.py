@@ -53,6 +53,7 @@ from chronicle.config import Config
 from chronicle.discord import ausgabe as discord_ausgabe
 from chronicle.discord import rueckblick as discord_rueckblick
 from chronicle.discord import service as discord_service
+from chronicle.discord.client import Message
 from chronicle.foundry import service as foundry_service
 from chronicle.foundry import store as foundry_store
 from chronicle.foundry.model import Character, ChatMessage, Player, Scene, WorldSnapshot
@@ -1135,3 +1136,66 @@ def test_der_rueckblick_erreicht_keinen_kanal_einer_fremden_gilde(zwei_runden):
 
     assert bot.gepostet == ["kanal-von-b"]
     assert not eigen.gescheitert
+
+
+def test_der_briefkasten_wird_nicht_in_einer_fremden_gilde_geleert(zwei_runden):
+    """Die Gegenrichtung dazu, und die schwerere (#192).
+
+    Beide Gilden haben einen Kanal namens »diktat« — gleichnamig ist Absicht, wie überall
+    hier. Eine Suche über alle Gilden fände die erstbeste, und was darin liegt, bliebe
+    nicht bloß am falschen Ort liegen: es würde verschriftet und stünde danach als Notiz
+    in der Chronik einer Gruppe, die es nie gesprochen hat.
+
+    Und die Runde ohne Gilde — die aus der Zeit der Weboberfläche — bekommt keinen
+    Briefkasten geliehen: geraten wäre hier genau derselbe Griff in eine fremde Gilde.
+    """
+    config, a, b, _ids = zwei_runden
+    settings.save(b, {"discord_bot_token": "platzhalter-token"})
+    fremd = "Die Nachbarn sprachen über ihren eigenen Keller."
+
+    class ZweiBriefkaesten:
+        """Zwei Gilden, in beiden ein »diktat«; nur einer gehört dieser Runde."""
+
+        kanaele = {"gilde-a": "briefkasten-der-fremden", "gilde-b": "briefkasten-von-b"}
+        einwuerfe = {
+            "briefkasten-der-fremden": (Message(id="200", content=fremd, from_bot=False),),
+            "briefkasten-von-b": (
+                Message(id="100", content="Der Keller war eine Falle.", from_bot=False),
+            ),
+        }
+
+        def __init__(self):
+            self.gelesen = []
+
+        def guild_channel_id(self, guild_id, kanal):
+            kennung = self.kanaele.get(guild_id)
+            if kennung is None:
+                return None
+            return kennung if kanal in (kennung, discord_service.KANAL) else None
+
+        def messages(self, kanal, *, after=None, limit=100):
+            self.gelesen.append(kanal)
+            return self.einwuerfe.get(kanal, ())
+
+        def react(self, kanal, message_id, emoji):
+            return None
+
+        def reply(self, kanal, message_id, text):
+            return None
+
+    bot = ZweiBriefkaesten()
+    assert discord_service.run(config, a, client=bot) == (discord_service.OHNE_GILDE,)
+    assert bot.gelesen == []
+
+    discord_service.run(config, b, client=bot)
+
+    assert bot.gelesen == ["briefkasten-von-b"]
+    assert discord_service.cursor(b) == "100"
+    texte = [
+        eintrag.text
+        for sitzung in notes.sessions(b)
+        for szene in notes.session(b, sitzung.id).scenes
+        for eintrag in szene.notes
+    ]
+    assert "Der Keller war eine Falle." in texte
+    assert fremd not in texte
