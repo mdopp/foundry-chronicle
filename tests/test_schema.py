@@ -238,6 +238,42 @@ def test_ein_archiv_von_vor_der_testweltspalte_gilt_als_echt(tmp_path):
     assert db.current_schema_version(pfad) == db.SCHEMA_VERSION
 
 
+def test_eine_sitzung_von_vor_der_kennung_bekommt_die_spalte_und_ihren_wert(tmp_path):
+    """``CREATE TABLE IF NOT EXISTS`` erreicht eine bestehende Tabelle nicht — ohne den
+    Eintrag in ``NACHGETRAGEN`` stünde die laufende Instanz nach dem Aufspielen ohne die
+    Spalte da, und schon ``notes.sessions`` fiele über sie. Der Wert muss mitkommen: eine
+    Sitzung ohne Kennung ist über ``/chronik sitzung-loeschen`` nicht mehr erreichbar.
+    """
+    pfad = tmp_path / "alt.sqlite3"
+    verbindung = db.connect(pfad)
+    try:
+        with verbindung:
+            verbindung.execute(
+                "CREATE TABLE session (id INTEGER PRIMARY KEY, runde_id INTEGER NOT NULL, "
+                "played_on TEXT NOT NULL, title TEXT, created_at TEXT NOT NULL, "
+                "thread_id TEXT, UNIQUE (id, runde_id))"
+            )
+            verbindung.executemany(
+                "INSERT INTO session (id, runde_id, played_on, created_at) VALUES (?, 1, ?, ?)",
+                ((1, "2026-05-01", STAND), (2, "2026-05-08", SPAETER)),
+            )
+    finally:
+        verbindung.close()
+
+    db.init(pfad)
+
+    verbindung = db.connect(pfad)
+    try:
+        kennungen = [
+            zeile["token"] for zeile in verbindung.execute("SELECT token FROM session ORDER BY id")
+        ]
+    finally:
+        verbindung.close()
+    assert all(kennungen)
+    assert len(set(kennungen)) == 2
+    assert db.current_schema_version(pfad) == db.SCHEMA_VERSION
+
+
 def test_eine_datenbank_ohne_die_neue_laufart_bekommt_sie_nachgetragen(tmp_path):
     """``CHECK (kind IN …)`` steht im ``CREATE TABLE`` und wandert mit keinem ``ALTER`` mit.
 
