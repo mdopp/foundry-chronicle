@@ -26,6 +26,15 @@ Name (#76, Betreiber-Entscheidung vom 2026-08-12 — Gleichheit ist ein Beleg, k
 Vermutung). Sonst steht der Discord-Name da — nie ein Vorschlag, nie ein geratener Name,
 und nie eine Ähnlichkeit.
 
+**``marke_ms``, ``span``, ``note_text`` und ``LEERE_SPANNE`` haben seit #157 keinen
+Aufrufer in ``src/``** — sie trugen den Handschnitt der Weboberfläche, mit dem ein
+Abschnitt zwischen zwei Zeitmarken von Hand in eine Szene gelegt wurde. Sie stehen hier
+absichtlich weiter: der Handschnitt kommt wieder, wenn das Produkt ausgebaut wird
+(Betreiber-Entscheidung 2026-08-13 zu #163 — erst muss sich zeigen, wie oft die
+automatische Verteilung danebenliegt). Bis dahin halten die Tests sie ehrlich. Wer hier
+aufräumt, entfernt keine vergessene Leiche, sondern eine Vorhaltung — und sollte vorher
+#163 lesen.
+
 Was hier herauskommt, geht als **Notiz** in eine Szene: dieselbe Form, die die Eingabe am
 Tisch liefert. Damit bleibt die Komposition unverändert und es gibt weiterhin eine
 Pipeline.
