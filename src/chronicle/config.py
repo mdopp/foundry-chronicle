@@ -32,6 +32,12 @@ FOUNDRY_FELDER = ("die Adresse", "der Benutzer")
 
 REMOTE_USER_VARIABLE = "CHRONICLE_REQUIRE_REMOTE_USER"
 
+# Wessen ``Remote-User``/``Remote-Groups`` geglaubt wird (#190). Leer heißt: diese
+# Maschine selbst, errechnet statt abgeschrieben — die Box hängt an DHCP. Gesetzt ersetzt
+# der Wert die errechnete Antwort; das ist der Weg zurück, wenn der Proxy einmal woanders
+# steht. Siehe ``chronicle.herkunft``.
+TRUSTED_PROXIES_VARIABLE = "CHRONICLE_TRUSTED_PROXIES"
+
 # Der Box-Standard: unser Pod läuft im Host-Netz, Ollama hört daneben auf 11434. Er steht
 # hier und nirgends sonst — Oberfläche, Einrichtung und Komposition fragen denselben Wert,
 # sonst verspräche die Seite eine Adresse, gegen die der Lauf nicht redet.
@@ -66,6 +72,10 @@ def _value(env: Mapping[str, str], name: str) -> str | None:
     return (env.get(name) or "").strip() or None
 
 
+def _liste(env: Mapping[str, str], name: str) -> tuple[str, ...]:
+    return tuple(teil.strip() for teil in (env.get(name) or "").split(",") if teil.strip())
+
+
 def _flag(env: Mapping[str, str], name: str) -> bool:
     return (env.get(name) or "").strip().lower() in ("1", "true", "yes", "on")
 
@@ -85,6 +95,7 @@ class Config:
     whisper_model: str | None = None
     whisper_device: str | None = None
     require_remote_user: bool = False
+    trusted_proxies: tuple[str, ...] = ()
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> Config:
@@ -103,6 +114,7 @@ class Config:
             whisper_model=_value(env, "CHRONICLE_WHISPER_MODEL"),
             whisper_device=_value(env, "CHRONICLE_WHISPER_DEVICE"),
             require_remote_user=_flag(env, REMOTE_USER_VARIABLE),
+            trusted_proxies=_liste(env, TRUSTED_PROXIES_VARIABLE),
         )
 
     @property
@@ -152,5 +164,6 @@ class Config:
             f"recordings_dir={str(self.recordings_dir)!r}, "
             f"whisper_model={self.whisper_model!r}, "
             f"whisper_device={self.whisper_device!r}, "
-            f"require_remote_user={self.require_remote_user!r})"
+            f"require_remote_user={self.require_remote_user!r}, "
+            f"trusted_proxies={self.trusted_proxies!r})"
         )
