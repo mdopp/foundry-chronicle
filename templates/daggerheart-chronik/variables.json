@@ -1,7 +1,7 @@
 {
   "CHRONICLE_PORT": {
     "type": "text",
-    "description": "HTTP-Port auf der Box. Der Dienst bindet 0.0.0.0, damit NPM ihn erreicht; ein Request ohne Remote-User wird mit 403 abgewiesen, ein direkter Zugriff aus dem LAN umgeht die Anmeldung also nicht.",
+    "description": "HTTP-Port auf der Box. Der Dienst bindet 0.0.0.0, damit NPM ihn erreicht — der Port ist damit auch aus dem LAN offen. Dass ein Remote-User-Header da ist, belegt deshalb nichts: den schreibt sich jeder selbst, der den Port erreicht. Geglaubt wird die Anmeldung nur, wenn der Aufruf von dieser Box kommt, wo der Proxy läuft (#190); jeder andere Absender bekommt 403, mit Kopfzeile wie ohne. Steht der Proxy woanders, gehört seine Adresse in CHRONICLE_TRUSTED_PROXIES.",
     "default": "8700"
   },
   "CHRONICLE_IMAGE_TAG": {

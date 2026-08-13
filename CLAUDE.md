@@ -210,9 +210,10 @@ Assists (`get_assist`) lesen. Dieser Abschnitt ist der Extrakt, nicht der Ersatz
   nur, wenn der Aufruf von dieser Maschine kommt** (#190). Die Kopfzeile allein ist kein
   Beleg: sie schreibt sich jeder selbst, der den offenen Port erreicht. »Kein
   LAN-Bypass« hieß bis dahin nur »ohne Kopfzeile kein Zugang«, und der Test dazu prüfte
-  auch nur das; geprüft wird seither der **erfundene** Fall. „Keine Zugriffskontrolle" weiter unten
-  meint Mandantentrennung zwischen Gruppen — nicht die Haustür vor der Betreiber-Seite.
-  Was hinter ihr liegt, sind Instanz-Werte und keine Rechte über fremde Runden (#90).
+  auch nur das; geprüft wird seither der **erfundene** Fall. „Keine Zugriffskontrolle"
+  weiter unten meint Mandantentrennung zwischen Gruppen — nicht die Haustür vor der
+  Betreiber-Seite. Was hinter ihr liegt, sind Instanz-Werte und keine Rechte über fremde
+  Runden (#90).
 - **`/healthz` → 200** ist Test-Seam und Install-Gate der Box.
 - **SQLite läuft im WAL-Modus** — Plattform-Lektion gegen „database is locked".
 - **CI gatet den Image-Publish auf grüne Tests** (`needs: test`); eine CI, die nur

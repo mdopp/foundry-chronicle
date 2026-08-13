@@ -17,9 +17,10 @@ abgewiesen. **Die Kopfzeile allein ist dabei kein Beleg** (#190): der Port liegt
 Host-Netz offen, und wer ihn direkt erreicht, schreibt sie sich selbst hin. Geglaubt
 wird sie — und `Remote-Groups` mit ihr — nur einem Absender, der eine Adresse *dieser
 Maschine* trägt; das ist genau der Proxy, der auf derselben Box läuft. Aus dem übrigen
-LAN kommt niemand mehr an den Bot-Token, auch nicht mit erfundenen Kopfzeilen. Das ist kein Erbstück aus der Zeit der großen Oberfläche: auf dieser Seite
-liegt der Bot-Token, ServiceBay-ADR 0001 gilt für sie also unverändert. Subdomain,
-Proxy-Route und die `auth`-Abhängigkeit bleiben deshalb.
+LAN kommt niemand mehr an den Bot-Token, auch nicht mit erfundenen Kopfzeilen. Das ist
+kein Erbstück aus der Zeit der großen Oberfläche: auf dieser Seite liegt der Bot-Token,
+ServiceBay-ADR 0001 gilt für sie also unverändert. Subdomain, Proxy-Route und die
+`auth`-Abhängigkeit bleiben deshalb.
 
 **Eine Instanz trägt mehrere Runden** (#62). Eine Runde ist eine Discord-Gilde mit eigenem
 Foundry-Zugang; für eine zweite Gruppe wird der Bot in ihren Server eingeladen, nicht der
