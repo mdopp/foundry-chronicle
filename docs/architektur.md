@@ -183,6 +183,14 @@ passiert ist** — und Teile davon nacherzählen können.
   Maschine** kommt, wo der Proxy läuft (#190). Ohne das zweite Stück war die Haustür
   keine: der Port liegt im Host-Netz offen, und die Kopfzeile schreibt sich jeder selbst.
   Sie bleibt in Kraft, weil dort ein Geheimnis liegt.
+- **Dass der Port im Host-Netz liegt, ist eine erklärte Abweichung** von ServiceBays
+  ADR 0007 (#165) und keine Nachlässigkeit: der Dienst spricht die Nachbarn der Box über
+  die Schleife an — Ollama (`127.0.0.1:11434`) schreibt die Chronik, `solaris-tts`
+  (`127.0.0.1:8881`) spricht die Ansage —, und beide binden nur an Loopback. Eine
+  benannte Ausnahme wurde in `mdopp/servicebay#2518` erfragt und verneint. Sie bleibt
+  damit, aber bezahlt: der Türsteher oben ist die Gegenmaßnahme, und die Abweichung fällt,
+  sobald die Nachbarn auch aus einem eigenen Netz-Namensraum erreichbar sind. Das Warum in
+  ganzer Länge steht in `CLAUDE.md` und im Template.
 - Die **Personen-Zuordnung** Discord ↔ Foundry entsteht einmalig, und zwar **beim
   Betreten des Sprachkanals** (#76), damit jede Äußerung von Anfang an einer Figur
   gehört. Ohne Rückfrage gesetzt wird sie nur bei **1:1 gleichem Namen** — der Discord-Name

@@ -76,6 +76,19 @@ def test_healthcheck_zeigt_auf_healthz(manifest: dict, variablen: dict) -> None:
     assert probe["url"] == f"http://localhost:{port}/healthz"
 
 
+def test_das_hostnetz_bleibt_samt_seiner_begruendung(manifest: dict, rohtext: str) -> None:
+    # Erklärte Abweichung von ServiceBay-ADR 0007 (#165): der Dienst erreicht Ollama
+    # (127.0.0.1:11434) und solaris-tts (127.0.0.1:8881) nur über die Schleife der Box,
+    # und beide binden nirgendwo sonst. Wer die Zeile herausnimmt, legt den Dienst still,
+    # ohne dass etwas fehlschlüge — deshalb steht sie hier fest. Die Begründung steht
+    # daneben und nicht nur im Kopf dessen, der sie geschrieben hat: eine Abweichung ohne
+    # erklärten Grund gilt als nicht gemeldet. Ein Umbau ist erlaubt, aber nicht
+    # versehentlich — er ändert diesen Test mit und braucht Verify auf der Box.
+    assert manifest["spec"]["hostNetwork"] is True
+    assert "ADR 0007" in rohtext
+    assert "servicebay#2518" in rohtext
+
+
 def test_erreichbar_ohne_stillen_fehlschlag(manifest: dict) -> None:
     # Der Pod muss hostNetwork sein oder jeder containerPort einen hostPort tragen,
     # sonst ist das Deployment still unerreichbar.
