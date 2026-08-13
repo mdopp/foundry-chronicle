@@ -25,7 +25,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:  # pragma: no cover - nur für die Typprüfung
     from chronicle.runde import Runde
 
-SCHEMA_VERSION = 24
+SCHEMA_VERSION = 25
 
 # Der Name der ersten Runde: die Bestände der Entwicklungs-Instanz wandern hier hinein,
 # und eine frische Datenbank bekommt sie ebenfalls — die Oberfläche braucht bis zu ihrer
@@ -106,6 +106,7 @@ NACHGETRAGEN = (
     ("job", "herzschlag", "TEXT"),
     ("recording", "besitzer", "TEXT"),
     ("recording", "herzschlag", "TEXT"),
+    ("foundry_message", "aus_testwelt", "INTEGER NOT NULL DEFAULT 0"),
 )
 
 # Woran erkannt wird, ob die Prüfbedingung von ``job`` die jüngste Art Lauf schon kennt.

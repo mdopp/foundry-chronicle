@@ -73,9 +73,12 @@ Box-Template setzt keine davon (siehe unten).
 Figuren, 8 Chat-Nachrichten, 32 Szenen —, die der Abgleich durch dieselbe Strecke schickt
 wie eine Antwort vom Server: Berechtigungsfilter, System-Adapter, Zwischenspeicher. Kein
 Netz, kein Passwort, kein zweiter Prozess; damit lässt sich die Instanz auch dann prüfen,
-wenn der Foundry-Server aus ist. Solange sie aktiv ist, sagt das Band auf jeder Seite:
-*Testwelt aktiv — das sind keine echten Kampagnendaten.* Umschalten ersetzt den
-Zwischenspeicher im Ganzen; es gehört der Runde (`settings.save_foundry_quelle`) und steht
+wenn der Foundry-Server aus ist. Solange sie aktiv ist, sagt es jede Meldung des
+Abgleichs: *Testwelt aktiv — das sind keine echten Kampagnendaten.* Umschalten ersetzt
+Konten, Figuren und Szenen im Ganzen — die sind Spiegel; die eingespielten **Chat-Nachrichten
+tragen ihre Herkunft** (`foundry_message.aus_testwelt`) und werden beim Zurückschalten aus
+dem Archiv genommen, denn ein erfundener Wurf, den kein Abgleich mehr zurücknimmt, wäre
+später nicht mehr von einem echten zu unterscheiden. Es gehört der Runde (`settings.save_foundry_quelle`) und steht
 seit [#110](../../issues/110) als Menü unter `/setup` in Discord — nicht als Feld im
 Fenster, denn ein getippter Quellenname ginge beim Vertippen still ins Leere, und die
 falsche Stellung füllt eine Chronik mit erfundenen Zahlen. Der Weg zurück steht daneben:
@@ -107,7 +110,8 @@ Ollama der Box. Offen bleibt dann allein die Modellwahl. Rein aus der Umgebung k
 leer = automatisch, siehe [Transkription](#transkription)) sowie `TTS_URL` — die Adresse
 des Sprachdienstes, der die Ansage spricht (Vorgabe `http://127.0.0.1:8881`, siehe
 [Aufnahme per Discord](#aufnahme-per-discord)). Fehlt die
-Foundry-Konfiguration, startet der Dienst trotzdem und sagt es im Band auf jeder Seite.
+Foundry-Konfiguration, startet der Dienst trotzdem und sagt es dort, wo jemand danach
+fragt: in `/setup` und in der Meldung des Abgleichs.
 
 Ein eigenes Login gibt es nicht: angemeldet wird am Proxy (ServiceBay-ADR 0001), der
 `Remote-User` setzt. Auf der Box gehört deshalb `CHRONICLE_REQUIRE_REMOTE_USER=1` in die

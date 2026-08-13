@@ -139,14 +139,19 @@ def _testwelt(scope: db.Scope, zeitpunkt: str) -> SyncState:
     Gebunden wird die Runde an sie **nicht**: die Testwelt ist keine Kampagne, und eine
     Bindung an sie machte das Zurückschalten auf den echten Server zu einem Weltwechsel,
     den der Abgleich dann verweigern müsste.
+
+    Ihre Nachrichten gehen mit ``testwelt=True`` in den Speicher — dort tragen sie ihre
+    Herkunft und bleiben vom Archiv der Runde getrennt. Gemeldet wird deshalb hier die
+    **Lieferung** und nicht der Bestand: der Satz sagt, was aus der Fixture kam, und
+    zählte sonst die echten Nachrichten der Runde in eine erfundene Welt hinein.
     """
     user_id, raw = testwelt.abzug()
-    store.save(scope, project(raw, user_id, fetched_at=zeitpunkt))
-    snapshot = store.load(scope)
-    logger.info("Testwelt eingespielt: %s", _umfang(snapshot))
+    eingespielt = project(raw, user_id, fetched_at=zeitpunkt)
+    store.save(scope, eingespielt, testwelt=True)
+    logger.info("Testwelt eingespielt: %s", _umfang(eingespielt))
     return SyncState(
-        message=TESTWELT_STAND.format(hinweis=testwelt.HINWEIS, umfang=_umfang(snapshot)),
-        snapshot=snapshot,
+        message=TESTWELT_STAND.format(hinweis=testwelt.HINWEIS, umfang=_umfang(eingespielt)),
+        snapshot=store.load(scope),
     )
 
 

@@ -100,6 +100,12 @@ CREATE TABLE IF NOT EXISTS foundry_scene (
 -- ``vanished_at`` ist der Herkunftsvermerk: der Zeitpunkt des ersten Abgleichs, der diese
 -- Nachricht in Foundry nicht mehr fand. Leer heißt vorhanden. Er wird gezeigt, wo die
 -- Nachricht benutzt wird — eine stille Karteileiche wäre die falsche Sorte Gedächtnis.
+--
+-- ``aus_testwelt`` trennt die eingespielte Fixture vom Archiv der Runde. Ohne diese Spalte
+-- bliebe ein Ausflug in die Testwelt für immer darin stehen: Konten, Figuren und Szenen
+-- sind Spiegel und werden ersetzt, Nachrichten nicht. Ein erfundener Wurf, den der echte
+-- Abgleich nicht mehr liefert, sähe danach aus wie ein echter, den die Spielleitung aus
+-- dem Chat-Log geräumt hat — und die Komposition dürfte ihn als Beleg zitieren.
 CREATE TABLE IF NOT EXISTS foundry_message (
     runde_id            INTEGER NOT NULL REFERENCES runde (id) ON DELETE CASCADE,
     id                  TEXT NOT NULL,
@@ -115,6 +121,7 @@ CREATE TABLE IF NOT EXISTS foundry_message (
     roll_modifier_total INTEGER,
     roll_dice           TEXT,
     vanished_at         TEXT,
+    aus_testwelt        INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (runde_id, id)
 );
 

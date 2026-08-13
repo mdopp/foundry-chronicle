@@ -12,6 +12,11 @@ korrigierte Nachricht wird hier übernommen, denn die Id ist stabil und meint da
 Ereignis, und ein Archiv, das einer lebenden Quelle widerspricht, wäre kein Beleg. Erst
 mit dem Verschwinden friert der zuletzt gesehene Stand ein und bekommt seinen Vermerk;
 taucht die Nachricht wieder auf, fällt der Vermerk weg — er beschreibt die Gegenwart.
+
+Genau deshalb braucht die **Testwelt** eine eigene Herkunft (``aus_testwelt``): was hier
+liegen bleibt, bleibt für immer liegen, und eine erfundene Zahl, die kein Abgleich mehr
+zurücknimmt, ist der teuerste Fehler dieses Projekts. Die Fixture wird gesondert
+vorgemerkt und geht beim ersten echten Abgleich wieder heraus.
 """
 
 from __future__ import annotations
@@ -57,9 +62,10 @@ FELDER = (
 )
 
 NACHRICHT_SCHREIBEN = (
-    f"INSERT INTO foundry_message (runde_id, id, vanished_at, {', '.join(FELDER)}) "
-    f"VALUES (?, ?, NULL, {', '.join('?' * len(FELDER))}) "
+    f"INSERT INTO foundry_message (runde_id, id, vanished_at, aus_testwelt, {', '.join(FELDER)}) "
+    f"VALUES (?, ?, NULL, ?, {', '.join('?' * len(FELDER))}) "
     "ON CONFLICT (runde_id, id) DO UPDATE SET vanished_at = NULL, "
+    "aus_testwelt = excluded.aus_testwelt, "
     + ", ".join(f"{feld} = excluded.{feld}" for feld in FELDER)
 )
 
@@ -115,8 +121,33 @@ def message(row: sqlite3.Row) -> ChatMessage:
     )
 
 
-def save(scope: db.Scope, snapshot: WorldSnapshot) -> None:
+def testwelt_raeumen(scope: db.Scope) -> int:
+    """Nimmt die eingespielte Fixture aus dem Archiv und sagt, wie viele es waren.
+
+    Die Testwelt ist keine Kampagne — ihre Würfe dürfen die der Runde nicht überleben. Mit
+    der Nachricht geht ihre Auswahl in einer Szene: eine Zeile, die auf eine gelöschte
+    Nachricht zeigt, wäre eine Belegstelle ohne Beleg.
+    """
     runde_id = scope.runde_id
+    with scope:
+        scope.execute(
+            "DELETE FROM scene_foundry_message WHERE runde_id = ? AND message_id IN "
+            "(SELECT id FROM foundry_message WHERE runde_id = ? AND aus_testwelt = 1)",
+            (runde_id, runde_id),
+        )
+        geraeumt = scope.execute(
+            "DELETE FROM foundry_message WHERE runde_id = ? AND aus_testwelt = 1", (runde_id,)
+        ).rowcount
+    return max(geraeumt, 0)
+
+
+def save(scope: db.Scope, snapshot: WorldSnapshot, *, testwelt: bool = False) -> None:
+    runde_id = scope.runde_id
+    if not testwelt:
+        # Vor allem anderen: was aus der Fixture stammt, verschwindet beim ersten echten
+        # Abgleich. Sonst stempelte der Durchlauf darunter es als »nicht mehr vorhanden«
+        # und machte es damit ununterscheidbar von einem echten, geräumten Wurf.
+        testwelt_raeumen(scope)
     with scope:
         for tabelle in ("foundry_player", "foundry_character", "foundry_scene"):
             scope.execute(f"DELETE FROM {tabelle} WHERE runde_id = ?", (runde_id,))
@@ -147,9 +178,13 @@ def save(scope: db.Scope, snapshot: WorldSnapshot) -> None:
         # einer über Jahre gewachsenen Chronik an SQLites Parametergrenze. Wer schon einen
         # Vermerk trägt, behält seinen: er soll den ersten Abgleich ohne diese Nachricht
         # nennen, nicht den letzten.
+        #
+        # Vorgemerkt wird nur die eigene Herkunft: ein Ausflug in die Testwelt erklärte
+        # sonst das Archiv der Runde für verschwunden, obwohl er nie bei ihrem Server war.
         scope.execute(
-            "UPDATE foundry_message SET vanished_at = ? WHERE runde_id = ? AND vanished_at IS NULL",
-            (snapshot.fetched_at, runde_id),
+            "UPDATE foundry_message SET vanished_at = ? "
+            "WHERE runde_id = ? AND vanished_at IS NULL AND aus_testwelt = ?",
+            (snapshot.fetched_at, runde_id, int(testwelt)),
         )
         scope.executemany(
             NACHRICHT_SCHREIBEN,
@@ -157,6 +192,7 @@ def save(scope: db.Scope, snapshot: WorldSnapshot) -> None:
                 (
                     runde_id,
                     n.id,
+                    int(testwelt),
                     n.timestamp,
                     n.speaker_actor,
                     n.speaker_alias,
