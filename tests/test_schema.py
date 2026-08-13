@@ -1,4 +1,5 @@
 import sqlite3
+from pathlib import Path
 
 import pytest
 from conftest import UNSER_KONTO, runde
@@ -272,6 +273,122 @@ def test_eine_sitzung_von_vor_der_kennung_bekommt_die_spalte_und_ihren_wert(tmp_
     assert all(kennungen)
     assert len(set(kennungen)) == 2
     assert db.current_schema_version(pfad) == db.SCHEMA_VERSION
+
+
+BESTAND = Path(__file__).with_name("bestand.sql")
+
+
+def tabellenform(pfad):
+    """Jede Tabelle mit ihren Spalten, wie SQLite sie erklärt — ohne Reihenfolge."""
+    verbindung = db.connect(pfad)
+    try:
+        namen = [
+            zeile["name"]
+            for zeile in verbindung.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name"
+            )
+        ]
+        return {
+            name: {
+                zeile["name"]: (zeile["type"], zeile["notnull"], zeile["dflt_value"], zeile["pk"])
+                for zeile in verbindung.execute(f"PRAGMA table_info({name})")
+            }
+            for name in namen
+        }
+    finally:
+        verbindung.close()
+
+
+def test_eine_gewachsene_datenbank_kommt_beim_start_auf_die_form_einer_frischen(tmp_path):
+    """Der Fall, für den ``NACHGETRAGEN`` überhaupt existiert — und der sonst nirgends vorkommt.
+
+    Jeder andere Test beginnt bei einer frischen Datenbank, in der ``schema.sql`` alle
+    Spalten ohnehin anlegt; ein vergessener Nachtrag fällt dort nie auf. Hier startet der
+    Lauf stattdessen auf ``bestand.sql`` — einer eingefrorenen Momentaufnahme dessen, was
+    auf der laufenden Instanz steht. Dass ihr die Spalten wirklich fehlen, liegt nicht an
+    diesem Test: ``schema.sql`` legt seine Tabellen mit ``IF NOT EXISTS`` an und rührt eine
+    bestehende nicht mehr an, eine Spalte kann also nur über einen Nachtrag kommen.
+
+    Entscheidend ist, dass die Momentaufnahme **unabhängig** von ``NACHGETRAGEN`` ist. Eine
+    Vorlage, die sich ihre fehlenden Spalten aus der Liste selbst ableitet, prüft nichts:
+    ein gestrichener Eintrag fehlte dann auch der Vorlage, die Spalte wäre nie fort und der
+    Test bliebe grün. Weil ``bestand.sql`` daneben steht und sich nicht bewegt, macht das
+    Streichen eines Eintrags ihn rot — und eine Spalte, die nächste Woche zu einer
+    bestehenden Tabelle kommt, ist ohne weiteres Zutun mitgeprüft.
+
+    Gewandert wird über ``db.init``, damit die Reihenfolge der Schritte die der laufenden
+    Instanz ist und keine hier gewählte. Verglichen wird die Form, nicht der Inhalt: was
+    eine nachgetragene Spalte in den Bestandszeilen tragen muss, hängt am einzelnen Eintrag
+    und steht bei ihm — die beiden Tests darüber sind die Fälle, die es bisher gibt.
+
+    Eine Tabelle deckt dieser Test nicht: ``runde`` wird auf dieser Momentaufnahme ganz neu
+    gebaut, weil ihr die Kennung fehlt, und bekommt ihre Spalten dabei aus ``schema.sql``
+    statt aus ``NACHGETRAGEN``. Der Test darunter setzt genau dort an.
+    """
+    gewachsen = tmp_path / "bestand.sqlite3"
+    verbindung = db.connect(gewachsen)
+    try:
+        verbindung.executescript(BESTAND.read_text(encoding="utf-8"))
+        verbindung.commit()
+    finally:
+        verbindung.close()
+    frisch = tmp_path / "frisch.sqlite3"
+    db.init(frisch)
+    # Wäre die Momentaufnahme irgendwann an das heutige Schema angeglichen worden, fehlte
+    # ihr keine Spalte mehr und der Vergleich unten ginge auf, ohne je etwas zu wandern.
+    vorher, vorbild = tabellenform(gewachsen), tabellenform(frisch)
+    assert {
+        name: sorted(set(vorbild[name]) - set(spalten))
+        for name, spalten in vorher.items()
+        if name in vorbild and set(vorbild[name]) - set(spalten)
+    }
+
+    db.init(gewachsen)
+
+    nachher = tabellenform(gewachsen)
+    for name in sorted(set(nachher) | set(vorbild)):
+        assert nachher.get(name) == vorbild.get(name), name
+    assert db.current_schema_version(gewachsen) == db.SCHEMA_VERSION
+
+
+def test_eine_runde_die_ihre_kennung_schon_hat_bekommt_neue_spalten_einzeln(tmp_path):
+    """``runde`` ist die einzige Tabelle, deren Nachtrag zweimal aussieht — je nach Alter.
+
+    Fehlt die Kennung, baut ``_kennung_nachtragen`` die Tabelle ganz neu und füllt sie aus
+    ``schema.sql``; jede fehlende Spalte kommt dabei mit, ob sie in ``NACHGETRAGEN`` steht
+    oder nicht. Diesseits dieses Umbaus — und dort steht jede Instanz, sobald sie einmal
+    gestartet ist — fällt dieser Weg weg, und eine neue Spalte an ``runde`` kann nur noch
+    über die Liste kommen. Genau dieser Stand wird hier gebaut: die Momentaufnahme, einmal
+    gewandert, dann wieder auf ihre damaligen Spalten zurückgesetzt — die Kennung
+    ausgenommen, denn sie ist der Schalter, der über den Umbau entscheidet. Welche Spalten
+    »damals« waren, sagt ``bestand.sql`` und nicht ``NACHGETRAGEN``; sonst prüfte der Test
+    die Liste an sich selbst und ein gestrichener Eintrag fiele wieder niemandem auf.
+    """
+    pfad = tmp_path / "bestand.sqlite3"
+    verbindung = db.connect(pfad)
+    try:
+        verbindung.executescript(BESTAND.read_text(encoding="utf-8"))
+        verbindung.commit()
+    finally:
+        verbindung.close()
+    damals = set(tabellenform(pfad)["runde"])
+    frisch = tmp_path / "frisch.sqlite3"
+    db.init(frisch)
+    db.init(pfad)
+
+    seither = sorted(set(tabellenform(frisch)["runde"]) - damals - {"token"})
+    assert seither
+    verbindung = db.connect(pfad)
+    try:
+        for spalte in seither:
+            verbindung.execute(f"ALTER TABLE runde DROP COLUMN {spalte}")
+        verbindung.commit()
+    finally:
+        verbindung.close()
+
+    db.init(pfad)
+
+    assert tabellenform(pfad)["runde"] == tabellenform(frisch)["runde"]
 
 
 def test_eine_datenbank_ohne_die_neue_laufart_bekommt_sie_nachgetragen(tmp_path):
