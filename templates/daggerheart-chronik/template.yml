@@ -24,8 +24,22 @@ metadata:
       timeout: 5s
       startup_timeout: 5m
 spec:
-  # hostNetwork, damit der Dienst Foundry und ein Ollama auf der Box über 127.0.0.1
-  # erreicht und NPM ihn ohne veröffentlichten hostPort findet.
+  # **Erklärte Abweichung von ServiceBay-ADR 0007** (#165), die App-Container in einen
+  # eigenen Netz-Namensraum stellen will. Grund: der Dienst spricht die Nachbarn dieser
+  # Box über die Schleife an — Ollama auf 127.0.0.1:11434 schreibt die Chronik,
+  # solaris-tts auf 127.0.0.1:8881 spricht die Ansage —, und der Proxy findet ihn so ohne
+  # veröffentlichten hostPort. Beide binden heute nur an Loopback, aus einer isolierten
+  # netns wären sie unerreichbar. ADR 0007 sieht benannte Ausnahmen vor;
+  # mdopp/servicebay#2518 hat verneint, die Liste bleibt geschlossen.
+  # Der Preis ist belegt, nicht vermutet: hostNetwork ist der Grund, warum dieser Port auf
+  # 0.0.0.0 im ganzen LAN stand, und ein erfundener Remote-User genügte, um an den
+  # Bot-Token zu kommen (#190). Bezahlt wird er von chronicle.herkunft — geglaubt werden
+  # die Anmelde-Kopfzeilen nur von einer Adresse dieser Maschine (siehe unten bei
+  # CHRONICLE_REQUIRE_REMOTE_USER).
+  # Die Abweichung fällt, sobald die Nachbarn auch aus einem eigenen Netz-Namensraum
+  # erreichbar sind. Das liegt in deren Vorlagen, nicht hier — und eine Netzänderung an
+  # diesem Dienst wird ohne Box-Verify nicht gemacht: falsch gemacht legt sie eine echte
+  # Discord-Gilde still.
   hostNetwork: true
   # **OnFailure statt der Vorgabe Always.** Podman startet einen Container sonst auch
   # dann neu, wenn er sich mit 0 beendet hat — und genau das ist der Bot, wenn ihm eine

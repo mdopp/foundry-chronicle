@@ -237,6 +237,27 @@ Assists (`get_assist`) lesen. Dieser Abschnitt ist der Extrakt, nicht der Ersatz
   (Die frühere Fassung nannte die Abweichung »auslaufend« und erwartete, dass mit #69
   fast der ganze Webteil verschwindet. Das ist eingetreten; geblieben ist die
   Betreiber-Seite, und mit ihr Flask.)
+- **Erklärte Abweichung, bezahlt und bis auf Weiteres bleibend:** der Pod läuft mit
+  `hostNetwork: true` statt im eigenen Netz-Namensraum, den **ADR 0007** verlangt (#165).
+  Der Grund steht im Template: der Dienst spricht die Nachbarn dieser Box über die
+  Schleife an — Ollama auf `127.0.0.1:11434` schreibt die Chronik, `solaris-tts` auf
+  `127.0.0.1:8881` spricht die Ansage —, und der Proxy findet ihn so ohne veröffentlichten
+  `hostPort`. **Was sie kostet, ist seit #190 belegt und nicht mehr vermutet:** Host-Netz
+  ist der Grund, warum der Port auf `0.0.0.0` im ganzen LAN erreichbar war, und das war
+  ausnutzbar — ein selbst erfundener `Remote-User` genügte, um auf die Betreiber-Seite und
+  damit an den Bot-Token zu kommen. Ohne Host-Netz wäre der Port nie im LAN gewesen. Die
+  Rechnung dafür ist bezahlt, nicht gestundet: `chronicle.herkunft` glaubt `Remote-User`
+  und `Remote-Groups` nur von einer Adresse **dieser Maschine**, `CHRONICLE_TRUSTED_PROXIES`
+  ist der Ausweg für einen umgezogenen Proxy, und eine Selbstprobe beim Start sagt es, wenn
+  die Prüfung im Kern nicht trägt. **Sie fiele, sobald die Nachbarn auch aus einem eigenen
+  Netz-Namensraum erreichbar sind** — heute binden Ollama und `solaris-tts` nur an
+  Loopback, ein isolierter Namensraum erreicht sie damit nicht. Das liegt in fremden
+  Vorlagen und ist deshalb eine Bedingung, kein Versprechen. Gefragt wurde: ADR 0007 sieht
+  benannte Ausnahmen vor, `mdopp/servicebay#2518` hat sie verneint — die Liste bleibt
+  geschlossen. **Und angefasst wird hier nichts ohne Box-Verify:** eine Netzänderung legt
+  diesen Dienst still, wenn sie falsch ist, und er hängt an einer echten Discord-Gilde.
+  `tests/test_template.py` hält `hostNetwork: true` samt dieser Begründung fest, damit es
+  niemand versehentlich entfernt.
 - **Standards-Lücken werden zurückgemeldet:** `standards-gap`-Issue in
   `mdopp/servicebay` (`get_assist report-standards-gaps`).
 

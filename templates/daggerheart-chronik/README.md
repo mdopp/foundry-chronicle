@@ -98,6 +98,28 @@ anlegt. Wer hier einen Container ergänzt, macht aus jedem laufenden Lauf einen
 Discord unter `/setup`, Vorgabe 04:00 nach der Zone der Runde; ein verpasstes Fenster wird
 nicht nachgeholt.
 
+## Der Pod hängt im Host-Netz — erklärte Abweichung von ADR 0007
+
+`spec.hostNetwork: true` steht bewusst da, obwohl ServiceBays **ADR 0007** App-Container
+in einen eigenen Netz-Namensraum stellen will (#165). Der Grund sind die Nachbarn auf
+derselben Box, die dieser Dienst über die Schleife anspricht: **Ollama** auf
+`127.0.0.1:11434` schreibt die Chronik, **`solaris-tts`** auf `127.0.0.1:8881` spricht die
+Ansage im Sprachkanal. Beide binden nur an Loopback — aus einem eigenen Namensraum wären
+sie nicht erreichbar. Dazu kommt, dass der Proxy den Dienst so ohne veröffentlichten
+`hostPort` findet.
+
+ADR 0007 sieht benannte Ausnahmen vor; ob dieser Dienst eine ist, wurde in
+`mdopp/servicebay#2518` gefragt und **verneint** — die Liste bleibt geschlossen. Die
+Abweichung bleibt deshalb, aber nicht gratis: sie ist der Grund, warum der Port auf
+`0.0.0.0` im ganzen LAN stand und ein erfundener `Remote-User` bis an den Bot-Token
+führte (#190). Die Rechnung ist bezahlt — die Anmelde-Kopfzeilen gelten seither nur von
+einer Adresse dieser Maschine, siehe oben und `CHRONICLE_TRUSTED_PROXIES`.
+
+**Sie fällt, sobald Ollama und `solaris-tts` auch aus einem eigenen Netz-Namensraum
+erreichbar sind** — das liegt in deren Vorlagen, nicht in dieser. Bis dahin gilt: an der
+Netzkonfiguration dieses Dienstes wird nichts ohne Verify auf der Box geändert. Falsch
+gemacht legt sie eine laufende Discord-Gilde still.
+
 ## Die Grafikkarte — dieser Pod hat keine
 
 **Der Pod reicht bewusst keine NVIDIA-Karte durch.** Der Versuch stand hier schon einmal
