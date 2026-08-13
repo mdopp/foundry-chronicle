@@ -166,11 +166,17 @@ def test_eine_ebene_hoeher_ergibt_dieselben_abende():
 def test_die_szenen_stehen_in_der_reihenfolge_des_dokuments(unsere):
     eingelesen(unsere)
 
-    erster, _zweiter, dritter = gliederung(unsere)
+    erster, zweiter, dritter = gliederung(unsere)
 
     assert [titel for titel, _notizen in erster[2]] == [
         "Der Regen und der Wirt",
         "Das Gespräch am Kamin",
+    ]
+    # Der zweite Abend ist der einzige, bei dem Sitzungs-Id und Id der ersten Szene
+    # auseinanderlaufen — ein vertauschtes Argumentpaar in ``rename_scene`` fällt nur hier auf.
+    assert [titel for titel, _notizen in zweiter[2]] == [
+        "Die Luke hinter dem Fass",
+        "Was unten wartete",
     ]
     # Der dritte Abend hat keine eigene Szene — sein Text steht in der ersten.
     assert dritter[2] == [(None, [DRITTER_ABEND])]
