@@ -320,7 +320,11 @@ class Aufnahme:
             )
             spur = _Spur(ziel, sprecher.name)
             self._spuren[sprecher.id] = spur
-            logger.info("Spur für %s: %s", sprecher.name, ziel.name)
+            # Gezählt statt benannt: der Anzeigename ist es, der hier spricht, und der
+            # Dateiname trägt ihn im Stamm (#194). Was der Betreiber an dieser Zeile
+            # braucht, ist, dass eine weitere Spur aufgemacht wurde und zu welchem Abend —
+            # beides sagen zwei Zahlen, die außerhalb dieser Datenbank nichts bedeuten.
+            logger.info("Sitzung %s: %s. Spur begonnen", self.session_id, len(self._spuren))
         spur.schreiben(pcm)
         self.pakete += 1
 

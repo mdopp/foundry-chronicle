@@ -8,6 +8,7 @@ ein erfundenes.
 from __future__ import annotations
 
 import itertools
+import logging
 import queue
 import sqlite3
 import threading
@@ -470,6 +471,28 @@ def test_die_zurueckgestellte_spur_sagt_an_der_zeile_was_ihr_geschah(config, sit
     assert nachher.status == recordings.WARTET
     assert nachher.detail == recordings.UNTERBROCHEN
     assert [zeile.id for zeile in recordings.pending(runde(config))] == [aufnahme.id]
+
+
+def test_im_log_der_zurueckgestellten_spur_steht_kein_name_und_kein_dateiname(
+    config, sitzung_id, caplog
+):
+    """Der Stamm eines Spurnamens ist der Anzeigename des Sprechers (#194).
+
+    Gemeldet wird deshalb die Job-Id samt Sitzung: der Betreiber findet damit Zeile, Datei
+    und Stand, und wer das Log liest, erfährt trotzdem nicht, wer an dem Abend sprach.
+    Geprüft wird auf DEBUG und über den ganzen ``caplog.text`` — ein Traceback, der den
+    Pfad mitbrächte, stünde ebenfalls darin.
+    """
+    caplog.set_level(logging.DEBUG)
+    aufnahme = hochladen(config, sitzung_id, name="Mira.m4a")
+    laeuft_bei(config, aufnahme.id, "der-prozess-von-vorhin", gestorben_vor(3600))
+
+    recordings.zurueckstellen(runde(config))
+
+    assert f"Spur {aufnahme.id} aus Sitzung {sitzung_id}" in caplog.text
+    assert recordings.UNTERBROCHEN in caplog.text
+    assert "Mira" not in caplog.text
+    assert aufnahme.source not in caplog.text
 
 
 def test_die_eigene_verwaiste_spur_kommt_ohne_wartezeit_zurueck(config, sitzung_id):
