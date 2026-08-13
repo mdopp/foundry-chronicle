@@ -510,6 +510,33 @@ def test_die_begonnene_spur_steht_ohne_namen_im_log(konfiguration, sitzung_id, o
     assert ".wav" not in caplog.text
 
 
+def test_der_kanalname_steht_weder_bei_der_einwilligung_noch_beim_empfangstest_im_log(
+    konfiguration, sitzung_id, ohne_espeak, kurze_probe, caplog
+):
+    """Ein Kanalname ist kein Personenname, beschreibt aber die Struktur einer fremden
+    Gilde (#206) — und ins Log des Betreibers gehört er so wenig wie ein Sprechername.
+
+    Der Empfangstest geht durch ``starten``, also stehen beide Zeilen in einem Lauf. Was
+    an ihre Stelle tritt, wird mitgeprüft: eine Zeile, die nichts mehr identifiziert, wäre
+    kein Fortschritt, sondern ein Loch im Reparaturmantel.
+
+    Im **Nachweis** bleibt der Name unangetastet — dort belegt er, wo die Ansage lief, und
+    das ist die Rechtsgrundlage nach §201.
+    """
+    caplog.set_level(logging.DEBUG)
+    stimme = FakeStimme()
+    stimme.kanal = Kanal(guild_id=KANAL.guild_id, id="78", name="Am-Runden-Tisch")
+
+    asyncio.run(recorder.pruefen(konfiguration, stimme, unsere_runde(konfiguration)))
+
+    assert stimme.kanal.name not in caplog.text
+    (nachweis,) = consent.for_session(unsere_runde(konfiguration), sitzung_id)
+    assert nachweis.channel_name == stimme.kanal.name
+    assert f"Einwilligung {consent.ANSAGE} für Sitzung {sitzung_id}" in caplog.text
+    assert f"Nachweis {nachweis.id}" in caplog.text
+    assert f"Empfangstest für Sitzung {sitzung_id}" in caplog.text
+
+
 def test_die_spur_traegt_die_discord_id_ihres_sprechers(konfiguration, sitzung_id, ohne_espeak):
     aufnahme = asyncio.run(
         recorder.starten(konfiguration, FakeStimme(), unsere_runde(konfiguration))
