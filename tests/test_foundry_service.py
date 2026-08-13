@@ -17,6 +17,7 @@ from conftest import (
 import chronicle.foundry.__main__ as batch
 from chronicle import db, lebenszyklus, settings, zugang
 from chronicle import runde as runden
+from chronicle.compose import service as compose_service
 from chronicle.foundry import service, store
 from chronicle.foundry.client import FoundryUnreachable
 from chronicle.foundry.model import NICHT_MEHR_VORHANDEN, World
@@ -420,3 +421,109 @@ def test_kein_passwort_in_den_logzeilen_eines_abzugs(config, welt, tmp_path, cap
             client=Abgleich(welt),
         )
     assert PASSWORT not in caplog.text
+
+
+# -- Der Ausflug in die Testwelt --------------------------------------------------------
+
+
+def _archiv(config):
+    scope = db.scoped(runde(config))
+    try:
+        return scope.execute(
+            "SELECT id, roll_title, roll_total, vanished_at, aus_testwelt "
+            "FROM foundry_message WHERE runde_id = ? ORDER BY id",
+            (scope.runde_id,),
+        ).fetchall()
+    finally:
+        scope.close()
+
+
+def _auf(config, quelle):
+    settings.save_foundry_quelle(runde(config), quelle)
+
+
+def test_die_testwelt_erklaert_das_archiv_der_runde_nicht_fuer_verschwunden(config, welt):
+    """Sie war bei keinem Server — sie kann über dessen Chat-Log nichts wissen."""
+    service.sync(config, runde(config), client=Abgleich(welt), passwort=PASSWORT)
+
+    _auf(config, settings.TESTWELT)
+    service.sync(config, runde(config))
+
+    echt = [zeile for zeile in _archiv(config) if not zeile["aus_testwelt"]]
+    assert echt
+    assert not [zeile for zeile in echt if zeile["vanished_at"]]
+
+
+def test_die_testwelt_meldet_ihre_lieferung_und_nicht_das_archiv(config, welt):
+    """Sonst zählte der Satz »eingespielt aus der Fixture« die echten Nachrichten mit."""
+    service.sync(config, runde(config), client=Abgleich(welt), passwort=PASSWORT)
+
+    _auf(config, settings.TESTWELT)
+    zustand = service.sync(config, runde(config))
+
+    aus_der_fixture = [zeile for zeile in _archiv(config) if zeile["aus_testwelt"]]
+    assert f"{len(aus_der_fixture)} Chat-Nachrichten" in zustand.message
+
+
+def test_ein_ausflug_in_die_testwelt_laesst_keinen_wurf_im_archiv(config, welt):
+    """Testwelt gespielt, zurückgeschaltet, echt abgeglichen — das Archiv ist wieder das
+    der Runde.
+
+    Bliebe ein Fixture-Wurf liegen, trüge er nach dem Rückwechsel den Vermerk »nicht mehr
+    vorhanden« und wäre damit von einem echten Wurf nicht mehr zu unterscheiden, den die
+    Spielleitung aus dem Chat-Log geräumt hat.
+    """
+    service.sync(config, runde(config), client=Abgleich(welt), passwort=PASSWORT)
+    vorher = {zeile["id"] for zeile in _archiv(config)}
+
+    _auf(config, settings.TESTWELT)
+    service.sync(config, runde(config))
+    assert len(_archiv(config)) > len(vorher)
+
+    _auf(config, settings.SERVER)
+    zustand = service.sync(config, runde(config), client=Abgleich(welt), passwort=PASSWORT)
+
+    assert {zeile["id"] for zeile in _archiv(config)} == vorher
+    assert not [zeile for zeile in _archiv(config) if zeile["vanished_at"]]
+    assert NICHT_MEHR_VORHANDEN not in zustand.message
+
+
+def test_ein_wurf_der_testwelt_bleibt_keine_belegstelle(config, welt):
+    """Was ausgewählt war, geht mit — sonst zeigte eine Szene auf einen Beleg, den es
+    nicht mehr gibt, und die Komposition zöge eine erfundene Zahl in die Chronik."""
+    _auf(config, settings.TESTWELT)
+    service.sync(config, runde(config))
+
+    scope = db.scoped(runde(config))
+    try:
+        sitzung = scope.execute(
+            "INSERT INTO session (runde_id, played_on, title, created_at) VALUES (?, ?, ?, ?)",
+            (scope.runde_id, "2026-08-05", "Der Keller", "2026-08-05T20:00:00+00:00"),
+        ).lastrowid
+        szene = scope.execute(
+            "INSERT INTO scene (runde_id, session_id, position, title, created_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (scope.runde_id, sitzung, 1, "Aufbruch", "2026-08-05T20:00:00+00:00"),
+        ).lastrowid
+        erfunden = _archiv(config)[0]["id"]
+        with scope:
+            scope.execute(
+                "INSERT INTO scene_foundry_message (runde_id, scene_id, message_id) "
+                "VALUES (?, ?, ?)",
+                (scope.runde_id, szene, erfunden),
+            )
+        assert compose_service.material(scope, sitzung).scenes[0].facts
+    finally:
+        scope.close()
+
+    _auf(config, settings.SERVER)
+    service.sync(config, runde(config), client=Abgleich(welt), passwort=PASSWORT)
+
+    scope = db.scoped(runde(config))
+    try:
+        assert not compose_service.material(scope, sitzung).scenes[0].facts
+        assert not scope.execute(
+            "SELECT 1 FROM scene_foundry_message WHERE runde_id = ?", (scope.runde_id,)
+        ).fetchall()
+    finally:
+        scope.close()

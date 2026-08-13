@@ -295,6 +295,28 @@ def test_die_wahl_selbst_sagt_es_auch(auf_testwelt):
     assert einrichten.QUELLE_TESTWELT.endswith("erfundene Zahlen")
 
 
+def test_der_weg_zurueck_raeumt_die_erfundenen_wuerfe_und_sagt_wie_viele(auf_testwelt):
+    """Er verspricht es nicht dem nächsten Abgleich — der kommt vielleicht nie.
+
+    Bis dahin stünden die Fixture-Würfe als auswählbare Belege im Archiv der Runde.
+    """
+    config = auf_testwelt
+    service.sync(config, runde(config), client=NiemalsAnrufen())
+    eingespielt = len(geladen(config).messages)
+    assert eingespielt > 1
+
+    antwort = einrichten.quelle_setzen(runde(config), settings.SERVER)
+
+    assert f"{eingespielt} Chat-Nachrichten" in antwort
+    assert geladen(config).messages == ()
+
+
+def test_wer_nie_in_der_testwelt_war_bekommt_kein_aufraeumen_erzaehlt(config):
+    """Gesagt wird, was geschah — und hier geschah nichts."""
+    antwort = einrichten.quelle_setzen(runde(config), settings.SERVER)
+    assert antwort == einrichten.QUELLE_GESETZT_SERVER
+
+
 class NurDieWelt:
     """Ein Foundry, das genau diesen Rohdump zeigt — mehr braucht der Abgleich nicht."""
 

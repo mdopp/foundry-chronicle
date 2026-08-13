@@ -28,8 +28,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from chronicle import lebenszyklus, settings
+from chronicle import db, lebenszyklus, settings
 from chronicle.config import Config
+from chronicle.foundry import store
 from chronicle.runde import Runde
 
 # -- Einladen ---------------------------------------------------------------------------
@@ -155,9 +156,18 @@ QUELLE_WAEHLEN = "Quelle der Spieldaten"
 QUELLE_SERVER = "Euer Foundry-Server"
 QUELLE_TESTWELT = "Eingebaute Testwelt — erfundene Zahlen"
 QUELLE_GESETZT_SERVER = (
-    "Die Zahlen kommen künftig aus eurem Foundry. Der nächste Abgleich ersetzt damit, was "
-    "aus der Testwelt hier liegt."
+    "Die Zahlen kommen künftig aus eurem Foundry. Konten, Figuren und Szenen holt der "
+    "nächste Abgleich frisch."
 )
+
+# Gesagt wird, was geschah, und nur wenn es geschah: Konten, Figuren und Szenen sind
+# Spiegel und werden ersetzt, Chat-Nachrichten nicht — die bleiben liegen, bis jemand sie
+# herausnimmt. Das tut das Zurückschalten selbst, statt es dem nächsten Abgleich zu
+# versprechen: der kommt vielleicht nie, und bis dahin stünden erfundene Würfe als Beleg
+# in einer Chronik dieser Runde.
+TESTWELT_GERAEUMT = "Die erfundenen Würfe der Testwelt habe ich aus dem Archiv genommen — {anzahl}."
+EINE_NACHRICHT = "eine Chat-Nachricht"
+MEHRERE_NACHRICHTEN = "{anzahl} Chat-Nachrichten"
 QUELLE_GESETZT_TESTWELT = (
     "Ich nehme künftig die eingebaute Testwelt. **Was dann in euren Chroniken steht, ist "
     "erfunden** — kein Wurf daraus hat je an eurem Tisch stattgefunden, und der Abgleich "
@@ -367,11 +377,23 @@ def quellenwahl(runde: Runde) -> tuple[tuple[str, str, bool], ...]:
 
 
 def quelle_setzen(runde: Runde, wert: str) -> str:
-    """Echter Server oder Testwelt — die Folge steht in der Antwort, nicht im Kleingedruckten."""
+    """Echter Server oder Testwelt — die Folge steht in der Antwort, nicht im Kleingedruckten.
+
+    Der Weg zurück räumt gleich mit auf: die Fixture-Nachrichten gehen hier heraus, und
+    was herausging, steht in der Antwort.
+    """
     settings.save_foundry_quelle(runde, wert)
     if settings.foundry_quelle(runde) == settings.TESTWELT:
         return QUELLE_GESETZT_TESTWELT
-    return QUELLE_GESETZT_SERVER
+    scope = db.scoped(runde)
+    try:
+        geraeumt = store.testwelt_raeumen(scope)
+    finally:
+        scope.close()
+    if not geraeumt:
+        return QUELLE_GESETZT_SERVER
+    anzahl = EINE_NACHRICHT if geraeumt == 1 else MEHRERE_NACHRICHTEN.format(anzahl=geraeumt)
+    return f"{QUELLE_GESETZT_SERVER} {TESTWELT_GERAEUMT.format(anzahl=anzahl)}"
 
 
 def begruessung(config: Config, guild_id: str) -> Begruessung:

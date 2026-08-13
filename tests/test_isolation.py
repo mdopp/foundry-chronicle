@@ -454,6 +454,9 @@ SCHREIBER = frozenset(
         "store.save",
         "store.bind_world",
         "store.record_failure",
+        # Räumt die Fixture aus dem Archiv — ein Löscher, und damit der Aufruf, bei dem
+        # eine verwechselte Runde nicht bloß etwas Fremdes zeigte, sondern es fortnähme.
+        "store.testwelt_raeumen",
         "service.compose_session",
         "service.recap_session",
         "service.save",
@@ -816,6 +819,41 @@ def test_das_umhaengen_nimmt_nur_in_der_eigenen_runde_etwas_fort(zwei_runden):
     # Und drüben steht alles, wie es war — dieselbe Kennung, dasselbe Konto.
     assert _nach_kennung(b)["d-1"].confirmed.name == f"Spielerin {MARKE[2]}"
     assert _nach_kennung(b)["d-2"].confirmed is None
+
+
+def test_das_raeumen_der_testwelt_greift_nicht_ins_nachbararchiv(zwei_runden):
+    """Ein Löscher auf ``foundry_message`` — hier wäre eine verwechselte Runde ein Verlust.
+
+    Beide Runden tragen dieselbe Nachrichten-Id; geräumt wird nur, was aus der Fixture
+    stammt, und nur in der Runde, deren Scope gefragt wurde.
+    """
+    _config, a, b, _ids = zwei_runden
+    for gruppe in (a, b):
+        _mit_scope(
+            gruppe,
+            lambda scope: foundry_store.save(
+                scope,
+                WorldSnapshot(
+                    system="daggerheart",
+                    fetched_at="2026-05-02T20:00:00+00:00",
+                    messages=(ChatMessage(id="m-2", timestamp=2000, content="Erfunden."),),
+                ),
+                testwelt=True,
+            ),
+        )
+
+    assert _mit_scope(a, foundry_store.testwelt_raeumen) == 1
+
+    def _ids_von(scope):
+        return {
+            zeile["id"]
+            for zeile in scope.execute(
+                "SELECT id FROM foundry_message WHERE runde_id = ?", (scope.runde_id,)
+            )
+        }
+
+    assert _mit_scope(a, _ids_von) == {"m-1"}
+    assert _mit_scope(b, _ids_von) == {"m-1", "m-2"}
 
 
 def test_das_menue_beim_betreten_zeigt_nur_konten_der_eigenen_runde(zwei_runden):

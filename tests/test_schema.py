@@ -202,6 +202,42 @@ def test_ein_protokoll_aus_schema_11_bekommt_die_zustellspalte_nachgetragen(tmp_
     assert db.current_schema_version(pfad) == db.SCHEMA_VERSION
 
 
+def test_ein_archiv_von_vor_der_testweltspalte_gilt_als_echt(tmp_path):
+    """Nachgetragen wird mit ``NOT NULL DEFAULT 0`` — beides zusammen oder gar nicht.
+
+    Ohne die Vorgabe wiese SQLite das ``ALTER TABLE`` ab, und ohne das ``NOT NULL`` stünde
+    in den Bestandszeilen ``NULL``: der Bedingung ``aus_testwelt = 0`` genügte dann keine
+    einzige, und der nächste Abgleich erklärte ein gewachsenes Archiv für unberührbar.
+    """
+    pfad = tmp_path / "alt.sqlite3"
+    verbindung = db.connect(pfad)
+    try:
+        with verbindung:
+            verbindung.execute(
+                "CREATE TABLE foundry_message (runde_id INTEGER NOT NULL, id TEXT NOT NULL, "
+                "timestamp INTEGER NOT NULL, content TEXT NOT NULL, vanished_at TEXT, "
+                "PRIMARY KEY (runde_id, id))"
+            )
+            verbindung.execute(
+                "INSERT INTO foundry_message (runde_id, id, timestamp, content) "
+                "VALUES (1, 'm-alt', 1000, 'Ein Wurf von damals.')"
+            )
+    finally:
+        verbindung.close()
+
+    db.init(pfad)
+
+    verbindung = db.connect(pfad)
+    try:
+        zeile = verbindung.execute(
+            "SELECT content, aus_testwelt FROM foundry_message WHERE aus_testwelt = 0"
+        ).fetchone()
+    finally:
+        verbindung.close()
+    assert zeile["content"] == "Ein Wurf von damals."
+    assert db.current_schema_version(pfad) == db.SCHEMA_VERSION
+
+
 def test_eine_datenbank_ohne_die_neue_laufart_bekommt_sie_nachgetragen(tmp_path):
     """``CHECK (kind IN …)`` steht im ``CREATE TABLE`` und wandert mit keinem ``ALTER`` mit.
 
