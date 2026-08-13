@@ -121,12 +121,20 @@ class FakeTextkanal:
         return thread
 
 
+def _mitglied(wer, *, admin):
+    """Ein Mitglied mit genau den Rechten, die Discord für diesen Server meldet."""
+    return types.SimpleNamespace(
+        id=wer, guild_permissions=types.SimpleNamespace(administrator=admin)
+    )
+
+
 class FakeCtx:
-    def __init__(self, *, guild_id=GILDE, kanal=None, wer=WER):
+    def __init__(self, *, guild_id=GILDE, kanal=None, wer=WER, admin=True):
         self.guild_id = guild_id
         self.channel = kanal if kanal is not None else FakeTextkanal()
         self.channel_id = self.channel.id
-        self.user = types.SimpleNamespace(id=wer)
+        self.user = _mitglied(wer, admin=admin)
+        self.author = self.user
         self.antworten: list[str] = []
         self.ansichten: list = []
         self.modale: list[FakeModal] = []
@@ -175,10 +183,10 @@ class FakeNachreichen:
 
 
 class FakeInteraction:
-    def __init__(self, kanal, *, guild_id=GILDE, wer=WER):
+    def __init__(self, kanal, *, guild_id=GILDE, wer=WER, admin=True):
         self.channel = kanal
         self.guild_id = guild_id
-        self.user = types.SimpleNamespace(id=wer)
+        self.user = _mitglied(wer, admin=admin)
         self.response = FakeAntwort()
         self.followup = FakeNachreichen()
 
@@ -1977,16 +1985,19 @@ def test_ein_belegter_lauf_schiebt_die_frist_des_gemerkten_passworts_nicht_weite
 # -- Ein vorhandenes Notizdokument einlesen ---------------------------------------------
 
 
-def einlesen_fahren(bot, text=BEISPIEL, *, name="notizen.md", groesse=None, knopf=None):
+def einlesen_fahren(
+    bot, text=BEISPIEL, *, name="notizen.md", groesse=None, knopf=None, admin=True, am_knopf=None
+):
     """``/chronik einlesen`` samt dem Knopf, der seit #169 davor steht.
 
     ``knopf`` wählt, was danach geklickt wird — ``None`` heißt: gar nichts, und dann darf
-    auch nichts entstanden sein.
+    auch nichts entstanden sein. ``admin`` gilt für den Befehl, ``am_knopf`` für den Klick
+    danach; getrennt, weil die Schranke seit #205 an beiden Stellen einzeln steht.
     """
-    ctx = FakeCtx()
+    ctx = FakeCtx(admin=admin)
     datei = FakeAnhang(name, inhalt=text.encode("utf-8"), groesse=groesse)
     asyncio.run(chronikbefehl(bot, "einlesen")(ctx, datei))
-    klick = FakeInteraction(ctx.channel)
+    klick = FakeInteraction(ctx.channel, admin=admin if am_knopf is None else am_knopf)
     ansicht = ctx.ansichten[-1]
     if knopf is not None and ansicht is not None:
         asyncio.run(ansicht.items[0 if knopf == "ja" else 1].callback(klick))
@@ -2034,6 +2045,25 @@ def test_erst_der_knopf_legt_die_sitzungen_an(stelle, bot):
         "Der Regen und der Wirt",
         "Das Gespräch am Kamin",
     ]
+
+
+def test_ein_dokument_einzulesen_ist_kein_befehl_fuer_jedes_mitglied(stelle, bot):
+    """Dieselbe Schranke wie vor dem Löschen, und an beiden Stellen einzeln gerechnet.
+
+    Es geht nicht um die Menge: wer die Vergangenheit einer Kampagne umschreibt, greift so
+    tief ein wie wer sie fortnimmt. Die Vorschau fängt das Versehen ab, nicht die Absicht —
+    stünde die Schranke nur am Befehl, klickte am Ende irgendwer die Frage weg.
+    """
+    _config, unsere = stelle
+
+    ctx, _klick = einlesen_fahren(bot, admin=False)
+    assert ctx.antworten == [einrichten.NUR_ADMIN]
+    assert ctx.ansichten == [None]
+    assert notes.sessions(unsere) == ()
+
+    _erlaubt, am_knopf = einlesen_fahren(bot, knopf="ja", am_knopf=False)
+    assert am_knopf.response.bearbeitet[-1]["content"] == einrichten.NUR_ADMIN
+    assert notes.sessions(unsere) == ()
 
 
 def test_abbrechen_legt_nichts_an(stelle, bot):
