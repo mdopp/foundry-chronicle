@@ -428,6 +428,11 @@ SCHREIBER = frozenset(
         "recordings.enqueue",
         "recordings.mark",
         "recordings.sweep",
+        # Beide fassen die ``laeuft``-Zeilen **einer** Runde an: das Zurückstellen einer
+        # verwaisten Spur ist ein Schreiber wie jeder andere, und der Herzschlag hinter
+        # ``in_arbeit`` schreibt in dieselbe Zeile.
+        "recordings.zurueckstellen",
+        "recordings.in_arbeit",
         "register.suggest",
         "register.decide",
         "people.confirm",

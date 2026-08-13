@@ -20,6 +20,14 @@ im Ansagetext steht, wäre keins — deshalb formatiert die Ansage ihre Frist au
 Gelöscht wird dabei nur die **Audiodatei**; die Zeile bleibt mit ``deleted_at`` stehen.
 Sie ist der ehrliche Teil der Geschichte: dass es die Spur gab, wann sie kam, was aus ihr
 wurde — und dass sie nach Frist entfernt wurde und nicht etwa verlorenging.
+
+**Eine Spur auf ``laeuft`` gehört einem Prozess**, und der sagt selbst, ob er noch lebt
+(``besitzer``/``herzschlag``, dieselbe Bauart wie bei ``chronicle.jobs``). Das Verschriften
+läuft eine gute Stunde je Sitzungsstunde; ein Deploy oder ein OOM mittendrin ließ die Zeile
+früher für immer auf ``laeuft`` stehen — ``pending`` sah sie nie wieder an, und nach sieben
+Tagen holte die Frist die Audiodatei, ohne dass je ein Transkript entstand (#181). Jetzt
+kommt eine verwaiste Zeile in die Warteschlange zurück, und was die Frist ohne Transkript
+holt, wird laut gemeldet statt still abgeräumt.
 """
 
 from __future__ import annotations
@@ -27,9 +35,13 @@ from __future__ import annotations
 import asyncio
 import logging
 import sqlite3
+import threading
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from uuid import uuid4
 
 from werkzeug.utils import secure_filename
 
@@ -53,6 +65,47 @@ RETENTION_TAGE = 7
 SWEEP_ABSTAND = 24 * 60 * 60
 
 NACH_FRIST = "Spur »{source}«: Aufnahme nach {tage} Tagen gelöscht — die Frist aus der Ansage."
+
+# Die Frist gilt auch der Spur, die es nie durch die Verschriftung geschafft hat: sie ist
+# eine Zusage an Menschen, deren Stimme aufgenommen wurde, und keine Belohnung für einen
+# geglückten Lauf. Aber sie darf nicht **still** greifen — hier geht eine Stunde
+# gesprochener Abend, von der es keinen Text gibt und nie einen geben wird.
+OHNE_TEXT = (
+    "Spur »{source}«: die Aufnahme ist nach {tage} Tagen gelöscht — die Frist aus der "
+    "Ansage —, und verschriftet wurde sie nie. Von dieser Spur gibt es keinen Text, und "
+    "nachholen lässt sich das nicht."
+)
+
+# Was an der Zeile stehen bleibt. Ohne diesen Satz sagte sie »wartet« über eine Aufnahme,
+# auf die niemand mehr wartet.
+NIE_VERSCHRIFTET = "Die Frist hat die Aufnahme geholt, bevor ein Transkript entstand."
+
+# Der Vermerk an einer Spur, deren Lauf einen Neustart nicht überlebt hat. Er sagt beides:
+# was passiert ist und dass nichts verloren ist — die Datei liegt noch da.
+UNTERBROCHEN = (
+    "Der Lauf wurde unterbrochen, weil der Dienst zwischendurch neu gestartet ist. Die "
+    "Aufnahme liegt noch da und steht wieder in der Warteschlange."
+)
+
+# Wer dieser Prozess ist — für die Dauer genau eines Starts. Ein Zufallswert und nicht die
+# Prozess-Id: die vergibt die Box nach einem Neustart wieder, und ein Neustart ist genau
+# der Fall, um den es hier geht. ``chronicle.jobs`` führt denselben Wert für seine eigene
+# Tabelle; geteilt wird er nicht, weil ``jobs`` dieses Modul einliest und nicht umgekehrt —
+# verglichen wird er ohnehin nur mit sich selbst.
+_ICH = uuid4().hex
+
+# Wie oft die laufende Spur ihr Lebenszeichen schreibt, und wie lange ein fremder Prozess
+# darauf wartet, bevor er die Zeile für verwaist hält. Der Abstand ist mit Absicht groß:
+# eine Lastspitze darf keine laufende Verschriftung als abgestürzt erscheinen lassen — sie
+# liefe sonst ein zweites Mal, auf derselben einen CPU.
+HERZSCHLAG = 20.0
+VERSTUMMT = timedelta(seconds=90)
+
+# Welche Spuren in **diesem** Prozess gerade verschriftet werden. Was hier steht, läuft;
+# was fehlt und uns gehört, hat einen Neustart nicht überlebt. Über fremde Zeilen sagt
+# diese Liste nichts — dafür ist der Herzschlag da.
+_laufend: set[int] = set()
+_schloss = threading.RLock()
 
 # Was Sprachmemo-Apps ablegen. Normalisiert wird nichts davon vorab: faster-whisper
 # dekodiert über PyAV, dessen Wheel bringt die FFmpeg-Bibliotheken mit — m4a/AAC und
@@ -106,6 +159,11 @@ class Recording:
 
 def _now() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds")
+
+
+def _lebenszeichen() -> str:
+    """Feiner als ``_now``: zwei Schläge dürfen sich nicht auf dieselbe Sekunde runden."""
+    return datetime.now(UTC).isoformat(timespec="milliseconds")
 
 
 def _eintrag(row: sqlite3.Row, text: str = "") -> Recording:
@@ -273,16 +331,137 @@ def pending(runde: Runde) -> tuple[Recording, ...]:
 
 
 def mark(runde: Runde, recording_id: int, status: str, detail: str | None = None) -> None:
+    """Der neue Stand der Spur — und damit auch, wem sie gehört.
+
+    Der Besitzvermerk hängt am Stand und wird nirgends von Hand gepflegt: ``laeuft`` gehört
+    diesem Prozess, jeder andere Stand gehört niemandem mehr. So kann keine fertige Zeile
+    einen Besitzer behalten, dessen Herzschlag nie wieder kommt.
+    """
+    laeuft = status == LAEUFT
     scope = db.scoped(runde)
     try:
         with scope:
             scope.execute(
-                "UPDATE recording SET status = ?, detail = ?, updated_at = ? "
-                "WHERE runde_id = ? AND id = ?",
-                (status, detail, _now(), scope.runde_id, recording_id),
+                "UPDATE recording SET status = ?, detail = ?, updated_at = ?, besitzer = ?, "
+                "herzschlag = ? WHERE runde_id = ? AND id = ?",
+                (
+                    status,
+                    detail,
+                    _now(),
+                    _ICH if laeuft else None,
+                    _lebenszeichen() if laeuft else None,
+                    scope.runde_id,
+                    recording_id,
+                ),
             )
     finally:
         scope.close()
+
+
+def _verwaist(zeile: sqlite3.Row, grenze: datetime) -> bool:
+    """Gehört diese ``laeuft``-Zeile niemandem mehr?
+
+    Dieselben vier Fälle wie bei den Läufen (#178), in der Reihenfolge, in der sie sich
+    sicher entscheiden lassen: was in der eigenen Merkliste steht, wird hier und jetzt
+    verschriftet. Was uns gehört und **nicht** darin steht, hat einen Neustart nicht
+    überlebt. Alles übrige gehört einem anderen Prozess, und über den entscheidet allein
+    sein Lebenszeichen. Eine Zeile ohne beides stammt von vor diesen Spalten — oder aus
+    einem Lauf, der starb, bevor der erste Schlag geschrieben war.
+    """
+    if int(zeile["id"]) in _laufend:
+        return False
+    if zeile["besitzer"] == _ICH:
+        return True
+    herzschlag = zeile["herzschlag"]
+    if not herzschlag:
+        return True
+    return datetime.fromisoformat(herzschlag) < grenze
+
+
+def zurueckstellen(runde: Runde) -> tuple[str, ...]:
+    """Spuren, deren Verschriftung niemand mehr betreibt, zurück in die Warteschlange.
+
+    Zurück auf ``wartet`` und nicht auf ``gescheitert``: die Audiodatei liegt noch da, der
+    Lauf ist beliebig oft wiederholbar, und ein Transkript aus dem zweiten Anlauf ist
+    dasselbe wie eines aus dem ersten. Ein Fehlschlag stünde hier für einen Fehler, den es
+    nicht gab — und die Spur bekäme nie einen zweiten Versuch.
+    """
+    zurueck = []
+    scope = db.scoped(runde)
+    try:
+        with _schloss:
+            offen = scope.execute(
+                "SELECT id, source, besitzer, herzschlag FROM recording "
+                "WHERE runde_id = ? AND status = ? AND deleted_at IS NULL",
+                (scope.runde_id, LAEUFT),
+            ).fetchall()
+            grenze = datetime.now(UTC) - VERSTUMMT
+            verwaist = [zeile for zeile in offen if _verwaist(zeile, grenze)]
+            if not verwaist:
+                return ()
+            zeitpunkt = _now()
+            with scope:
+                scope.executemany(
+                    "UPDATE recording SET status = ?, detail = ?, updated_at = ?, "
+                    "besitzer = NULL, herzschlag = NULL WHERE runde_id = ? AND id = ?",
+                    [
+                        (WARTET, UNTERBROCHEN, zeitpunkt, scope.runde_id, int(zeile["id"]))
+                        for zeile in verwaist
+                    ],
+                )
+            zurueck = [str(zeile["source"]) for zeile in verwaist]
+    finally:
+        scope.close()
+    for quelle in zurueck:
+        logger.warning("Spur %s: %s", quelle, UNTERBROCHEN)
+    return tuple(zurueck)
+
+
+def _pulsen(runde: Runde, recording_id: int, halt: threading.Event) -> None:
+    """Das Lebenszeichen der laufenden Spur — in einem eigenen Faden.
+
+    Nicht im Arbeitsfaden: der steckt stundenlang im Modell, und genau währenddessen muss
+    ein Nachbarprozess sehen, dass hier noch jemand an dieser Spur sitzt.
+    """
+    while not halt.wait(HERZSCHLAG):
+        scope = db.scoped(runde)
+        try:
+            with scope:
+                scope.execute(
+                    "UPDATE recording SET herzschlag = ? WHERE runde_id = ? AND id = ?",
+                    (_lebenszeichen(), scope.runde_id, recording_id),
+                )
+        # Ein verpasster Schlag darf die Spur nicht mitnehmen; bis ``VERSTUMMT`` bleibt
+        # Platz für mehrere.
+        except Exception as fehler:  # noqa: BLE001
+            logger.warning("Lebenszeichen für Spur %s nicht geschrieben: %s", recording_id, fehler)
+        finally:
+            scope.close()
+
+
+@contextmanager
+def in_arbeit(runde: Runde, recording_id: int) -> Iterator[None]:
+    """Die Spur läuft — mit Besitzer, Lebenszeichen und Eintrag in der Merkliste.
+
+    Der abschließende ``mark`` gehört **in** den Block: dazwischen stünde die Zeile sonst
+    für einen Wimpernschlag auf ``laeuft``, ohne dass jemand sie noch führt.
+    """
+    with _schloss:
+        _laufend.add(recording_id)
+    mark(runde, recording_id, LAEUFT)
+    halt = threading.Event()
+    threading.Thread(
+        target=_pulsen,
+        args=(runde, recording_id, halt),
+        name=f"chronicle-spur-{recording_id}",
+        daemon=True,
+    ).start()
+    try:
+        yield
+    finally:
+        halt.set()
+        with _schloss:
+            _laufend.discard(recording_id)
 
 
 def expired(runde: Runde, *, tage: int = RETENTION_TAGE) -> tuple[Recording, ...]:
@@ -299,11 +478,16 @@ def expired(runde: Runde, *, tage: int = RETENTION_TAGE) -> tuple[Recording, ...
     return tuple(_eintrag(row) for row in rows)
 
 
-def _als_geloescht_vermerken(runde: Runde, recording_id: int) -> None:
+def _als_geloescht_vermerken(runde: Runde, recording_id: int, status: str | None = None) -> None:
     zeitpunkt = _now()
     scope = db.scoped(runde)
     try:
         with scope:
+            if status is not None:
+                scope.execute(
+                    "UPDATE recording SET status = ?, detail = ? WHERE runde_id = ? AND id = ?",
+                    (status, NIE_VERSCHRIFTET, scope.runde_id, recording_id),
+                )
             scope.execute(
                 "UPDATE recording SET deleted_at = ?, updated_at = ? WHERE runde_id = ? AND id = ?",
                 (zeitpunkt, zeitpunkt, scope.runde_id, recording_id),
@@ -312,18 +496,40 @@ def _als_geloescht_vermerken(runde: Runde, recording_id: int) -> None:
         scope.close()
 
 
+def _verschriftet(aufnahme: Recording) -> bool:
+    """Hat diese Spur bekommen, wofür sie eingereiht wurde?
+
+    ``fertig`` ohne Transkript ist der eine gewollte Fall: eine Spur ohne Äußerung wird
+    absichtlich nicht verschriftet (``MINDESTDAUER``), und ihr Vermerk sagt das auch. Alles
+    andere ohne Transkript ist eine Aufnahme, die nie zu Text wurde.
+    """
+    return aufnahme.transcript_id is not None or aufnahme.status == FERTIG
+
+
 def sweep(config, runde: Runde, *, tage: int = RETENTION_TAGE) -> tuple[str, ...]:
     """Setzt die zugesagte Frist durch: Audio weg, Zeile bleibt.
 
     Beliebig oft aufrufbar — eine bereits vermerkte Spur wird nicht noch einmal gesucht,
     und eine schon von Hand entfernte Datei ist kein Fehlschlag.
+
+    Die Frist gilt **jeder** Spur, auch der nie verschrifteten: sie ist eine Zusage an
+    Menschen, deren Stimme aufgenommen wurde, und keine Belohnung für einen geglückten
+    Lauf. Still darf sie eine solche Spur aber nicht abräumen — hier geht eine Stunde
+    gesprochener Abend, von der es keinen Text gibt und nie mehr einen geben wird. Also
+    eine eigene Meldung und ein ehrlicher Stand an der Zeile statt eines »wartet«, auf das
+    niemand mehr wartet (#181).
     """
     meldungen = []
     for aufnahme in expired(runde, tage=tage):
         (config.recordings_dir / aufnahme.filename).unlink(missing_ok=True)
-        _als_geloescht_vermerken(runde, aufnahme.id)
-        meldung = NACH_FRIST.format(source=aufnahme.source, tage=tage)
-        logger.info("%s", meldung)
+        if _verschriftet(aufnahme):
+            _als_geloescht_vermerken(runde, aufnahme.id)
+            meldung = NACH_FRIST.format(source=aufnahme.source, tage=tage)
+            logger.info("%s", meldung)
+        else:
+            _als_geloescht_vermerken(runde, aufnahme.id, status=GESCHEITERT)
+            meldung = OHNE_TEXT.format(source=aufnahme.source, tage=tage)
+            logger.warning("%s", meldung)
         meldungen.append(meldung)
     return tuple(meldungen)
 

@@ -8,11 +8,12 @@ ein erfundenes.
 from __future__ import annotations
 
 import sqlite3
+import threading
 import wave
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from conftest import runde
+from conftest import GRENZE, runde, warte_bis
 
 from chronicle import db, notes, recordings
 from chronicle.config import Config
@@ -342,6 +343,7 @@ def test_der_naechtliche_stapel_setzt_die_frist_auch_ohne_arbeit_durch(config, s
 
 def test_die_meldung_sagt_warum_die_aufnahme_weg_ist(config, sitzung_id):
     hochladen(config, sitzung_id)
+    service.run_queue(config, runde(config), model=Erkenner())
     (aufnahme,) = recordings.for_session(runde(config), sitzung_id)
     altern(config, aufnahme.id, recordings.RETENTION_TAGE + 1)
 
@@ -352,6 +354,171 @@ def test_die_meldung_sagt_warum_die_aufnahme_weg_ist(config, sitzung_id):
     )
     assert recordings.get(runde(config), aufnahme.id).deleted_at
     assert recordings.pending(runde(config)) == ()
+
+
+def test_eine_nie_verschriftete_spur_verschwindet_nicht_stillschweigend(config, sitzung_id):
+    """Die Frist gilt auch ihr — aber niemand darf es erst hinterher merken (#181).
+
+    Hier geht eine Stunde gesprochener Abend, von der es keinen Text gibt und nie mehr
+    einen geben wird. Die Zeile sagte danach »wartet«, und die Meldung klang wie jede
+    andere.
+    """
+    aufnahme = hochladen(config, sitzung_id)
+    altern(config, aufnahme.id, recordings.RETENTION_TAGE + 1)
+
+    (meldung,) = recordings.sweep(config, runde(config))
+
+    assert meldung == recordings.OHNE_TEXT.format(
+        source=aufnahme.source, tage=recordings.RETENTION_TAGE
+    )
+    nachher = recordings.get(runde(config), aufnahme.id)
+    assert nachher.status == recordings.GESCHEITERT
+    assert nachher.detail == recordings.NIE_VERSCHRIFTET
+    assert nachher.deleted_at
+    assert list(config.recordings_dir.iterdir()) == []
+
+
+def test_eine_absichtlich_uebersprungene_spur_ist_kein_solcher_verlust(config, sitzung_id):
+    """``fertig`` ohne Transkript ist der eine gewollte Fall (``MINDESTDAUER``, #142)."""
+    config.recordings_dir.mkdir(parents=True, exist_ok=True)
+    pfad = config.recordings_dir / f"sitzung{sitzung_id}-teek.wav"
+    with wave.open(str(pfad), "wb") as datei:
+        datei.setnchannels(2)
+        datei.setsampwidth(2)
+        datei.setframerate(48000)
+        datei.writeframes(bytes(int(48000 * 0.08) * 4))
+    aufnahme = recordings.enqueue(runde(config), sitzung_id, pfad.name)
+    service.run_queue(config, runde(config), model=Erkenner())
+    altern(config, aufnahme.id, recordings.RETENTION_TAGE + 1)
+
+    (meldung,) = recordings.sweep(config, runde(config))
+
+    assert meldung == recordings.NACH_FRIST.format(
+        source=aufnahme.source, tage=recordings.RETENTION_TAGE
+    )
+    assert recordings.get(runde(config), aufnahme.id).status == recordings.FERTIG
+
+
+# --- Ein Neustart mitten im Verschriften (#181) -------------------------------------
+
+
+def laeuft_bei(config, aufnahme_id, besitzer, herzschlag):
+    """Die Zeile so, wie ein anderer Prozess sie hinterlassen hat.
+
+    Roh geschrieben und nicht über ``mark``: ``mark`` trüge diesen Prozess als Besitzer
+    ein, und dann wäre es keine fremde Zeile mehr.
+    """
+    verbindung = db.connect(config.database_path)
+    try:
+        with verbindung:
+            verbindung.execute(
+                "UPDATE recording SET status = ?, besitzer = ?, herzschlag = ? WHERE id = ?",
+                (recordings.LAEUFT, besitzer, herzschlag, aufnahme_id),
+            )
+    finally:
+        verbindung.close()
+
+
+def gestorben_vor(sekunden):
+    return (datetime.now(UTC) - timedelta(seconds=sekunden)).isoformat(timespec="milliseconds")
+
+
+def herzschlag_von(config, aufnahme_id):
+    verbindung = db.connect(config.database_path)
+    try:
+        zeile = verbindung.execute(
+            "SELECT herzschlag FROM recording WHERE id = ?", (aufnahme_id,)
+        ).fetchone()
+    finally:
+        verbindung.close()
+    return zeile["herzschlag"]
+
+
+def test_ein_neustart_mitten_im_verschriften_verliert_die_spur_nicht(config, sitzung_id):
+    """Der gemeldete Fehler: ein Deploy mitten im Lauf, und die Spur steht für immer.
+
+    Verschriftet wird eine gute Stunde je Sitzungsstunde — der Prozess, der dabei stirbt,
+    ist kein seltener Fall. Danach startet ein **anderer**; für ihn ist die Zeile fremd,
+    und ihr Lebenszeichen ist verstummt.
+    """
+    aufnahme = hochladen(config, sitzung_id)
+    laeuft_bei(
+        config,
+        aufnahme.id,
+        "der-prozess-von-vorhin",
+        gestorben_vor(recordings.VERSTUMMT.total_seconds() + 1),
+    )
+
+    meldungen = service.run_queue(config, runde(config), model=Erkenner())
+
+    assert "2 Segmente" in meldungen[0]
+    nachher = recordings.get(runde(config), aufnahme.id)
+    assert nachher.status == recordings.FERTIG
+    assert nachher.text == "Auf dem Heimweg fällt mir ein: die Wirtin hat gelogen."
+    assert len(list(config.recordings_dir.iterdir())) == 1
+
+
+def test_die_zurueckgestellte_spur_sagt_an_der_zeile_was_ihr_geschah(config, sitzung_id):
+    aufnahme = hochladen(config, sitzung_id)
+    laeuft_bei(config, aufnahme.id, "der-prozess-von-vorhin", gestorben_vor(3600))
+
+    assert recordings.zurueckstellen(runde(config)) == (aufnahme.source,)
+
+    nachher = recordings.get(runde(config), aufnahme.id)
+    assert nachher.status == recordings.WARTET
+    assert nachher.detail == recordings.UNTERBROCHEN
+    assert [zeile.id for zeile in recordings.pending(runde(config))] == [aufnahme.id]
+
+
+def test_die_eigene_verwaiste_spur_kommt_ohne_wartezeit_zurueck(config, sitzung_id):
+    """Was uns gehört und nicht in der Merkliste steht, läuft nirgends mehr."""
+    aufnahme = hochladen(config, sitzung_id)
+    recordings.mark(runde(config), aufnahme.id, recordings.LAEUFT)
+
+    assert recordings.zurueckstellen(runde(config)) == (aufnahme.source,)
+    assert recordings.get(runde(config), aufnahme.id).status == recordings.WARTET
+
+
+def test_eine_spur_die_ein_anderer_prozess_gerade_verschriftet_bleibt_ihm(config, sitzung_id):
+    """Die Gegenrichtung: zwei Container liegen auf einer Datei (#178).
+
+    Ein frisches Lebenszeichen heißt, dass dort jemand sitzt — die Spur ein zweites Mal
+    anzufassen hieße, dieselbe Stunde ein zweites Mal auf derselben einen CPU zu rechnen.
+    """
+    aufnahme = hochladen(config, sitzung_id)
+    laeuft_bei(config, aufnahme.id, "der-nachbarcontainer", gestorben_vor(1))
+
+    assert recordings.zurueckstellen(runde(config)) == ()
+    assert service.run_queue(config, runde(config), model=Erkenner()) == ()
+    assert recordings.get(runde(config), aufnahme.id).status == recordings.LAEUFT
+
+
+def test_die_spur_in_arbeit_gibt_lebenszeichen(config, sitzung_id, monkeypatch):
+    """Ohne den Puls hielte der Nachbarprozess eine stundenlange Spur für abgestürzt."""
+    monkeypatch.setattr(recordings, "HERZSCHLAG", 0.01)
+    aufnahme = hochladen(config, sitzung_id)
+    tor = threading.Event()
+
+    class Langsam(Erkenner):
+        def transcribe(self, audio_path, *, vocabulary=""):
+            tor.wait(GRENZE)
+            yield from ()
+
+    faden = threading.Thread(
+        target=lambda: service.run_queue(config, runde(config), model=Langsam())
+    )
+    faden.start()
+    try:
+        assert warte_bis(lambda: recordings.get(runde(config), aufnahme.id).status == "laeuft")
+        erster = herzschlag_von(config, aufnahme.id)
+        assert erster is not None
+        assert warte_bis(lambda: herzschlag_von(config, aufnahme.id) > erster)
+    finally:
+        tor.set()
+        faden.join(GRENZE)
+
+    assert recordings.get(runde(config), aufnahme.id).status == recordings.FERTIG
+    assert herzschlag_von(config, aufnahme.id) is None
 
 
 def test_eine_alte_datenbank_bekommt_die_spalte_nachgetragen(tmp_path):
