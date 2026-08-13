@@ -7,6 +7,7 @@ daraus macht, steht in ``test_app``.
 """
 
 import ipaddress
+import logging
 import socket
 
 import pytest
@@ -14,7 +15,7 @@ import pytest
 from chronicle import herkunft
 
 # TEST-NET-1 (RFC 5737): eine Adresse, die keiner Maschine gehören darf.
-FREMD = "192.0.2.1"
+FREMD = herkunft.PROBE_ADRESSE
 
 
 def eigene_lan_adresse():
@@ -73,6 +74,19 @@ def test_die_liste_nimmt_auch_ein_netz():
     assert herkunft.vertraut("192.168.178.55", erlaubt)
     assert herkunft.vertraut("::1", erlaubt)
     assert not herkunft.vertraut("10.0.0.5", erlaubt)
+
+
+def test_die_selbstprobe_besteht_wo_die_pruefung_traegt():
+    assert herkunft.selbstprobe()
+
+
+def test_die_selbstprobe_meldet_einen_kern_dem_jede_adresse_eigen_ist(monkeypatch, caplog):
+    """Der Fall, den kein Test von der Box aus sieht: ``ip_nonlocal_bind`` sagt zu allem ja."""
+    monkeypatch.setattr(herkunft, "ist_eigene", lambda gefragt: True)
+    with caplog.at_level(logging.ERROR):
+        assert not herkunft.selbstprobe()
+    assert herkunft.NONLOCAL_SCHALTER in caplog.text
+    assert herkunft.TRUSTED_VARIABLE in caplog.text
 
 
 def test_ein_unlesbarer_eintrag_faellt_heraus_statt_zu_sperren():

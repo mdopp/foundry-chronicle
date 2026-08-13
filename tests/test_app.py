@@ -6,12 +6,14 @@ und ``test_kette``. Hier bleiben die Haustür (ADR 0001), der Bot-Token, das Spr
 und die Frage, wer verwalten darf.
 """
 
+import logging
+
 import pytest
 from conftest import GM_FIGUR, UNSER_KONTO, runde, systemsprache
 from flask import request
 
 import chronicle.__main__ as entry
-from chronicle import db, instanz, settings, zugang
+from chronicle import db, herkunft, instanz, settings, zugang
 from chronicle.app import create_app
 from chronicle.compose import client as sprachmodell
 from chronicle.compose.client import ModelUnreachable
@@ -191,8 +193,9 @@ def test_der_stand_des_abgleichs_steht_nicht_mehr_auf_der_betreiberseite(config,
 # Bot-Token, also gibt es hier sehr wohl etwas zu schützen.
 
 # Ein anderer Rechner im LAN. Der Testclient spricht sonst von 127.0.0.1 — das ist diese
-# Maschine, und von der kommt auch der Proxy auf der Box.
-AUS_DEM_LAN = {"REMOTE_ADDR": "192.168.178.55"}
+# Maschine, und von der kommt auch der Proxy auf der Box. Die Adresse stammt aus TEST-NET-1
+# (RFC 5737): eine echte LAN-Adresse könnte der Maschine gehören, auf der die Tests laufen.
+AUS_DEM_LAN = {"REMOTE_ADDR": "192.0.2.55"}
 
 
 def test_ohne_remote_user_kommt_niemand_durch(tmp_path):
@@ -258,6 +261,32 @@ def test_wer_den_proxy_woanders_hat_traegt_ihn_nach(tmp_path):
     assert antwort.status_code == 200
     # Und die Liste ersetzt die Maschine: Loopback steht nicht mehr darin.
     assert client.get("/", headers={"Remote-User": "mira"}).status_code == 403
+
+
+def test_ein_kern_der_die_pruefung_entwertet_wird_gemeldet_und_haelt_nichts_auf(
+    tmp_path, monkeypatch, caplog
+):
+    """Steht ``ip_nonlocal_bind``, gilt jeder Absender als eigen — von hier aus unsichtbar.
+
+    Der Dienst sagt es deshalb beim Start selbst. Starten muss er trotzdem: eine Instanz,
+    die daran nicht mehr hochkommt, ist dieselbe Aussperrung noch einmal.
+    """
+    monkeypatch.setattr(herkunft, "ist_eigene", lambda gefragt: True)
+    with caplog.at_level(logging.ERROR):
+        app = create_app(Config(data_dir=tmp_path, require_remote_user=True))
+    assert herkunft.NONLOCAL_SCHALTER in caplog.text
+    assert herkunft.TRUSTED_VARIABLE in caplog.text
+    assert app.test_client().get("/healthz").status_code == 200
+
+
+def test_die_selbstprobe_bleibt_weg_wo_eine_gepflegte_liste_steht(tmp_path, monkeypatch, caplog):
+    """Dort entscheidet die Liste, nicht der Kern — die Frage stellt sich gar nicht."""
+    monkeypatch.setattr(herkunft, "ist_eigene", lambda gefragt: True)
+    with caplog.at_level(logging.ERROR):
+        create_app(
+            Config(data_dir=tmp_path, require_remote_user=True, trusted_proxies=("127.0.0.1",))
+        )
+    assert caplog.text == ""
 
 
 def test_mit_remote_user_geht_es_weiter(tmp_path):

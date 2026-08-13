@@ -61,6 +61,11 @@ def create_app(config: Config | None = None, *, zeitplan: bool = False) -> Flask
     # verlangt trotzdem eine, also nimmt sie die erste.
     runde = runden.erste(basis.database_path)
     vertrauen = herkunft.netze(basis.trusted_proxies)
+    # Ohne gepflegte Liste hängt der Türsteher allein an der Frage an den Kern — und die
+    # kann ein Kernschalter still entwerten. Einmal nachsehen; hochkommen darf der Dienst
+    # trotzdem.
+    if basis.require_remote_user and not vertrauen:
+        herkunft.selbstprobe()
     if zeitplan:
         nightly.starten(basis)
 

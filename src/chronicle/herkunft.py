@@ -21,7 +21,8 @@ binden (``EADDRNOTAVAIL``). Der Umweg lohnt, weil die Box per DHCP adressiert is
 abgeschriebene Adresse wäre nach der nächsten Lease eine Aussperrung, diese Frage
 beantwortet sich bei jedem Aufruf neu. (Wo im Kern ``ip_nonlocal_bind`` steht, gilt jede
 Adresse als eigene; dort trägt die Prüfung nicht, und es zählt allein die Liste unten.
-``tests/test_herkunft.py`` schlägt in diesem Fall fehl, statt still durchzuwinken.)
+``tests/test_herkunft.py`` schlägt in diesem Fall fehl, statt still durchzuwinken, und
+``selbstprobe`` sagt es beim Start jedes Dienstes — auch dem, unter dem niemand testet.)
 
 **Falls doch einmal ausgesperrt** — die Seite antwortet 403, obwohl die Anmeldung am
 Proxy geklappt hat: ``CHRONICLE_TRUSTED_PROXIES`` in der Dienstbeschreibung auf die
@@ -42,6 +43,12 @@ from collections.abc import Iterable
 logger = logging.getLogger(__name__)
 
 TRUSTED_VARIABLE = "CHRONICLE_TRUSTED_PROXIES"
+
+# TEST-NET-1 (RFC 5737): eine Adresse, die per Norm keiner Maschine gehört. Wer sie für
+# eigen hält, hält jede für eigen.
+PROBE_ADRESSE = "192.0.2.1"
+
+NONLOCAL_SCHALTER = "net.ipv4.ip_nonlocal_bind"
 
 Adresse = ipaddress.IPv4Address | ipaddress.IPv6Address
 Netz = ipaddress.IPv4Network | ipaddress.IPv6Network
@@ -93,6 +100,32 @@ def ist_eigene(gefragt: Adresse) -> bool:
     except OSError:
         return False
     return True
+
+
+def selbstprobe() -> bool:
+    """Trägt die Frage an den Kern hier überhaupt? Einmal beim Start gestellt.
+
+    Steht ``net.ipv4.ip_nonlocal_bind`` auf 1, lässt sich an **jede** Adresse binden;
+    ``ist_eigene`` sagt dann zu allem ja, und der Türsteher winkt jeden Absender durch,
+    ohne dass irgendetwas rot würde. Von der Box selbst ist das nicht testbar — dort ist
+    jeder Aufruf zu Recht ein eigener —, also fragt der Dienst es beim Start an einer
+    Adresse, die niemandem gehören darf.
+
+    Der Dienst startet auch dann; eine Instanz, die daran nicht mehr hochkommt, wäre
+    dieselbe Aussperrung noch einmal.
+    """
+    if not ist_eigene(ipaddress.ip_address(PROBE_ADRESSE)):
+        return True
+    logger.error(
+        "Die Herkunftsprüfung trägt auf dieser Maschine nicht: %s gilt ihr als eigene "
+        "Adresse, also gilt ihr jede. Damit wird Remote-User wieder jedem geglaubt, der "
+        "den Port erreicht (#190). Vermutlich steht %s auf 1 — auf 0 setzen, oder die "
+        "Adresse des Proxys in %s eintragen; dann zählt nur noch sie.",
+        PROBE_ADRESSE,
+        NONLOCAL_SCHALTER,
+        TRUSTED_VARIABLE,
+    )
+    return False
 
 
 def vertraut(absender: str | None, erlaubt: tuple[Netz, ...] = ()) -> bool:
