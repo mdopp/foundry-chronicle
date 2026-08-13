@@ -156,6 +156,13 @@ DOKUMENT_ANGELEGT = (
 
 DOKUMENT_ABGEBROCHEN = "Gut, ich habe nichts angelegt."
 
+# Der zweite Klick auf denselben Knopf, oder die zweite Vorschau desselben Dokuments: die
+# Abende stehen schon, und ein »angelegt« darunter wäre die Zusage, dass sie zweimal da sind.
+DOKUMENT_NICHTS_NEU = (
+    "Diese Abende stehen schon in der Chronik — angelegt habe ich nichts. Doppelt steht "
+    "dadurch nichts da."
+)
+
 NICHT_ABGELEGT = (
     "Das konnte ich nicht ablegen: {grund} Schreib es noch einmal — bleibt es dabei, "
     "steht der Grund im Log des Bots."
@@ -614,9 +621,17 @@ def dokument_anlegen(runde: Runde, abende: Sequence[dokument.Abend]) -> str:
 
     Weder der Dateiname noch eine Überschrift: beides kommt von der Gruppe und kann jeden
     Klarnamen enthalten. Wie viele Abende entstanden sind, sagt genug.
+
+    Gegen den Bestand geprüft wird **hier** und nicht nur in der Vorschau: die Vorschau
+    friert ihre Abende ein und ist ephemer, also ruft auf, wer unsicher ist, ob sie durchkam
+    — zwei offene Vorschauen desselben Dokuments legten den Abend sonst zweimal an. Und eine
+    einzelne Sitzung wieder loszuwerden gibt es nicht; ``/chronik loeschen`` nimmt die ganze
+    Runde.
     """
-    angelegt = dokument.anlegen(runde, abende)
+    angelegt = dokument.anlegen(runde, dokument.neu(runde, abende))
     logger.info("Notizdokument eingelesen: %s Sitzungen angelegt.", angelegt)
+    if not angelegt:
+        return DOKUMENT_NICHTS_NEU
     return DOKUMENT_ANGELEGT.format(sitzungen=_anzahl(angelegt, "Sitzung", "Sitzungen"))
 
 

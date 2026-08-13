@@ -576,7 +576,7 @@ def test_notiz_landet_nicht_in_der_fremden_szene(zwei_runden):
     config, a, b, ids = zwei_runden
     assert notes.add_note(a, ids[2]["szene"], "Fremde Szene") is None
     assert notes.add_scene(a, ids[2]["sitzung"]) is None
-    assert notes.rename_scene(a, ids[2]["szene"], "Umbenannt") is False
+    assert notes.rename_scene(a, ids[2]["sitzung"], ids[2]["szene"], "Umbenannt") is False
     assert notes.session(b, ids[2]["sitzung"]).scenes[0].title is None
     assert notes.session(a, ids[2]["sitzung"]) is None
     assert notes.session_of_scene(a, ids[2]["szene"]) is None

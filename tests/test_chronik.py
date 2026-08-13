@@ -1882,6 +1882,43 @@ def test_dieselbe_datei_zweimal_verdoppelt_den_bestand_nicht(stelle, bot):
     assert ctx.ansichten == [None], "ohne neuen Abend gibt es nichts zu bestätigen"
 
 
+def test_zwei_offene_vorschauen_legen_denselben_abend_nicht_zweimal_an(stelle, bot):
+    """Der alltägliche Griff: die Vorschau ist ephemer, also ruft man den Befehl noch einmal.
+
+    Beide Vorschauen halten dieselben eingefrorenen Abende; wer beide bestätigt, hätte jeden
+    Abend zweimal. Eine einzelne Sitzung wieder loszuwerden gibt es nicht — ``/chronik
+    loeschen`` nimmt die ganze Runde. Geprüft wird deshalb beim Schreiben, nicht beim Zeigen.
+    """
+    _config, unsere = stelle
+    erste, _ = einlesen_fahren(bot)
+    zweite, _ = einlesen_fahren(bot)
+
+    zuerst = FakeInteraction(erste.channel)
+    danach = FakeInteraction(zweite.channel)
+    asyncio.run(erste.ansichten[-1].items[0].callback(zuerst))
+    asyncio.run(zweite.ansichten[-1].items[0].callback(danach))
+
+    assert abende(unsere) == ["2026-04-09", "2026-03-26", "2026-03-12"]
+    assert zuerst.response.bearbeitet[0]["content"] == chronik.DOKUMENT_ANGELEGT.format(
+        sitzungen="3 Sitzungen"
+    )
+    assert danach.response.bearbeitet[0]["content"] == chronik.DOKUMENT_NICHTS_NEU
+
+
+def test_derselbe_knopf_zweimal_gedrueckt_schreibt_nur_einmal(stelle, bot):
+    """Ein Doppelklick ist kein zweiter Auftrag — und die Ansicht nimmt danach nichts mehr an."""
+    _config, unsere = stelle
+    ctx, _klick = einlesen_fahren(bot, knopf="ja")
+    ansicht = ctx.ansichten[-1]
+
+    nochmal = FakeInteraction(ctx.channel)
+    asyncio.run(ansicht.items[0].callback(nochmal))
+
+    assert abende(unsere) == ["2026-04-09", "2026-03-26", "2026-03-12"]
+    assert nochmal.response.bearbeitet[0]["content"] == chronik.DOKUMENT_NICHTS_NEU
+    assert ansicht.gestoppt, "nach dem Schreiben stellt Discord der Ansicht nichts mehr zu"
+
+
 def test_ein_dokument_ohne_datum_wird_nicht_geraten(stelle, bot):
     _config, unsere = stelle
 
@@ -1907,11 +1944,17 @@ def test_eine_zu_grosse_datei_bleibt_liegen(stelle, bot):
 
 
 def test_was_kein_notizdokument_ist_wird_nicht_gelesen(stelle, bot):
+    """Abgewiesen, nicht gelesen — der Dateiname allein belegt das nicht, er steht überall."""
     _config, unsere = stelle
 
     ctx, _klick = einlesen_fahren(bot, name="weltkarte.png")
 
-    assert "weltkarte.png" in ctx.antworten[0]
+    assert ctx.antworten == [
+        chronik.DOKUMENT_KEINE_DATEI.format(
+            name="weltkarte.png", endungen=", ".join(dokument.SUFFIXES)
+        )
+    ]
+    assert ctx.ansichten == [None], "was nicht gelesen wurde, hat nichts zu bestätigen"
     assert notes.sessions(unsere) == ()
 
 

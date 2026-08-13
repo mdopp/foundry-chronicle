@@ -117,6 +117,36 @@ def test_eine_unbekannte_szene_gehoert_zu_keiner_sitzung(tmp_path):
     assert notes.session_of_scene(gruppe(tmp_path), 99) is None
 
 
+def test_die_namenlose_erste_szene_bekommt_ihren_namen(tmp_path):
+    wo = gruppe(tmp_path)
+    sitzung_id = sitzung_anlegen(wo)
+    erste = notes.session(wo, sitzung_id).scenes[0]
+
+    assert notes.rename_scene(wo, sitzung_id, erste.id, "Der Regen und der Wirt") is True
+    assert notes.session(wo, sitzung_id).scenes[0].title == "Der Regen und der Wirt"
+
+
+def test_ein_gesetzter_szenenname_wird_nicht_ueberschrieben(tmp_path):
+    """Umbenannt wird die leere erste Szene — nicht, was ein Mensch selbst benannt hat."""
+    wo = gruppe(tmp_path)
+    sitzung_id = sitzung_anlegen(wo)
+    zweite = notes.add_scene(wo, sitzung_id, title="Ankunft im Hafen")
+
+    assert notes.rename_scene(wo, sitzung_id, zweite, "Etwas ganz anderes") is False
+    assert notes.session(wo, sitzung_id).scenes[1].title == "Ankunft im Hafen"
+
+
+def test_eine_szene_einer_fremden_sitzung_wird_nicht_umbenannt(tmp_path):
+    """Die Sitzung gehört zur Adresse: ein Abend benennt keine Szene eines anderen um."""
+    wo = gruppe(tmp_path)
+    erste_sitzung = sitzung_anlegen(wo)
+    zweite_sitzung = sitzung_anlegen(wo)
+    fremde = notes.session(wo, zweite_sitzung).scenes[0]
+
+    assert notes.rename_scene(wo, erste_sitzung, fremde.id, "Der Keller") is False
+    assert notes.session(wo, zweite_sitzung).scenes[0].title is None
+
+
 def test_mitschreiben_geht_ohne_foundry(tmp_path):
     # Foundry kommt beim Mitschreiben nicht vor — eine tote Foundry darf nichts blockieren.
     wo = gruppe(tmp_path)
