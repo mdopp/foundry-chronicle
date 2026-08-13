@@ -243,17 +243,21 @@ def ohne_alte_laeufe():
     """Ein Lauf des einen Tests darf im nächsten nicht als »läuft noch« dastehen.
 
     Dasselbe gilt für die Vormerkung des Nachtlaufs: sie hält ein Fenster offen, und ein
-    Rest davon machte im nächsten Test eine Runde fällig, die es nicht ist.
+    Rest davon machte im nächsten Test eine Runde fällig, die es nicht ist. Und für die
+    Merkliste der Spuren: eine Id daraus machte im nächsten Test eine gleichnamige Zeile
+    zur »läuft gerade hier«.
     """
-    from chronicle import nightly
+    from chronicle import nightly, recordings
 
     jobs._laufend.clear()
     nightly._vorgemerkt.clear()
+    recordings._laufend.clear()
     _gemerkt.clear()
     yield
     warte_auf_laeufe()
     jobs._laufend.clear()
     nightly._vorgemerkt.clear()
+    recordings._laufend.clear()
     _gemerkt.clear()
 
 

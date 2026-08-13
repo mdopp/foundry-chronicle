@@ -279,15 +279,19 @@ def run_queue(
     # setzt ``recordings.sweep_alle`` durch, die gilt ihr weiter.
     if lebenszyklus.ruht(runde):
         return ()
+    # Vor dem Blick in die Warteschlange: was ein Neustart auf ``laeuft`` stehen ließ,
+    # gehört wieder hinein. Sonst wäre die Spur für ``pending`` unsichtbar und verlöre
+    # nach der Frist ihre Datei, ohne je verschriftet worden zu sein (#181).
+    recordings.zurueckstellen(runde)
     wartend = recordings.pending(runde)
     meldungen = []
     if wartend:
         erkenner = model if model is not None else model_from_config(config)
         for aufnahme in wartend:
-            recordings.mark(runde, aufnahme.id, recordings.LAEUFT)
-            meldung, gelungen = _eine_spur(config, runde, aufnahme, erkenner, delete_audio)
-            stand = recordings.FERTIG if gelungen else recordings.GESCHEITERT
-            recordings.mark(runde, aufnahme.id, stand, meldung)
+            with recordings.in_arbeit(runde, aufnahme.id):
+                meldung, gelungen = _eine_spur(config, runde, aufnahme, erkenner, delete_audio)
+                stand = recordings.FERTIG if gelungen else recordings.GESCHEITERT
+                recordings.mark(runde, aufnahme.id, stand, meldung)
             meldungen.append(meldung)
     meldungen.extend(recordings.sweep(config, runde))
     return tuple(meldungen)

@@ -257,6 +257,12 @@ CREATE TABLE IF NOT EXISTS transcript (
 -- getippten Notiz tut — ein Diktat darf Tage später kommen und gehört trotzdem in die
 -- Szene von Dienstag. Nicht ``uploaded_at``: das ist der Zeitpunkt des Ablegens.
 -- ``NULL`` steht bei allem, was ohne Nachricht hereinkam: Bot-Spuren, Uploads.
+--
+-- ``besitzer`` und ``herzschlag`` sagen von einer Zeile auf ``laeuft``, **wem** sie gehört
+-- und ob er noch atmet — dieselben zwei Spalten wie bei ``job`` und aus demselben Grund:
+-- ein Verschriften läuft eine gute Stunde je Sitzungsstunde, und stirbt der Prozess dabei,
+-- stünde die Zeile ohne sie für immer auf ``laeuft``. Dann bekäme die Spur nie ein
+-- Transkript und verlöre nach der Frist trotzdem ihre Audiodatei (#181).
 CREATE TABLE IF NOT EXISTS recording (
     id          INTEGER PRIMARY KEY,
     runde_id    INTEGER NOT NULL REFERENCES runde (id) ON DELETE CASCADE,
@@ -272,6 +278,8 @@ CREATE TABLE IF NOT EXISTS recording (
     updated_at  TEXT NOT NULL,
     deleted_at  TEXT,
     discord_user_id TEXT,
+    besitzer    TEXT,
+    herzschlag  TEXT,
     FOREIGN KEY (session_id, runde_id) REFERENCES session (id, runde_id) ON DELETE CASCADE
 );
 
