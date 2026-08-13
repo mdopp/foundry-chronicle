@@ -122,6 +122,15 @@ drei Bedingungen, die nicht wegfallen dürfen — sie gelten für **jedes** Gehe
 
 - Die Seite steht **hinter Authelia und dem `Remote-User`-Guard**. Seit #157 ist sie die
   einzige, die es gibt — die Bedingung ist damit nicht schwächer, sondern trägt allein.
+  **Was sie heißt, war bis #190 weniger, als hier stand:** der Guard prüfte nur, ob die
+  Kopfzeile da ist, und die schreibt sich jeder selbst, der den Port erreicht — der
+  liegt im Host-Netz auf `0.0.0.0`, der Proxy war ein Weg dorthin und nicht der einzige.
+  Ein Unangemeldeter im LAN konnte damit den Bot-Token überschreiben. Seither gilt sie
+  wieder, aber wörtlich: geglaubt werden `Remote-User` **und** `Remote-Groups` nur, wenn
+  der Aufruf **von dieser Maschine** kommt — dort läuft der Proxy (`chronicle.herkunft`).
+  Das ersetzt Authelia nicht, es macht Authelia zum einzigen Weg. Wer den Proxy woanders
+  hinstellt, trägt seine Adresse in `CHRONICLE_TRUSTED_PROXIES` nach; ohne das antwortet
+  die Seite 403, und der Bot-Token bleibt unerreichbar statt ungeschützt.
 - Der Wert wird **nirgends angezeigt** — nicht im Formular, nicht auf `/status`, nicht in
   `repr`, Log oder Fehlermeldung; angezeigt wird nur, *ob* er gesetzt ist.
 - Übertragen wird **nur per POST**, nie in einer URL; ein leeres Feld heißt unverändert.
@@ -197,8 +206,11 @@ Assists (`get_assist`) lesen. Dieser Abschnitt ist der Extrakt, nicht der Ersatz
 
 - **ADR 0001 — SSO:** user-facing läuft auf einer Subdomain hinter
   Authelia-Forward-Auth. Die App baut **kein eigenes Login**; sobald echte Inhalte
-  angezeigt werden (#5/#7), erzwingt sie den `Remote-User`-Header und testet, dass
-  ohne ihn abgelehnt wird — kein LAN-Bypass. „Keine Zugriffskontrolle" weiter unten
+  angezeigt werden (#5/#7), erzwingt sie den `Remote-User`-Header — **und glaubt ihn
+  nur, wenn der Aufruf von dieser Maschine kommt** (#190). Die Kopfzeile allein ist kein
+  Beleg: sie schreibt sich jeder selbst, der den offenen Port erreicht. »Kein
+  LAN-Bypass« hieß bis dahin nur »ohne Kopfzeile kein Zugang«, und der Test dazu prüfte
+  auch nur das; geprüft wird seither der **erfundene** Fall. „Keine Zugriffskontrolle" weiter unten
   meint Mandantentrennung zwischen Gruppen — nicht die Haustür vor der Betreiber-Seite.
   Was hinter ihr liegt, sind Instanz-Werte und keine Rechte über fremde Runden (#90).
 - **`/healthz` → 200** ist Test-Seam und Install-Gate der Box.

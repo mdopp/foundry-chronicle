@@ -114,6 +114,18 @@ Ein eigenes Login gibt es nicht: angemeldet wird am Proxy (ServiceBay-ADR 0001),
 Umgebung — dann wird jeder Request ohne diesen Header abgewiesen. Lokal bleibt die
 Variable aus, sonst kommt man ohne Proxy nicht hinein.
 
+Die Kopfzeile allein ist dabei kein Beleg: der Dienst hört auf `0.0.0.0`, und wer den
+Port direkt erreicht, schreibt sie sich selbst hin. Geglaubt wird sie — und
+`Remote-Groups` mit ihr — deshalb nur einem Absender, der eine Adresse **dieser
+Maschine** trägt (#190); der Proxy läuft auf derselben Box und tut genau das. Steht er
+einmal woanders, sagt die Seite 403, obwohl die Anmeldung geklappt hat. Der Weg zurück
+ist `CHRONICLE_TRUSTED_PROXIES`: eine kommagetrennte Liste aus Adressen oder Netzen
+(`192.168.178.100`, `10.0.0.0/8`, `::1`), die die errechnete Antwort **ersetzt** —
+gesetzt zählt nur noch, was dort steht. Welche Adresse gemeint ist, sagt die Logzeile
+jeder Abweisung; leer bleibt es bei der Maschine selbst, weil die Box an DHCP hängt und
+eine abgeschriebene Adresse nach der nächsten Lease aussperrte. `/healthz` steht vor
+alldem — es ist das Install-Gate der Box und wird am Proxy vorbei gefragt.
+
 Prüfen wie die CI: `ruff check . && ruff format --check . && pytest -q`.
 
 ## Transkription
