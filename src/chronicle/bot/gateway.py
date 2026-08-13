@@ -947,7 +947,11 @@ async def _abschied_bei_leere(bot, lauf: _Lauf, aufnahme: Aufnahme) -> None:
     await asyncio.sleep(LEER_FRIST)
     if lauf.aufnahme is not aufnahme or _menschen(lauf):
         return
-    logger.info("Sprachkanal #%s leer — der Mitschnitt endet.", aufnahme.kanal.name)
+    # Die Sitzung statt des Kanalnamens (#206/#211): der Name beschreibt die Struktur
+    # einer fremden Gilde, die Sitzungskennung niemanden. Sie genügt trotzdem, weil an
+    # ihr Thread, Spuren und Einwilligungsnachweis hängen — und im Nachweis steht der
+    # Kanalname weiter, einen Schritt entfernt und dort mit Grund.
+    logger.info("Sitzung %s: Sprachkanal leer — der Mitschnitt endet.", aufnahme.session_id)
     await _beenden_und_sagen(bot, lauf, aufnahme, LEER_BEENDET, LEER_GESCHEITERT)
 
 
@@ -960,14 +964,20 @@ async def _abschied_beim_kanalverlust(bot, lauf: _Lauf, aufnahme: Aufnahme, woan
     die Spuren an dieser Stelle aufhören. Einen Abriss als Verschieben zu melden schickte
     die Runde in einen Sprachkanal nebenan, in dem nie jemand war (#120).
     """
+    # Beide Zeilen nennen die Sitzung statt des Kanals (#206/#211). Welcher Kanal es war,
+    # steht zwei Zeilen weiter im Thread — der gehört der Gilde, die ihre eigenen Kanäle
+    # ohnehin kennt. Im Log des Betreibers trägt die Kennung genug: sie unterscheidet die
+    # Läufe voneinander und führt zu Thread und Spuren, ohne eine Gilde zu beschreiben.
     if woanders:
         logger.warning(
-            "Der Bot wurde aus #%s verschoben — der Mitschnitt endet.", aufnahme.kanal.name
+            "Sitzung %s: der Bot wurde aus dem Sprachkanal verschoben — der Mitschnitt endet.",
+            aufnahme.session_id,
         )
         beendet, gescheitert = VERSCHOBEN, VERSCHOBEN_GESCHEITERT
     else:
         logger.warning(
-            "Die Verbindung zu #%s ist abgerissen — der Mitschnitt endet.", aufnahme.kanal.name
+            "Sitzung %s: die Verbindung zum Sprachkanal ist abgerissen — der Mitschnitt endet.",
+            aufnahme.session_id,
         )
         beendet, gescheitert = GETRENNT, GETRENNT_GESCHEITERT
     await _beenden_und_sagen(
