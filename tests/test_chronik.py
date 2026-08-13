@@ -40,9 +40,20 @@ from test_bot import FakeCtx as FakeSprechCtx
 from test_dokument import BEISPIEL, DRITTER_ABEND
 
 import chronicle.bot.__main__ as bot_eintritt
-from chronicle import db, dokument, jobs, lebenszyklus, notes, recordings, settings, zugang
+from chronicle import (
+    db,
+    dokument,
+    jobs,
+    lebenszyklus,
+    notes,
+    recordings,
+    search,
+    settings,
+    zugang,
+)
 from chronicle import runde as runden
 from chronicle.bot import ansage, chronik, einrichten, erinnern, gateway, recorder
+from chronicle.compose import service as compose_service
 from chronicle.config import Config
 from chronicle.discord import ausgabe, rueckblick
 from chronicle.foundry import client as foundry_client
@@ -191,9 +202,20 @@ class FakeNachricht:
         self.antworten.append(text)
 
 
-def rohes_ereignis(message_id, *, gilde=GILDE, inhalt=None):
+def rohes_ereignis(message_id, *, gilde=GILDE, inhalt=None, kanal=None, zeit=None, vom_bot=False):
+    """Die rohe Nutzlast eines Änderungs-Ereignisses, so weit der Handler sie liest.
+
+    ``inhalt=None`` heißt: **kein** ``content``-Schlüssel — die Änderung betraf etwas
+    anderes. ``inhalt=""`` ist der Fall, den Discord bei einer geleerten Bildunterschrift
+    schickt, und ein ganz anderer.
+    """
     daten = {} if inhalt is None else {"content": inhalt}
-    return types.SimpleNamespace(message_id=message_id, guild_id=gilde, data=daten)
+    if zeit is not None:
+        daten["timestamp"] = zeit.isoformat()
+    daten["author"] = {"id": "4001", "bot": vom_bot}
+    return types.SimpleNamespace(
+        message_id=message_id, channel_id=kanal, guild_id=gilde, data=daten
+    )
 
 
 # -- Die Bühne --------------------------------------------------------------------------
@@ -299,6 +321,9 @@ def sitzung_starten(bot, ctx=None, titel="", *, passwort="", wer=WER):
 
     asyncio.run(ablauf())
     thread = ctx.channel.threads[-1] if ctx.channel.threads else None
+    if thread is not None:
+        # Wie py-cord: den eben angelegten Thread findet der Bot danach über seine Kennung.
+        bot.kanaele[thread.id] = thread
     return fenster_interaktion, thread
 
 
@@ -744,17 +769,30 @@ def test_was_vor_jeder_trennlinie_liegt_bleibt_in_der_ersten_szene(stelle, bot):
 # -- Ändern und Löschen spiegeln --------------------------------------------------------
 
 
+def aendern(bot, message_id, *, thread=None, **rest):
+    kanal = None if thread is None else thread.id
+    asyncio.run(
+        bot.ereignisse["on_raw_message_edit"](rohes_ereignis(message_id, kanal=kanal, **rest))
+    )
+
+
+def gesagt(thread):
+    """Was nach der Begrüßung in den Thread ging — die steht dort schon vor jedem Test."""
+    return thread.gesendet[1:]
+
+
 def test_eine_geaenderte_nachricht_aendert_ihre_notiz(stelle, bot):
     _config, unsere = stelle
     _ctx, thread = sitzung_starten(bot)
     melden(bot, FakeNachricht(7301, "Die Wirtin heißt Mara.", kanal=thread.id))
 
-    asyncio.run(
-        bot.ereignisse["on_raw_message_edit"](rohes_ereignis(7301, inhalt="Die Wirtin heißt Mira."))
-    )
+    aendern(bot, 7301, thread=thread, inhalt="Die Wirtin heißt Mira.")
 
     sitzung_id = notes.session_of_thread(unsere, str(thread.id))
     assert notizen(unsere, sitzung_id) == [(1, "Die Wirtin heißt Mira.")]
+    # Die neue Fassung steht im Thread; eine Quittung darunter wäre die zweite Hälfte
+    # jedes Satzes eines ganzen Abends.
+    assert gesagt(thread) == []
 
 
 def test_eine_aenderung_ohne_neuen_text_laesst_die_notiz_stehen(stelle, bot):
@@ -762,10 +800,144 @@ def test_eine_aenderung_ohne_neuen_text_laesst_die_notiz_stehen(stelle, bot):
     _ctx, thread = sitzung_starten(bot)
     melden(bot, FakeNachricht(7302, "Die Wirtin heißt Mira.", kanal=thread.id))
 
-    asyncio.run(bot.ereignisse["on_raw_message_edit"](rohes_ereignis(7302)))
+    aendern(bot, 7302, thread=thread)
 
     sitzung_id = notes.session_of_thread(unsere, str(thread.id))
     assert notizen(unsere, sitzung_id) == [(1, "Die Wirtin heißt Mira.")]
+    assert gesagt(thread) == []
+
+
+def test_eine_geleerte_nachricht_nimmt_ihre_notiz_mit(stelle, bot):
+    """``content: ""`` heißt zurückgenommen — Notiz und Suchzeile gehen mit (#184)."""
+    _config, unsere = stelle
+    _ctx, thread = sitzung_starten(bot)
+    melden(bot, FakeNachricht(7310, "Mara hat den Wirt bestochen.", kanal=thread.id))
+    assert search.find(unsere, "bestochen").groups
+
+    aendern(bot, 7310, thread=thread, inhalt="")
+
+    sitzung_id = notes.session_of_thread(unsere, str(thread.id))
+    assert notizen(unsere, sitzung_id) == []
+    assert search.find(unsere, "bestochen").groups == ()
+    assert gesagt(thread) == [chronik.NOTIZ_FORT]
+
+
+def test_nachgetragener_text_wird_zur_notiz_seiner_szene(stelle, bot):
+    """Eine Nachricht ohne Text hatte nie eine Notiz — der Nachtrag legt sie an (#184)."""
+    _config, unsere = stelle
+    _ctx, thread = sitzung_starten(bot)
+    sitzung_id = notes.session_of_thread(unsere, str(thread.id))
+    notes.add_scene(unsere, sitzung_id, title="Im Keller", at="2026-08-05T21:00:00+00:00")
+    notes.add_scene(unsere, sitzung_id, title="Auf dem Dach", at="2026-08-05T23:00:00+00:00")
+    # Nur ein Anhang, kein Wort: so kommt eine Karte in den Thread.
+    melden(
+        bot,
+        FakeNachricht(
+            7311,
+            "",
+            kanal=thread.id,
+            anhaenge=(FakeAnhang("karte.png"),),
+            zeit=datetime(2026, 8, 5, 22, 0, tzinfo=UTC),
+        ),
+    )
+    assert notizen(unsere, sitzung_id) == []
+
+    aendern(
+        bot,
+        7311,
+        thread=thread,
+        inhalt="Der Gang hinter der Kammer.",
+        zeit=datetime(2026, 8, 5, 22, 0, tzinfo=UTC),
+    )
+
+    # Die Szene der Nachricht, nicht die zuletzt gezogene.
+    assert notizen(unsere, sitzung_id) == [(2, "Der Gang hinter der Kammer.")]
+    assert search.find(unsere, "Kammer").groups
+    assert gesagt(thread) == [chronik.NOTIZ_NACHGETRAGEN]
+
+
+def test_geschrieben_geaendert_geleert_und_wieder_nachgetragen(stelle, bot):
+    """Die ganze Folge an einer Nachricht — jeder Schritt zieht die Notiz mit."""
+    _config, unsere = stelle
+    _ctx, thread = sitzung_starten(bot)
+    sitzung_id = notes.session_of_thread(unsere, str(thread.id))
+    melden(bot, FakeNachricht(7312, "Der Wirt heißt Bram.", kanal=thread.id))
+
+    aendern(bot, 7312, thread=thread, inhalt="Der Wirt heißt Brom.")
+    assert notizen(unsere, sitzung_id) == [(1, "Der Wirt heißt Brom.")]
+
+    aendern(bot, 7312, thread=thread, inhalt="   ")
+    assert notizen(unsere, sitzung_id) == []
+    assert search.find(unsere, "Brom").groups == ()
+
+    aendern(bot, 7312, thread=thread, inhalt="Der Wirt heißt Bram.")
+    assert notizen(unsere, sitzung_id) == [(1, "Der Wirt heißt Bram.")]
+    assert gesagt(thread) == [chronik.NOTIZ_FORT, chronik.NOTIZ_NACHGETRAGEN]
+
+
+def test_steht_die_chronik_schon_wird_das_bei_jeder_aenderung_gesagt(stelle, bot):
+    """Die Chronik ist ein Abzug: sie läuft sonst still von den Notizen weg (#184)."""
+    _config, unsere = stelle
+    _ctx, thread = sitzung_starten(bot)
+    sitzung_id = notes.session_of_thread(unsere, str(thread.id))
+    melden(bot, FakeNachricht(7313, "Mara hat den Wirt bestochen.", kanal=thread.id))
+    scope = db.scoped(unsere)
+    try:
+        compose_service.save(scope, sitzung_id, "# Chronik", "2026-08-05T22:00:00+00:00")
+    finally:
+        scope.close()
+
+    aendern(bot, 7313, thread=thread, inhalt="Mara hat den Wirt gefragt.")
+    aendern(bot, 7313, thread=thread, inhalt="")
+
+    # Auch die stumme Änderung sagt es jetzt — und der Ausweg stimmt: ``/chronik fertig``
+    # meint genau diese Sitzung.
+    assert gesagt(thread) == [
+        chronik.CHRONIK_STEHT_SCHON,
+        f"{chronik.NOTIZ_FORT} {chronik.CHRONIK_STEHT_SCHON}",
+    ]
+
+
+def test_an_einer_aelteren_sitzung_wird_kein_ausweg_versprochen(stelle, bot):
+    """``/chronik fertig`` meint die zuletzt angelegte — für die davor wäre es gelogen."""
+    _config, unsere = stelle
+    kanal = FakeTextkanal()
+    _ctx, thread = sitzung_starten(bot, FakeCtx(kanal=kanal))
+    sitzung_id = notes.session_of_thread(unsere, str(thread.id))
+    melden(bot, FakeNachricht(7314, "Mara hat den Wirt bestochen.", kanal=thread.id))
+    scope = db.scoped(unsere)
+    try:
+        compose_service.save(scope, sitzung_id, "# Chronik", "2026-08-05T22:00:00+00:00")
+    finally:
+        scope.close()
+    # Ein neuer Abend darüber: ``/chronik fertig`` meint jetzt ihn.
+    sitzung_starten(bot, FakeCtx(kanal=kanal))
+
+    aendern(bot, 7314, thread=thread, inhalt="")
+
+    assert gesagt(thread) == [f"{chronik.NOTIZ_FORT} {chronik.CHRONIK_STEHT_SCHON_ALT}"]
+
+
+def test_was_der_bot_selbst_geschrieben_hat_wird_auch_beim_aendern_keine_notiz(stelle, bot):
+    _config, unsere = stelle
+    _ctx, thread = sitzung_starten(bot)
+
+    aendern(bot, 7315, thread=thread, inhalt="Die Sitzung läuft.", vom_bot=True)
+
+    sitzung_id = notes.session_of_thread(unsere, str(thread.id))
+    assert notizen(unsere, sitzung_id) == []
+    assert gesagt(thread) == []
+
+
+def test_eine_aenderung_ausserhalb_eines_sitzungsthreads_legt_nichts_an(stelle, bot):
+    _config, unsere = stelle
+    _ctx, thread = sitzung_starten(bot)
+    sitzung_id = notes.session_of_thread(unsere, str(thread.id))
+
+    aendern(bot, 7316, inhalt="Im Plauderkanal.")
+
+    assert notizen(unsere, sitzung_id) == []
+    assert gesagt(thread) == []
 
 
 def test_eine_geloeschte_nachricht_verschwindet_auch_bei_uns(stelle, bot):
@@ -784,10 +956,12 @@ def test_ein_ereignis_ohne_gilde_fasst_nichts_an(stelle, bot):
     _ctx, thread = sitzung_starten(bot)
     melden(bot, FakeNachricht(7304, "Bleibt stehen.", kanal=thread.id))
 
+    # Mit Kanal, aber ohne Gilde: so steht hier die Gilden-Weiche auf dem Prüfstand und
+    # nicht bloß ein Ereignis, das ohnehin nirgends ankäme.
+    aendern(bot, 7304, thread=thread, gilde=None, inhalt="weg")
     asyncio.run(
-        bot.ereignisse["on_raw_message_edit"](rohes_ereignis(7304, gilde=None, inhalt="weg"))
+        bot.ereignisse["on_raw_message_delete"](rohes_ereignis(7304, gilde=None, kanal=thread.id))
     )
-    asyncio.run(bot.ereignisse["on_raw_message_delete"](rohes_ereignis(7304, gilde=None)))
 
     sitzung_id = notes.session_of_thread(unsere, str(thread.id))
     assert notizen(unsere, sitzung_id) == [(1, "Bleibt stehen.")]

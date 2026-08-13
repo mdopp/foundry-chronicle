@@ -348,7 +348,12 @@ def drop_derived(runde: Runde, session_id: int, origin: str) -> int:
 
 
 def update_note(runde: Runde, message_id: str, text: str) -> bool:
-    """Zieht eine im Thread geänderte Nachricht nach."""
+    """Zieht eine im Thread geänderte Nachricht nach — nur mit Text.
+
+    Eine leergeräumte Nachricht ist hier kein Fall, sondern einer für ``remove_note``: eine
+    Notiz ohne Text gibt es nicht. Dass diese Weiche in ``bot.chronik`` fehlte, war der
+    Weg, auf dem der zurückgenommene Wortlaut samt Suchzeile stehenblieb (#184).
+    """
     inhalt = text.strip()
     if not inhalt:
         return False

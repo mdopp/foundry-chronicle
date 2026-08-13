@@ -31,7 +31,16 @@ from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from chronicle import dokument, jobs, lebenszyklus, notes, recordings, settings, zugang
+from chronicle import (
+    dokument,
+    jobs,
+    lebenszyklus,
+    notes,
+    protocol,
+    recordings,
+    settings,
+    zugang,
+)
 from chronicle import runde as runden
 from chronicle.bot import BotFehler
 from chronicle.config import Config
@@ -177,6 +186,36 @@ DOKUMENT_NICHTS_NEU = (
 NICHT_ABGELEGT = (
     "Das konnte ich nicht ablegen: {grund} Schreib es noch einmal — bleibt es dabei, "
     "steht der Grund im Log des Bots."
+)
+
+# Eine Bildunterschrift zu löschen ist ein Rücknehmen — und die Nachricht steht danach
+# weiter im Thread, mit ihrem Anhang. Ohne diesen Satz sähe niemand, dass darunter etwas
+# fortgenommen wurde (#184).
+NOTIZ_FORT = (
+    "Der Text ist aus der Nachricht heraus, damit ist auch die Notiz fort. Der Anhang "
+    "bleibt, wo er ist."
+)
+
+# Nachgetragener Text an einer Nachricht, die nie eine Notiz hatte. Die Szene ist die
+# ihres Zeitpunkts und nicht die von gerade eben — das zu sagen erspart die Suche danach.
+NOTIZ_NACHGETRAGEN = (
+    "Der nachgetragene Text ist jetzt eine Notiz — in der Szene, in die die Nachricht "
+    "gehört, nicht in der letzten."
+)
+
+# Die Chronik ist ein Abzug, kein Spiegel: sie steht, wie sie geschrieben wurde. Eine
+# Notiz zu ändern, ohne das zu sagen, ließe beide auseinanderlaufen, ohne dass es jemand
+# sieht — genau das Gedächtnis, gegen das die Zusage im Thread steht.
+CHRONIK_STEHT_SCHON = (
+    "Die Chronik dieser Sitzung steht allerdings schon, mit dem alten Stand. "
+    "`/chronik fertig` schreibt sie neu."
+)
+
+# Dieselbe Lage an einer älteren Sitzung: ``/chronik fertig`` meint immer die zuletzt
+# angelegte, wäre hier also kein Ausweg, sondern ein falscher.
+CHRONIK_STEHT_SCHON_ALT = (
+    "Die Chronik dieser Sitzung steht allerdings schon, mit dem alten Stand — und sie "
+    "wird davon nicht neu geschrieben."
 )
 
 FERTIG = (
@@ -652,8 +691,52 @@ def dokument_anlegen(runde: Runde, abende: Sequence[dokument.Abend]) -> str:
     return DOKUMENT_ANGELEGT.format(sitzungen=_anzahl(angelegt, "Sitzung", "Sitzungen"))
 
 
-def notiz_aendern(runde: Runde, message_id: str, text: str) -> bool:
-    return notes.update_note(runde, message_id, text)
+@dataclass(frozen=True)
+class Notizwechsel:
+    """Was eine geänderte Nachricht mit ihrer Notiz gemacht hat — und wo es zu sagen ist."""
+
+    sitzung: int | None = None
+    antwort: str | None = None
+
+
+def _mit_chronikstand(runde: Runde, session_id: int, satz: str) -> str | None:
+    """Hängt an, dass die Chronik schon steht — und nur dann, wenn sie wirklich steht."""
+    if protocol.stored(runde, session_id) is None:
+        return satz or None
+    aktuell = letzte_sitzung(runde) == session_id
+    nachsatz = CHRONIK_STEHT_SCHON if aktuell else CHRONIK_STEHT_SCHON_ALT
+    return " ".join(teil for teil in (satz, nachsatz) if teil)
+
+
+def notiz_aendern(runde: Runde, thread_id: str, nachricht: Nachricht) -> Notizwechsel:
+    """Eine im Thread geänderte Nachricht auf ihre Notiz ziehen — in allen drei Fällen.
+
+    Geänderter Text zieht die Notiz nach und sagt nichts: die neue Fassung steht im Thread,
+    eine Quittung darunter wäre die zweite Hälfte jedes Satzes. **Geleerter** Text nimmt
+    die Notiz fort — Discord schickt ``content: ""``, wenn eine Nachricht mit Anhang ihre
+    Bildunterschrift verliert, und ein so zurückgenommener Wortlaut, der in ``/suche`` und
+    in der komponierten Chronik weiterlebte, wäre genau das Gedächtnis, gegen das die
+    Zusage im Thread steht. **Nachgetragener** Text an einer Nachricht, die nie eine Notiz
+    hatte, legt sie jetzt an; vorher traf er keine Zeile und war still verloren (#184).
+
+    Der Thread entscheidet mit: außerhalb einer Sitzung wird nichts angelegt, auch wenn die
+    Kennung zufällig eine Notiz träfe.
+    """
+    sitzung = sitzung_des_threads(runde, thread_id)
+    if sitzung is None:
+        return Notizwechsel()
+    inhalt = nachricht.text.strip()
+    if not inhalt:
+        satz = NOTIZ_FORT if notes.remove_note(runde, nachricht.id) else None
+    elif notes.update_note(runde, nachricht.id, inhalt):
+        satz = ""
+    else:
+        szene = notes.scene_at(runde, sitzung, nachricht.zeitpunkt)
+        angelegt = notes.add_note(runde, szene, inhalt, message_id=nachricht.id)
+        satz = NOTIZ_NACHGETRAGEN if angelegt is not None else None
+    if satz is None:
+        return Notizwechsel()
+    return Notizwechsel(sitzung, _mit_chronikstand(runde, sitzung, satz))
 
 
 def notiz_entfernen(runde: Runde, message_id: str) -> bool:
