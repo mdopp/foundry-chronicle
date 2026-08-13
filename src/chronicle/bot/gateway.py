@@ -23,7 +23,7 @@ import functools
 import logging
 import wave
 from collections.abc import Callable
-from datetime import UTC
+from datetime import UTC, datetime
 from pathlib import Path
 
 from chronicle import consent, lebenszyklus, recordings
@@ -974,6 +974,22 @@ def _nachricht(nachricht) -> chronik.Nachricht:
         ),
         autor_id=str(nachricht.author.id),
     )
+
+
+def _rohzeitpunkt(daten: dict) -> str:
+    """Derselbe Zeitpunkt aus der rohen Nutzlast — Discord schickt ihn als ISO-Text.
+
+    Er entscheidet über die Szene, auch bei einer Änderung: nachgetragener Text gehört in
+    die Szene der Nachricht und nicht in die, die gerade offen ist.
+    """
+    roh = daten.get("timestamp")
+    if not roh:
+        return ""
+    return datetime.fromisoformat(roh).astimezone(UTC).isoformat(timespec="seconds")
+
+
+def _vom_bot(daten: dict) -> bool:
+    return bool((daten.get("author") or {}).get("bot"))
 
 
 def _runde_des_ereignisses(config: Config, payload):
@@ -2248,10 +2264,22 @@ def baue(config: Config):
     async def on_raw_message_edit(payload) -> None:
         # Roh und nicht ``on_message_edit``: das gäbe es nur für Nachrichten, die der Bot
         # seit seinem Start gesehen hat — eine Woche alte Notiz gehört auch dazu.
-        text = (payload.data or {}).get("content")
+        daten = payload.data or {}
+        text = daten.get("content")
         runde = _runde_des_ereignisses(config, payload)
-        if text is not None and runde is not None:
-            chronik.notiz_aendern(runde, str(payload.message_id), text)
+        # Was der Bot selbst geschrieben hat, ist keine Notiz — beim Ablegen nicht und beim
+        # Ändern erst recht nicht: sonst legte eine bearbeitete Begrüßung eine an.
+        if text is None or runde is None or _vom_bot(daten):
+            return
+        wechsel = chronik.notiz_aendern(
+            runde,
+            str(payload.channel_id),
+            chronik.Nachricht(
+                id=str(payload.message_id), text=text, zeitpunkt=_rohzeitpunkt(daten)
+            ),
+        )
+        if wechsel.antwort is not None:
+            await _in_den_sitzungsthread(bot, runde, wechsel.sitzung, wechsel.antwort)
 
     @bot.event
     async def on_raw_message_delete(payload) -> None:
