@@ -267,7 +267,10 @@ und zwar relativ statt fest: die Abende trennt die oberste Ebene, deren Übersch
 **Datum** tragen, alles darunter die Szenen — dasselbe Dokument mit `#` je Abend ergibt
 dieselben Sitzungen wie eines mit `##`-Abenden unter einem `#`-Vorspann. Der Text wird
 übernommen, wie er dasteht: kein Modell, keine Zusammenfassung, kein geratenes Datum — eine
-Überschrift ohne lesbares Datum wird benannt und übersprungen. Der Bot zeigt erst, **was
+Überschrift ohne lesbares Datum wird benannt und übersprungen. Ebenso ein Abend, unter dem
+**kein einziger Satz** steht: er trüge nichts in die Chronik und wäre beim nächsten Einlesen
+nicht wiederzuerkennen, also wird auch er benannt und nicht angelegt
+([#172](../../issues/172)). Der Bot zeigt erst, **was
 entstünde**; ohne Bestätigung entsteht nichts, und dieselbe Datei ein zweites Mal
 hochgeladen verdoppelt den Bestand nicht ([#169](../../issues/169)).
 
