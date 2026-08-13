@@ -6,7 +6,7 @@
   },
   "CHRONICLE_IMAGE_TAG": {
     "type": "text",
-    "description": "Image-Tag von ghcr.io/mdopp/foundry-chronicle. Für den Rollout auf einen festen Tag setzen — 'sha-<kurz>' aus dem Build oder die Release-Version — und nach dem Neustart den laufenden Digest prüfen. 'latest' ist nur die Erstinstallation, solange noch kein Release geschnitten ist.",
+    "description": "Image-Tag von ghcr.io/mdopp/foundry-chronicle. Für den Rollout auf einen festen Tag setzen, nicht auf 'latest': 'python scripts/bestimme_image_tag.py' nennt den aktuellen, '--zurueck 1' den Stand davor — das ist der Weg zurück, wenn ein Deployment misslingt. Nach dem Neustart den laufenden Digest gegen den erwarteten prüfen. 'latest' ist nur die Erstinstallation, solange die Box noch kein Repo zur Hand hat.",
     "default": "latest"
   },
   "CHRONICLE_SUBDOMAIN": {
