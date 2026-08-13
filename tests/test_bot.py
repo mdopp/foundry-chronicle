@@ -1308,9 +1308,13 @@ class FakeView:
     def __init__(self, *, timeout=None):
         self.timeout = timeout
         self.items: list = []
+        self.gestoppt = False
 
     def add_item(self, teil):
         self.items.append(teil)
+
+    def stop(self):
+        self.gestoppt = True
 
 
 class FakeAntwort:

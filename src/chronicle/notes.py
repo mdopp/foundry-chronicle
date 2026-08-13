@@ -228,11 +228,16 @@ def add_scene(runde: Runde, session_id: int, *, title: str = "", at: str = "") -
         scope.close()
 
 
-def rename_scene(runde: Runde, scene_id: int, title: str) -> bool:
-    """Benennt eine Szene nach — für die erste, die mit der Sitzung schon entstanden ist.
+def rename_scene(runde: Runde, session_id: int, scene_id: int, title: str) -> bool:
+    """Benennt die noch **namenlose** Szene einer Sitzung nach — die erste, die mit ihr kam.
 
     Sie steht am Anfang jeder Sitzung und hat keinen Namen; wer eine fertige Gliederung
     einliest (``chronicle.dokument``), hätte sonst eine leere Szene vor der ersten.
+
+    Enger als ein allgemeines Umbenennen, und das mit Absicht: die Sitzung muss genannt
+    werden, und ein Name, den ein Mensch gesetzt hat, bleibt stehen. Wer hier ohne diese
+    beiden Schranken durchkäme, überschriebe mit einer Zahl aus einer alten Ansicht die
+    Szenentitel eines fremden Abends.
     """
     sauber = title.strip()
     if not sauber:
@@ -241,8 +246,9 @@ def rename_scene(runde: Runde, scene_id: int, title: str) -> bool:
     try:
         with scope:
             cursor = scope.execute(
-                "UPDATE scene SET title = ? WHERE runde_id = ? AND id = ?",
-                (sauber, scope.runde_id, scene_id),
+                "UPDATE scene SET title = ? "
+                "WHERE runde_id = ? AND id = ? AND session_id = ? AND title IS NULL",
+                (sauber, scope.runde_id, scene_id, session_id),
             )
         return cursor.rowcount > 0
     finally:

@@ -78,6 +78,16 @@ NACHGETRAGEN = """
 Der Schlüssel passte doch, nur nicht in dieses Schloss.
 """
 
+# Hinten angehängt und über der Abend-Ebene: der Fall, an dem »Datum statt Mehrfachheit«
+# hängt. Die Unterüberschrift darunter muss draußen bleiben — sie gehört zu keinem Abend.
+ANHANG = """
+# Anhang
+
+### Die drei Zeichen aus dem Keller
+
+Mira hat sie abgemalt; hier stehen sie noch einmal sauber.
+"""
+
 
 @pytest.fixture
 def config(tmp_path):
@@ -218,6 +228,26 @@ def test_ein_dokument_ganz_ohne_datum_ergibt_nichts():
     assert dokument.lesen("# Die Sturmklingen\n\n## Der Keller\n\nEtwas geschah.\n") == (
         dokument.Aufteilung()
     )
+
+
+def test_ein_nachgestellter_anhang_wird_kein_abend_und_keine_szene(unsere):
+    """Die Begründung für »Datum statt Mehrfachheit« — und dafür, dass oben zugemacht wird.
+
+    Mit ``# Anhang`` kommt die oberste Ebene zweimal vor. Entschiede die Mehrfachheit, wäre
+    sie damit die Abend-Ebene, und der Titel der Sammlung stünde plötzlich als Abend ohne
+    Datum da. Und was **unter** dem Anhang steht, gehört zu keinem Abend — auch nicht zum
+    letzten, der vor ihm zu Ende ging.
+    """
+    aufteilung = dokument.lesen(BEISPIEL + ANHANG)
+    eingelesen(unsere, BEISPIEL + ANHANG)
+
+    assert [abend.datum for abend in aufteilung.abende] == [
+        "2026-03-12",
+        "2026-03-26",
+        "2026-04-09",
+    ]
+    assert aufteilung.ohne_datum == ()
+    assert gliederung(unsere)[-1][2] == [(None, [DRITTER_ABEND])]
 
 
 def test_ein_einzelner_abend_bleibt_ein_abend(unsere):

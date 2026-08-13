@@ -1568,6 +1568,11 @@ def _einleseansicht(config: Config, runde, abende):
     Wie die Löschansicht entscheidet auch dieser Knopf gegen den Stand von jetzt: die
     Ansicht lebt eine Viertelstunde, in der die Runde gelöscht und ihre Kennung neu
     vergeben sein kann — der Altbestand der einen Gruppe landete sonst bei einer fremden.
+
+    Und er wirkt genau einmal: ``stop`` nimmt die Ansicht aus Discords Zustellung, damit ein
+    zweiter Klick gar nicht erst hier ankommt. Die Löschansicht braucht das nicht, weil die
+    gelöschte Runde jeden weiteren Klick von selbst ins Leere laufen lässt; hier bleibt die
+    Runde stehen, also muss der Knopf es selbst tun.
     """
     discord = _discord()
 
@@ -1581,11 +1586,13 @@ def _einleseansicht(config: Config, runde, abende):
         gemeint = await _noch_dieselbe(config, interaction, runde)
         if gemeint is None:
             return
+        ansicht.stop()
         meldung = chronik.dokument_anlegen(gemeint, abende)
         await interaction.response.edit_message(content=meldung, view=None)
 
     @_geklickt
     async def verworfen(interaction) -> None:
+        ansicht.stop()
         await interaction.response.edit_message(content=chronik.DOKUMENT_ABGEBROCHEN, view=None)
 
     ja.callback = bestaetigt
@@ -1597,7 +1604,8 @@ def _einleseansicht(config: Config, runde, abende):
             self.add_item(ja)
             self.add_item(nein)
 
-    return Einleseansicht()
+    ansicht = Einleseansicht()
+    return ansicht
 
 
 def _embed(gebaut: dict | None):

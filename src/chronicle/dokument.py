@@ -16,6 +16,10 @@ Drei Sätze tragen alles Weitere:
   belastbarere Kennzeichen als bloße Mehrfachheit: ein Dokument mit **einem** Abend und
   zwei Szenen darunter hat die mehrfache Ebene bei den Szenen, und ein angehängtes
   ``# Anhang`` machte aus dem Titel der Sammlung plötzlich einen Abend.
+  Was die Regel **nicht** trägt: ein Vorspann, der selbst ein Datum führt
+  (``# Notizen bis 12.03.2026``), ist damit die oberste Ebene mit Datum und zieht die
+  Abendebene auf sich — aus dem ganzen Dokument wird ein Abend. Das bleibt so: geraten
+  wird nichts, und was entstünde, steht vor dem Anlegen in der Vorschau.
 * **Kein Datum, keine Sitzung.** Eine Abendüberschrift ohne lesbares Datum wird benannt
   und übersprungen, nie geraten. Gelesen werden ``12.03.2026`` und ``2026-03-12``; ein
   ``12.03.`` ohne Jahr ist nicht sicher zu lesen und gilt deshalb als kein Datum.
@@ -219,6 +223,6 @@ def anlegen(runde: Runde, abende: Sequence[Abend]) -> int:
             else:
                 ziel = erste.id
                 if szene.titel:
-                    notes.rename_scene(runde, ziel, szene.titel)
+                    notes.rename_scene(runde, sitzung, ziel, szene.titel)
             notes.add_note(runde, ziel, szene.text, origin=herkunft(abend))
     return len(abende)
