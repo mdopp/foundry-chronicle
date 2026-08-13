@@ -135,6 +135,16 @@ def test_remote_user_erzwingen_laesst_sich_schalten():
         assert not Config.from_env({"CHRONICLE_REQUIRE_REMOTE_USER": wert}).require_remote_user
 
 
+def test_ohne_eintrag_zaehlt_die_maschine_selbst():
+    """Leer heißt errechnet — eine abgeschriebene Adresse wäre nach der DHCP-Lease falsch."""
+    assert Config.from_env({}).trusted_proxies == ()
+
+
+def test_der_proxy_laesst_sich_nachtragen():
+    config = Config.from_env({"CHRONICLE_TRUSTED_PROXIES": " 192.168.178.100, 10.0.0.0/8 ,"})
+    assert config.trusted_proxies == ("192.168.178.100", "10.0.0.0/8")
+
+
 def test_repr_maskiert_den_token():
     text = repr(Config.from_env(VOLLSTAENDIG))
     assert "bot-token-aus-der-umgebung" not in text

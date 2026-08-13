@@ -5,6 +5,12 @@ App baut kein eigenes Login. Erzwungen wird der Header nur, wenn die Umgebung es
 sonst wäre ``python -m chronicle`` ohne Proxy nicht startbar. Die Tür bleibt, obwohl das
 Spiel nach Discord gezogen ist: auf dieser Seite liegt der Bot-Token.
 
+Der Header allein reicht dafür nicht: er ist eine gewöhnliche Kopfzeile, und der Port
+liegt im Host-Netz offen. Geglaubt wird er deshalb nur, wenn der Aufruf **von dieser
+Maschine** kommt — der Proxy läuft auf derselben Box (#190, ``chronicle.herkunft``).
+Sperrt das einmal aus, weil der Proxy woanders steht: ``CHRONICLE_TRUSTED_PROXIES`` auf
+seine Adresse setzen und den Dienst neu starten; das Abbild bleibt, wie es ist.
+
 **Spielinhalte gibt es hier keine mehr** (#157). Was die spielende Gruppe betrifft —
 Sitzung, Szene, Notiz, Diktat, Chronik, Suche, Register, Zuordnung, Einrichtung —, steht
 in Discord. Übrig bleibt, was *keiner Gilde gehört* und deshalb dort keinen Ort hat:
@@ -25,13 +31,17 @@ nicht im Aufnahme-Bot, weil es den ohne Bot-Token gar nicht gibt (siehe
 
 from __future__ import annotations
 
+import logging
+
 from flask import Flask, Response, redirect, render_template, request, url_for
 
-from chronicle import db, instanz, nightly, roles, settings
+from chronicle import db, herkunft, instanz, nightly, roles, settings
 from chronicle import runde as runden
 from chronicle.compose import client as sprachmodell
 from chronicle.compose.client import ModelError
 from chronicle.config import Config
+
+logger = logging.getLogger(__name__)
 
 REMOTE_USER_HEADER = "Remote-User"
 
@@ -50,6 +60,7 @@ def create_app(config: Config | None = None, *, zeitplan: bool = False) -> Flask
     # Die Betreiber-Seite kennt keine Runden — sie zeigt Instanz-Werte. ``settings.effective``
     # verlangt trotzdem eine, also nimmt sie die erste.
     runde = runden.erste(basis.database_path)
+    vertrauen = herkunft.netze(basis.trusted_proxies)
     if zeitplan:
         nightly.starten(basis)
 
@@ -58,6 +69,17 @@ def create_app(config: Config | None = None, *, zeitplan: bool = False) -> Flask
         # /healthz ist das Install-Gate der Box und wird am Proxy vorbei abgefragt.
         if not basis.require_remote_user or request.endpoint == "healthz":
             return None
+        # Erst wer, dann was: eine Kopfzeile, die jeder selbst hinschreiben kann, sagt
+        # nichts (#190). Die Antwort gilt für **beide** Kopfzeilen — wer hier scheitert,
+        # erreicht ``verwaltungsrolle`` nicht, und Remote-Groups wird nie gelesen.
+        if not herkunft.vertraut(request.remote_addr, vertrauen):
+            logger.warning(
+                "Anmeldung von %s verworfen: nicht der Proxy dieser Box. "
+                "Ist sie es doch, gehört ihre Adresse in %s.",
+                request.remote_addr,
+                herkunft.TRUSTED_VARIABLE,
+            )
+            return render_template("abgewiesen.html"), 403
         if not request.headers.get(REMOTE_USER_HEADER):
             return render_template("abgewiesen.html"), 403
         return None

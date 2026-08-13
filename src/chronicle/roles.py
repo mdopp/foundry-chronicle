@@ -9,6 +9,13 @@ Gruppen pflegt die Benutzerverwaltung der Box, nicht die Chronik.
 Gespeichert ist hier nur der *Name* der Gruppe. **Leer heißt: alle dürfen alles** — das
 ist die Vorgabe und das bisherige Verhalten; kleine Runden ohne Rollenbedarf müssen
 nichts tun.
+
+Dass die Kopfzeile wirklich vom Proxy kommt, wird hier **nicht** geprüft, sondern eine
+Tür davor: ``chronicle.app.tuersteher`` weist einen Aufruf ab, der nicht von dieser
+Maschine kommt, bevor irgendetwas hier gefragt wird (#190, ``chronicle.herkunft``). Die
+Frage ist für ``Remote-User`` und ``Remote-Groups`` dieselbe, also wird sie einmal
+gestellt — eine Gruppe zu prüfen, deren Benutzername frei erfunden sein darf, wäre
+ohnehin wertlos.
 """
 
 from __future__ import annotations

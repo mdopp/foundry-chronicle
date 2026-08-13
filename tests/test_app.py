@@ -190,6 +190,10 @@ def test_der_stand_des_abgleichs_steht_nicht_mehr_auf_der_betreiberseite(config,
 # Sie bleibt, obwohl das Spiel nach Discord gezogen ist: auf dieser Seite liegt der
 # Bot-Token, also gibt es hier sehr wohl etwas zu schützen.
 
+# Ein anderer Rechner im LAN. Der Testclient spricht sonst von 127.0.0.1 — das ist diese
+# Maschine, und von der kommt auch der Proxy auf der Box.
+AUS_DEM_LAN = {"REMOTE_ADDR": "192.168.178.55"}
+
 
 def test_ohne_remote_user_kommt_niemand_durch(tmp_path):
     antwort = bewacht(tmp_path).get("/")
@@ -202,6 +206,58 @@ def test_auch_kein_lan_bypass_auf_die_unterseiten(tmp_path):
     assert client.get("/status").status_code == 403
     assert client.get("/einstellungen").status_code == 403
     assert client.post("/einstellungen", data={}).status_code == 403
+
+
+# Bis #190 hieß »kein LAN-Bypass« nur: ohne Kopfzeile kommt niemand durch. Genau das war
+# die Lücke — die Kopfzeile schreibt sich jeder selbst. Was zählt, ist der Absender.
+
+
+def test_die_erfundene_kopfzeile_aus_dem_lan_hilft_nicht(tmp_path):
+    client = bewacht(tmp_path)
+    for pfad in ("/", "/status", "/einstellungen"):
+        antwort = client.get(pfad, headers={"Remote-User": "sonde"}, environ_base=AUS_DEM_LAN)
+        assert antwort.status_code == 403, pfad
+    assert (
+        client.post(
+            "/einstellungen",
+            data={"discord_bot_token": "token-des-fremden"},
+            headers={"Remote-User": "sonde"},
+            environ_base=AUS_DEM_LAN,
+        ).status_code
+        == 403
+    )
+
+
+def test_auch_die_erfundene_gruppe_hilft_nicht(tmp_path):
+    """Beide Kopfzeilen hängen an derselben Frage — eine allein zu prüfen wäre wertlos."""
+    config = Config(data_dir=tmp_path, require_remote_user=True)
+    db.init(config.database_path)
+    instanz.save_admin_group(config.database_path, GRUPPE)
+    client = create_app(config).test_client()
+    kopf = {"Remote-User": "sonde", "Remote-Groups": GRUPPE}
+    assert client.get("/einstellungen", headers=kopf, environ_base=AUS_DEM_LAN).status_code == 403
+    antwort = client.post(
+        "/einstellungen",
+        data={"admin_group": "gruppe-des-fremden", "gruppe_bestaetigt": "ja"},
+        headers=kopf,
+        environ_base=AUS_DEM_LAN,
+    )
+    assert antwort.status_code == 403
+    assert instanz.admin_group(config.database_path) == GRUPPE
+
+
+def test_wer_den_proxy_woanders_hat_traegt_ihn_nach(tmp_path):
+    """Der Weg zurück aus einer Aussperrung: eine Zeile Umgebung, kein neues Abbild."""
+    config = Config(
+        data_dir=tmp_path, require_remote_user=True, trusted_proxies=(AUS_DEM_LAN["REMOTE_ADDR"],)
+    )
+    client = create_app(config).test_client()
+    antwort = client.get(
+        "/einstellungen", headers={"Remote-User": "mira"}, environ_base=AUS_DEM_LAN
+    )
+    assert antwort.status_code == 200
+    # Und die Liste ersetzt die Maschine: Loopback steht nicht mehr darin.
+    assert client.get("/", headers={"Remote-User": "mira"}).status_code == 403
 
 
 def test_mit_remote_user_geht_es_weiter(tmp_path):
