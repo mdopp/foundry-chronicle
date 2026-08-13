@@ -159,12 +159,27 @@ def segment_rows(segments: Iterable[Segment]) -> tuple[tuple[int, int, str], ...
     return tuple(zeilen)
 
 
-def _mit_fortschritt(segments: Iterator[Segment], source: str) -> Iterator[Segment]:
+def kennung(session_id: int, job_id: int | None = None) -> str:
+    """Woran der Betreiber eine Zeile dieses Laufs festmacht: Zahlen statt Namen.
+
+    Der Stamm eines Spurnamens ist der Anzeigename des Sprechers, und der Dateiname trägt
+    ihn mit (#194, #199) — beides geht das Log des Betreibers nichts an. Übrig bleiben die
+    Job-Id und die Sitzung: laufende Nummern, die außerhalb dieser Datenbank nichts
+    bedeuten und drinnen in einem Schritt zu Datei, Stand und Meldung führen. Wer von Hand
+    eine einzelne Datei verschriftet, hat keine Job-Id; dann steht die Sitzung allein da,
+    denn mehr weiß dieser Aufruf nicht.
+    """
+    if job_id is None:
+        return f"Sitzung {session_id}"
+    return f"Job {job_id} in Sitzung {session_id}"
+
+
+def _mit_fortschritt(segments: Iterator[Segment], marke: str) -> Iterator[Segment]:
     gemeldet = 0.0
     for teil in segments:
         if teil.end - gemeldet >= MELDEABSTAND:
             gemeldet = teil.end
-            logger.info("Spur %s: transkribiert bis %s", source, zeitmarke(teil.end))
+            logger.info("%s: transkribiert bis %s", marke, zeitmarke(teil.end))
         yield teil
 
 
@@ -207,6 +222,7 @@ def transcribe_session(
     *,
     model: SpeechModel | None = None,
     source: str | None = None,
+    job_id: int | None = None,
     delete_audio: bool = False,
 ) -> Transcript | None:
     db.init(config.database_path)
@@ -218,6 +234,7 @@ def transcribe_session(
         if bekannt is None:
             return None
         spur = source or audio_path.stem
+        marke = kennung(session_id, job_id)
         dauer = spurdauer(audio_path)
         if dauer is not None and dauer < MINDESTDAUER:
             # Vor dem Modell und vor dem Vorspann: eine Spur ohne Äußerung soll nichts
@@ -236,9 +253,9 @@ def transcribe_session(
         vorspann = vocabulary.prompt(eigennamen)
         erkenner = model if model is not None else model_from_config(config)
 
-        logger.info("Spur %s: %s beginnt, %s Namen vorgespannt", spur, audio_path, len(eigennamen))
+        logger.info("%s: Spur beginnt, %s Namen vorgespannt", marke, len(eigennamen))
         segmente = segment_rows(
-            _mit_fortschritt(erkenner.transcribe(audio_path, vocabulary=vorspann), spur)
+            _mit_fortschritt(erkenner.transcribe(audio_path, vocabulary=vorspann), marke)
         )
         store(scope, session_id, spur, segmente, _now())
     finally:
@@ -246,7 +263,7 @@ def transcribe_session(
 
     if delete_audio:
         audio_path.unlink()
-        logger.info("Spur %s: %s auf Verlangen gelöscht", spur, audio_path)
+        logger.info("%s: Tondatei auf Verlangen gelöscht", marke)
 
     return Transcript(
         session_id=session_id,
@@ -315,11 +332,16 @@ def _eine_spur(
             pfad,
             model=erkenner,
             source=aufnahme.source,
+            job_id=aufnahme.id,
             delete_audio=delete_audio,
         )
         return transkript.message, True
     # Eine kaputte Spur — abgebrochene Aufnahme, umbenannte Textdatei — darf die übrigen
     # Jobs der Nacht nicht mitnehmen.
     except Exception as fehler:  # noqa: BLE001
-        logger.warning("Spur %s: %s", aufnahme.source, fehler)
+        # Nur die Fehlerart, wie in ``notes._tondateien_loeschen``: der Text eines
+        # Datei-Fehlers führt den Pfad mit sich und damit den Sprechernamen (#199). Der
+        # ganze Text geht trotzdem nicht verloren — er steht in der Meldung an die Runde
+        # und im Stand der Aufnahme, wo er die Gruppe angeht und nicht den Betreiber.
+        logger.warning("%s: %s", kennung(aufnahme.session_id, aufnahme.id), type(fehler).__name__)
         return f"Spur »{aufnahme.source}«: {fehler}", False

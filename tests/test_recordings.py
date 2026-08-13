@@ -241,6 +241,55 @@ def test_eine_kaputte_spur_nimmt_die_uebrigen_nicht_mit(config, sitzung_id, monk
     assert stände == [recordings.GESCHEITERT, recordings.FERTIG]
 
 
+def test_im_log_des_stapellaufs_steht_kein_name_und_kein_dateiname(config, sitzung_id, caplog):
+    """Der Stamm eines Spurnamens ist der Anzeigename des Sprechers (#194, #199).
+
+    Der Stapellauf schreibt bei **jeder** Spur, nicht nur im Fehlerfall: Beginn,
+    Fortschritt, Löschung. Gemeldet wird deshalb die Job-Id samt Sitzung — damit findet
+    der Betreiber Zeile, Datei und Stand in einem Schritt, und wer das Log liest, erfährt
+    trotzdem nicht, wer an dem Abend sprach. Geprüft wird auf DEBUG und über den ganzen
+    ``caplog.text``: ein Traceback brächte den Pfad ebenfalls dorthin.
+    """
+    caplog.set_level(logging.DEBUG)
+    aufnahme = hochladen(config, sitzung_id, name="Mira.m4a")
+
+    service.run_queue(
+        config,
+        runde(config),
+        model=Erkenner(
+            Segment(start=0.0, end=2.5, text=" Wir brechen bei Sonnenaufgang auf."),
+            Segment(start=2.5, end=61.25, text=" Das Schwert bleibt in der Scheide."),
+        ),
+        delete_audio=True,
+    )
+
+    assert f"Job {aufnahme.id} in Sitzung {sitzung_id}" in caplog.text
+    assert "transkribiert bis 0:01:01" in caplog.text
+    assert "auf Verlangen gelöscht" in caplog.text
+    assert "Mira" not in caplog.text
+    assert aufnahme.source not in caplog.text
+    assert aufnahme.filename not in caplog.text
+
+
+def test_die_gescheiterte_spur_meldet_dem_log_nur_die_fehlerart(config, sitzung_id, caplog):
+    """Der Text eines Datei-Fehlers führt den Pfad mit sich — und damit den Namen (#199).
+
+    Der Runde wird der ganze Fehler trotzdem gesagt: dort geht er sie an, im Log des
+    Betreibers nicht.
+    """
+    caplog.set_level(logging.DEBUG)
+    aufnahme = hochladen(config, sitzung_id, name="Mira.m4a")
+    pfad = config.recordings_dir / aufnahme.filename
+    erkenner = Erkenner(fehler=RuntimeError(f"{pfad} lässt sich nicht dekodieren"))
+
+    (meldung,) = service.run_queue(config, runde(config), model=erkenner)
+
+    assert f"Job {aufnahme.id} in Sitzung {sitzung_id}: RuntimeError" in caplog.text
+    assert "Mira" not in caplog.text
+    assert str(pfad) not in caplog.text
+    assert "Mira" in meldung
+
+
 def test_die_spur_bleibt_liegen_und_geht_nur_auf_verlangen(config, sitzung_id):
     hochladen(config, sitzung_id)
 
