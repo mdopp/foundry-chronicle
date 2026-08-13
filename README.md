@@ -239,6 +239,19 @@ dabei nicht verschwiegen: eine ausgelieferte Chronik liegt in einem Discord-Kana
 bleibt dort, das Abgeleitete überdauert also den Beleg. Genau das steht in der
 Rückfrage, damit sich holen kann, wer den Beleg braucht.
 
+**`/chronik sitzung-loeschen` nimmt genau einen Abend** — der kleine Weg neben dem
+großen, für den Fehlgriff beim Einlesen und den Testabend vom Einrichten. Erst ein Menü
+mit den Sitzungen, dann eine Rückfrage, die benennt, was an der gewählten hängt: Szenen,
+Notizen, Verschriftungen, die geschriebenen Texte — und die **Tondateien mit Zahl**, auch
+die, die noch keine Zeile haben. Erst dahinter der Knopf. Hier gilt die **entgegengesetzte**
+Regel zur großen Löschung: der **Nachweis der Ansage bleibt stehen**. Die Runde gibt es
+weiter, und was belegt, dass im Sprachkanal angesagt wurde, ist genau dann etwas wert,
+wenn das daraus Gemachte noch irgendwo liegt — in Discord tut es das. Wer auch den Beleg
+nicht mehr will, löscht die ganze Runde. Geben darf den Befehl die **Administration**,
+dieselbe Schranke wie vor der ganzen Runde und nicht die niedrigere der Verwaltung: diese
+Löschung ist nicht die harmlosere, sondern die **lautlose** — auswählbar, ephemer, und
+niemand in der Gruppe erfährt davon.
+
 **Fortnehmen kann euch die Runde niemand sonst.** Es gibt keinen Befehl und keine Seite,
 über die der Betreiber der Box eine fremde Runde sperrt oder löscht — sie verschwindet,
 weil ihr es sagt, oder weil die Frist nach dem Rauswurf abläuft. Dass er *lesen* kann, was

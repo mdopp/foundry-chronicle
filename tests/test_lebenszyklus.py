@@ -152,6 +152,9 @@ class FakeMitglied:
 
 LEITUNG = FakeMitglied("4000", "Spielleitung", verwaltet=True, admin=True)
 MITGLIED = FakeMitglied()
+# Verwaltet den Server, führt ihn aber nicht: genau die Person, an der sich die Schranke
+# vor dem Löschen von der vor dem Einrichten unterscheidet.
+VERWALTUNG = FakeMitglied("4002", "Verwaltung", verwaltet=True)
 
 
 class FakeInteraction:
@@ -1131,12 +1134,24 @@ def sitzungsbefehl(bot, ctx):
 
 
 def sitzung_waehlen(ctx, session_id, *, wer=LEITUNG):
-    """Die Wahl im Menü — sie zeigt die Rückfrage und löscht noch nichts."""
+    """Die Wahl im Menü — sie zeigt die Rückfrage und löscht noch nichts.
+
+    Gewählt wird über das, was im Menü steht, und nicht über eine hier gebaute Nummer: was
+    der Bot mitgibt, ist die Marke der Sitzung, und ein Test, der sie sich selbst zimmert,
+    prüfte den Weg nicht mehr.
+    """
     (menue,) = ctx.ansichten[-1].items
-    menue.values = [str(session_id)]
+    menue.values = [_menuewert(menue, session_id)]
     klick = FakeInteraction(wer=wer)
     asyncio.run(menue.callback(klick))
     return klick
+
+
+def _menuewert(menue, session_id):
+    for eintrag in menue.options:
+        if eintrag.value.startswith(f"{session_id}:"):
+            return eintrag.value
+    raise AssertionError(f"Sitzung {session_id} steht nicht im Menü.")
 
 
 def sitzung_bestaetigen(klick, *, wer=LEITUNG, ja=True):
@@ -1206,6 +1221,29 @@ def test_die_frage_sagt_dass_die_tondateien_mitgehen(konfiguration, bot):
     # Und die Wahl allein hat noch nichts angefasst.
     assert notes.session(unsere, ids["sitzung"]) is not None
     assert ids["spur"].exists()
+
+
+def test_die_frage_nennt_auch_den_ton_ohne_zeile(konfiguration, bot):
+    """Datei da, Zeile noch nicht: der Mitschnitt läuft oder ist abgestürzt.
+
+    Genau dafür sucht das Löschen auch im Verzeichnis — und was es mitnimmt, muss in der
+    Rückfrage stehen. Sonst bestätigt die Gruppe eine Sitzung ohne Ton und bekommt hinterher
+    gesagt, dass eine Stunde Stimmen von der Platte ist.
+    """
+    unsere = runden.anlegen(konfiguration.database_path, GILDENAME, guild_id=GILDE)
+    sitzung = notes.create_session(unsere, played_on="2026-05-01", title="Sitzung alpha")
+    laufend = konfiguration.recordings_dir / f"sitzung{sitzung}-20260501T200000-Mira.wav"
+    laufend.write_bytes(b"ton")
+
+    ctx = sitzungsbefehl(bot, FakeCtx(gilde=FakeGilde()))
+    klick = sitzung_waehlen(ctx, sitzung)
+
+    frage = klick.response.bearbeitet[-1]["content"]
+    assert "1 Tondatei" in frage
+    fertig = sitzung_bestaetigen(klick).response.bearbeitet[-1]["content"]
+    # Und die Meldung danach zählt richtig **und** sagt es in gutem Deutsch.
+    assert "Von der Platte gelöscht: 1 Tondatei." in fertig
+    assert not laufend.exists()
 
 
 def test_ohne_tondatei_verspricht_die_frage_keine(konfiguration, bot):
@@ -1340,23 +1378,48 @@ def test_die_geloeschte_sitzung_steht_nicht_mehr_im_suchindex(konfiguration, bot
 
 
 def test_eine_sitzung_zu_loeschen_ist_kein_befehl_fuer_jedes_mitglied(konfiguration, bot):
-    """Sie ist eine Berichtigung und nicht das Ende der Runde — also die Schranke der
-    Verwaltung, dieselbe wie vor `/setup`. Gerechnet wird sie an allen drei Stellen: sonst
-    stellt die Leitung die Frage und irgendwer klickt sie weg."""
+    """Gerechnet wird an allen drei Stellen: sonst stellt die Leitung die Frage und
+    irgendwer klickt sie weg."""
     unsere = runden.anlegen(konfiguration.database_path, GILDENAME, guild_id=GILDE)
     ids = fuellen(konfiguration, unsere, "alpha")
 
     ctx = sitzungsbefehl(bot, FakeCtx(gilde=FakeGilde(), autor=MITGLIED))
-    assert ctx.antworten == [einrichten.NUR_VERWALTUNG]
+    assert ctx.antworten == [einrichten.NUR_ADMIN]
     assert ctx.ansichten == [None]
 
     erlaubt = sitzungsbefehl(bot, FakeCtx(gilde=FakeGilde()))
     am_menue = sitzung_waehlen(erlaubt, ids["sitzung"], wer=MITGLIED)
-    assert am_menue.response.bearbeitet[-1]["content"] == einrichten.NUR_VERWALTUNG
+    assert am_menue.response.bearbeitet[-1]["content"] == einrichten.NUR_ADMIN
 
     klick = sitzung_waehlen(erlaubt, ids["sitzung"])
     am_knopf = sitzung_bestaetigen(klick, wer=MITGLIED)
-    assert am_knopf.response.bearbeitet[-1]["content"] == einrichten.NUR_VERWALTUNG
+    assert am_knopf.response.bearbeitet[-1]["content"] == einrichten.NUR_ADMIN
+    assert notes.session(unsere, ids["sitzung"]) is not None
+    assert ids["spur"].exists()
+
+
+def test_auch_die_verwaltung_loescht_keine_einzelne_sitzung(konfiguration, bot):
+    """Die Schranke ist die der Administration — dieselbe wie vor der ganzen Runde.
+
+    Sie ist nicht die harmlosere Löschung, sondern die lautlose: alles hier läuft ephemer,
+    der Thread bleibt stehen, und wer geklickt hat, steht mit Absicht in keinem Log. Ein
+    Verwalter nähme so genau den einen unbequemen Abend samt seinen Aufnahmen fort, und
+    niemand in der Gruppe erführe es. Fällt die Heimlichkeit — ein sichtbarer Vermerk im
+    Kanal —, darf diese Schranke wieder sinken; bis dahin fällt sie hier durch.
+    """
+    unsere = runden.anlegen(konfiguration.database_path, GILDENAME, guild_id=GILDE)
+    ids = fuellen(konfiguration, unsere, "alpha")
+
+    ctx = sitzungsbefehl(bot, FakeCtx(gilde=FakeGilde(), autor=VERWALTUNG))
+    assert ctx.antworten == [einrichten.NUR_ADMIN]
+    assert ctx.ansichten == [None]
+
+    erlaubt = sitzungsbefehl(bot, FakeCtx(gilde=FakeGilde()))
+    am_menue = sitzung_waehlen(erlaubt, ids["sitzung"], wer=VERWALTUNG)
+    assert am_menue.response.bearbeitet[-1]["content"] == einrichten.NUR_ADMIN
+
+    am_knopf = sitzung_bestaetigen(sitzung_waehlen(erlaubt, ids["sitzung"]), wer=VERWALTUNG)
+    assert am_knopf.response.bearbeitet[-1]["content"] == einrichten.NUR_ADMIN
     assert notes.session(unsere, ids["sitzung"]) is not None
     assert ids["spur"].exists()
 
@@ -1390,6 +1453,115 @@ def test_ein_zweiter_knopf_loescht_nicht_noch_einmal(konfiguration, bot):
     nochmal = sitzung_bestaetigen(zweite)
 
     assert nochmal.response.bearbeitet[-1]["content"] == chronik.SITZUNG_SCHON_FORT
+
+
+def neu_unter_derselben_nummer(config, runde, alte_nummer):
+    """Dieselbe Nummer, ein anderer Abend — der Fall, für den die Marke gebaut ist.
+
+    ``session.id`` ist ein ``INTEGER PRIMARY KEY`` ohne ``AUTOINCREMENT``; SQLite vergibt
+    die Nummer der zuletzt gelöschten Zeile wieder. Genau das passiert im Betrieb: die
+    gewählte Sitzung wird anderswo gelöscht, ``/chronik start`` beginnt den nächsten Abend.
+    """
+    notes.delete_session(config, runde, notes.sitzungsmarke(notes.session(runde, alte_nummer)))
+    neu = notes.create_session(runde, played_on="2026-05-08", title="Der echte Abend")
+    assert neu == alte_nummer, "Der Fall trägt nur, wenn SQLite die Nummer wirklich neu vergibt."
+    spur = config.recordings_dir / f"sitzung{neu}-20260508T200000-Mira.wav"
+    spur.write_bytes(b"ton")
+    return {"sitzung": neu, "spur": spur}
+
+
+def test_der_knopf_nimmt_nicht_den_frisch_begonnenen_abend(konfiguration, bot):
+    """Der Ablauf, für den dieser Befehl gebaut wurde — und in dem er am teuersten irrt.
+
+    Zwischen Rückfrage und Klick liegt eine Viertelstunde. Wird die gewählte Sitzung in der
+    Zeit anderswo gelöscht und danach eine neue begonnen, steht unter der Nummer von vorhin
+    ein anderer Abend. Ein Klick, der nur die Nummer trägt, nähme ihn samt seinen Aufnahmen
+    fort — und meldete ihn unter dem Titel des alten als gelöscht.
+    """
+    unsere = runden.anlegen(konfiguration.database_path, GILDENAME, guild_id=GILDE)
+    ids = fuellen(konfiguration, unsere, "alpha")
+    klick = sitzung_waehlen(sitzungsbefehl(bot, FakeCtx(gilde=FakeGilde())), ids["sitzung"])
+
+    echt = neu_unter_derselben_nummer(konfiguration, unsere, ids["sitzung"])
+    fertig = sitzung_bestaetigen(klick)
+
+    assert fertig.response.bearbeitet[-1]["content"] == chronik.SITZUNG_SCHON_FORT
+    assert notes.session(unsere, echt["sitzung"]).title == "Der echte Abend"
+    assert echt["spur"].exists()
+
+
+def test_das_menue_zeigt_nicht_den_abend_unter_der_alten_nummer(konfiguration, bot):
+    """Dieselbe Viertelstunde eine Stufe früher: schon die Wahl darf nichts Fremdes zeigen.
+
+    Sonst stünde in der Rückfrage der neue Abend mit seinen Aufnahmen, und wer sie gestellt
+    hat, hielte ihn für den, den er gewählt hat.
+    """
+    unsere = runden.anlegen(konfiguration.database_path, GILDENAME, guild_id=GILDE)
+    ids = fuellen(konfiguration, unsere, "alpha")
+    ctx = sitzungsbefehl(bot, FakeCtx(gilde=FakeGilde()))
+
+    echt = neu_unter_derselben_nummer(konfiguration, unsere, ids["sitzung"])
+    klick = sitzung_waehlen(ctx, ids["sitzung"])
+
+    assert klick.response.bearbeitet[-1]["content"] == chronik.SITZUNG_SCHON_FORT
+    assert notes.session(unsere, echt["sitzung"]) is not None
+    assert echt["spur"].exists()
+
+
+def test_die_tondatei_die_bleibt_wird_ohne_ihren_namen_gemeldet(
+    konfiguration, bot, caplog, monkeypatch
+):
+    """Der Stamm eines Aufnahmenamens ist der Sprechername — er gehört in keine Logzeile.
+
+    Ein ungefangenes ``unlink`` schriebe ihn über den Traceback dorthin. Und die Meldung
+    danach darf nicht mehr versprechen, als geschehen ist: was liegen blieb, wird gesagt.
+    """
+    caplog.set_level(logging.INFO)
+    unsere = runden.anlegen(konfiguration.database_path, GILDENAME, guild_id=GILDE)
+    sitzung = notes.create_session(unsere, played_on="2026-05-01", title="Sitzung alpha")
+    spur = konfiguration.recordings_dir / f"sitzung{sitzung}-20260501T200000-{MIRA.name}.wav"
+    spur.write_bytes(b"ton")
+    recordings.enqueue(unsere, sitzung, spur.name, discord_user_id=MIRA.id)
+    echt = Path.unlink
+
+    def sperrt(self, *rest, **weiteres):
+        if self == spur:
+            raise PermissionError(13, "Permission denied", str(self))
+        return echt(self, *rest, **weiteres)
+
+    klick = sitzung_waehlen(sitzungsbefehl(bot, FakeCtx(gilde=FakeGilde())), sitzung)
+    monkeypatch.setattr(Path, "unlink", sperrt)
+    antwort = sitzung_bestaetigen(klick)
+
+    # Zuerst das Log: ein ungefangener Fehlschlag käme über den Traceback des Klicks hier
+    # heraus, und dann stünde der Name da, bevor irgendeine Meldung geprüft wird.
+    assert MIRA.name not in caplog.text
+    assert ".wav" not in caplog.text
+    assert "PermissionError" in caplog.text
+    fertig = antwort.response.bearbeitet[-1]["content"]
+    assert "1 Tondatei" in fertig and "Nicht löschen" in fertig
+    assert spur.exists()
+    assert notes.session(unsere, sitzung) is None
+
+
+def test_eine_tondatei_ausserhalb_des_verzeichnisses_wird_nicht_geloescht(konfiguration, bot):
+    """Der Name kommt aus einer Spalte, gelöscht wird eine Datei — ein ``../`` darin zeigte
+    aus dem Aufnahmeverzeichnis heraus.
+
+    Heute schreibt jeder Aufrufer einen bloßen Namen hinein; an einer Stelle, die *löscht*,
+    ist das keine Zusage, auf die man sich verlässt.
+    """
+    unsere = runden.anlegen(konfiguration.database_path, GILDENAME, guild_id=GILDE)
+    sitzung = notes.create_session(unsere, played_on="2026-05-01", title="Sitzung alpha")
+    fremd = konfiguration.recordings_dir.parent / "nicht-unsere.wav"
+    fremd.write_bytes(b"ton")
+    recordings.enqueue(unsere, sitzung, f"../{fremd.name}", discord_user_id=MIRA.id)
+
+    ctx = sitzungsbefehl(bot, FakeCtx(gilde=FakeGilde()))
+    sitzung_bestaetigen(sitzung_waehlen(ctx, sitzung))
+
+    assert fremd.exists()
+    assert notes.session(unsere, sitzung) is None
 
 
 def test_im_log_der_sitzungsloeschung_steht_kein_name_und_kein_titel(konfiguration, bot, caplog):

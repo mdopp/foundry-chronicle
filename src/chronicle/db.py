@@ -107,6 +107,7 @@ NACHGETRAGEN = (
     ("recording", "besitzer", "TEXT"),
     ("recording", "herzschlag", "TEXT"),
     ("foundry_message", "aus_testwelt", "INTEGER NOT NULL DEFAULT 0"),
+    ("session", "token", "TEXT"),
 )
 
 # Woran erkannt wird, ob die Prüfbedingung von ``job`` die jüngste Art Lauf schon kennt.
@@ -235,6 +236,20 @@ def _kennung_nachtragen(connection: sqlite3.Connection) -> None:
     connection.execute("DROP TABLE runde__alt")
     connection.execute("PRAGMA foreign_keys = ON")
     connection.execute("PRAGMA legacy_alter_table = OFF")
+
+
+def _sitzungskennung_nachtragen(connection: sqlite3.Connection) -> None:
+    """Auch jede bestehende Sitzung bekommt eine Kennung — sonst wäre sie nicht löschbar.
+
+    Anders als bei ``runde`` ohne Umbau der Tabelle: die Spalte darf leer bleiben, weil
+    ``notes.gemeinte_sitzung`` eine leere Kennung ausdrücklich abweist statt sie als
+    Übereinstimmung zu lesen. Ein Bestand aus der Zeit davor stünde damit aber ohne
+    Wiedererkennung da, und ``/chronik sitzung-loeschen`` käme an ihn nicht heran.
+    """
+    for zeile in connection.execute("SELECT id FROM session WHERE token IS NULL").fetchall():
+        connection.execute(
+            "UPDATE session SET token = ? WHERE id = ?", (kennung(), int(zeile["id"]))
+        )
 
 
 def _laufarten_nachtragen(connection: sqlite3.Connection) -> None:
@@ -389,6 +404,7 @@ def init(database_path: Path) -> None:
         # Kennung, und die Spalte dafür kommt erst hier.
         _nachtragen(connection)
         _kennung_nachtragen(connection)
+        _sitzungskennung_nachtragen(connection)
         _umziehen(connection, erste_runde_id(connection))
         _geheimnisse_verwerfen(connection)
         # Der Suchindex wird abgeleitet und deshalb zuletzt neu gebaut — er liest Spalten,

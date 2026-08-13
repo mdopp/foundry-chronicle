@@ -225,6 +225,9 @@ SITZUNG_FRAGE = (
 SITZUNG_ZEILE_NOTIZEN = "• {szenen} mit {notizen}"
 SITZUNG_ZEILE_TON = "• {spuren} — davon liegen {dateien} noch hier, auch die gehen"
 SITZUNG_ZEILE_OHNE_TON = "• {spuren} — Tondateien liegen dazu keine mehr"
+# Eine Datei ohne Zeile: der Mitschnitt läuft noch oder ist abgestürzt, eingereiht wird
+# erst am Ende. Ohne diese Zeile nennte die Frage weniger, als danach geschieht.
+SITZUNG_ZEILE_NUR_TON = "• {dateien} liegen hier, noch ohne Eintrag — auch die gehen"
 SITZUNG_ZEILE_VERSCHRIFTET = "• {transkripte} aus diesen Spuren"
 SITZUNG_ZEILE_GESCHRIEBEN = "• {protokolle} daraus: Chronik und Rückblick"
 
@@ -232,7 +235,11 @@ SITZUNG_JA = "Ja, diese Sitzung löschen"
 SITZUNG_NEIN = "Abbrechen"
 
 SITZUNG_FERTIG = "»{sitzung}« ist fort, mit allem, was daran hing.{ton}"
-SITZUNG_FERTIG_TON = " {dateien} sind von der Platte gelöscht."
+SITZUNG_FERTIG_TON = " Von der Platte gelöscht: {dateien}."
+SITZUNG_FERTIG_REST = (
+    " Nicht löschen ließen sich {dateien} — sie liegen weiter hier, der Grund steht im Log "
+    "des Bots."
+)
 SITZUNG_ABGEBROCHEN = "Nichts gelöscht. Es bleibt alles, wie es war."
 
 # Der Knopf lebt eine Viertelstunde. In der Zeit kann dieselbe Sitzung schon gelöscht sein
@@ -774,11 +781,17 @@ def sitzungswahl(runde: Runde) -> Sitzungswahl:
     der Fall, aus dem dieser Befehl entstanden ist (#169/#171). Über ein Datum ginge es
     auch nicht eindeutig — zwei Abende an einem Tag sind selten, aber möglich, und was
     endgültig löscht, darf nicht raten.
+
+    Was das Menü mitgibt, ist nicht die Nummer, sondern die **Marke** der Sitzung: die
+    Nummer allein trüge die Zusage nicht, dass eine Viertelstunde später noch derselbe Abend
+    darunter steht (``notes.sitzungsmarke``).
     """
     alle = notes.sessions(runde)
     if not alle:
         return Sitzungswahl(text=SITZUNG_KEINE)
-    zeilen = tuple((_wahlschrift(sitzung), str(sitzung.id)) for sitzung in alle[:SITZUNG_ZUR_WAHL])
+    zeilen = tuple(
+        (_wahlschrift(sitzung), notes.sitzungsmarke(sitzung)) for sitzung in alle[:SITZUNG_ZUR_WAHL]
+    )
     rest = SITZUNG_WAHL_GEKUERZT.format(anzahl=len(zeilen)) if len(alle) > len(zeilen) else ""
     return Sitzungswahl(text=SITZUNG_WAHL.format(rest=rest), zeilen=zeilen)
 
@@ -789,6 +802,11 @@ def _sitzungszeilen(umfang: notes.Contents) -> str:
     Sie sind der Grund, warum diese Frage überhaupt gestellt wird: an ihnen hängen die
     Stimmen echter Menschen, und ob welche da sind, sieht man einer Sitzung von außen nicht
     an. Was es nicht gibt, steht nicht da — eine Zeile »0 Aufnahmen« sagt nichts.
+
+    Gefragt wird nach **Dateien**, nicht nach Zeilen: eine Spur wird die ganze Sitzung über
+    geschrieben und erst am Ende eingereiht, ein Absturz mittendrin hinterlässt also Ton
+    ohne Zeile. Genau den nimmt das Löschen mit, und was es mitnimmt, muss vorher dastehen —
+    sonst bestätigt die Rückfrage etwas anderes, als geschieht.
     """
     zeilen = [
         SITZUNG_ZEILE_NOTIZEN.format(
@@ -796,15 +814,16 @@ def _sitzungszeilen(umfang: notes.Contents) -> str:
             notizen=_anzahl(umfang.session.note_count, "Notiz", "Notizen"),
         )
     ]
+    dateien = _anzahl(umfang.audio, "Tondatei", "Tondateien")
     if umfang.recordings:
         spuren = _anzahl(umfang.recordings, "Aufnahme", "Aufnahmen")
         zeilen.append(
-            SITZUNG_ZEILE_TON.format(
-                spuren=spuren, dateien=_anzahl(umfang.audio, "Tondatei", "Tondateien")
-            )
+            SITZUNG_ZEILE_TON.format(spuren=spuren, dateien=dateien)
             if umfang.audio
             else SITZUNG_ZEILE_OHNE_TON.format(spuren=spuren)
         )
+    elif umfang.audio:
+        zeilen.append(SITZUNG_ZEILE_NUR_TON.format(dateien=dateien))
     if umfang.transcripts:
         zeilen.append(
             SITZUNG_ZEILE_VERSCHRIFTET.format(
@@ -820,34 +839,41 @@ def _sitzungszeilen(umfang: notes.Contents) -> str:
     return "\n".join(zeilen)
 
 
-def sitzungsfrage(config: Config, runde: Runde, session_id: int) -> str | None:
+def sitzungsfrage(config: Config, runde: Runde, marke: str) -> str | None:
     """Was diese Sitzung kostet — gefragt, bevor irgendetwas geschieht. ``None``: schon fort."""
-    umfang = notes.session_contents(config, runde, session_id)
+    umfang = notes.session_contents(config, runde, marke)
     if umfang is None:
         return None
     return SITZUNG_FRAGE.format(sitzung=sitzungsname(umfang.session), liste=_sitzungszeilen(umfang))
 
 
-def sitzung_geloescht(config: Config, runde: Runde, session_id: int) -> str:
+def sitzung_geloescht(config: Config, runde: Runde, marke: str) -> str:
     """Die Sitzung fortnehmen und sagen, was fort ist.
 
     Im Log stehen **Zahlen und sonst nichts** — kein Titel, keine Kennung, kein Name. Der
     Titel kommt von der Gruppe und trägt oft genug einen Klarnamen; anders als beim Löschen
     der ganzen Runde gibt es hier auch niemanden zu vermerken, der es veranlasst hat: die
     Runde bleibt stehen, und wer in ihr was tut, geht das Log des Betreibers nichts an.
+
+    Gemeldet wird, was **wirklich** von der Platte ist: was liegen blieb, steht daneben.
     """
-    umfang = notes.delete_session(config, runde, session_id)
+    umfang = notes.delete_session(config, runde, marke)
     if umfang is None:
         return SITZUNG_SCHON_FORT
     logger.info(
-        "Sitzung gelöscht: %s Notizen und %s Tondateien entfernt.",
+        "Sitzung gelöscht: %s Notizen und %s Tondateien entfernt, %s geblieben.",
         umfang.session.note_count,
         umfang.audio,
+        umfang.geblieben,
     )
-    ton = SITZUNG_FERTIG_TON.format(dateien=_anzahl(umfang.audio, "Tondatei", "Tondateien"))
-    return SITZUNG_FERTIG.format(
-        sitzung=sitzungsname(umfang.session), ton=ton if umfang.audio else ""
-    )
+    ton = ""
+    if umfang.audio:
+        ton += SITZUNG_FERTIG_TON.format(dateien=_anzahl(umfang.audio, "Tondatei", "Tondateien"))
+    if umfang.geblieben:
+        ton += SITZUNG_FERTIG_REST.format(
+            dateien=_anzahl(umfang.geblieben, "Tondatei", "Tondateien")
+        )
+    return SITZUNG_FERTIG.format(sitzung=sitzungsname(umfang.session), ton=ton)
 
 
 @dataclass(frozen=True)

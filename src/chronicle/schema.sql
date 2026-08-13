@@ -134,6 +134,14 @@ CREATE INDEX IF NOT EXISTS foundry_message_zeit ON foundry_message (runde_id, ti
 -- ``thread_id`` ist der Discord-Thread, in dem diese Sitzung geschrieben wird: er hat
 -- einen Anfang, ein Ende, eine Teilnehmerliste und eine Zeitachse, und die Runde tippt
 -- ohnehin dort. Er bleibt leer, wo eine Sitzung anders entstanden ist.
+-- ``token`` ist der Zufallswert, an dem eine Sitzung über einen Klick hinweg wiedererkannt
+-- wird — dasselbe wie bei ``runde`` und aus demselben Grund: die ``id`` ist ein
+-- ``INTEGER PRIMARY KEY`` ohne ``AUTOINCREMENT`` und wird nach einer Löschung wieder
+-- vergeben, ``created_at`` steht nur auf die Sekunde genau. Ein Menü lebt eine
+-- Viertelstunde; ohne den Wert nähme sein Knopf den Abend fort, der inzwischen unter der
+-- Nummer steht. Anders als bei ``runde`` darf die Spalte leer sein — ein Bestand aus der
+-- Zeit davor bekommt seinen Wert bei der Wanderung, und wo doch keiner steht, ist die
+-- Sitzung schlicht **nicht wiedererkennbar** und wird auf diesem Weg nicht gelöscht.
 CREATE TABLE IF NOT EXISTS session (
     id         INTEGER PRIMARY KEY,
     runde_id   INTEGER NOT NULL REFERENCES runde (id) ON DELETE CASCADE,
@@ -141,6 +149,7 @@ CREATE TABLE IF NOT EXISTS session (
     title      TEXT,
     created_at TEXT NOT NULL,
     thread_id  TEXT,
+    token      TEXT,
     UNIQUE (id, runde_id)
 );
 
