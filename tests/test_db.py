@@ -239,6 +239,51 @@ def test_nach_der_wanderung_ist_die_kennung_pflicht(tmp_path):
         connection.close()
 
 
+def test_die_wanderung_traegt_jeder_sitzung_eine_eigene_kennung_nach(tmp_path):
+    """Ohne Kennung wäre eine Sitzung aus der Zeit davor nicht wiedererkennbar — und damit
+    über ``/chronik sitzung-loeschen`` gar nicht zu löschen. Je Sitzung eine eigene, sonst
+    gälten zwei als dieselbe."""
+    pfad = tmp_path / "chronicle.sqlite3"
+    db.init(pfad)
+    runde = runden.erste(pfad)
+    erste = notes.create_session(runde, played_on="2026-05-01", title="Erster Abend")
+    zweite = notes.create_session(runde, played_on="2026-05-08", title="Zweiter Abend")
+    connection = db.connect(pfad)
+    try:
+        connection.execute("UPDATE session SET token = NULL")
+        connection.commit()
+    finally:
+        connection.close()
+
+    db.init(pfad)
+
+    kennungen = {sitzung.token for sitzung in notes.sessions(runde)}
+    assert len(kennungen) == 2
+    assert all(kennungen)
+    assert (
+        notes.gemeinte_sitzung(runde, notes.sitzungsmarke(notes.session(runde, erste))) is not None
+    )
+    assert notes.session(runde, zweite).title == "Zweiter Abend"
+
+
+def test_ohne_kennung_ist_eine_sitzung_nicht_die_gemeinte(tmp_path):
+    """Zwei Sitzungen ohne Kennung dürfen nicht als dieselbe durchgehen — sonst fiele der
+    Vergleich still auf die Nummer zurück, gegen die die Kennung gerade steht."""
+    pfad = tmp_path / "chronicle.sqlite3"
+    db.init(pfad)
+    runde = runden.erste(pfad)
+    sitzung = notes.create_session(runde, played_on="2026-05-01", title="Erster Abend")
+    connection = db.connect(pfad)
+    try:
+        connection.execute("UPDATE session SET token = NULL")
+        connection.commit()
+    finally:
+        connection.close()
+
+    assert notes.gemeinte_sitzung(runde, f"{sitzung}:") is None
+    assert notes.gemeinte_sitzung(runde, str(sitzung)) is None
+
+
 def test_scope_laesst_eine_abfrage_mit_runde_durch(tmp_path):
     pfad = tmp_path / "chronicle.sqlite3"
     runde = runden.erste(pfad)

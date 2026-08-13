@@ -25,12 +25,15 @@ nach (``bot.chronik``). Es ist keine Betreiber-Fähigkeit: über der Runde steht
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import logging
+from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime
 from pathlib import Path
 
 from chronicle import db
 from chronicle.runde import Runde
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -56,6 +59,7 @@ class Session:
     scene_count: int = 0
     note_count: int = 0
     scenes: tuple[Scene, ...] = ()
+    token: str = ""
 
 
 @dataclass(frozen=True)
@@ -66,6 +70,11 @@ class Contents:
     Platte liegen: nach der Aufbewahrungsfrist bleibt die Zeile stehen und der Ton ist
     fort. Der Unterschied gehört in die Frage — »drei Aufnahmen« und »drei Stunden
     Stimmen« sind nicht dasselbe Versprechen.
+
+    ``geblieben`` gibt es nur nach dem Löschen und ist dort fast immer ``0``: die Zahl der
+    Dateien, die sich **nicht** entfernen ließen. Sie steht hier, damit die Meldung danach
+    nicht mehr verspricht, als geschehen ist — bei Stimmen echter Menschen ist ein »fort«,
+    das keines war, die teuerste Sorte Unwahrheit.
     """
 
     session: Session
@@ -73,6 +82,7 @@ class Contents:
     audio: int
     transcripts: int
     protocols: int
+    geblieben: int = 0
 
 
 def _now() -> str:
@@ -91,14 +101,15 @@ def create_session(
     try:
         with scope:
             cursor = scope.execute(
-                "INSERT INTO session (runde_id, played_on, title, created_at, thread_id) "
-                "VALUES (?, ?, ?, ?, ?)",
+                "INSERT INTO session (runde_id, played_on, title, created_at, thread_id, token) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
                 (
                     scope.runde_id,
                     played_on.strip() or today(),
                     title.strip() or None,
                     zeitpunkt,
                     str(thread_id).strip() or None,
+                    db.kennung(),
                 ),
             )
             sitzung = int(cursor.lastrowid)
@@ -117,7 +128,7 @@ def sessions(runde: Runde) -> tuple[Session, ...]:
     scope = db.scoped(runde)
     try:
         rows = scope.execute(
-            "SELECT s.id, s.played_on, s.title, "
+            "SELECT s.id, s.played_on, s.title, s.token, "
             "(SELECT COUNT(*) FROM scene WHERE session_id = s.id) AS szenen, "
             "(SELECT COUNT(*) FROM note n JOIN scene c ON n.scene_id = c.id "
             " WHERE c.session_id = s.id) AS notizen "
@@ -133,6 +144,7 @@ def sessions(runde: Runde) -> tuple[Session, ...]:
             title=r["title"],
             scene_count=r["szenen"],
             note_count=r["notizen"],
+            token=r["token"] or "",
         )
         for r in rows
     )
@@ -142,7 +154,7 @@ def session(runde: Runde, session_id: int) -> Session | None:
     scope = db.scoped(runde)
     try:
         kopf = scope.execute(
-            "SELECT id, played_on, title FROM session WHERE runde_id = ? AND id = ?",
+            "SELECT id, played_on, title, token FROM session WHERE runde_id = ? AND id = ?",
             (scope.runde_id, session_id),
         ).fetchone()
         if kopf is None:
@@ -180,6 +192,7 @@ def session(runde: Runde, session_id: int) -> Session | None:
         scene_count=len(scenes),
         note_count=len(notizen),
         scenes=scenes,
+        token=kopf["token"] or "",
     )
 
 
@@ -431,18 +444,64 @@ def _audio(config, runde: Runde, session_id: int) -> tuple[Path, ...]:
         scope.close()
     gefunden = {config.recordings_dir / zeile["filename"] for zeile in zeilen}
     gefunden.update(config.recordings_dir.glob(f"sitzung{int(session_id)}-*"))
-    return tuple(sorted(datei for datei in gefunden if datei.exists()))
+    # Der Name kommt aus einer Spalte, gelöscht wird eine Datei: ein ``../`` darin zeigte
+    # aus dem Aufnahmeverzeichnis heraus. Heute schreibt jeder Aufrufer einen bloßen Namen
+    # hinein — an einer Stelle, die *löscht*, ist das keine Zusage, auf die man sich verlässt.
+    return tuple(
+        sorted(
+            datei for datei in gefunden if datei.parent == config.recordings_dir and datei.exists()
+        )
+    )
 
 
-def session_contents(config, runde: Runde, session_id: int) -> Contents | None:
+def sitzungsmarke(sitzung: Session) -> str:
+    """Woran diese Sitzung über einen Klick hinweg wiedererkannt wird — Nummer und Kennung.
+
+    Das Gegenstück zu ``bot.chronik.dieselbe_runde`` eine Ebene tiefer, und aus demselben
+    Grund: ``session.id`` ist ein ``INTEGER PRIMARY KEY`` ohne ``AUTOINCREMENT``, SQLite
+    vergibt die Nummer der zuletzt gelöschten Zeile also wieder. Ein Menü und ein Knopf
+    leben eine Viertelstunde; wird die gewählte Sitzung in der Zeit anderswo gelöscht und
+    danach eine neue angelegt, trägt die neue dieselbe Nummer — und der Klick von vorhin
+    nähme den frisch begonnenen Abend samt seiner Tondateien fort.
+
+    ``created_at`` täte es nicht: es steht auf die Sekunde genau, und Löschen und Anlegen
+    fallen leicht in dieselbe. Verglichen wird deshalb der Zufallswert aus ``token``.
+    """
+    return f"{sitzung.id}:{sitzung.token}"
+
+
+def gemeinte_sitzung(runde: Runde, marke: str) -> Session | None:
+    """Die Sitzung hinter einer Marke — ``None``, wenn unter der Nummer etwas anderes steht.
+
+    Was hier hereinkommt, kommt aus einer Discord-Interaktion und ist deshalb nichts, worauf
+    man sich verlässt: eine Marke, die keine ist, ist keine Sitzung. Eine **leere** Kennung
+    ebenso wenig — sonst fiele der Vergleich für zwei Sitzungen ohne Kennung still auf
+    Nummern-Gleichheit zurück, und das ist genau der Fehler, gegen den die Kennung steht.
+    """
+    kennung, _, wert = str(marke).partition(":")
+    if not wert or not kennung.isdigit():
+        return None
+    scope = db.scoped(runde)
+    try:
+        zeile = scope.execute(
+            "SELECT id FROM session WHERE runde_id = ? AND id = ? AND token = ?",
+            (scope.runde_id, int(kennung), wert),
+        ).fetchone()
+    finally:
+        scope.close()
+    return None if zeile is None else session(runde, int(kennung))
+
+
+def session_contents(config, runde: Runde, marke: str) -> Contents | None:
     """Was an dieser Sitzung hängt — die Auskunft **vor** dem Löschen, ohne zu löschen.
 
-    Keine Sitzung dieser Runde heißt ``None``. Das ist zugleich die Schranke, hinter der
-    ``_audio`` erst ins Verzeichnis greifen darf.
+    Keine Sitzung dieser Runde, oder nicht mehr die gemeinte, heißt ``None``. Das ist
+    zugleich die Schranke, hinter der ``_audio`` erst ins Verzeichnis greifen darf.
     """
-    gefunden = session(runde, session_id)
+    gefunden = gemeinte_sitzung(runde, marke)
     if gefunden is None:
         return None
+    session_id = gefunden.id
     scope = db.scoped(runde)
     try:
         zahlen = scope.execute(
@@ -487,7 +546,24 @@ def _index_nachziehen(scope: db.Scope, session_id: int) -> None:
     )
 
 
-def delete_session(config, runde: Runde, session_id: int) -> Contents | None:
+def _tondateien_loeschen(dateien: tuple[Path, ...]) -> int:
+    """Die Tondateien fortnehmen und sagen, wie viele blieben. **Nie mit dem Namen im Log.**
+
+    Der Stamm eines Aufnahmenamens ist der Sprechername; ein ungefangenes ``unlink`` schriebe
+    ihn über den Traceback ins Log des Betreibers, und zwar auf einem Weg, den niemand
+    bestellt hat. Was schiefging, sagt die Art des Fehlers.
+    """
+    geblieben = 0
+    for datei in dateien:
+        try:
+            datei.unlink(missing_ok=True)
+        except OSError as fehler:
+            geblieben += 1
+            logger.warning("Eine Tondatei ließ sich nicht löschen: %s.", type(fehler).__name__)
+    return geblieben
+
+
+def delete_session(config, runde: Runde, marke: str) -> Contents | None:
     """Eine einzelne Sitzung und alles, was an ihr hängt. Rückgängig gibt es nicht.
 
     **Die Tondateien zuerst**, wie beim Löschen der ganzen Runde: verschwände die Zeile
@@ -502,14 +578,19 @@ def delete_session(config, runde: Runde, session_id: int) -> Contents | None:
     dann etwas wert, wenn das daraus Gemachte noch irgendwo liegt. Beim Löschen der ganzen
     Runde geht er mit — dort ist niemand mehr da, für den er belegte.
 
-    Zurück kommt, was fort ist — für die Meldung danach. ``None`` heißt: diese Sitzung
-    gehört dieser Runde nicht (mehr), und dann ist auch nichts geschehen.
+    Gelöscht wird gegen eine **Marke** und nicht gegen eine nackte Nummer: unter der Nummer
+    von vorhin kann eine Viertelstunde später ein anderer Abend stehen (``sitzungsmarke``).
+
+    Zurück kommt, was fort ist — für die Meldung danach: ``audio`` zählt dort die Dateien,
+    die wirklich von der Platte sind, ``geblieben`` die, die es nicht wurden. ``None`` heißt:
+    diese Sitzung gehört dieser Runde nicht (mehr) oder ist nicht mehr die gemeinte, und dann
+    ist auch nichts geschehen.
     """
-    gefunden = session_contents(config, runde, session_id)
+    gefunden = session_contents(config, runde, marke)
     if gefunden is None:
         return None
-    for datei in _audio(config, runde, session_id):
-        datei.unlink(missing_ok=True)
+    session_id = gefunden.session.id
+    geblieben = _tondateien_loeschen(_audio(config, runde, session_id))
     scope = db.scoped(runde)
     try:
         with scope:
@@ -519,4 +600,4 @@ def delete_session(config, runde: Runde, session_id: int) -> Contents | None:
             _index_nachziehen(scope, session_id)
     finally:
         scope.close()
-    return gefunden
+    return replace(gefunden, audio=gefunden.audio - geblieben, geblieben=geblieben)

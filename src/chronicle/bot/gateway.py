@@ -239,7 +239,7 @@ BEFEHLE = (
     "• `/setup` — Foundry, Kanal, Uhrzeit, Zone und Quelle ändern; nur für die "
     "Verwaltung.\n"
     "• `/chronik sitzung-loeschen` — **eine** Sitzung samt ihren Aufnahmen löschen, nach "
-    "Rückfrage; nur für die Verwaltung.\n"
+    "Rückfrage; nur für die Administration.\n"
     "• `/chronik loeschen` — alles von dieser Runde löschen, nach Rückfrage; nur für die "
     "Administration.\n"
     "• `/aufnahme hilfe` — alles noch einmal in Ruhe.\n"
@@ -1581,34 +1581,35 @@ def _loeschansicht(config: Config, runde):
     return Loeschansicht()
 
 
-def _sitzungsloeschansicht(config: Config, runde, session_id: int):
+def _sitzungsloeschansicht(config: Config, runde, marke: str):
     """Die Rückfrage vor **einer** Sitzung — dieselben zwei Knöpfe wie vor der ganzen Runde.
 
     Und dieselben zwei Prüfungen beim Klick: die Runde, weil ihre Kennung inzwischen einer
-    fremden Gilde gehören kann, und das Recht, weil die Frage die Verwaltung stellt und
-    klicken könnte jeder, der die Nachricht sieht. Dass die Sitzung noch da ist, prüft der
-    Löschweg selbst — er sagt es, statt ein »fort« über etwas zu setzen, das schon fort war.
+    fremden Gilde gehören kann, und das Recht, weil die Frage die Administration stellt und
+    klicken könnte jeder, der die Nachricht sieht. Dass die Sitzung noch da ist — und noch
+    dieselbe —, prüft der Löschweg selbst an der ``marke``: er sagt es, statt ein »fort«
+    über etwas zu setzen, das schon fort war oder nie gemeint war.
     """
     discord = _discord()
 
     ja = discord.ui.Button(
-        label=chronik.SITZUNG_JA, custom_id=f"{KENNUNG_SITZUNG}:{runde.id}:{session_id}:ja"
+        label=chronik.SITZUNG_JA, custom_id=f"{KENNUNG_SITZUNG}:{runde.id}:{marke}:ja"
     )
     nein = discord.ui.Button(
-        label=chronik.SITZUNG_NEIN, custom_id=f"{KENNUNG_SITZUNG}:{runde.id}:{session_id}:nein"
+        label=chronik.SITZUNG_NEIN, custom_id=f"{KENNUNG_SITZUNG}:{runde.id}:{marke}:nein"
     )
 
     @_geklickt
     async def bestaetigt(interaction) -> None:
-        if not _darf_verwalten(getattr(interaction, "user", None)):
-            await interaction.response.edit_message(content=einrichten.NUR_VERWALTUNG, view=None)
+        if not _darf_loeschen(getattr(interaction, "user", None)):
+            await interaction.response.edit_message(content=einrichten.NUR_ADMIN, view=None)
             return
         gemeint = await _noch_dieselbe(config, interaction, runde)
         if gemeint is None:
             return
         # Tondateien und Zeilen einer langen Sitzung: das dauert und gehört nicht auf die
         # Ereignisschleife — solange sie rechnet, antwortet der Bot niemandem.
-        meldung = await asyncio.to_thread(chronik.sitzung_geloescht, config, gemeint, session_id)
+        meldung = await asyncio.to_thread(chronik.sitzung_geloescht, config, gemeint, marke)
         await interaction.response.edit_message(content=meldung, view=None)
 
     @_geklickt
@@ -1633,6 +1634,10 @@ def _sitzungswahlansicht(config: Config, runde, zeilen):
     Zwei Schritte, weil es keinen dritten Versuch gibt: die Wahl benennt die Sitzung, die
     Rückfrage danach benennt, was an ihr hängt — bis hin zu den Tondateien. Ein Menü, das
     beim Loslassen löschte, wäre ein Vertipper vom Verlust entfernt.
+
+    Weitergereicht wird die Marke der Sitzung und nicht ihre Nummer: was aus einer
+    Interaktion zurückkommt, ist ein Vorschlag, und die Nummer allein trägt nicht, dass
+    darunter noch derselbe Abend steht.
     """
     discord = _discord()
 
@@ -1649,19 +1654,19 @@ def _sitzungswahlansicht(config: Config, runde, zeilen):
 
     @_geklickt
     async def gewaehlt(interaction) -> None:
-        if not _darf_verwalten(getattr(interaction, "user", None)):
-            await interaction.response.edit_message(content=einrichten.NUR_VERWALTUNG, view=None)
+        if not _darf_loeschen(getattr(interaction, "user", None)):
+            await interaction.response.edit_message(content=einrichten.NUR_ADMIN, view=None)
             return
         gemeint = await _noch_dieselbe(config, interaction, runde)
         if gemeint is None:
             return
-        sitzung = int(menue.values[0])
-        frage = chronik.sitzungsfrage(config, gemeint, sitzung)
+        marke = str(menue.values[0])
+        frage = chronik.sitzungsfrage(config, gemeint, marke)
         if frage is None:
             await interaction.response.edit_message(content=chronik.SITZUNG_SCHON_FORT, view=None)
             return
         await interaction.response.edit_message(
-            content=frage, view=_sitzungsloeschansicht(config, gemeint, sitzung)
+            content=frage, view=_sitzungsloeschansicht(config, gemeint, marke)
         )
 
     menue.callback = gewaehlt
@@ -2257,17 +2262,30 @@ def baue(config: Config):
     async def chronik_sitzung_loeschen(ctx) -> None:
         """Der kleine Weg neben ``/chronik loeschen``: ein Abend statt der ganzen Runde.
 
-        Die Schranke ist die der Verwaltung und nicht die der Administration: eine Sitzung
-        fortzunehmen ist eine Berichtigung — den überzähligen Abend aus einem eingelesenen
-        Dokument, den Testabend vom Einrichten —, und wer die Runde einrichtet, berichtigt
-        sie auch. Die ganze Runde bleibt die strengere Frage, denn sie ist die, nach der
-        nichts mehr da ist. Gerechnet wird noch einmal am Menü und am Knopf.
+        **Die Schranke ist die der Administration, dieselbe wie vor der ganzen Runde**
+        (Operator-Entscheidung, #171/#174) — und das ist nicht die naheliegende Antwort.
+        Naheliegend wäre die Verwaltung: eine Sitzung fortzunehmen sieht nach Berichtigung
+        aus, der überzählige Abend aus einem eingelesenen Dokument. Sie ist aber nicht die
+        harmlosere Löschung, sondern die **schlimmere**: sie ist auswählbar *und* lautlos.
+        Alles hier läuft ephemer, der Thread der Sitzung bleibt unverändert stehen, und wer
+        geklickt hat, steht mit Absicht in keinem Log. Ein Verwalter nähme so genau den
+        einen unbequemen Abend samt seinen Aufnahmen fort, und niemand in der Gruppe
+        erführe es; ``/chronik loeschen`` kann man nicht heimlich drücken. Der Maßstab von
+        ``_darf_loeschen`` trägt genau das: das Sofortige bekommt die strengere Schranke,
+        das Langsame die Umkehrbarkeit — und ein langsames, umkehrbares Gegenstück zu
+        dieser Löschung gibt es überhaupt nicht.
+
+        Die Alternative steht offen: ``_darf_verwalten`` wäre vertretbar, wenn dafür die
+        Heimlichkeit fiele — ein sichtbarer Vermerk im Kanal der Runde, dass dieser Abend
+        gelöscht wurde. Das ist nicht gebaut; wer es baut, darf die Schranke senken.
+
+        Gerechnet wird noch einmal am Menü und am Knopf.
 
         Eine ruhende Runde kommt hier nicht durch: sie ist verabschiedet, und wer sie ganz
         loswerden will, hat dafür ``/chronik loeschen``.
         """
-        if not _darf_verwalten(getattr(ctx, "author", None)):
-            await _zustellen(ctx.respond, einrichten.NUR_VERWALTUNG, ephemeral=True)
+        if not _darf_loeschen(getattr(ctx, "author", None)):
+            await _zustellen(ctx.respond, einrichten.NUR_ADMIN, ephemeral=True)
             return
         runde = chronik.runde_verlangen(config, ctx.guild_id)
         wahl = chronik.sitzungswahl(runde)

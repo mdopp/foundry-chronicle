@@ -299,6 +299,11 @@ def _mit_scope(runde, arbeit):
         scope.close()
 
 
+def _marke(runde, ids) -> str:
+    """Die Sitzungsmarke dieser Runde — was das Menü mitgibt, statt einer nackten Nummer."""
+    return notes.sitzungsmarke(notes.session(runde, ids["sitzung"]))
+
+
 # Jede lesende Funktion der Schicht, aufgerufen für **eine** Runde. Die Prüfung ist immer
 # dieselbe: in der Antwort darf die Marke der anderen Runde nicht vorkommen.
 ABFRAGEN = {
@@ -309,7 +314,9 @@ ABFRAGEN = {
     "notes.session_of_thread": lambda c, r, i: notes.session_of_thread(r, i["thread"]),
     "notes.thread_of_session": lambda c, r, i: notes.thread_of_session(r, i["sitzung"]),
     "dokument.neu": lambda c, r, i: dokument.neu(r, ()),
-    "notes.session_contents": lambda c, r, i: notes.session_contents(c, r, i["sitzung"]),
+    "notes.session_contents": lambda c, r, i: notes.session_contents(c, r, _marke(r, i)),
+    "notes.sitzungsmarke": lambda c, r, i: notes.sitzungsmarke(notes.session(r, i["sitzung"])),
+    "notes.gemeinte_sitzung": lambda c, r, i: notes.gemeinte_sitzung(r, _marke(r, i)),
     "notes.scene_at": lambda c, r, i: notes.scene_at(r, i["sitzung"], "2026-05-01T20:00:00+00:00"),
     "notes.today": lambda c, r, i: notes.today(),
     "protocol.stored": lambda c, r, i: protocol.stored(r, i["sitzung"]),
@@ -630,14 +637,15 @@ def test_die_fremde_sitzung_wird_nicht_geloescht(zwei_runden):
     config.recordings_dir.mkdir(parents=True, exist_ok=True)
     fremd = config.recordings_dir / f"sitzung{ids[2]['sitzung']}-20260501T200000-Mira.wav"
     fremd.write_bytes(b"ton")
+    fremde_marke = _marke(b, ids[2])
 
-    assert notes.delete_session(config, a, ids[2]["sitzung"]) is None
+    assert notes.delete_session(config, a, fremde_marke) is None
 
     assert fremd.exists()
     assert notes.session(b, ids[2]["sitzung"]) is not None
-    assert notes.session_contents(config, a, ids[2]["sitzung"]) is None
+    assert notes.session_contents(config, a, fremde_marke) is None
     # Und die eigene geht sehr wohl — sonst bliebe der Test auch grün, wenn gar nichts löschte.
-    assert notes.delete_session(config, a, ids[1]["sitzung"]) is not None
+    assert notes.delete_session(config, a, _marke(a, ids[1])) is not None
 
 
 def _notiztexte(runde, session_id) -> str:
