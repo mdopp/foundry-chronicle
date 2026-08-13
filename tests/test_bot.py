@@ -487,6 +487,29 @@ def test_je_sprecher_eine_eigene_spur(konfiguration, sitzung_id, ohne_espeak):
     assert nach_name == {"Mira.wav": 960, "Brok.wav": 960}
 
 
+def test_die_begonnene_spur_steht_ohne_namen_im_log(konfiguration, sitzung_id, ohne_espeak, caplog):
+    """Der Anzeigename ist der Stamm des Dateinamens (#194) — beide gehören nicht ins Log
+    des Betreibers. Gezählt statt benannt: welcher Abend, die wievielte Spur.
+
+    Geprüft wird auf DEBUG und über den ganzen Lauf, Abschluss eingeschlossen: ein
+    Traceback, der den Pfad mitbrächte, stünde ebenso in ``caplog.text`` und fiele hier auf.
+    """
+    caplog.set_level(logging.DEBUG)
+    aufnahme = asyncio.run(
+        recorder.starten(konfiguration, FakeStimme(), unsere_runde(konfiguration))
+    )
+
+    aufnahme.schreiben(MIRA, stille(480))
+    aufnahme.schreiben(BROK, stille(960))
+    aufnahme.beenden()
+
+    assert f"Sitzung {sitzung_id}: 1. Spur begonnen" in caplog.text
+    assert f"Sitzung {sitzung_id}: 2. Spur begonnen" in caplog.text
+    assert MIRA.name not in caplog.text
+    assert BROK.name not in caplog.text
+    assert ".wav" not in caplog.text
+
+
 def test_die_spur_traegt_die_discord_id_ihres_sprechers(konfiguration, sitzung_id, ohne_espeak):
     aufnahme = asyncio.run(
         recorder.starten(konfiguration, FakeStimme(), unsere_runde(konfiguration))

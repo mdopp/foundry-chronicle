@@ -386,12 +386,13 @@ def zurueckstellen(runde: Runde) -> tuple[str, ...]:
     dasselbe wie eines aus dem ersten. Ein Fehlschlag stünde hier für einen Fehler, den es
     nicht gab — und die Spur bekäme nie einen zweiten Versuch.
     """
-    zurueck = []
+    zurueck: list[str] = []
+    gemeldet: list[tuple[int, int]] = []
     scope = db.scoped(runde)
     try:
         with _schloss:
             offen = scope.execute(
-                "SELECT id, source, besitzer, herzschlag FROM recording "
+                "SELECT id, session_id, source, besitzer, herzschlag FROM recording "
                 "WHERE runde_id = ? AND status = ? AND deleted_at IS NULL",
                 (scope.runde_id, LAEUFT),
             ).fetchall()
@@ -410,10 +411,16 @@ def zurueckstellen(runde: Runde) -> tuple[str, ...]:
                     ],
                 )
             zurueck = [str(zeile["source"]) for zeile in verwaist]
+            gemeldet = [(int(zeile["id"]), int(zeile["session_id"])) for zeile in verwaist]
     finally:
         scope.close()
-    for quelle in zurueck:
-        logger.warning("Spur %s: %s", quelle, UNTERBROCHEN)
+    # Im Log steht die Job-Id, nicht die Quelle: der Stamm eines Spurnamens ist der
+    # Anzeigename des Sprechers (#194), und den geht das Log des Betreibers nichts an. Die
+    # Id nennt niemanden — sie ist eine laufende Nummer, die außerhalb dieser Datenbank
+    # nichts bedeutet —, und drinnen führt sie in einem Schritt zu Datei, Stand und Text.
+    # Die Sitzung steht daneben, weil der Betreiber sonst nicht sähe, welcher Abend es traf.
+    for kennung, sitzung in gemeldet:
+        logger.warning("Spur %s aus Sitzung %s: %s", kennung, sitzung, UNTERBROCHEN)
     return tuple(zurueck)
 
 
