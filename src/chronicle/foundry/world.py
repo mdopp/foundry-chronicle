@@ -111,6 +111,21 @@ def _message(message: Mapping, system: str) -> ChatMessage:
     )
 
 
+def fuer_die_gruppe(raw: Mapping) -> frozenset[str]:
+    """Die Kennungen der Nachrichten, die für die **ganze** Gruppe bestimmt waren.
+
+    Sie steht neben ``project`` und nicht darin: das Ergebnis von ``project`` ist das
+    Archiv, und das bleibt voll. Hier geht es um die engere Grenze davor — was in den
+    laufenden Sitzungs-Thread darf, in dem alle mitlesen. Was der Rohdump als Geflüster
+    oder blind führt, gehört nicht dazu, auch wenn unser Konto es sehen darf.
+    """
+    return frozenset(
+        _id(message)
+        for message in _documents(raw, "messages")
+        if permissions.message_fuer_die_gruppe(message)
+    )
+
+
 def project(raw: Mapping, user_id: str, *, fetched_at: str) -> WorldSnapshot:
     system = _system_id(raw)
     users = _documents(raw, "users")

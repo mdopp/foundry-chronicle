@@ -343,7 +343,8 @@ START_HINWEIS = "Leer lassen geht: dann eben ohne die Zahlen."
 MIT_FOUNDRY = (
     "Das Passwort liegt bis zum Abschluss bereit — gespeichert wird es nirgends, und "
     "`/chronik fertig` fragt nicht noch einmal. Ab jetzt stelle ich hier ein, was in eurem "
-    "Foundry gewürfelt wird, während ihr spielt."
+    "Foundry **offen** gewürfelt wird, während ihr spielt. Geflüstertes und Verdecktes "
+    "nicht: hier liest die ganze Gruppe mit."
 )
 
 OHNE_FOUNDRY = (
@@ -454,6 +455,14 @@ class Strom:
 
     Alles davon lebt im Arbeitsspeicher und nur so lange wie die Sitzung: ein Neustart
     beendet den Strom, und das ist richtig so — das Passwort ist dann ohnehin fort.
+
+    **Er endet dabei stumm, und das ist die bekannte Grenze dieses Weges.** Wird der Bot
+    mitten in einer Sitzung neu gestartet, sagt niemand im Thread, dass ab jetzt nichts
+    mehr kommt; die Runde spielt in dem Glauben weiter, die Würfe kämen noch. Verloren
+    geht nichts — der Abschluss fragt das Passwort neu und holt alles ganz —, aber das
+    »beobachtbar« aus #93 gilt bis zum Neustart und nicht darüber hinaus. Es hier zu
+    schreiben ist der ehrlichere Zustand, als es offenzulassen; wer die Lücke schließt,
+    tut das beim Wiederanlauf und sagt es in den Thread.
     """
 
     runde: Runde

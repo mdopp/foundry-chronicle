@@ -17,7 +17,15 @@ import types
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from conftest import GM_FIGUR, GM_GEFLUESTER, GRENZE, UNSER_KONTO, WELT, systemsprache
+from conftest import (
+    GM_FIGUR,
+    GM_GEFLUESTER,
+    GRENZE,
+    LEITUNG,
+    UNSER_KONTO,
+    WELT,
+    systemsprache,
+)
 from conftest import runde as erste_runde
 from test_bot import (
     TOKEN,
@@ -2257,9 +2265,10 @@ def test_ein_zweiter_abschluss_loescht_das_eingelesene_nicht(stelle, bot):
 class FoundryAttrappe:
     """Das Foundry der Runde, ohne Netz — Welt und Erreichbarkeit ändern sich zwischen Blicken."""
 
-    def __init__(self, welt=None, fehler=None):
+    def __init__(self, welt=None, fehler=None, konto=UNSER_KONTO):
         self.welt = welt
         self.fehler = fehler
+        self.konto = konto
         self.blicke = 0
 
     def __call__(self, _wirksam, _geheim):
@@ -2269,19 +2278,49 @@ class FoundryAttrappe:
 
     def fetch_world(self):
         self.blicke += 1
-        return UNSER_KONTO, self.welt
+        return self.konto, self.welt
+
+
+def ohne(welt, *kennungen):
+    """Dieselbe Welt, bevor diese Nachrichten fielen — so wird der erste Blick zur Grundlinie."""
+    return dict(welt, messages=[n for n in welt["messages"] if n["_id"] not in kennungen])
 
 
 def ohne_wurf(welt):
     """Dieselbe Welt, bevor gewürfelt wurde — sie stellt die Grundlinie des ersten Blicks."""
-    return dict(welt, messages=[n for n in welt["messages"] if n["_id"] != "m-wurf"])
+    return ohne(welt, "m-wurf")
 
 
-def buehne(stelle, bot, monkeypatch, welt=WELT, fehler=None):
+# Ein Wurf, den die Spielleitung genau **unserem** Konto zuflüstert. Er passiert den
+# Rechtefilter des Archivs, denn wir sind gemeint — für die Runde bestimmt ist er trotzdem
+# nicht.
+GEFLUESTERTER_WURF = {
+    "_id": "m-fluesterwurf",
+    "timestamp": 6000,
+    "author": LEITUNG,
+    "whisper": [UNSER_KONTO, LEITUNG],
+    "content": "",
+    "speaker": {},
+    "system": {"roll": {"title": "Heimlicher Fallenwurf", "total": 19}},
+}
+
+
+def mit(welt, *nachrichten):
+    return dict(welt, messages=[*welt["messages"], *nachrichten])
+
+
+def archiv(gestellt):
+    """Was der Strom in die Chronik gelegt hat — sie bleibt voll, auch wo der Thread leer bleibt."""
+    return {
+        n.id for n in foundry_service.current(gestellt.config, gestellt.runde).snapshot.messages
+    }
+
+
+def buehne(stelle, bot, monkeypatch, welt=WELT, fehler=None, konto=UNSER_KONTO):
     """Eine laufende Sitzung mit hinterlegtem Passwort und einem Foundry dahinter."""
     config, unsere = stelle
     _fenster, thread = sitzung_starten(bot, passwort=PASSWORT)
-    foundry = FoundryAttrappe(welt, fehler)
+    foundry = FoundryAttrappe(welt, fehler, konto)
     monkeypatch.setattr(foundry_service, "FoundryClient", foundry)
     sitzung = chronik.sitzung_des_threads(unsere, str(thread.id))
     return types.SimpleNamespace(
@@ -2346,6 +2385,43 @@ def test_der_blinde_wurf_der_spielleitung_bleibt_draussen(stelle, bot, monkeypat
 
     assert "Verborgener Wurf" not in gesagt
     assert GM_FIGUR not in gesagt and GM_GEFLUESTER not in gesagt
+
+
+def test_ein_wurf_der_uns_zugefluestert_wird_bleibt_draussen(stelle, bot, monkeypatch):
+    """Der Thread ist die **Gruppe**, nicht unser Konto.
+
+    Mit dem empfohlenen Spielerkonto flüstert die Spielleitung genau diesem Konto einen Wurf
+    zu. Der Rechtefilter des Archivs lässt ihn durch — wir sind ja gemeint —, und dort soll
+    er auch stehen. In den Thread gehört er nicht: dort läse ihn die ganze Runde.
+    """
+    gestellt = buehne(stelle, bot, monkeypatch, welt=ohne_wurf(WELT))
+    blick(gestellt)
+    gestellt.foundry.welt = mit(WELT, GEFLUESTERTER_WURF)
+
+    gesagt = blick(gestellt).text
+
+    assert "Heimlicher Fallenwurf" not in gesagt and "19" not in gesagt
+    assert "Knowledge Roll" in gesagt, "der offene Wurf daneben kommt weiterhin an"
+    assert "m-fluesterwurf" in archiv(gestellt)
+
+
+def test_ein_blinder_wurf_bleibt_auch_mit_gm_konto_draussen(stelle, bot, monkeypatch):
+    """Dass ein GM-Konto mehr sieht, ist die Entscheidung der Gruppe (#78) — der Thread nicht.
+
+    Neu ist an diesem Weg, dass GM-Inhalt **während** des Spiels ankäme statt hinterher in
+    der Chronik: genau dann, wenn ein verborgener Wurf verborgen bleiben muss. Er fällt
+    deshalb erst **nach** der Grundlinie — sonst hielte ihn schon die zurück.
+    """
+    gestellt = buehne(stelle, bot, monkeypatch, welt=ohne(WELT, "m-wurf", "m-blind"), konto=LEITUNG)
+    blick(gestellt)
+    gestellt.foundry.welt = WELT
+
+    gesagt = blick(gestellt).text
+
+    assert "Verborgener Wurf" not in gesagt and "18" not in gesagt
+    assert GM_GEFLUESTER not in gesagt
+    assert "Knowledge Roll" in gesagt, "der offene Wurf daneben kommt weiterhin an"
+    assert "m-blind" in archiv(gestellt), "im Archiv steht er, weil dieses Konto ihn sieht"
 
 
 def test_jedes_ereignis_genau_einmal(stelle, bot, monkeypatch):
@@ -2434,7 +2510,11 @@ def test_der_strom_beginnt_mit_der_sitzung_und_endet_mit_ihr(stelle, bot, monkey
     monkeypatch.setattr(
         gateway, "_strom_stellen", lambda _c, _b, _lauf, r, s: gestellt.append((r.id, s))
     )
-    monkeypatch.setattr(gateway, "_strom_abbestellen", lambda _lauf, s: abbestellt.append(s))
+
+    async def abbestellen(_lauf, s):
+        abbestellt.append(s)
+
+    monkeypatch.setattr(gateway, "_strom_abbestellen", abbestellen)
 
     _fenster, thread = sitzung_starten(bot, passwort=PASSWORT)
     sitzung = chronik.sitzung_des_threads(unsere, str(thread.id))
@@ -2469,10 +2549,52 @@ def test_der_beobachter_stellt_in_den_thread_bis_es_nichts_mehr_zu_sehen_gibt(
         (chronik.Meldung(text="🎲 erster Wurf"), chronik.Meldung(text="Schluss", weiter=False))
     )
     monkeypatch.setattr(chronik, "ereignisse_abholen", lambda _config, _strom: next(meldungen))
-
     lauf = gateway._Lauf()
-    strom = chronik.Strom(runde=unsere, session_id=sitzung)
-    asyncio.run(gateway._ereignisstrom(config, bot, lauf, strom))
+
+    async def fahren():
+        # Über ``_strom_stellen`` und nicht am Faden vorbei: sonst stünde der Beobachter nie
+        # im Lauf, und die Frage »ist er hinterher ausgetragen« wäre keine.
+        gateway._strom_stellen(config, bot, lauf, unsere, sitzung)
+        faden = lauf.stroeme[sitzung]
+        waehrenddessen = dict(lauf.stroeme)
+        await faden
+        return waehrenddessen
+
+    waehrenddessen = asyncio.run(fahren())
 
     assert thread.gesendet[-2:] == ["🎲 erster Wurf", "Schluss"]
+    assert list(waehrenddessen) == [sitzung], "solange er läuft, steht er im Lauf"
+    assert lauf.stroeme == {}, "und danach trägt er sich selbst wieder aus"
+
+
+def test_das_abbestellen_wartet_auf_den_laufenden_blick(stelle, bot, monkeypatch):
+    """``cancel`` erreicht keinen Faden, der gerade in ``asyncio.to_thread`` sitzt.
+
+    Ohne das Warten liefe der Blick zu Ende und schriebe seinen Stand **hinter** den des
+    Abschlusses; ein Wurf aus diesem Zwischenraum stünde danach als »nicht mehr vorhanden«
+    in der Chronik — eine Unwahrheit über einen Beleg.
+    """
+    config, unsere = stelle
+    _fenster, thread = sitzung_starten(bot, passwort=PASSWORT)
+    sitzung = chronik.sitzung_des_threads(unsere, str(thread.id))
+    monkeypatch.setattr(chronik, "STROM_ABSTAND", 0)
+    angefangen = threading.Event()
+    geschrieben: list = []
+
+    def blick_der_dauert(_config, _strom):
+        angefangen.set()
+        time.sleep(0.05)
+        geschrieben.append("Stand des laufenden Blicks")
+        return chronik.Meldung()
+
+    monkeypatch.setattr(chronik, "ereignisse_abholen", blick_der_dauert)
+    lauf = gateway._Lauf()
+
+    async def fahren():
+        gateway._strom_stellen(config, bot, lauf, unsere, sitzung)
+        await asyncio.to_thread(angefangen.wait, GRENZE)
+        await gateway._strom_abbestellen(lauf, sitzung)
+        return list(geschrieben)
+
+    assert asyncio.run(fahren()) == ["Stand des laufenden Blicks"]
     assert lauf.stroeme == {}

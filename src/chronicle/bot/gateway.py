@@ -214,7 +214,7 @@ ABGERISSEN = (
 BEFEHLE = (
     "• `/chronik start` — ich lege die Sitzung an und öffne ihren Thread; ab dort wird jede "
     "Nachricht eine Notiz. Das Fenster davor nimmt das Foundry-Passwort; gebt ihr eines, "
-    "stelle ich die Würfe aus eurem Foundry ein, während ihr spielt.\n"
+    "stelle ich die offenen Würfe aus eurem Foundry ein, während ihr spielt.\n"
     "• `/szene <Name>` — die Trennlinie zur nächsten Szene.\n"
     "• `/aufnahme start` — ich komme in deinen Sprachkanal, spiele eine hörbare Ansage "
     "und schneide **erst danach** mit, je Stimme eine eigene Spur.\n"
@@ -993,6 +993,23 @@ async def _abschied_beim_kanalverlust(bot, lauf: _Lauf, aufnahme: Aufnahme, woan
     )
 
 
+async def _blick(config: Config, strom: chronik.Strom) -> chronik.Meldung:
+    """Ein Blick nach Foundry im Faden daneben — abbrechen lässt er sich nicht, nur abwarten.
+
+    ``cancel`` erreicht einen Faden nicht, der schon in ``asyncio.to_thread`` steckt: er
+    liefe zu Ende und schriebe seinen Stand **hinter** den des Abschlusses, der gerade alles
+    noch einmal ganz holt. Ein Wurf aus diesem Zwischenraum trüge danach »nicht mehr
+    vorhanden« — eine Unwahrheit über einen Beleg. Der Abbruch wird deshalb angenommen und
+    erst weitergereicht, wenn dieser Blick durch ist.
+    """
+    laufend = asyncio.ensure_future(asyncio.to_thread(chronik.ereignisse_abholen, config, strom))
+    try:
+        return await asyncio.shield(laufend)
+    except asyncio.CancelledError:
+        await asyncio.wait({laufend})
+        raise
+
+
 async def _ereignisstrom(config: Config, bot, lauf: _Lauf, strom: chronik.Strom) -> None:
     """Solange die Sitzung offen ist: nachsehen, was in Foundry fällt, und es einstellen.
 
@@ -1010,7 +1027,7 @@ async def _ereignisstrom(config: Config, bot, lauf: _Lauf, strom: chronik.Strom)
         while True:
             await asyncio.sleep(chronik.STROM_ABSTAND)
             try:
-                meldung = await asyncio.to_thread(chronik.ereignisse_abholen, config, strom)
+                meldung = await _blick(config, strom)
                 zugestellt = not meldung.text or await _in_den_sitzungsthread(
                     bot, strom.runde, strom.session_id, meldung.text
                 )
@@ -1031,11 +1048,20 @@ def _strom_stellen(config: Config, bot, lauf: _Lauf, runde: Runde, session_id: i
     lauf.stroeme[session_id] = asyncio.create_task(_ereignisstrom(config, bot, lauf, strom))
 
 
-def _strom_abbestellen(lauf: _Lauf, session_id: int) -> None:
-    """Beim Abschluss ist Schluss: der Abgleich löst das Passwort ein und holt alles ganz."""
+async def _strom_abbestellen(lauf: _Lauf, session_id: int) -> None:
+    """Beim Abschluss ist Schluss: der Abgleich löst das Passwort ein und holt alles ganz.
+
+    Gewartet wird, bis der Faden wirklich steht. ``cancel`` erreicht keinen, der gerade in
+    ``asyncio.to_thread`` sitzt — der Blick liefe zu Ende und schriebe seinen Stand hinter
+    den des Abschlusses. Ein Wurf aus dem Zwischenraum stünde danach als »nicht mehr
+    vorhanden« in der Chronik, und das wäre eine Unwahrheit über einen Beleg.
+    """
     faden = lauf.stroeme.pop(session_id, None)
-    if faden is not None:
-        faden.cancel()
+    if faden is None:
+        return
+    faden.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await faden
 
 
 def _erledigt(faden) -> bool:
@@ -1312,7 +1338,7 @@ async def _abschliessen(
     # Vor allem anderen: von hier an holt der eine Lauf die Zahlen, und er verbraucht dabei
     # das Passwort. Ein Beobachter, der daneben weiterliefe, fände beim nächsten Blick
     # keines mehr vor und sagte es in einen Thread, dessen Sitzung gerade geschrieben wird.
-    _strom_abbestellen(lauf, session_id)
+    await _strom_abbestellen(lauf, session_id)
     meldungen: tuple[str, ...] = ()
     try:
         meldungen = await _mitschnitt_beenden(lauf, runde)
