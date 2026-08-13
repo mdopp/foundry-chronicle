@@ -52,6 +52,12 @@ EINZAHL = {FIGUR: "Figur", ORT: "Ort", FADEN: "Handlungsfaden"}
 VORSCHLAG = "vorschlag"
 BESTAETIGT = "bestaetigt"
 
+# Was eine Entscheidung wirklich bewirkt hat. Der Aufrufer sagt der Runde, was hier
+# steht — nicht, was er angeklickt hat; alles andere wäre eine Zusage ohne Deckung.
+GESCHRIEBEN = "geschrieben"
+DOPPELT = "doppelt"
+UNVERAENDERT = "unveraendert"
+
 JA = "ja"
 NEIN = "nein"
 
@@ -401,43 +407,85 @@ def nach_sitzung(runde: Runde) -> dict[int, tuple[str, ...]]:
     return {sitzung: tuple(zeilen) for sitzung, zeilen in je_sitzung.items()}
 
 
-def decide(runde: Runde, auswahl: Mapping[int, Entscheidung]) -> None:
+def _bestaetigen(
+    scope: db.Scope, eintrag_id: int, entscheidung: Entscheidung, zeitpunkt: str
+) -> str:
+    """Ein Ja — und die ehrliche Auskunft, ob es die Zeile wirklich erreicht hat."""
+    zeile = scope.execute(
+        "SELECT kind, name FROM register_entry WHERE runde_id = ? AND id = ? AND state = ?",
+        (scope.runde_id, eintrag_id, VORSCHLAG),
+    ).fetchone()
+    if zeile is None:
+        return UNVERAENDERT
+    art = entscheidung.kind.strip() or zeile["kind"]
+    name = entscheidung.name.strip() or zeile["name"]
+    besetzt = scope.execute(
+        "SELECT state FROM register_entry WHERE runde_id = ? AND kind = ? AND name = ? AND id <> ?",
+        (scope.runde_id, art, name, eintrag_id),
+    ).fetchone()
+    if besetzt is not None:
+        if besetzt["state"] != BESTAETIGT:
+            return UNVERAENDERT
+        # Der Name steht unter dieser Art schon im Register — das Ja ist damit bereits
+        # erfüllt, und die zweite Zeile ist nur noch eine Deutung desselben Namens unter
+        # einer anderen Art. Sie stehen zu lassen hieße, den Vorschlag für immer offen zu
+        # halten: die Bestätigung kommt nie durch, und die Ansicht widerspräche jeder
+        # Antwort. Verworfen wird ein *Vorschlag*, nichts Bestätigtes.
+        scope.execute(
+            "DELETE FROM register_entry WHERE runde_id = ? AND id = ? AND state = ?",
+            (scope.runde_id, eintrag_id, VORSCHLAG),
+        )
+        return DOPPELT
+    zeiger = scope.execute(
+        "UPDATE OR IGNORE register_entry SET name = ?, "
+        "description = COALESCE(NULLIF(?, ''), description), "
+        "kind = ?, state = ?, confirmed_at = ? WHERE runde_id = ? AND id = ? AND state = ?",
+        (
+            name,
+            entscheidung.description.strip(),
+            art,
+            BESTAETIGT,
+            zeitpunkt,
+            scope.runde_id,
+            eintrag_id,
+            VORSCHLAG,
+        ),
+    )
+    return GESCHRIEBEN if zeiger.rowcount else UNVERAENDERT
+
+
+def decide(runde: Runde, auswahl: Mapping[int, Entscheidung]) -> dict[int, str]:
     """Schreibt fest, was ein Mensch entschieden hat; ein Nein verwirft den Vorschlag.
 
     Nur Zeilen, die noch Vorschlag sind: ein bestätigter Eintrag wird hier nicht erneut
-    entschieden. ``UPDATE OR IGNORE`` lässt eine Zeile stehen, deren richtiggestellter
-    Name schon vergeben ist — sie bleibt Vorschlag, statt das Formular scheitern zu lassen.
+    entschieden.
 
     Die Art gehört zur Entscheidung: was als Figur vorgeschlagen war und ein Ort ist, wird
-    als Ort bestätigt, ohne Umweg über ein Nein und einen zweiten Vorschlag.
+    als Ort bestätigt, ohne Umweg über ein Nein und einen zweiten Vorschlag. Genau daraus
+    entsteht die Kollision auf ``UNIQUE (runde_id, kind, name)``: dasselbe Modell schlägt
+    einen Namen ohne Weiteres unter zwei Arten vor, und beide als Ort zu bestätigen ist eine
+    ganz normale Zwei-Klick-Folge (#183).
+
+    Deshalb gibt jede Entscheidung zurück, **was wirklich geschah** — ``GESCHRIEBEN``,
+    ``DOPPELT`` oder ``UNVERAENDERT``. Vorher verschluckte ``UPDATE OR IGNORE`` die
+    Kollision still, und der Aufrufer meldete trotzdem »steht jetzt im Register«: eine
+    Zusage ohne Deckung, unbegrenzt wiederholbar, und die Ansicht darunter listete den
+    Eintrag im selben Atemzug weiter als Vorschlag.
     """
     zeitpunkt = _now()
+    ergebnis: dict[int, str] = {}
     scope = db.scoped(runde)
     try:
         with scope:
             for eintrag_id, entscheidung in auswahl.items():
                 if not entscheidung.ja:
-                    scope.execute(
+                    zeiger = scope.execute(
                         "DELETE FROM register_entry WHERE runde_id = ? AND id = ? AND state = ?",
                         (scope.runde_id, eintrag_id, VORSCHLAG),
                     )
+                    ergebnis[eintrag_id] = GESCHRIEBEN if zeiger.rowcount else UNVERAENDERT
                     continue
-                scope.execute(
-                    "UPDATE OR IGNORE register_entry SET "
-                    "name = COALESCE(NULLIF(?, ''), name), "
-                    "description = COALESCE(NULLIF(?, ''), description), "
-                    "kind = COALESCE(NULLIF(?, ''), kind), "
-                    "state = ?, confirmed_at = ? WHERE runde_id = ? AND id = ? AND state = ?",
-                    (
-                        entscheidung.name.strip(),
-                        entscheidung.description.strip(),
-                        entscheidung.kind.strip(),
-                        BESTAETIGT,
-                        zeitpunkt,
-                        scope.runde_id,
-                        eintrag_id,
-                        VORSCHLAG,
-                    ),
-                )
+                ergebnis[eintrag_id] = _bestaetigen(scope, eintrag_id, entscheidung, zeitpunkt)
     finally:
         scope.close()
+    return ergebnis

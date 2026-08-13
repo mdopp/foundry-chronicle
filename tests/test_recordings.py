@@ -7,13 +7,15 @@ ein erfundenes.
 
 from __future__ import annotations
 
+import itertools
+import queue
 import sqlite3
 import threading
 import wave
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from conftest import GRENZE, runde, warte_bis
+from conftest import GRENZE, runde
 
 from chronicle import db, notes, recordings
 from chronicle.config import Config
@@ -494,8 +496,27 @@ def test_eine_spur_die_ein_anderer_prozess_gerade_verschriftet_bleibt_ihm(config
 
 
 def test_die_spur_in_arbeit_gibt_lebenszeichen(config, sitzung_id, monkeypatch):
-    """Ohne den Puls hielte der Nachbarprozess eine stundenlange Spur für abgestürzt."""
-    monkeypatch.setattr(recordings, "HERZSCHLAG", 0.01)
+    """Ohne den Puls hielte der Nachbarprozess eine stundenlange Spur für abgestürzt.
+
+    Takt und Uhr kommen aus dem Test, nicht von der Wanduhr: der Puls schlägt genau dann,
+    wenn hier ein Anstoß gegeben wird, und quittiert jeden Schlag, sobald er in der
+    Datenbank steht. Die frühere Fassung stellte ``HERZSCHLAG`` klein und wartete in
+    Schleifen darauf, dass sich etwas ändert — unter Last wurde sie rot und beim
+    Wiederholen grün, und ein Test, dem man nicht glaubt, ist schlimmer als keiner.
+    """
+    takte = itertools.count()
+    monkeypatch.setattr(
+        recordings, "_lebenszeichen", lambda: f"2026-08-13T21:00:00.{next(takte):03d}+00:00"
+    )
+    anstoss: queue.Queue = queue.Queue()
+    quittung: queue.Queue = queue.Queue()
+
+    def takt(halt):
+        quittung.put(None)
+        anstoss.get()
+        return halt.is_set()
+
+    monkeypatch.setattr(recordings, "_takt", takt)
     aufnahme = hochladen(config, sitzung_id)
     tor = threading.Event()
 
@@ -509,15 +530,35 @@ def test_die_spur_in_arbeit_gibt_lebenszeichen(config, sitzung_id, monkeypatch):
     )
     faden.start()
     try:
-        assert warte_bis(lambda: recordings.get(runde(config), aufnahme.id).status == "laeuft")
+        quittung.get(timeout=GRENZE)
+        assert recordings.get(runde(config), aufnahme.id).status == recordings.LAEUFT
         erster = herzschlag_von(config, aufnahme.id)
         assert erster is not None
-        assert warte_bis(lambda: herzschlag_von(config, aufnahme.id) > erster)
+
+        anstoss.put(None)
+        quittung.get(timeout=GRENZE)
+
+        assert herzschlag_von(config, aufnahme.id) > erster
     finally:
         tor.set()
         faden.join(GRENZE)
+        # Der Puls hängt im Anstoß und kommt erst hier frei — deshalb steht fest, dass
+        # zwischen ``fertig`` und der letzten Prüfung kein Schlag mehr dazwischenfährt.
+        anstoss.put(None)
 
     assert recordings.get(runde(config), aufnahme.id).status == recordings.FERTIG
+    assert herzschlag_von(config, aufnahme.id) is None
+
+
+def test_ein_nachzuegler_belebt_die_fertige_spur_nicht(config, sitzung_id, monkeypatch):
+    """Zwischen dem Ende der Wartezeit und dem Schreiben kann die Spur längst fertig sein."""
+    aufnahme = hochladen(config, sitzung_id)
+    recordings.mark(runde(config), aufnahme.id, recordings.FERTIG)
+    schlaege = iter([False, True])
+    monkeypatch.setattr(recordings, "_takt", lambda halt: next(schlaege))
+
+    recordings._pulsen(runde(config), aufnahme.id, threading.Event())
+
     assert herzschlag_von(config, aufnahme.id) is None
 
 

@@ -144,7 +144,7 @@ class FakeAntwort:
         self.gesendet.append(text)
 
     async def edit_message(self, *, content=None, embed=None, view=None):
-        self.bearbeitet.append({"content": content, "view": view})
+        self.bearbeitet.append({"content": content, "embed": embed, "view": view})
 
     async def defer(self, **rest):
         self.aufgeschoben = True

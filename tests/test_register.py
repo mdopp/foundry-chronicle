@@ -180,6 +180,67 @@ def test_ein_ja_uebernimmt_die_richtigstellung(tmp_path):
     assert (bestaetigt.name, bestaetigt.description) == ("Die Wirtin", "Schenkt aus.")
 
 
+def test_eine_entscheidung_meldet_was_wirklich_geschah(tmp_path):
+    """#183: ``decide`` sagt je Zeile, ob der Schreibvorgang griff — sonst log der Aufrufer."""
+    config, sitzung_id, _ = mit_chronik(tmp_path)
+    register.suggest(config, runde(config), sitzung_id, model=Chronist())
+    offen = {eintrag.name: eintrag.id for eintrag in register.pending(runde(config))}
+
+    ergebnis = register.decide(
+        runde(config),
+        {
+            offen[WIRTIN]: register.Entscheidung(ja=True),
+            offen["Der Keller"]: register.Entscheidung(ja=False),
+        },
+    )
+
+    assert ergebnis == {
+        offen[WIRTIN]: register.GESCHRIEBEN,
+        offen["Der Keller"]: register.GESCHRIEBEN,
+    }
+    # Und was gar nichts mehr antrifft, wird auch nicht als Änderung gemeldet.
+    nochmal = register.decide(runde(config), {offen[WIRTIN]: register.Entscheidung(ja=True)})
+    assert nochmal == {offen[WIRTIN]: register.UNVERAENDERT}
+
+
+def test_ein_name_unter_zweiter_art_raeumt_den_doppelten_vorschlag_weg(tmp_path):
+    """Der Fall aus #183: derselbe Name, zwei Arten, beide als Ort bestätigt."""
+    config, sitzung_id, _ = mit_chronik(tmp_path)
+    doppelt = Chronist(
+        register_antwort=f"ort | {WIRTIN} | Die Schenke der Runde.\n"
+        f"faden | {WIRTIN} | Die Schenke der Runde."
+    )
+    register.suggest(config, runde(config), sitzung_id, model=doppelt)
+    offen = {eintrag.kind: eintrag.id for eintrag in register.pending(runde(config))}
+
+    register.decide(runde(config), {offen[register.ORT]: register.Entscheidung(ja=True)})
+    ergebnis = register.decide(
+        runde(config),
+        {offen[register.FADEN]: register.Entscheidung(ja=True, kind=register.ORT)},
+    )
+
+    assert ergebnis == {offen[register.FADEN]: register.DOPPELT}
+    assert register.pending(runde(config)) == ()
+    (gruppe,) = register.overview(runde(config))
+    assert (gruppe.kind, namen(gruppe.entries)) == (register.ORT, [WIRTIN])
+
+
+def test_eine_richtigstellung_auf_einen_vergebenen_namen_schreibt_nichts(tmp_path):
+    """Der noch offene Nachbar bleibt offen — und niemand bekommt ein Ja gemeldet."""
+    config, sitzung_id, _ = mit_chronik(tmp_path)
+    register.suggest(config, runde(config), sitzung_id, model=Chronist())
+    offen = {eintrag.name: eintrag.id for eintrag in register.pending(runde(config))}
+
+    ergebnis = register.decide(
+        runde(config),
+        {offen["Der Keller"]: register.Entscheidung(ja=True, kind=register.FIGUR, name=WIRTIN)},
+    )
+
+    assert ergebnis == {offen["Der Keller"]: register.UNVERAENDERT}
+    assert sorted(namen(register.pending(runde(config)))) == sorted(offen)
+    assert register.overview(runde(config)) == ()
+
+
 def test_ein_zweiter_lauf_ueberschreibt_keinen_bestaetigten_satz(tmp_path):
     config, sitzung_id, _ = mit_chronik(tmp_path)
     register.suggest(config, runde(config), sitzung_id, model=Chronist())

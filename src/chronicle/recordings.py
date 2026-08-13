@@ -417,19 +417,34 @@ def zurueckstellen(runde: Runde) -> tuple[str, ...]:
     return tuple(zurueck)
 
 
+def _takt(halt: threading.Event) -> bool:
+    """Ein Schlag Wartezeit; ``True`` heißt: Schluss.
+
+    Eigene Funktion, damit ein Test den Takt vorgeben kann. Ein Puls, den man nur über
+    Wartezeiten beobachtet, macht den Test wetterabhängig — und ein Test, der unter Last
+    rot wird und beim Wiederholen grün, ist schlimmer als keiner.
+    """
+    return halt.wait(HERZSCHLAG)
+
+
 def _pulsen(runde: Runde, recording_id: int, halt: threading.Event) -> None:
     """Das Lebenszeichen der laufenden Spur — in einem eigenen Faden.
 
     Nicht im Arbeitsfaden: der steckt stundenlang im Modell, und genau währenddessen muss
     ein Nachbarprozess sehen, dass hier noch jemand an dieser Spur sitzt.
     """
-    while not halt.wait(HERZSCHLAG):
+    while not _takt(halt):
         scope = db.scoped(runde)
         try:
             with scope:
+                # ``status = laeuft`` gehört in die Bedingung: zwischen dem Ende der
+                # Wartezeit und diesem Schreiben kann der Arbeitsfaden die Spur längst auf
+                # ``fertig`` gesetzt haben, und dann trüge eine abgeschlossene Zeile wieder
+                # einen Herzschlag.
                 scope.execute(
-                    "UPDATE recording SET herzschlag = ? WHERE runde_id = ? AND id = ?",
-                    (_lebenszeichen(), scope.runde_id, recording_id),
+                    "UPDATE recording SET herzschlag = ? "
+                    "WHERE runde_id = ? AND id = ? AND status = ?",
+                    (_lebenszeichen(), scope.runde_id, recording_id, LAEUFT),
                 )
         # Ein verpasster Schlag darf die Spur nicht mitnehmen; bis ``VERSTUMMT`` bleibt
         # Platz für mehrere.
