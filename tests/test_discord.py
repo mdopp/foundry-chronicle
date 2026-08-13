@@ -176,6 +176,26 @@ def test_ohne_den_kanal_sagt_der_lauf_das_statt_still_zu_stehen(config):
     assert api.antworten == []
 
 
+# --- Der Kanal einer Gilde: über die Id oder den Namen, aber nie über die Gilde hinaus --
+
+
+def test_der_kanal_einer_gilde_wird_ueber_die_id_gefunden(config):
+    api = FakeDiscord()
+    assert klient(config, api).guild_channel_id(GILDE, DIKTAT_KANAL) == DIKTAT_KANAL
+
+
+def test_der_kanal_einer_gilde_wird_auch_ueber_den_namen_gefunden(config):
+    api = FakeDiscord()
+    assert klient(config, api).guild_channel_id(GILDE, service.KANAL) == DIKTAT_KANAL
+
+
+def test_in_einer_fremden_gilde_wird_gar_nicht_erst_gesucht(config):
+    """Der Bot steht in mehreren Gilden; eine, die dieser Runde nicht gehört, ist keine
+    Quelle und kein Ziel — auch dann nicht, wenn sie einen passenden Kanal hätte."""
+    api = FakeDiscord()
+    assert klient(config, api).guild_channel_id("g-fremde", service.KANAL) is None
+
+
 def test_ohne_token_wird_kein_klient_gebaut(tmp_path):
     with pytest.raises(DiscordNotConfigured) as fehler:
         DiscordClient(Config(data_dir=tmp_path))

@@ -173,6 +173,32 @@ class DiscordClient:
                     return str(kanal["id"])
         return None
 
+    def guild_channel_id(self, guild_id: str, kanal: str) -> str | None:
+        """Der Textkanal **einer** Gilde — angegeben als Id oder als Name.
+
+        Zwei Formen, weil die Einstellung zwei Herkünfte hat: ``/setup`` schreibt die Id des
+        gewählten Kanals, ältere Runden und ``DISCORD_RECAP_CHANNEL`` tragen den Namen.
+
+        Gesucht wird nur in dieser einen Gilde, und das ist der Punkt: »chronik« heißt in
+        jeder zweiten Gilde ein Kanal, und eine Id aus einer fremden ist hier so wenig
+        erreichbar wie ein fremder Name. Sonst stünde der Rückblick der einen Runde im
+        Kanal einer anderen — ein Leck, das niemand bemerkte, weil es aussieht wie eine
+        gelungene Zustellung.
+        """
+        logger.info("Discord: suche Kanal %s in Gilde %s", kanal, guild_id)
+        gilden = self._liste("/users/@me/guilds", "Gildenliste")
+        if not any(
+            isinstance(gilde, Mapping) and str(gilde.get("id")) == str(guild_id) for gilde in gilden
+        ):
+            return None
+        for eintrag in self._liste(f"/guilds/{guild_id}/channels", "Kanalliste"):
+            if not isinstance(eintrag, Mapping) or eintrag.get("type") != GUILD_TEXT:
+                continue
+            kennung = str(eintrag.get("id") or "")
+            if kennung and kanal in (kennung, eintrag.get("name")):
+                return kennung
+        return None
+
     def messages(
         self, channel_id: str, *, after: str | None = None, limit: int = LIMIT
     ) -> tuple[Message, ...]:

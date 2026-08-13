@@ -44,7 +44,7 @@ def main(argv: list[str] | None = None) -> int:
     rueckblick = recap_session(config, runde, sitzung)
     print(chronik.message)
     print(rueckblick.message)
-    print(deliver(config, runde, sitzung))
+    print(deliver(config, runde, sitzung).meldung)
     hinweis = anhaengen(config, runde, sitzung)
     if hinweis:
         print(hinweis)

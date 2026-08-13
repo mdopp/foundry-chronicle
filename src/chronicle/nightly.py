@@ -185,10 +185,15 @@ def _chronik(config: Config, runde: Runde) -> Schritt:
     for sitzung_id, datum in faellig:
         compose_session(config, runde, sitzung_id)
         recap_session(config, runde, sitzung_id)
-        deliver(config, runde, sitzung_id)
+        zustellung = deliver(config, runde, sitzung_id)
         ausgabe = anhaengen(config, runde, sitzung_id)
         register.suggest(config, runde, sitzung_id)
-        meldungen.append(GESCHRIEBEN.format(datum=datum) + (f" {ausgabe}" if ausgabe else ""))
+        # Eine misslungene Zustellung steht auf der Karte: verworfen war sie der stille
+        # Ausfall aus #182 — die Nacht meldete »geschrieben« und niemand erfuhr, dass der
+        # Rückblick nirgends ankam.
+        liegengeblieben = zustellung.meldung if zustellung.gescheitert else ""
+        gesagt = (GESCHRIEBEN.format(datum=datum), liegengeblieben, ausgabe)
+        meldungen.append(" ".join(satz for satz in gesagt if satz))
     return Schritt(CHRONIK, " ".join(meldungen))
 
 
