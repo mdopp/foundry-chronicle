@@ -566,6 +566,61 @@ def test_der_stapelaufruf_leert_den_kanal(config, sitzung_id, monkeypatch, capsy
     assert notes.session(runde(config), sitzung_id).note_count == 1
 
 
+def test_der_stapelaufruf_geht_ueber_alle_runden(config, sitzung_id, monkeypatch, capsys):
+    """Eine Instanz trägt mehrere Runden (#62) — das Werkzeug sah nur die erste an.
+
+    Der stille Fehlschlag ist der eigentliche Schaden: wer den Briefkasten von Hand leert,
+    hielt danach **alle** für geleert. Je Runde eine Zeile, mit ihrem Namen davor.
+    """
+    zweite = runden.anlegen(config.database_path, "Die Nachbarn")
+    api = FakeDiscord(nachricht("100", text="Die Wirtin hat gelogen."))
+    monkeypatch.setattr(entry.Config, "from_env", classmethod(lambda cls: config))
+    monkeypatch.setattr(service, "DiscordClient", lambda zugang: klient(zugang, api))
+
+    assert entry.main() == 0
+
+    ausgabe = capsys.readouterr().out
+    assert notes.session(runde(config), sitzung_id).note_count == 1
+    assert f"{runde(config).name}: " in ausgabe
+    assert f"{zweite.name}: {service.OHNE_GILDE}" in ausgabe
+
+
+def test_eine_stolpernde_runde_haelt_die_uebrigen_nicht_auf(config, monkeypatch, capsys):
+    """Sonst bliebe der Briefkasten der zweiten Runde ungeleert, weil die erste nicht kam."""
+
+    class Weg:
+        def request(self, *args, **kwargs):
+            raise requests.ConnectionError("weg")
+
+    zweite = runden.anlegen(config.database_path, "Die Nachbarn", guild_id=FREMDE_GILDE)
+    monkeypatch.setattr(entry.Config, "from_env", classmethod(lambda cls: config))
+    monkeypatch.setattr(service, "DiscordClient", lambda zugang: klient(zugang, Weg()))
+
+    assert entry.main() == 2
+
+    ausgabe = capsys.readouterr().out
+    assert f"{runde(config).name}: " in ausgabe
+    assert f"{zweite.name}: " in ausgabe
+
+
+def test_ohne_runde_sagt_der_stapelaufruf_das_auch(tmp_path, monkeypatch, capsys):
+    """Still nichts zu tun ist dieselbe Sorte Fehlschlag wie nur die erste Runde anzusehen.
+
+    Und angelegt wird dabei nichts: ein Werkzeug, das einen Briefkasten leert, ist nicht
+    der Ort, an dem eine Instanz entsteht.
+    """
+    leer = Config(
+        discord_bot_token=TOKEN,
+        data_dir=tmp_path / "daten",
+        recordings_dir=tmp_path / "aufnahmen",
+    )
+    monkeypatch.setattr(entry.Config, "from_env", classmethod(lambda cls: leer))
+
+    assert entry.main() == 0
+    assert entry.KEINE_RUNDE in capsys.readouterr().out
+    assert not leer.database_path.exists()
+
+
 def test_ein_leerer_briefkasten_ist_kein_fehlschlag(config, sitzung_id, monkeypatch, capsys):
     monkeypatch.setattr(entry.Config, "from_env", classmethod(lambda cls: config))
     monkeypatch.setattr(service, "DiscordClient", lambda zugang: klient(zugang, FakeDiscord()))
