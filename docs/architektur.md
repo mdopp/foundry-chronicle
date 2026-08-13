@@ -143,6 +143,17 @@ Notiz — sonst verlöre die Chronik genau die Grenze zwischen Belegtem und Verb
 für die es diesen Weg gibt. Wie oft nachgesehen wird, ist eine Betriebsfrage: eine Runde
 soll ein fremdes Foundry nicht wund fragen.
 
+**Der Thread ist die Gruppe, nicht das Konto.** Vor ihm liegt deshalb eine zweite, engere
+Grenze als vor dem Archiv: dort entscheidet die Berechtigungsstufe des angemeldeten Kontos,
+was gespeichert wird — hier entscheidet, ob die Nachricht für **alle** bestimmt war. Ein
+Geflüster an unser Konto ist es nicht, ein blinder Wurf auch nicht, und mit einem
+GM-Zugang (#78) käme sonst beides mitten im Spiel dort an, wo die Runde mitliest. Das
+Archiv bleibt davon unberührt voll; eingeengt wird nur der Weg in den Thread.
+
+Die Grenze des Weges: der Strom lebt im Arbeitsspeicher wie das Passwort. Ein Neustart des
+Bots beendet ihn **stumm** — verloren geht nichts, der Abschluss holt alles noch einmal
+ganz, aber bis dahin spielt die Runde in dem Glauben weiter, die Würfe kämen noch.
+
 **Alles nach der Aufnahme läuft im Stapel.** Keine Echtzeit-Transkription, damit keine
 GPU-Konkurrenz und keine Latenzfrage. Läuft nachts; auf CPU langsam genug, um ohne
 Grafikkarte auszukommen. Auch die Erfassung folgt dem Prinzip: der Diktat-Kanal ist

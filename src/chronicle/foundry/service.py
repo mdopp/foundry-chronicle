@@ -27,7 +27,7 @@ from chronicle.foundry.model import (
     World,
     WorldSnapshot,
 )
-from chronicle.foundry.world import identity, project
+from chronicle.foundry.world import fuer_die_gruppe, identity, project
 from chronicle.runde import Runde
 
 logger = logging.getLogger(__name__)
@@ -220,10 +220,14 @@ def beobachten(
     oder hat der Abschluss ihn eingelöst, endet der Strom von selbst. Nichts liegt dadurch
     länger als die zwölf Stunden aus #64, und gespeichert wird nach wie vor nichts.
 
-    Gefiltert wird **vor** dem Speicher und damit vor dem Thread: ``project`` entscheidet
-    über die Berechtigungsstufe des angemeldeten Kontos, was überhaupt herauskommt. Ein
-    blinder Wurf und ein Geflüster der Spielleitung gehen hier nicht durch — im Thread
-    läsen sie alle mit, und das wäre der teuerste Fehler dieses Weges.
+    Gefiltert wird zweimal, und beides **vor** dem Speicher. ``project`` entscheidet über
+    die Berechtigungsstufe des angemeldeten Kontos, was ins Archiv geht — das ist die Frage
+    »darf dieses Konto das sehen«, und für die Chronik ist sie die richtige. Für den Thread
+    ist sie die falsche: dort liest die **ganze Gruppe** mit. Was ihn erreicht, entscheidet
+    deshalb ``fuer_die_gruppe`` enger — ein Geflüster an unser Konto und ein blinder Wurf
+    bleiben draußen, gleich wie hoch das Konto steht, mit dem wir angemeldet sind. Das
+    Archiv bleibt davon unberührt voll: eingeengt wird der Weg in den Thread, nicht der in
+    die Chronik.
 
     Der Fehlschlag wird **nicht** als Abgleichsfehler vermerkt: der Strom sieht zu, er
     führt den Stand nicht. Wer den letzten Abgleich beurteilen will, liest den des
@@ -260,8 +264,13 @@ def beobachten(
         store.bind_world(scope, gefunden)
     finally:
         scope.close()
+    fuer_alle = fuer_die_gruppe(raw)
     neu = sorted(
-        (n for n in schnappschuss.messages if systems.lohnt(n) and n.id not in gesehen),
+        (
+            n
+            for n in schnappschuss.messages
+            if systems.lohnt(n) and n.id not in gesehen and n.id in fuer_alle
+        ),
         key=lambda n: (n.timestamp, n.id),
     )
     logger.info("Ereignisstrom: %d neue Ereignisse", len(neu))

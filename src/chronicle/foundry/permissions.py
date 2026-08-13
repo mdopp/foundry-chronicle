@@ -57,3 +57,18 @@ def message_visible(message: Mapping, user_id: str, gm: bool) -> bool:
     if whisper and user_id not in whisper and str(message.get("author")) != user_id:
         return False
     return gm or not message.get("blind")
+
+
+def message_fuer_die_gruppe(message: Mapping) -> bool:
+    """Ob diese Nachricht am Tisch für **alle** bestimmt war.
+
+    Das ist die zweite, engere Frage, und sie hat einen anderen Adressaten als
+    ``message_visible``: dort geht es um *dieses Konto* — darf es das sehen —, hier um die
+    *Gruppe*. Fürs Archiv ist die erste die richtige; für den laufenden Sitzungs-Thread ist
+    sie es nicht, denn dort liest die ganze Runde mit. Ein Geflüster an unser Konto und ein
+    blinder Wurf sind für sie nicht bestimmt, gleich wie hoch das angemeldete Konto steht.
+
+    Nach dem Konto wird deshalb gar nicht erst gefragt: geflüstert ist geflüstert, blind ist
+    blind — an wen und für wen sichtbar, ändert daran nichts.
+    """
+    return not message.get("whisper") and not message.get("blind")
