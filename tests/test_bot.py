@@ -1808,6 +1808,17 @@ def test_ein_stolperndes_trennen_nimmt_den_widerruf_nicht_mit(
     assert ctx.antworten[0].startswith("Das hat nicht geklappt:")
 
 
+def test_die_probe_vorstellung_passt_in_eine_nachricht():
+    """Die Voraussetzung, unter der der Empfangstest keinen halben Text hinterlassen kann.
+
+    Der Widerruf steht dort trotzdem — er ist heute nur wirkungslos, weil es zwischen
+    »ganz raus« und »gar nicht raus« nichts gibt. Wächst der Text über Discords Grenze,
+    wird derselbe Zweig schlagartig tragend wie der in ``start``, und das fiele ohne
+    diese Zeile niemandem auf: kein Test wird rot, wenn man dort den Widerruf entfernt.
+    """
+    assert len(grenzen.teile(gateway.PROBE_VORSTELLUNG)) == 1
+
+
 def test_wer_nach_einem_gescheiterten_start_dazukommt_wird_nicht_aufgenommen(
     konfiguration, ohne_espeak, runde
 ):
