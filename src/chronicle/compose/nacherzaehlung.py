@@ -39,7 +39,7 @@ import logging
 from dataclasses import dataclass
 
 from chronicle.compose.client import ModelError, TextModel
-from chronicle.compose.composer import NICHT_ERREICHBAR, numbers
+from chronicle.compose.composer import NICHT_ERREICHBAR, eigene_ueberschrift, numbers
 
 logger = logging.getLogger(__name__)
 
@@ -135,22 +135,6 @@ class Nacherzaehlung:
         return f"{satz} {self.gap_count} Lücke{mehr} benannt, nicht gefüllt."
 
 
-def _eigene_ueberschrift(absatz: str) -> bool:
-    """Ob der Absatz eine Zeile enthält, die Markdown als Überschrift läse.
-
-    ``#`` am Zeilenanfang, oder eine Zeile aus lauter ``=``/``-``, die die Zeile darüber
-    zur Überschrift macht. Beides kostet das Modell ein einziges Zeichen und fälschte
-    damit die einzige Trennung, die dieser Text hat.
-    """
-    for zeile in absatz.splitlines():
-        blank = zeile.strip()
-        if not blank:
-            continue
-        if blank.startswith("#") or set(blank) <= {"="} or set(blank) <= {"-"}:
-            return True
-    return False
-
-
 def _liste(zeilen: tuple[str, ...]) -> str:
     return "\n".join(f"- {zeile}" for zeile in zeilen)
 
@@ -222,7 +206,7 @@ def nacherzaehlen(stoff: ErzaehlStoff, model: TextModel | None = None) -> Nacher
                         sorted(unbelegt),
                     )
                     teile.append(f"{ERZAEHLT_TITEL}\n{VERWORFEN}")
-                elif _eigene_ueberschrift(absatz):
+                elif eigene_ueberschrift(absatz):
                     logger.warning(
                         "Sitzung %s: Absatz verworfen, er machte eine eigene Überschrift auf",
                         abschnitt.session_id,

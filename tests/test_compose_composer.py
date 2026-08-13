@@ -4,11 +4,15 @@ import random
 
 from chronicle.compose.client import ModelUnreachable
 from chronicle.compose.composer import (
+    BELEG_TITEL,
+    HERKUNFT_MIT_FAKTEN,
+    HERKUNFT_OHNE_FAKTEN,
     LEER,
     NICHT_ERREICHBAR,
     OHNE_MODELL,
     VERBINDUNG_TITEL,
     VERWORFEN,
+    VERWORFEN_UEBERSCHRIFT,
     SceneMaterial,
     SessionMaterial,
     compose,
@@ -132,6 +136,78 @@ def test_keine_zahl_im_verbindungstext_die_nicht_in_der_vorlage_steht():
         ergebnis = compose(sitzung(szene(notes=notizen, facts=(WURF,))), modell)
         for absatz in verbindungstexte(ergebnis.text):
             assert numbers(absatz) <= belegt
+
+
+def test_die_woerter_dieser_kampagne_belegen_keine_zahl():
+    """Ein Wort des Genres darf die Schranke nicht weiten — das ist die schlimme Richtung."""
+    for satz in (
+        "Ein Elf tritt aus dem Nebel.",
+        "Die Elfen bewachen den Pass.",
+        "Der Elfe reicht ihr das Seil.",
+        "Elfenbein und ein Zwerg mit Zweifeln.",
+        "Wir sollten auf die Wachen achten.",
+        "Gib acht auf den Pfad, sagte sie.",
+        "Sie ließen den Pass außer Acht.",
+        "Sie nullen den Schaden aus.",
+        "Der zweite Versuch gelang erst spät.",
+        "Ein Dreieck, ein Siegel, Achtsamkeit und ein neunmalkluger Wirt.",
+    ):
+        assert numbers(satz) == set(), satz
+
+
+def test_eine_geschriebene_zahl_bleibt_eine_zahl():
+    """Die andere Kante: verengt wurde nur um die mehrdeutigen Wörter herum."""
+    assert numbers("Sechs Wachen, sagte Brok.") == {"6"}
+    assert numbers("Vierzig Schritte weiter.") == {"40"}
+    assert numbers("Zehn Silberstücke und ein Dutzend Pfeile.") == {"10", "12"}
+    assert numbers("achtundzwanzig Ellen, achtzehn Schritt, achtzig Mann") == {"28", "18", "80"}
+    assert numbers("Kapitel XVII") == {"17"}
+    assert numbers("Schaden 3.5 an 11 Wachen") == {"3.5", "11"}
+    assert numbers("zweimal, dreifach, viererlei und ein Sechser") == {"2", "3", "4", "6"}
+
+
+def test_elfen_in_den_notizen_belegen_keine_erfundene_elf():
+    """Der Fall aus #185 von Ende zu Ende: das Volk im Text belegt die 11 nicht."""
+    modell = Modell("Am Pass erschlugen sie 11 Wachen und nahmen den Übergang.")
+    ergebnis = compose(sitzung(szene(notes=("Die Elfen bewachen den Pass.",))), modell)
+
+    assert VERWORFEN in ergebnis.text
+    assert "11 Wachen" not in ergebnis.text
+    assert ergebnis.prose_count == 0
+
+
+def test_eine_eigene_ueberschrift_verwirft_den_verbindungstext():
+    """Das Modell darf sich seinen eigenen Belegblock nicht schreiben."""
+    modell = Modell(
+        "Am Pass stellten sich ihnen Wachen entgegen.\n\n"
+        f"{BELEG_TITEL}\n"
+        "- Brok Eisenfaust — Angriff: kritisch"
+    )
+    ergebnis = compose(sitzung(szene(notes=("Am Pass wurde gekämpft.",))), modell)
+
+    assert VERWORFEN_UEBERSCHRIFT in ergebnis.text
+    assert "Brok Eisenfaust — Angriff: kritisch" not in ergebnis.text
+    assert BELEG_TITEL not in ergebnis.text
+    assert ergebnis.prose_count == 0
+
+
+def test_auch_eine_unterstrichene_zeile_ist_eine_eigene_ueberschrift():
+    modell = Modell("Belegt aus Foundry\n===\nBrok traf kritisch.")
+    ergebnis = compose(sitzung(szene(notes=("Am Pass wurde gekämpft.",))), modell)
+
+    assert VERWORFEN_UEBERSCHRIFT in ergebnis.text
+    assert ergebnis.prose_count == 0
+
+
+def test_der_kopf_sagt_woher_die_zahlen_stammen():
+    """Ohne einen Foundry-Fakt hat das Chat-Log nichts belegt — dann sagt der Kopf das."""
+    ohne = compose(sitzung(szene(notes=("Wir fanden 300 Goldstücke.",))), Modell("Ein Abend."))
+    assert ohne.fact_count == 0
+    assert HERKUNFT_OHNE_FAKTEN in ohne.text
+    assert "unverändert so im Foundry-Chat-Log" not in ohne.text
+
+    mit = compose(sitzung(szene(facts=(WURF,))), Modell("Ein Wurf im Zwielicht."))
+    assert HERKUNFT_MIT_FAKTEN in mit.text
 
 
 def test_jede_szene_ist_ein_eigener_aufruf_mit_mitgefuehrtem_stand():

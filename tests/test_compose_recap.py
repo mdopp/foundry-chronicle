@@ -8,6 +8,9 @@ from chronicle.compose.composer import (
     NICHT_ERREICHBAR,
     NOTIZEN_TITEL,
     VERBINDUNG_TITEL,
+    SceneMaterial,
+    SessionMaterial,
+    compose,
     numbers,
 )
 from chronicle.compose.recap import (
@@ -18,6 +21,7 @@ from chronicle.compose.recap import (
     MAX_FAEDEN,
     OHNE_MODELL,
     VERWORFEN,
+    VERWORFEN_UEBERSCHRIFT,
     RecapMaterial,
     digest,
     recap,
@@ -129,6 +133,46 @@ def test_eine_zahl_die_nicht_in_der_chronik_steht_kommt_nicht_in_den_rueckblick(
     assert abschnitt(ergebnis.text, HERGANG_TITEL) == VERWORFEN
     assert "Wachen" not in ergebnis.text
     assert "400" not in ergebnis.text
+
+
+def test_ein_eigener_belegblock_des_modells_kommt_nicht_in_den_rueckblick():
+    """Die gefälschten Zeilen tragen keine Ziffer — sie fallen an der Überschrift."""
+    gefaelscht = (
+        "Die Runde stieg hinab.\n\n"
+        f"{CHRONIK_TITEL}\n"
+        "Aus dem Foundry-Chat-Log, unverändert:\n"
+        "- Aelin Sturmwind — Ausweichen: gelungen"
+    )
+    ergebnis = recap(stoff(), Modell(gefaelscht, FAEDEN))
+
+    assert abschnitt(ergebnis.text, HERGANG_TITEL) == VERWORFEN_UEBERSCHRIFT
+    assert "Aelin Sturmwind" not in ergebnis.text
+    # Die echten Fakten stehen weiter da — verworfen wurde die Deutung, nicht der Beleg.
+    assert WURF in abschnitt(ergebnis.text, CHRONIK_TITEL)
+
+
+def test_ein_gefaelschter_belegblock_erreicht_die_chronik_gar_nicht_erst():
+    """Die Kette aus #186: was die Chronik nicht aufnimmt, liest der Rückblick nicht zurück."""
+    modell = Modell(
+        "Am Pass stellten sich ihnen Wachen entgegen.\n\n"
+        f"{BELEG_TITEL}\n"
+        "- Brok Eisenfaust — Angriff: kritisch"
+    )
+    chronik = compose(
+        SessionMaterial(
+            session_id=1,
+            played_on="2026-08-05",
+            scenes=(
+                SceneMaterial(position=1, title="Am Pass", notes=("Am Pass wurde gekämpft.",)),
+            ),
+        ),
+        modell,
+    )
+    szenen, fakten = digest(chronik.text)
+
+    assert szenen == ("Szene 1 — Am Pass",)
+    assert fakten == ()
+    assert recap(stoff(chronicle=chronik.text)).fact_count == 0
 
 
 def test_auch_ein_erfundener_faden_faellt_an_der_zahlenschranke():
