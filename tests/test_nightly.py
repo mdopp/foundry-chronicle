@@ -1,12 +1,13 @@
 """Der nächtliche Lauf: zur angesetzten Zeit, in einer Reihenfolge, ohne Doppelstart."""
 
 import json
+import threading
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import pytest
-from conftest import laufender_job, runde, warte_bis
+from conftest import GRENZE, laufender_job, runde, warte_bis
 
 from chronicle import db, jobs, lebenszyklus, nightly, notes, settings, zugang
 from chronicle import runde as runden
@@ -30,6 +31,12 @@ def uhr(stunde, minute=0, tag=6):
     """Die Uhr der Runde, nicht die der Maschine — sonst prüften diese Tests auf einem
     UTC-Läufer etwas anderes als auf einem deutschen Schreibtisch."""
     return datetime(2026, 8, tag, stunde, minute, tzinfo=BERLIN)
+
+
+def haltend(tor):
+    """Eine Nacht, die noch dauert — das Fenster der zweiten Runde läuft derweil ab."""
+    tor.wait(GRENZE)
+    return "durch"
 
 
 def mit_notiz(config, played_on="2026-08-05"):
@@ -266,6 +273,46 @@ def test_solange_ein_anderer_lauf_laeuft_beginnt_die_nacht_nicht(stelle, monkeyp
 
     assert nightly.tick(stelle, jetzt=uhr(4)) is None
     assert jobs.latest(runde(stelle), jobs.NACHTLAUF) is None
+
+
+def test_bei_gleicher_uhrzeit_bekommt_auch_die_zweite_runde_ihre_nacht(stelle, monkeypatch):
+    """#180: dauert die Nacht der ersten Runde länger als das Fenster, fiel die zweite
+    heraus — und weil die Reihenfolge an der Id hing, jede Nacht dieselbe."""
+    tor = threading.Event()
+    monkeypatch.setattr(nightly, "lauf", lambda config, eine: haltend(tor))
+    erste = runde(stelle)
+    zweite = runden.anlegen(stelle.database_path, "Runde B", guild_id="2202")
+
+    angestossen = nightly.tick(stelle, jetzt=uhr(4))
+    assert angestossen is not None and angestossen.runde_id == erste.id
+
+    assert nightly.tick(stelle, jetzt=uhr(4, 30)) is None
+    assert nightly.tick(stelle, jetzt=uhr(5, 30)) is None
+
+    tor.set()
+    assert warte_bis(lambda: not jobs.running(erste))
+
+    spaeter = nightly.tick(stelle, jetzt=uhr(6))
+    assert spaeter is not None and spaeter.runde_id == zweite.id
+
+
+def test_wer_noch_nie_eine_nacht_hatte_ist_zuerst_dran(stelle, monkeypatch):
+    """Sonst gewinnt bei gleicher Uhrzeit immer die kleinere Id."""
+    monkeypatch.setattr(nightly, "lauf", lambda config, eine: "durch")
+    abgelegter_lauf(stelle, [], started="2026-08-05T02:00:00+00:00")
+    zweite = runden.anlegen(stelle.database_path, "Runde B", guild_id="2202")
+
+    angestossen = nightly.tick(stelle, jetzt=uhr(4))
+
+    assert angestossen is not None and angestossen.runde_id == zweite.id
+
+
+def test_ohne_vormerkung_bleibt_eine_verpasste_nacht_verpasst(stelle, monkeypatch):
+    """Die Gegenprobe zur Vormerkung: war niemand da, wird nichts nachgeholt."""
+    monkeypatch.setattr(nightly, "lauf", lambda config, eine: "durch")
+    runden.anlegen(stelle.database_path, "Runde B", guild_id="2202")
+
+    assert nightly.tick(stelle, jetzt=uhr(6)) is None
 
 
 def test_die_gespeicherte_uhrzeit_bestimmt_den_zeitpunkt(stelle, monkeypatch):

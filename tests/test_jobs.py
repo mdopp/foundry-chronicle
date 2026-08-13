@@ -1,11 +1,14 @@
 """Läufe, die der Server führt: anstoßen, ehrlich melden, nichts hängen lassen."""
 
 import threading
+from contextlib import contextmanager
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from conftest import GRENZE, runde, warte_bis
 
 from chronicle import db, jobs, lebenszyklus, notes, protocol, recordings
+from chronicle import runde as runden
 from chronicle.config import Config
 from chronicle.foundry import service as foundry
 from chronicle.foundry.client import FoundryUnreachable
@@ -50,6 +53,51 @@ def laufende_zeile(config, kind=jobs.ABGLEICH):
                 (scope.runde_id, kind, jobs.LAEUFT, "2026-08-06T10:00:00+00:00"),
             )
         return int(zeiger.lastrowid)
+    finally:
+        scope.close()
+
+
+@contextmanager
+def anderer_prozess(monkeypatch):
+    """Der Blick des Nachbarcontainers auf dieselbe Datei: anderes Ich, leere Merkliste.
+
+    Genau das ist die ausgelieferte Vorlage — ``chronik`` und ``bot`` teilen ``/data``,
+    und keiner der beiden sieht den Speicher des anderen.
+    """
+    with monkeypatch.context() as fremd:
+        fremd.setattr(jobs, "_ICH", "der-andere-container")
+        fremd.setattr(jobs, "_laufend", set())
+        yield
+
+
+def fremde_zeile(config, herzschlag, kind=jobs.ABGLEICH):
+    """Eine laufende Zeile, die einem anderen Prozess gehört."""
+    scope = db.scoped(runde(config))
+    try:
+        with scope:
+            zeiger = scope.execute(
+                "INSERT INTO job (runde_id, kind, session_id, state, started_at, besitzer, "
+                "herzschlag) VALUES (?, ?, NULL, ?, ?, ?, ?)",
+                (
+                    scope.runde_id,
+                    kind,
+                    jobs.LAEUFT,
+                    "2026-08-06T10:00:00+00:00",
+                    "der-andere-container",
+                    herzschlag,
+                ),
+            )
+        return int(zeiger.lastrowid)
+    finally:
+        scope.close()
+
+
+def herzschlag(config, job_id):
+    scope = db.scoped(runde(config))
+    try:
+        return scope.execute(
+            "SELECT herzschlag FROM job WHERE runde_id = ? AND id = ?", (scope.runde_id, job_id)
+        ).fetchone()["herzschlag"]
     finally:
         scope.close()
 
@@ -286,3 +334,99 @@ def protokollarten(config, sitzung_id):
         }
     finally:
         scope.close()
+
+
+# --- Zwei Prozesse auf einer Datei (#178) ---------------------------------------------
+
+
+def test_der_nachbarprozess_raeumt_einen_laufenden_lauf_nicht_weg(stelle, monkeypatch):
+    """Der gemeldete Fehler: der Bot stößt an, der Nachtlauf-Faden räumt ihn binnen einer
+    Minute als »unterbrochen« weg — und ließe danach einen zweiten derselben Art los."""
+    tor = threading.Event()
+    angestossen = jobs.start(stelle, runde(stelle), jobs.ABGLEICH, haltend(tor))
+
+    with anderer_prozess(monkeypatch):
+        assert jobs.latest(runde(stelle), jobs.ABGLEICH).laeuft
+        assert jobs.running(runde(stelle), jobs.ABGLEICH)
+        assert jobs.start(stelle, runde(stelle), jobs.NACHTLAUF, lambda: "zweiter") is None
+
+    tor.set()
+    assert warte_bis(lambda: jobs.latest(runde(stelle), jobs.ABGLEICH).fertig)
+    lauf = jobs.latest(runde(stelle), jobs.ABGLEICH)
+    assert lauf.id == angestossen.id
+    assert lauf.result == "durch"
+    assert zeilen(stelle) == 1
+
+
+def test_ein_verstummter_fremder_lauf_wird_doch_abgeraeumt(stelle):
+    """Die Gegenrichtung: ein wirklich abgestürzter Nachbar darf die Maschine nicht halten."""
+    laengst = (datetime.now(UTC) - jobs.VERSTUMMT - timedelta(seconds=1)).isoformat()
+    fremde_zeile(stelle, laengst)
+
+    lauf = jobs.latest(runde(stelle), jobs.ABGLEICH)
+    assert lauf.gescheitert
+    assert lauf.error == jobs.UNTERBROCHEN
+
+
+def test_ein_fremder_lauf_mit_frischem_lebenszeichen_bleibt_stehen(stelle):
+    fremde_zeile(stelle, datetime.now(UTC).isoformat())
+
+    assert jobs.latest(runde(stelle), jobs.ABGLEICH).laeuft
+
+
+def test_ein_laufender_lauf_gibt_lebenszeichen(stelle, monkeypatch):
+    """Ohne den Puls hielte der Nachbar einen stundenlangen Lauf nach anderthalb Minuten
+    für abgestürzt."""
+    monkeypatch.setattr(jobs, "HERZSCHLAG", 0.01)
+    tor = threading.Event()
+    angestossen = jobs.start(stelle, runde(stelle), jobs.ABGLEICH, haltend(tor))
+    erster = herzschlag(stelle, angestossen.id)
+
+    assert erster is not None
+    assert warte_bis(lambda: herzschlag(stelle, angestossen.id) > erster)
+
+    tor.set()
+    assert warte_bis(lambda: jobs.latest(runde(stelle), jobs.ABGLEICH).fertig)
+
+
+# --- Was der Abgewiesene zu hören bekommt (#179) --------------------------------------
+
+
+def test_die_eigene_runde_im_weg_heisst_nicht_eine_andere_runde(stelle):
+    """Ein laufender ``abgleich`` blockiert den Abschluss derselben Runde."""
+    tor = threading.Event()
+    jobs.start(stelle, runde(stelle), jobs.ABGLEICH, haltend(tor))
+
+    assert jobs.belegt(runde(stelle)) == jobs.BELEGT_EIGEN
+
+    tor.set()
+    assert warte_bis(lambda: not jobs.running(runde(stelle)))
+
+
+def test_eine_fremde_runde_im_weg_heisst_genau_das(stelle):
+    fremde = runden.anlegen(stelle.database_path, "Der Krumme Ast", guild_id="1101")
+    tor = threading.Event()
+    jobs.start(stelle, fremde, jobs.ABGLEICH, haltend(tor))
+
+    assert jobs.belegt(runde(stelle)) == jobs.BELEGT
+
+    tor.set()
+    assert warte_bis(lambda: not jobs.running(fremde))
+
+
+def test_wer_abgewiesen_wird_bekommt_keinen_platz_in_einer_warteschlange(stelle):
+    """Der alte Satz versprach, der Lauf beginne, sobald die andere Runde durch ist."""
+    sitzung_id = notes.create_session(runde(stelle), played_on="2026-08-05", title="Keller")
+    fremde = runden.anlegen(stelle.database_path, "Der Krumme Ast", guild_id="1101")
+    tor = threading.Event()
+    jobs.start(stelle, fremde, jobs.ABGLEICH, haltend(tor))
+
+    abgewiesen = jobs.start(
+        stelle, runde(stelle), jobs.CHRONIK, lambda: "nie", session_id=sitzung_id
+    )
+
+    assert abgewiesen is None
+    assert zeilen(stelle) == 0
+    tor.set()
+    assert warte_bis(lambda: not jobs.running(fremde))
+    assert jobs.latest(runde(stelle), jobs.CHRONIK) is None

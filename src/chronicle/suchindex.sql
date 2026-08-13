@@ -111,5 +111,5 @@ SELECT e.name || ' — ' || e.description, 'register', e.id, e.runde_id,
        (SELECT MIN(session_id) FROM register_mention WHERE entry_id = e.id), NULL
 FROM register_entry e WHERE e.state = 'bestaetigt';
 
-INSERT INTO meta (key, value) VALUES ('schema_version', '22')
+INSERT INTO meta (key, value) VALUES ('schema_version', '23')
 ON CONFLICT (key) DO UPDATE SET value = excluded.value;

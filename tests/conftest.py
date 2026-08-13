@@ -240,12 +240,20 @@ def laufender_job(database_path, kind, session_id=None):
 
 @pytest.fixture(autouse=True)
 def ohne_alte_laeufe():
-    """Ein Lauf des einen Tests darf im nächsten nicht als »läuft noch« dastehen."""
+    """Ein Lauf des einen Tests darf im nächsten nicht als »läuft noch« dastehen.
+
+    Dasselbe gilt für die Vormerkung des Nachtlaufs: sie hält ein Fenster offen, und ein
+    Rest davon machte im nächsten Test eine Runde fällig, die es nicht ist.
+    """
+    from chronicle import nightly
+
     jobs._laufend.clear()
+    nightly._vorgemerkt.clear()
     _gemerkt.clear()
     yield
     warte_auf_laeufe()
     jobs._laufend.clear()
+    nightly._vorgemerkt.clear()
     _gemerkt.clear()
 
 

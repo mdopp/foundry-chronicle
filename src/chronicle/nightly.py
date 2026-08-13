@@ -4,19 +4,28 @@ Der Knopf in der Oberfläche und der Stapelaufruf bleiben, was sie sind: der Weg
 »jetzt sofort«. Der Normalfall ist diese Kette, und sie ruft dieselben Funktionen auf —
 ein dritter Auslöser, kein dritter Weg.
 
-Sie läuft **im Webdienst**, in einem eigenen Faden. Der Aufnahme-Bot schiede aus, denn
-ohne Bot-Token gibt es ihn gar nicht, eine Präsenzgruppe hat trotzdem Aufnahmen zu
-verschriften und Chroniken zu schreiben. Ein dritter Container schiede ebenfalls aus,
-und zwar aus einem schärferen Grund als »eine Betriebseinheit mehr«: ``chronicle.jobs``
-erkennt einen abgestürzten Lauf daran, dass eine ``laeuft``-Zeile in der Datenbank steht,
-die der eigene Prozess nicht in seiner Merkliste hat. Diese Invariante trägt nur, solange
-**ein** Prozess Job-Zeilen anlegt. Ein zweiter Anleger machte aus jedem laufenden Lauf
-des einen Prozesses einen »unterbrochenen« im Auge des anderen.
+Sie läuft **im Webdienst**, in einem eigenen Faden, und nur dort. Der Aufnahme-Bot schiede
+aus, denn ohne Bot-Token gibt es ihn gar nicht, eine Präsenzgruppe hat trotzdem Aufnahmen
+zu verschriften und Chroniken zu schreiben; ein dritter Container wäre eine Betriebseinheit
+mehr für einen Faden, der einmal je Minute auf die Uhr sieht. (Die frühere Fassung nannte
+noch einen schärferen Grund: ``chronicle.jobs`` habe einen abgestürzten Lauf nur erkennen
+können, solange **ein** Prozess Zeilen anlegt. Die Vorlage hielt das nie ein — der Bot legt
+ebenfalls welche an —, und seit #178 hängt die Erkennung an Besitzer und Herzschlag in der
+Zeile statt an der Merkliste eines Prozesses.)
 
 Ein verpasstes Fenster wird nicht nachgeholt. War der Server um vier Uhr aus, ist das
 Material am nächsten Morgen so alt wie vorher — ein Lauf um zehn Uhr vormittags brächte
 niemandem etwas und stünde mitten im Arbeitstag auf der Maschine. Die nächste Nacht
 genügt, und in den Einstellungen steht das auch so.
+
+Verpasst heißt aber »niemand hat hingesehen«, nicht »die Maschine war besetzt«. Bei
+mehreren Runden mit derselben Uhrzeit — der Vorgabe — kommt nur eine sofort dran; die
+übrigen fielen aus ihrem Fenster, sobald die erste Nacht länger als eine Stunde dauerte,
+und zwar wegen der festen Reihenfolge jede Nacht dieselben (#180). Wer fällig war und die
+Maschine besetzt vorfand, wird deshalb **vorgemerkt** und behält seinen Anspruch bis zur
+nächsten angesetzten Zeit. Der Vermerk lebt im Speicher dieses Fadens und nirgends sonst:
+startet der Dienst neu, war eben doch niemand da, der zugesehen hätte, und dann gilt
+wieder die Regel darüber.
 
 Die angesetzte Zeit gilt in der **Zone der Runde**, nicht in der des Prozesses. Der
 Container läuft auf der Box in UTC, und das bleibt auch so: eine Instanz trägt mehrere
@@ -32,7 +41,7 @@ import logging
 import threading
 import time
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from chronicle import db, jobs, register, settings, zugang
@@ -222,34 +231,67 @@ def letzter(runde: Runde) -> Lauf | None:
     )
 
 
-def faellig(jetzt: datetime, geplant: str, zuletzt: datetime | None, zone: str) -> bool:
-    """Ist die angesetzte Zeit erreicht und die Nacht noch nicht gelaufen?
+def ziel(jetzt: datetime, geplant: str, zone: str) -> datetime:
+    """Die angesetzte Zeit des heutigen Tages — in der Zone der Runde.
 
-    Der Wechsel in die Zone der Runde ist der ganze Punkt: erst danach heißt ``hour=4``
-    vier Uhr für die Leute, die die Einstellung gesetzt haben. Verglichen wird trotzdem
-    über Zeitpunkte, nicht über Wanduhrzeiten — beide Seiten tragen ihren Versatz.
+    Der Wechsel in die Zone ist der ganze Punkt: erst danach heißt ``hour=4`` vier Uhr für
+    die Leute, die die Einstellung gesetzt haben.
     """
     stunde = settings.nightly_at(geplant)
-    ziel = jetzt.astimezone(ZoneInfo(zone)).replace(
+    return jetzt.astimezone(ZoneInfo(zone)).replace(
         hour=stunde.hour, minute=stunde.minute, second=0, microsecond=0
     )
-    if jetzt < ziel or jetzt - ziel > FENSTER:
+
+
+def faellig(
+    jetzt: datetime,
+    geplant: str,
+    zuletzt: datetime | None,
+    zone: str,
+    vermerk: datetime | None = None,
+) -> bool:
+    """Ist die angesetzte Zeit erreicht und die Nacht noch nicht gelaufen?
+
+    Verglichen wird über Zeitpunkte, nicht über Wanduhrzeiten — beide Seiten tragen ihren
+    Versatz. ``vermerk`` ist die angesetzte Zeit, für die diese Runde schon einmal fällig
+    war und die Maschine besetzt vorfand: dann läuft ihr Fenster nicht ab, denn sie hat
+    ihre Nacht nicht verpasst, sondern nicht bekommen.
+    """
+    heute = ziel(jetzt, geplant, zone)
+    if jetzt < heute:
         return False
-    return zuletzt is None or zuletzt < ziel
+    if jetzt - heute > FENSTER and vermerk != heute:
+        return False
+    return zuletzt is None or zuletzt < heute
 
 
-def _tick_runde(config: Config, runde: Runde, jetzt: datetime) -> jobs.Job | None:
-    zone = settings.nightly_zone(runde)
-    vorher = jobs.latest(runde, jobs.NACHTLAUF)
-    zuletzt = None if vorher is None else _ortszeit(vorher.started_at, zone)
-    if not faellig(jetzt, settings.nightly_time(runde), zuletzt, zone):
-        return None
-    # Ein laufender Lauf — auch der von Hand angestoßene — schreibt dieselben Zeilen.
-    # Der nächste Blick in derselben Stunde versucht es wieder.
-    if jobs.running(runde):
-        return None
-    logger.info("Nachtlauf der Runde %s beginnt", runde.name)
-    return jobs.start(config, runde, jobs.NACHTLAUF, lambda: lauf(config, runde))
+# Runden, die fällig waren und die Maschine besetzt vorfanden, je mit der angesetzten Zeit,
+# für die sie warten. Nur im Speicher — siehe den Kopf dieser Datei.
+_vorgemerkt: dict[int, datetime] = {}
+
+
+def _naechste(config: Config, jetzt: datetime) -> list[tuple[Runde, datetime, datetime | None]]:
+    faellige = []
+    for eine in runden.alle(config.database_path):
+        # Eine verabschiedete Runde bekommt keine Nacht mehr. Dieser Faden läuft im
+        # Webdienst und weiß vom Rauswurf nur hier: ohne diese Zeile verschriftete er
+        # dreißig Tage lang weiter, was eine Gruppe längst widerrufen hat.
+        if eine.gesperrt:
+            _vorgemerkt.pop(eine.id, None)
+            continue
+        zone = settings.nightly_zone(eine)
+        geplant = settings.nightly_time(eine)
+        vorher = jobs.latest(eine, jobs.NACHTLAUF)
+        zuletzt = None if vorher is None else _ortszeit(vorher.started_at, zone)
+        if not faellig(jetzt, geplant, zuletzt, zone, _vorgemerkt.get(eine.id)):
+            _vorgemerkt.pop(eine.id, None)
+            continue
+        faellige.append((eine, ziel(jetzt, geplant, zone), zuletzt))
+    # Wer am längsten auf eine Nacht wartet, ist zuerst dran. An der Id festzuhalten hieße
+    # bei gleicher Uhrzeit, dass jede Nacht dieselbe Runde gewinnt.
+    nie = datetime.min.replace(tzinfo=UTC)
+    faellige.sort(key=lambda eintrag: (eintrag[2] or nie, eintrag[0].id))
+    return faellige
 
 
 @runden.instanzweit
@@ -257,19 +299,22 @@ def tick(config: Config, *, jetzt: datetime | None = None) -> jobs.Job | None:
     """Ein Blick auf die Uhr — der Test dreht sie von Hand weiter.
 
     Jede Runde hat ihre eigene Uhrzeit und ihren eigenen Lauf; die Maschine bleibt eine.
-    Es beginnt deshalb höchstens einer, und die übrigen fälligen kommen beim nächsten
-    Blick innerhalb desselben Fensters an die Reihe.
+    Es beginnt deshalb höchstens einer. Wer dabei leer ausgeht, wird vorgemerkt und
+    verliert sein Fenster nicht — sonst bekäme bei gleicher Uhrzeit die zweite Runde nie
+    eine Nacht.
     """
     jetzt = datetime.now().astimezone() if jetzt is None else jetzt
-    for eine in runden.alle(config.database_path):
-        # Eine verabschiedete Runde bekommt keine Nacht mehr. Dieser Faden läuft im
-        # Webdienst und weiß vom Rauswurf nur hier: ohne diese Zeile verschriftete er
-        # dreißig Tage lang weiter, was eine Gruppe längst widerrufen hat.
-        if eine.gesperrt:
-            continue
-        angestossen = _tick_runde(config, eine, jetzt)
-        if angestossen is not None:
-            return angestossen
+    for eine, angesetzt, _zuletzt in _naechste(config, jetzt):
+        # Ein laufender Lauf — auch der von Hand angestoßene — schreibt dieselben Zeilen.
+        if not jobs.running(eine):
+            logger.info("Nachtlauf der Runde %s beginnt", eine.name)
+            angestossen = jobs.start(
+                config, eine, jobs.NACHTLAUF, lambda dran=eine: lauf(config, dran)
+            )
+            if angestossen is not None:
+                _vorgemerkt.pop(eine.id, None)
+                return angestossen
+        _vorgemerkt[eine.id] = angesetzt
     return None
 
 

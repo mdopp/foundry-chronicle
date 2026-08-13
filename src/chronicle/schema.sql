@@ -287,6 +287,11 @@ CREATE INDEX IF NOT EXISTS recording_sitzung ON recording (session_id);
 -- Zeile beim nächsten Blick auf ``gescheitert`` um, damit nichts für immer zu laufen
 -- scheint.
 --
+-- ``besitzer`` und ``herzschlag`` sagen, **wem** die Zeile gehört und ob er noch atmet.
+-- Auf der Box liegen zwei Prozesse auf dieser Datei — die Seite samt Nachtlauf und der
+-- Aufnahme-Bot —, und keiner sieht den Speicher des anderen. Ohne diese zwei Spalten
+-- hielte jeder den laufenden Lauf des anderen für die Hinterlassenschaft eines Absturzes.
+--
 -- Der Lauf gehört einer Runde, die Maschine allen: ``chronicle.jobs`` lässt über alle
 -- Runden hinweg nur einen gleichzeitig laufen — eine CPU, ein Ollama.
 CREATE TABLE IF NOT EXISTS job (
@@ -300,6 +305,8 @@ CREATE TABLE IF NOT EXISTS job (
     finished_at TEXT,
     result      TEXT,
     error       TEXT,
+    besitzer    TEXT,
+    herzschlag  TEXT,
     FOREIGN KEY (session_id, runde_id) REFERENCES session (id, runde_id) ON DELETE CASCADE
 );
 
