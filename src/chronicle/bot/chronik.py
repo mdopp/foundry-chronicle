@@ -223,11 +223,11 @@ SITZUNG_FRAGE = (
 )
 
 SITZUNG_ZEILE_NOTIZEN = "• {szenen} mit {notizen}"
-SITZUNG_ZEILE_TON = "• {spuren} — davon liegen {dateien} noch hier, auch die gehen"
+SITZUNG_ZEILE_TON = "• {spuren} — davon noch hier: {dateien}, auch die gehen"
 SITZUNG_ZEILE_OHNE_TON = "• {spuren} — Tondateien liegen dazu keine mehr"
 # Eine Datei ohne Zeile: der Mitschnitt läuft noch oder ist abgestürzt, eingereiht wird
 # erst am Ende. Ohne diese Zeile nennte die Frage weniger, als danach geschieht.
-SITZUNG_ZEILE_NUR_TON = "• {dateien} liegen hier, noch ohne Eintrag — auch die gehen"
+SITZUNG_ZEILE_NUR_TON = "• Noch ohne Eintrag: {dateien} — auch die gehen"
 SITZUNG_ZEILE_VERSCHRIFTET = "• {transkripte} aus diesen Spuren"
 SITZUNG_ZEILE_GESCHRIEBEN = "• {protokolle} daraus: Chronik und Rückblick"
 
@@ -237,8 +237,7 @@ SITZUNG_NEIN = "Abbrechen"
 SITZUNG_FERTIG = "»{sitzung}« ist fort, mit allem, was daran hing.{ton}"
 SITZUNG_FERTIG_TON = " Von der Platte gelöscht: {dateien}."
 SITZUNG_FERTIG_REST = (
-    " Nicht löschen ließen sich {dateien} — sie liegen weiter hier, der Grund steht im Log "
-    "des Bots."
+    " Nicht gelöscht: {dateien}. Was blieb, liegt weiter hier — der Grund steht im Log des Bots."
 )
 SITZUNG_ABGEBROCHEN = "Nichts gelöscht. Es bleibt alles, wie es war."
 

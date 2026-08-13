@@ -1539,7 +1539,7 @@ def test_die_tondatei_die_bleibt_wird_ohne_ihren_namen_gemeldet(
     assert ".wav" not in caplog.text
     assert "PermissionError" in caplog.text
     fertig = antwort.response.bearbeitet[-1]["content"]
-    assert "1 Tondatei" in fertig and "Nicht löschen" in fertig
+    assert "1 Tondatei" in fertig and "Nicht gelöscht" in fertig
     assert spur.exists()
     assert notes.session(unsere, sitzung) is None
 

@@ -246,7 +246,12 @@ def _sitzungskennung_nachtragen(connection: sqlite3.Connection) -> None:
     Übereinstimmung zu lesen. Ein Bestand aus der Zeit davor stünde damit aber ohne
     Wiedererkennung da, und ``/chronik sitzung-loeschen`` käme an ihn nicht heran.
     """
-    for zeile in connection.execute("SELECT id FROM session WHERE token IS NULL").fetchall():
+    # Auch der leere String: ``gemeinte_sitzung`` weist ihn ab, eine solche Zeile wäre also
+    # nie wieder löschbar und bekäme »schon fort« für einen Abend, der noch dasteht.
+    zeilen = connection.execute(
+        "SELECT id FROM session WHERE token IS NULL OR token = ''"
+    ).fetchall()
+    for zeile in zeilen:
         connection.execute(
             "UPDATE session SET token = ? WHERE id = ?", (kennung(), int(zeile["id"]))
         )
