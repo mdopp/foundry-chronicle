@@ -5,13 +5,19 @@ das Modell schreibt nur die Sätze dazwischen. Damit man Wochen später noch sie
 davon belegt ist, steht beides in getrennten Abschnitten — Notizen und Foundry-Fakten
 wörtlich, Verbindungstext unter einer Überschrift, die ihn als unbelegt ausweist.
 
-Zwei Dinge sind hier die eigentliche Arbeit:
+Drei Dinge sind hier die eigentliche Arbeit:
 
 * **Die Zahlenschranke.** Nach jedem Modellaufruf wird geprüft, ob der Text eine Zahl
   nennt, die nicht in den Notizen oder Fakten dieser Sitzung steht — in Ziffern,
   ausgeschrieben oder römisch. Wenn ja, wird der Absatz verworfen; die Szene bleibt dann
   bei ihrer geordneten Fassung. Eine Lücke ist besser als ein erfundener Satz, dem man das
   nicht ansieht. Wie weit sie reicht und wo sie aufhört, steht bei ``numbers``.
+* **Die Überschriften gehören uns, nicht dem Modell.** Ein Absatz, der eine eigene
+  Überschrift aufmacht, wird ebenso verworfen. Die sichtbare Trennung ist das Einzige,
+  woran ein Leser Belegtes von Gedeutetem unterscheidet — dürfte das Modell sie selbst
+  setzen, schriebe es sich sein eigenes »Belegt aus Foundry«, das von unserem nicht zu
+  unterscheiden wäre und das der Rückblick anschließend als Foundry-Fakt zurückliest.
+  Eine Bitte im System-Prompt trägt das nicht.
 * **Szene für Szene.** Ein Sitzungstranskript passt nicht in ein Kontextfenster. Jede
   Szene ist ein eigener Aufruf; mitgeführt wird nur der zuletzt angenommene Absatz, und
   der hat die Zahlenschranke bereits passiert.
@@ -41,8 +47,7 @@ ROEMISCH = re.compile(
 
 ROEMISCHE_WERTE = {"M": 1000, "D": 500, "C": 100, "L": 50, "X": 10, "V": 5, "I": 1}
 
-# Ausgeschrieben ist eine Zahl immer noch eine Zahl. »ein« fehlt mit Absicht: als
-# unbestimmter Artikel stünde es in fast jedem Satz und verwürfe jeden zweiten Absatz.
+# Ausgeschrieben ist eine Zahl immer noch eine Zahl.
 EINER = {
     "null": 0,
     "eins": 1,
@@ -58,7 +63,13 @@ EINER = {
     "neun": 9,
 }
 
-ZAHLWERTE = {name: wert for name, wert in EINER.items() if name != "ein"} | {
+# Drei dieser Wörter heißen im Deutschen öfter etwas anderes als eine Zahl und zählen als
+# Grundwort deshalb nicht mit: »ein« ist der unbestimmte Artikel, »elf« ist in einer
+# Fantasy-Runde das Volk, und »acht« steht in »gib acht« für kein Ergebnis. Als Vorsilbe
+# bleibt »acht« gültig — »achtundzwanzig« ist eindeutig. Näheres bei ``numbers``.
+MEHRDEUTIG = {"ein", "elf", "acht"}
+
+GROESSER = {
     "zehn": 10,
     "elf": 11,
     "zwölf": 12,
@@ -86,10 +97,15 @@ ZAHLWERTE = {name: wert for name, wert in EINER.items() if name != "ein"} | {
     "tausend": 1000,
 }
 
+ZAHLWERTE = {name: wert for name, wert in (EINER | GROESSER).items() if name not in MEHRDEUTIG}
+
+# Die Endungen sind die des Zählens und Vervielfachens. »e« und »en« stehen mit Absicht
+# nicht dabei: mit ihnen wären »Elfe«, »Elfen«, »achten« und »nullen« Zahlen — siehe
+# ``numbers``.
 ZAHLWORT = re.compile(
     r"\b(?:(" + "|".join(sorted(EINER, key=len, reverse=True)) + r")(?:und)?)?"
     r"(" + "|".join(sorted(ZAHLWERTE, key=len, reverse=True)) + r")"
-    r"(?:mal|fach|erlei|er|en|e)?\b",
+    r"(?:mal|fach|erlei|er)?\b",
     re.IGNORECASE,
 )
 
@@ -97,6 +113,11 @@ NOTIZEN_TITEL = "### Notizen"
 BELEG_TITEL = "### Belegt aus Foundry"
 VERBINDUNG_TITEL = "### Verbindungstext — vom Sprachmodell, nicht belegt"
 VERWORFEN = "_Der Verbindungstext wurde verworfen: er nannte eine Zahl ohne Beleg._"
+VERWORFEN_UEBERSCHRIFT = (
+    "_Der Verbindungstext wurde verworfen: er machte eine eigene Überschrift auf. Welche "
+    "Zeile belegt ist und welche gedeutet, sagen hier die Überschriften — die setzt niemand "
+    "außer dieser Stufe._"
+)
 LEER = "_Weder Notizen noch Foundry-Fakten._"
 
 # Diese beiden Sätze landen im abgelegten Protokoll und werden Wochen später gelesen —
@@ -184,13 +205,39 @@ def numbers(text: str) -> set[str]:
     Ziffer lässt sich weiter in eine neue Aussage setzen — steht ``5`` in der Vorlage, kommt
     »5 Prozent« durch. Ordnungszahlwörter fehlen mit Absicht: »erst« und »zweit« stehen im
     Deutschen zu oft für etwas anderes, und ein Absatz, der an »erst spät« scheitert, wäre
-    ein Fehlalarm bei jedem zweiten Satz. Die Schranke fängt das plump Erfundene, nicht
-    jede denkbare Umschreibung.
+    ein Fehlalarm bei jedem zweiten Satz.
+
+    Aus demselben Grund zählt ein Zahlwort nur, wo es selbst dasteht, und nur, wenn es
+    zuverlässig eine Zahl meint. Die Endungen enden bei ``mal``/``fach``/``erlei``/``er``,
+    und ``MEHRDEUTIG`` nimmt »ein«, »elf« und »acht« als Grundwort ganz heraus. Sonst wären
+    »Elf«, »Elfe«, »Elfen«, »achten«, »gib acht« und »nullen« Zahlen — und **das ist die
+    gefährliche Richtung**: ein solches Wort steht meist in der *Quelle*, und dort macht ein
+    Fehltreffer die Schranke weiter statt enger. Stünde »Elfen« in den Notizen, gälte die
+    ``11`` als belegt und ein erfundenes »11 Wachen« käme durch. Beide Zahlen bleiben als
+    Ziffer und römisch erkannt; verloren geht nur die ausgeschriebene Form.
+
+    Die Schranke fängt das plump Erfundene, nicht jede denkbare Umschreibung.
     """
     gefunden = set(ZIFFERN.findall(text))
     gefunden |= {str(_roemischer_wert(wort)) for wort in ROEMISCH.findall(text) if wort}
     gefunden |= {str(_wortwert(*treffer)) for treffer in ZAHLWORT.findall(text)}
     return gefunden
+
+
+def eigene_ueberschrift(absatz: str) -> bool:
+    """Ob der Absatz eine Zeile enthält, die Markdown als Überschrift läse.
+
+    ``#`` am Zeilenanfang, oder eine Zeile aus lauter ``=``/``-``, die die Zeile darüber
+    zur Überschrift macht. Beides kostet das Modell ein einziges Zeichen und fälschte
+    damit die einzige Trennung, die diese Texte haben.
+    """
+    for zeile in absatz.splitlines():
+        blank = zeile.strip()
+        if not blank:
+            continue
+        if blank.startswith("#") or set(blank) <= {"="} or set(blank) <= {"-"}:
+            return True
+    return False
 
 
 def _einzeilig(text: str) -> str:
@@ -251,15 +298,27 @@ def _prompt(stand: str, scene: SceneMaterial, notizen: tuple, fakten: tuple) -> 
     return "\n\n".join(teile)
 
 
-def _kopf(material: SessionMaterial, name: str | None, reason: str | None, prosa: int) -> str:
+HERKUNFT_MIT_FAKTEN = (
+    "Die Zahlen stehen unverändert so im Foundry-Chat-Log oder in den Notizen dieser Sitzung."
+)
+# Ohne einen einzigen Foundry-Fakt stammt jede Zahl aus einer Notiz — im Regelfall aus
+# einem Whisper-Transkript, wo eine verhörte Zahl alltäglich ist. Wer das Protokoll Wochen
+# später liest, muss das wissen; das Chat-Log hat hier nichts belegt.
+HERKUNFT_OHNE_FAKTEN = (
+    "Kein Foundry-Fakt lag vor: die Zahlen stammen aus den Notizen dieser Sitzung "
+    "und sind durch das Chat-Log nicht belegt."
+)
+
+
+def _kopf(
+    material: SessionMaterial, name: str | None, reason: str | None, prosa: int, fakten: int
+) -> str:
     titel = f"# Chronik — Sitzung vom {material.played_on}"
     if material.title:
         titel += f": {material.title}"
     if reason is None:
-        stand = (
-            f"_Verbindungstexte stammen vom Sprachmodell `{name}`. Alle Zahlen stehen "
-            "unverändert so im Foundry-Chat-Log._"
-        )
+        herkunft = HERKUNFT_MIT_FAKTEN if fakten else HERKUNFT_OHNE_FAKTEN
+        stand = f"_Verbindungstexte stammen vom Sprachmodell `{name}`. {herkunft}_"
     elif prosa:
         stand = f"_{reason} Die Szenen bis dahin sind erzählt._"
     else:
@@ -313,6 +372,13 @@ def compose(material: SessionMaterial, model: TextModel | None = None) -> Compos
                         sorted(unbelegt),
                     )
                     teile.append(VERWORFEN)
+                elif eigene_ueberschrift(absatz):
+                    logger.warning(
+                        "Szene %s: Verbindungstext verworfen, er machte eine eigene "
+                        "Überschrift auf",
+                        scene.position,
+                    )
+                    teile.append(VERWORFEN_UEBERSCHRIFT)
                 else:
                     teile.append(f"{VERBINDUNG_TITEL}\n{absatz}")
                     stand = absatz
@@ -320,7 +386,7 @@ def compose(material: SessionMaterial, model: TextModel | None = None) -> Compos
 
         bloecke.append("\n\n".join(teile))
 
-    kopf = _kopf(material, name, grund, prosa)
+    kopf = _kopf(material, name, grund, prosa, fakten_gesamt)
     return Composition(
         text="\n\n".join([kopf, *bloecke]) + "\n",
         model_name=name,

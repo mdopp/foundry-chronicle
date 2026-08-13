@@ -6,10 +6,14 @@ letzten Rückblicke, nicht noch einmal das Rohmaterial.
 
 Es gilt dieselbe Regel wie in der Chronik, nur verschärft: Verdichtung erhöht das
 Erfindungsrisiko, weil die glatte Überleitung umso verführerischer wird, je kürzer der
-Text ist. Zwei Dinge sichern das ab:
+Text ist. Drei Dinge sichern das ab:
 
 * **Die Zahlenschranke läuft gegen die Chronik.** Nennt das Modell eine Ziffer, die dort
   nicht steht, wird der Absatz verworfen; stehen bleibt die geordnete Fassung.
+* **Die Überschriften gehören uns, nicht dem Modell.** Ein Absatz, der eine eigene
+  Überschrift aufmacht, wird ebenso verworfen — sonst setzte sich das Modell sein eigenes
+  »Belegt aus der Chronik« über den echten Block, und der Satz »Aus dem Foundry-Chat-Log,
+  unverändert« stünde über Zeilen, die nie im Chat-Log standen.
 * **Offene Fäden sind Deutungen, keine Fakten.** Sie stehen unter einer Überschrift, die
   das sagt — auch dann noch, wenn der Text Wochen später als Gedächtnisstütze dient.
 """
@@ -21,7 +25,12 @@ import re
 from dataclasses import dataclass
 
 from chronicle.compose.client import ModelError, TextModel
-from chronicle.compose.composer import BELEG_TITEL, NICHT_ERREICHBAR, numbers
+from chronicle.compose.composer import (
+    BELEG_TITEL,
+    NICHT_ERREICHBAR,
+    eigene_ueberschrift,
+    numbers,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +50,10 @@ OHNE_MODELL = (
 )
 
 VERWORFEN = "_Verworfen: der Absatz nannte eine Zahl, die in der Chronik nicht vorkommt._"
+VERWORFEN_UEBERSCHRIFT = (
+    "_Verworfen: der Absatz machte eine eigene Überschrift auf. Welche Zeile belegt ist und "
+    "welche gedeutet, sagen hier die Überschriften — die setzt niemand außer dieser Stufe._"
+)
 KEIN_FADEN = "_Das Modell hat keinen offenen Faden benannt._"
 LEER = "_Die Chronik nennt weder Szene noch Foundry-Fakt._"
 
@@ -136,12 +149,16 @@ def _faeden(text: str) -> tuple[str, ...]:
     return tuple(punkt for punkt in punkte if punkt)[:MAX_FAEDEN]
 
 
-def _geprueft(absatz: str, belegt: set[str]) -> tuple[str, bool]:
+def _geprueft(absatz: str, belegt: set[str]) -> tuple[str, str]:
+    """Der Absatz — oder nichts und die Zeile, die dem Leser sagt, warum er fehlt."""
     unbelegt = numbers(absatz) - belegt
-    if not unbelegt:
-        return absatz, False
-    logger.warning("Rückblick: Absatz verworfen, unbelegte Zahlen %s", sorted(unbelegt))
-    return "", True
+    if unbelegt:
+        logger.warning("Rückblick: Absatz verworfen, unbelegte Zahlen %s", sorted(unbelegt))
+        return "", VERWORFEN
+    if eigene_ueberschrift(absatz):
+        logger.warning("Rückblick: Absatz verworfen, er machte eine eigene Überschrift auf")
+        return "", VERWORFEN_UEBERSCHRIFT
+    return absatz, ""
 
 
 def _kopf(material: RecapMaterial, name: str | None, grund: str | None) -> str:
@@ -169,9 +186,9 @@ def recap(material: RecapMaterial, model: TextModel | None = None) -> Recap:
     name = None if model is None else model.name
     grund = None if model is not None else OHNE_MODELL
     hergang = ""
-    hergang_verworfen = False
+    hergang_grund = ""
     faeden: tuple[str, ...] = ()
-    faeden_verworfen = False
+    faeden_grund = ""
 
     if model is not None:
         try:
@@ -185,19 +202,19 @@ def recap(material: RecapMaterial, model: TextModel | None = None) -> Recap:
             grund = NICHT_ERREICHBAR
             logger.warning("Rückblick bleibt bei der geordneten Fassung: %s", fehler)
         else:
-            hergang, hergang_verworfen = _geprueft(roher_hergang.strip(), belegt)
-            geprueft, faeden_verworfen = _geprueft(rohe_faeden.strip(), belegt)
+            hergang, hergang_grund = _geprueft(roher_hergang.strip(), belegt)
+            geprueft, faeden_grund = _geprueft(rohe_faeden.strip(), belegt)
             faeden = _faeden(geprueft)
 
     bloecke = [_kopf(material, name, grund)]
     if hergang:
         bloecke.append(f"{HERGANG_TITEL}\n{hergang}")
-    elif hergang_verworfen:
-        bloecke.append(f"{HERGANG_TITEL}\n{VERWORFEN}")
+    elif hergang_grund:
+        bloecke.append(f"{HERGANG_TITEL}\n{hergang_grund}")
     if faeden:
         bloecke.append(f"{FAEDEN_TITEL}\n{_liste(faeden)}")
-    elif faeden_verworfen:
-        bloecke.append(f"{FAEDEN_TITEL}\n{VERWORFEN}")
+    elif faeden_grund:
+        bloecke.append(f"{FAEDEN_TITEL}\n{faeden_grund}")
     elif grund is None:
         bloecke.append(f"{FAEDEN_TITEL}\n{KEIN_FADEN}")
 
