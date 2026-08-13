@@ -300,6 +300,22 @@ PROBE_VORSTELLUNG = (
     f"{AUSWEG}"
 )
 
+# Die Vorstellung steht **öffentlich** im Kanal, die Absage kommt nur bei der Person an,
+# die den Befehl gab. Bleibt die Ankündigung allein stehen, liest die Runde, dass gleich
+# mitgeschnitten wird, und spielt den Abend in dem Glauben, er werde festgehalten — die
+# Umkehrung dessen, wofür die Vorstellung überhaupt da ist. Also wird sie dort
+# zurückgenommen, wo sie steht (#189).
+#
+# Der Wortlaut sagt nur, was in **jedem** dieser Fälle wirklich gilt: es läuft nichts, und
+# es kommt nichts an. Über Ansage und Einwilligungsprotokoll steht hier absichtlich nichts
+# — ob die Ansage schon lief, hängt daran, wo der Start stolperte, und ein Satz, der das
+# pauschal verneinte, wäre genau die Sorte Zusage, die vom Verhalten abweicht.
+WIDERRUF = (
+    "⚠️ **Daraus wird nichts: ich schneide nicht mit.** Was darüber steht, ist damit "
+    "hinfällig — es läuft keine Aufnahme, und in die Chronik geht davon nichts ein. "
+    "Grund: {grund}"
+)
+
 RAHMEN = ansage.KANAELE * ansage.BREITE
 
 
@@ -1018,6 +1034,28 @@ def _vorstellungsziel(ctx, kanal):
     keinen eigenen Chat hat: dann läse niemand den Ausweg vor der Ansage.
     """
     return kanal if callable(getattr(kanal, "send", None)) else ctx.channel
+
+
+async def _widerrufen(ziel, fehler: BaseException) -> None:
+    """Die öffentliche Ankündigung dort zurücknehmen, wo sie steht.
+
+    Gesagt wird der Grund, den auch die ephemere Absage nennt — bei einem erwarteten
+    Fehler sein Satz, sonst nur die Art. Was im Fehler sonst noch stecken kann, bleibt im
+    Log des Betreibers: der Kanal ist der öffentlichste Ort, den dieser Bot hat.
+
+    Scheitert der Widerruf selbst, fliegt der **ursprüngliche** Fehler weiter — der ist
+    die Auskunft, auf die der Aufrufer wartet. Dass die Ankündigung ohne ihn stehenblieb,
+    steht dann im Log; mehr ist von hier aus nicht zu erreichen.
+    """
+    grund = (
+        str(fehler)
+        if isinstance(fehler, BotFehler)
+        else UNERWARTET.format(typ=type(fehler).__name__)
+    )
+    try:
+        await _zustellen(ziel.send, WIDERRUF.format(grund=grund))
+    except Exception:  # noqa: BLE001
+        logger.exception("Die Vorstellung blieb im Kanal stehen — der Widerruf kam nicht durch")
 
 
 def _melder(ziel) -> Callable[[str], None]:
@@ -2064,11 +2102,20 @@ def baue(config: Config):
             return
         await ctx.defer(ephemeral=True)
         stimme = Sprachverbindung(await kanal.connect())
+        ziel = _vorstellungsziel(ctx, kanal)
         try:
-            await _zustellen(_vorstellungsziel(ctx, kanal).send, VORSTELLUNG)
-            lauf.aufnahme = await recorder.starten(config, stimme, runde)
+            await _zustellen(ziel.send, VORSTELLUNG)
         except BaseException:
+            # Die Vorstellung ist die lesbare Hälfte der Einwilligung: sie nennt den
+            # Ausweg, und zwar solange noch nichts mitgeschnitten wird. Kam sie nicht
+            # durch, wird nicht gestartet — und zurückzunehmen gibt es nichts.
             await stimme.trennen()
+            raise
+        try:
+            lauf.aufnahme = await recorder.starten(config, stimme, runde)
+        except BaseException as fehler:
+            await stimme.trennen()
+            await _widerrufen(ziel, fehler)
             raise
         lauf.stimme = stimme
         await _zustellen(ctx.respond, recorder.GESTARTET, ephemeral=True)
@@ -2111,13 +2158,21 @@ def baue(config: Config):
         lauf.probe = True
         try:
             stimme = Sprachverbindung(await kanal.connect())
+            ziel = _vorstellungsziel(ctx, kanal)
             try:
-                await _zustellen(_vorstellungsziel(ctx, kanal).send, PROBE_VORSTELLUNG)
-                ergebnis = await recorder.pruefen(config, stimme, runde)
+                await _zustellen(ziel.send, PROBE_VORSTELLUNG)
             except BaseException:
+                await stimme.trennen()
+                raise
+            try:
+                ergebnis = await recorder.pruefen(config, stimme, runde)
+            except BaseException as fehler:
                 # ``pruefen`` trennt selbst, sobald es mitschneidet; das hier fängt den
                 # Abbruch davor — ohne es säße der Bot nach einer fehlenden Sitzung im Kanal.
+                # Und die Ankündigung steht öffentlich wie die vor einer Aufnahme, also
+                # wird sie auch hier zurückgenommen statt nur dem Aufrufer abgesagt.
                 await stimme.trennen()
+                await _widerrufen(ziel, fehler)
                 raise
         finally:
             lauf.probe = False
