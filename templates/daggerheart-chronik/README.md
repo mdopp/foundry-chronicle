@@ -153,9 +153,15 @@ python scripts/bestimme_image_tag.py --zurueck 1  # der Stand davor — der Weg 
 ```
 
 **Abgeleitet und nicht abgetippt**, weil `sha-` plus die Kurzform von `HEAD` regelmäßig
-danebengreift: `build-images.yml` ist pfadgefiltert, ein reiner Doku- oder
-Template-Commit veröffentlicht kein Image. Das Skript geht deshalb bis zum jüngsten
-Commit zurück, der wirklich einen Bau ausgelöst hat.
+danebengreift: `build-images.yml` ist pfadgefiltert, ein Push ohne Bau-Pfade
+veröffentlicht kein Image. Das Skript rät den Tag deshalb nicht aus der Historie, sondern
+**fragt GHCR**, welche es wirklich gibt: ab `--ref` rückwärts der erste Commit, dessen
+Manifest sich abrufen lässt. Getaggt wird nämlich der **Push**, nicht der einzelne Commit
+— ein Rebase-Merge landet einen ganzen Batch auf einmal, und dessen letzter Commit trägt
+den Tag, auch wenn er nur die README anfasst. Hat `main` selbst kein Image, sagt das
+Skript das: entweder als Hinweis, dass der ältere Tag inhaltlich derselbe Stand ist, oder
+— wenn seither Bau-Pfade geändert wurden — mit einer Verweigerung, denn dann fehlt ein
+Image, das es geben müsste.
 
 **`latest` ist keine Einstellung, sondern eine fehlende.** Damit gibt es keinen Tag, der
 den Stand von vorgestern benennt — ein misslungenes Rollout wäre nur über einen Revert
