@@ -2451,6 +2451,26 @@ def test_ist_niemand_mehr_da_hoert_der_bot_von_selbst_auf(
     assert "wartet auf den Stapel" in gesagt
 
 
+def test_das_ende_im_leeren_kanal_steht_ohne_kanalnamen_im_log(
+    konfiguration, sitzung_im_thread, ohne_espeak, runde, kurze_frist, caplog
+):
+    """Wie #206, nur die Zeile, die dort nicht im Issue stand (#211).
+
+    Der Kanalname ist kein Personenname, beschreibt aber die Struktur einer fremden
+    Gilde. Was an seine Stelle tritt, wird mitgeprüft: eine Zeile, die nichts mehr
+    identifiziert, wäre kein Fortschritt, sondern ein Loch im Reparaturmantel.
+    """
+    caplog.set_level(logging.DEBUG)
+    runde.kanal.name = "Am-Runden-Tisch"
+    bot = gateway.baue(konfiguration)
+    bot.kanaele[THREAD] = FakeTextkanal()
+
+    alle_gehen(bot, runde)
+
+    assert runde.kanal.name not in caplog.text
+    assert f"Sitzung {sitzung_im_thread}: Sprachkanal leer" in caplog.text
+
+
 def test_viele_spurmeldungen_fallen_nicht_still_weg(
     konfiguration, sitzung_im_thread, ohne_espeak, runde, kurze_frist, monkeypatch
 ):
@@ -3448,6 +3468,68 @@ def test_ein_abriss_wird_nicht_als_verschieben_gemeldet(
     (gesagt,) = thread.geschrieben
     assert gesagt.startswith(gateway.GETRENNT.format(kanal=runde.kanal.name))
     assert not gesagt.startswith(gateway.VERSCHOBEN.format(kanal=runde.kanal.name))
+
+
+def test_der_kanalverlust_steht_ohne_kanalnamen_im_log(
+    konfiguration, sitzung_im_thread, ohne_espeak, runde, kurze_frist, caplog
+):
+    """Beide Zweige des Kanalverlusts, verschoben und abgerissen, in einem Test (#211).
+
+    Sie unterscheiden sich nur in der Begründung, und die steht im **Thread** — dort mit
+    Kanalnamen, denn der gehört der Gilde, die ihre eigenen Kanäle kennt. Im Log des
+    Betreibers steht die Sitzung, und geprüft wird beides: dass der Name fort ist und
+    dass die Zeile trotzdem noch sagt, welcher Lauf hier endete.
+    """
+    caplog.set_level(logging.DEBUG)
+    runde.kanal.name = "Am-Runden-Tisch"
+    bot = gateway.baue(konfiguration)
+    thread = FakeTextkanal()
+    bot.kanaele[THREAD] = thread
+
+    async def ablauf():
+        await befehl(bot, "start")(FakeCtx(runde.mira))
+        runde.kanal.verbindung.senke.write(sprachdaten(stille(480)), runde.mira)
+        verschieben(runde)
+        await bot.ereignisse["on_voice_state_update"](
+            runde.chronist, zustand(runde.kanal), zustand()
+        )
+        await ruhen()
+
+    asyncio.run(ablauf())
+
+    assert runde.kanal.name not in caplog.text
+    assert f"Sitzung {sitzung_im_thread}: der Bot wurde aus dem Sprachkanal verschoben" in (
+        caplog.text
+    )
+    # Der Thread bekommt den Namen weiter — dort ist er die Auskunft, wo es aufhörte.
+    assert runde.kanal.name in " ".join(thread.geschrieben)
+
+
+def test_der_abriss_steht_ohne_kanalnamen_im_log(
+    konfiguration, sitzung_im_thread, ohne_espeak, runde, kurze_frist, caplog
+):
+    """Der zweite Zweig: hinausgeworfen statt verschoben, dieselbe Regel (#211)."""
+    caplog.set_level(logging.DEBUG)
+    runde.kanal.name = "Am-Runden-Tisch"
+    bot = gateway.baue(konfiguration)
+    bot.kanaele[THREAD] = FakeTextkanal()
+
+    async def ablauf():
+        await befehl(bot, "start")(FakeCtx(runde.mira))
+        runde.kanal.verbindung.senke.write(sprachdaten(stille(480)), runde.mira)
+        runde.chronist.voice = None
+        runde.kanal.verbindung.channel = None
+        await bot.ereignisse["on_voice_state_update"](
+            runde.chronist, zustand(runde.kanal), zustand()
+        )
+        await ruhen()
+
+    asyncio.run(ablauf())
+
+    assert runde.kanal.name not in caplog.text
+    assert f"Sitzung {sitzung_im_thread}: die Verbindung zum Sprachkanal ist abgerissen" in (
+        caplog.text
+    )
 
 
 def test_die_meldung_vieler_spuren_kommt_geteilt_statt_gar_nicht(
