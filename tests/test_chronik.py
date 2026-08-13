@@ -356,6 +356,7 @@ def test_der_bot_bringt_die_chronik_befehle_mit(bot):
         "abgleich",
         "nacherzaehlung",
         "einlesen",
+        "sitzung-loeschen",
         "loeschen",
     }
     assert gateway.BEFEHL_SZENE in bot.befehle

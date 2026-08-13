@@ -15,12 +15,19 @@ dort, wo sie hingehört, statt in der Szene, die gerade zufällig die letzte ist
 Alles hier gehört einer Runde und wird nur über sie erreicht — auch dort, wo eine Id
 allein schon eindeutig wäre. Eine Szenen-Id aus einer fremden Runde ist kein Fund,
 sondern ein Datenleck.
+
+**Eine Sitzung wieder loszuwerden gehört dazu** (``delete_session``, #171). Sie nimmt
+mit, was an ihr hängt — bis zu den Tondateien auf der Platte, und das sind die Stimmen
+echter Menschen. Rückgängig gibt es dafür nichts, also fragt der Weg dorthin vorher
+nach (``bot.chronik``). Es ist keine Betreiber-Fähigkeit: über der Runde steht niemand
+(#90), und hier steht niemand über der Sitzung.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
+from pathlib import Path
 
 from chronicle import db
 from chronicle.runde import Runde
@@ -49,6 +56,23 @@ class Session:
     scene_count: int = 0
     note_count: int = 0
     scenes: tuple[Scene, ...] = ()
+
+
+@dataclass(frozen=True)
+class Contents:
+    """Was an einer Sitzung hängt — die Zahlen, mit denen die Rückfrage sie benennt.
+
+    ``audio`` zählt nicht die Spuren, sondern die Dateien, die dafür **noch** auf der
+    Platte liegen: nach der Aufbewahrungsfrist bleibt die Zeile stehen und der Ton ist
+    fort. Der Unterschied gehört in die Frage — »drei Aufnahmen« und »drei Stunden
+    Stimmen« sind nicht dasselbe Versprechen.
+    """
+
+    session: Session
+    recordings: int
+    audio: int
+    transcripts: int
+    protocols: int
 
 
 def _now() -> str:
@@ -382,3 +406,117 @@ def remove_note(runde: Runde, message_id: str) -> bool:
         return cursor.rowcount > 0
     finally:
         scope.close()
+
+
+def _audio(config, runde: Runde, session_id: int) -> tuple[Path, ...]:
+    """Die Tondateien dieser Sitzung — die eingereihten und die, die es nie wurden.
+
+    Die Zeile allein genügt nicht: eine Spur wird während der ganzen Sitzung auf die Platte
+    geschrieben und erst am Ende eingereiht. Ein Absturz mittendrin hinterlässt fertige
+    Aufnahmen ohne Zeile, die sonst niemand mehr fände. Der Dateiname trägt die
+    Sitzungskennung, und über die wird deshalb auch im Verzeichnis gesucht.
+
+    Der Griff ins Verzeichnis geht **an der Runden-Schranke vorbei** — er sieht nur den
+    Namen, nicht die Runde. Deshalb wird er erst aufgerufen, wenn feststeht, dass diese
+    Sitzung dieser Runde gehört (``session_contents``); ohne diese Reihenfolge löschte eine
+    fremde Sitzungskennung die Tondateien der Nachbarrunde.
+    """
+    scope = db.scoped(runde)
+    try:
+        zeilen = scope.execute(
+            "SELECT filename FROM recording WHERE runde_id = ? AND session_id = ?",
+            (scope.runde_id, session_id),
+        ).fetchall()
+    finally:
+        scope.close()
+    gefunden = {config.recordings_dir / zeile["filename"] for zeile in zeilen}
+    gefunden.update(config.recordings_dir.glob(f"sitzung{int(session_id)}-*"))
+    return tuple(sorted(datei for datei in gefunden if datei.exists()))
+
+
+def session_contents(config, runde: Runde, session_id: int) -> Contents | None:
+    """Was an dieser Sitzung hängt — die Auskunft **vor** dem Löschen, ohne zu löschen.
+
+    Keine Sitzung dieser Runde heißt ``None``. Das ist zugleich die Schranke, hinter der
+    ``_audio`` erst ins Verzeichnis greifen darf.
+    """
+    gefunden = session(runde, session_id)
+    if gefunden is None:
+        return None
+    scope = db.scoped(runde)
+    try:
+        zahlen = scope.execute(
+            "SELECT "
+            "(SELECT COUNT(*) FROM recording WHERE runde_id = ? AND session_id = ?) AS spuren, "
+            "(SELECT COUNT(*) FROM transcript WHERE runde_id = ? AND session_id = ?) AS texte, "
+            "(SELECT COUNT(*) FROM protocol WHERE runde_id = ? AND session_id = ?) AS geschrieben",
+            (scope.runde_id, session_id) * 3,
+        ).fetchone()
+    finally:
+        scope.close()
+    return Contents(
+        session=gefunden,
+        recordings=int(zahlen["spuren"]),
+        audio=len(_audio(config, runde, session_id)),
+        transcripts=int(zahlen["texte"]),
+        protocols=int(zahlen["geschrieben"]),
+    )
+
+
+def _index_nachziehen(scope: db.Scope, session_id: int) -> None:
+    """Den Suchindex hinter der Kaskade aufräumen — ausdrücklich, wie beim Löschen der Runde.
+
+    Er hängt an keinem Fremdschlüssel — eine fts5-Tabelle kennt keine —, und die
+    Löschtrigger der Quelltabellen feuern bei einer Kaskade nicht. Ohne diese Zeilen stünden
+    Notizen, Chronik und Diktat einer gelöschten Sitzung weiter im Index.
+
+    Ein Registereintrag ist der eine Fall, der **nicht** mitgeht: er gehört der Runde und
+    überlebt jede einzelne Sitzung. Im Index steht bei ihm die erste Sitzung, in der er
+    vorkommt; war es genau diese, bekommt er seine nächste. Bleibt keine, wird der Verweis
+    leer — genau das, was auch der Neuaufbau beim nächsten Start schriebe.
+    """
+    scope.execute(
+        "DELETE FROM search_index WHERE runde_id = ? AND session_id = ? AND kind <> 'register'",
+        (scope.runde_id, session_id),
+    )
+    scope.execute(
+        "UPDATE search_index SET session_id = (SELECT MIN(m.session_id) FROM register_mention m "
+        "WHERE m.runde_id = search_index.runde_id AND m.entry_id = search_index.ref_id) "
+        "WHERE runde_id = ? AND kind = 'register' AND session_id = ?",
+        (scope.runde_id, session_id),
+    )
+
+
+def delete_session(config, runde: Runde, session_id: int) -> Contents | None:
+    """Eine einzelne Sitzung und alles, was an ihr hängt. Rückgängig gibt es nicht.
+
+    **Die Tondateien zuerst**, wie beim Löschen der ganzen Runde: verschwände die Zeile
+    vorher, wüsste niemand mehr, welche Datei zu löschen war, und eine Stunde fremder
+    Stimmen bliebe auf der Platte liegen. Der Rest fällt an der ``session``-Zeile über die
+    Fremdschlüssel-Kaskade: Szenen, Notizen, Diktate, Transkripte, Chronik und Rückblick,
+    die Läufe und die Erwähnungen im Register.
+
+    **Der Nachweis der Ansage bleibt** (``consent_event.session_id`` fällt auf ``NULL``).
+    Das ist die eine Zeile, die ihren Gegenstand überlebt, und sie tut es mit Absicht: die
+    Runde gibt es weiter, und was belegt, dass im Sprachkanal angesagt wurde, ist genau
+    dann etwas wert, wenn das daraus Gemachte noch irgendwo liegt. Beim Löschen der ganzen
+    Runde geht er mit — dort ist niemand mehr da, für den er belegte.
+
+    Zurück kommt, was fort ist — für die Meldung danach. ``None`` heißt: diese Sitzung
+    gehört dieser Runde nicht (mehr), und dann ist auch nichts geschehen.
+    """
+    gefunden = session_contents(config, runde, session_id)
+    if gefunden is None:
+        return None
+    for datei in _audio(config, runde, session_id):
+        datei.unlink(missing_ok=True)
+    scope = db.scoped(runde)
+    try:
+        with scope:
+            scope.execute(
+                "DELETE FROM session WHERE runde_id = ? AND id = ?", (scope.runde_id, session_id)
+            )
+            _index_nachziehen(scope, session_id)
+    finally:
+        scope.close()
+    return gefunden

@@ -309,6 +309,7 @@ ABFRAGEN = {
     "notes.session_of_thread": lambda c, r, i: notes.session_of_thread(r, i["thread"]),
     "notes.thread_of_session": lambda c, r, i: notes.thread_of_session(r, i["sitzung"]),
     "dokument.neu": lambda c, r, i: dokument.neu(r, ()),
+    "notes.session_contents": lambda c, r, i: notes.session_contents(c, r, i["sitzung"]),
     "notes.scene_at": lambda c, r, i: notes.scene_at(r, i["sitzung"], "2026-05-01T20:00:00+00:00"),
     "notes.today": lambda c, r, i: notes.today(),
     "protocol.stored": lambda c, r, i: protocol.stored(r, i["sitzung"]),
@@ -424,6 +425,10 @@ SCHREIBER = frozenset(
         "notes.update_note",
         "notes.remove_note",
         "notes.drop_derived",
+        # Die schärfste Löschung unterhalb der Runde: sie nimmt Tondateien von der Platte,
+        # und der Weg dorthin führt am Dateinamen entlang und nicht an der Runde. Geprüft
+        # weiter unten mit einer fremden Sitzungskennung — dieselbe Nummer, andere Runde.
+        "notes.delete_session",
         "merge.uebernehmen",
         "recordings.enqueue",
         "recordings.mark",
@@ -610,6 +615,29 @@ def test_der_thread_der_fremden_runde_ist_keine_sitzung(zwei_runden):
     assert notes.remove_note(a, ids[2]["nachricht"]) is False
     fremde = notes.session(b, ids[2]["sitzung"]).scenes[0].notes
     assert [notiz.text for notiz in fremde] == [f"Im Keller stand {MARKE[2]}."]
+
+
+def test_die_fremde_sitzung_wird_nicht_geloescht(zwei_runden):
+    """Der teuerste Griff daneben: gelöscht wird endgültig, und Tondateien gehen mit.
+
+    Die Sitzungskennung ist über alle Runden hinweg eindeutig, der Dateiname im
+    Aufnahmeverzeichnis trägt sie — wer die Datei über den Namen sucht, hat die Runde
+    dabei aus der Hand gegeben. Genau deshalb steht die Schranke **vor** dem Griff ins
+    Verzeichnis: eine Sitzung, die dieser Runde nicht gehört, gibt es hier nicht, und
+    dann wird auch nichts gesucht.
+    """
+    config, a, b, ids = zwei_runden
+    config.recordings_dir.mkdir(parents=True, exist_ok=True)
+    fremd = config.recordings_dir / f"sitzung{ids[2]['sitzung']}-20260501T200000-Mira.wav"
+    fremd.write_bytes(b"ton")
+
+    assert notes.delete_session(config, a, ids[2]["sitzung"]) is None
+
+    assert fremd.exists()
+    assert notes.session(b, ids[2]["sitzung"]) is not None
+    assert notes.session_contents(config, a, ids[2]["sitzung"]) is None
+    # Und die eigene geht sehr wohl — sonst bliebe der Test auch grün, wenn gar nichts löschte.
+    assert notes.delete_session(config, a, ids[1]["sitzung"]) is not None
 
 
 def _notiztexte(runde, session_id) -> str:
