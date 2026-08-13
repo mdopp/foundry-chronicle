@@ -229,6 +229,34 @@ def test_ein_datum_ohne_jahr_wird_nicht_ergaenzt():
     assert aufteilung.ohne_datum == ("26.03. — Der Keller",)
 
 
+def test_ein_abend_ganz_ohne_text_wird_uebersprungen_statt_angelegt(unsere):
+    """#172: ohne Notiz gäbe es keine Herkunft — der Abend entstünde bei jedem Mal neu.
+
+    Angelegt bliebe eine Sitzung, die nichts trägt, über die Suche nicht zu finden ist und
+    einzeln auch nicht wieder loszuwerden. Sie wird deshalb benannt, nicht geschrieben.
+    """
+    text = "## 01.01.2026 — Leer\n\n## 02.01.2026 — Auch leer\n"
+
+    aufteilung = dokument.lesen(text)
+
+    assert aufteilung.abende == ()
+    assert aufteilung.ohne_text == ("01.01.2026 — Leer", "02.01.2026 — Auch leer")
+    assert eingelesen(unsere, text) == 0
+    assert eingelesen(unsere, text) == 0
+    assert notes.sessions(unsere) == ()
+
+
+def test_ein_satz_unter_einer_szene_reicht_dem_abend(unsere):
+    """Die Gegenprobe: übersprungen wird nur, wo **nirgends** unter dem Abend ein Satz steht."""
+    text = "## 01.01.2026 — Leer\n\n## 02.01.2026 — Voll\n\n### Die Luke\n\nSie klemmte.\n"
+
+    assert eingelesen(unsere, text) == 1
+    assert dokument.lesen(text).ohne_text == ("01.01.2026 — Leer",)
+    assert gliederung(unsere) == [("2026-01-02", "Voll", [("Die Luke", ["Sie klemmte."])])]
+    # Und was steht, steht danach als bekannt da — der zweite Anlauf legt es nicht noch einmal.
+    assert eingelesen(unsere, text) == 0
+
+
 def test_ein_dokument_ganz_ohne_datum_ergibt_nichts():
     """Ohne ein einziges Datum ist nicht einmal zu sagen, welche Ebene die Abende trennt."""
     assert dokument.lesen("# Die Sturmklingen\n\n## Der Keller\n\nEtwas geschah.\n") == (
