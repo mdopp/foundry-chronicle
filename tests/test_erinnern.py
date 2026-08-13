@@ -562,6 +562,62 @@ def test_ein_nein_verwirft_den_vorschlag(stelle, bot):
     assert erinnern.VERWORFEN.format(name="Joras") in interaktion.response.bearbeitet[0]["content"]
 
 
+def test_derselbe_name_unter_zwei_arten_wird_nur_einmal_bestaetigt(stelle, bot):
+    """#183: der zweite Klick meldete »steht jetzt im Register« und schrieb nichts.
+
+    Das Modell schlägt einen Namen ohne Weiteres unter zwei Arten vor; beide als Ort zu
+    bestätigen ist damit eine ganz normale Zwei-Klick-Folge. Der zweite Klick lief auf die
+    eindeutige Spalte und wurde still verworfen — die Antwort behauptete trotzdem die
+    Bestätigung, und die Liste darunter führte den Eintrag im selben Atemzug weiter als
+    Vorschlag.
+    """
+    name = "Der Krumme Ast"
+    _config, unsere = stelle
+    sitzung = sitzung_mit_notiz(unsere)
+    ort = eintrag_anlegen(
+        unsere, sitzung, kind=register.ORT, name=name, satz="Die Schenke der Runde."
+    )
+    faden = eintrag_anlegen(
+        unsere, sitzung, kind=register.FADEN, name=name, satz="Die Schenke der Runde."
+    )
+    ctx = FakeCtx()
+    asyncio.run(registerbefehl(bot, "offen")(ctx))
+    view = ctx.ansichten[0]
+
+    zuerst = klicken(view, ort, register.ORT)
+    danach = klicken(view, faden, register.ORT)
+
+    bestaetigt = erinnern.BESTAETIGT.format(name=name, art="Ort")
+    assert bestaetigt in zuerst.response.bearbeitet[0]["embed"].gebaut["description"]
+    zweite = danach.response.bearbeitet[0]["content"]
+    assert zweite.startswith(erinnern.SCHON_IM_REGISTER.format(name=name, art="Ort"))
+    assert bestaetigt not in zweite
+    # Und die Ansicht widerspricht der Antwort nicht mehr: der doppelte Vorschlag ist weg,
+    # im Register steht der Name genau einmal.
+    assert register.pending(unsere) == ()
+    (gruppe,) = register.overview(unsere)
+    assert (gruppe.kind, [e.name for e in gruppe.entries]) == (register.ORT, [name])
+
+
+def test_ein_vergebener_name_wird_nicht_als_bestaetigt_gemeldet(stelle, bot):
+    """Kollision mit einem noch offenen Vorschlag: nichts geschrieben, nichts behauptet."""
+    name = "Der Krumme Ast"
+    _config, unsere = stelle
+    sitzung = sitzung_mit_notiz(unsere)
+    eintrag_anlegen(unsere, sitzung, kind=register.ORT, name=name, satz="Die Schenke.")
+    faden = eintrag_anlegen(unsere, sitzung, kind=register.FADEN, name=name, satz="Die Schenke.")
+    ctx = FakeCtx()
+    asyncio.run(registerbefehl(bot, "offen")(ctx))
+
+    interaktion = klicken(ctx.ansichten[0], faden, register.ORT)
+
+    beschreibung = interaktion.response.bearbeitet[0]["embed"].gebaut["description"]
+    assert beschreibung.startswith(erinnern.NICHT_EINGETRAGEN.format(name=name, art="Ort"))
+    assert erinnern.BESTAETIGT.format(name=name, art="Ort") not in beschreibung
+    assert register.overview(unsere) == ()
+    assert sorted(e.kind for e in register.pending(unsere)) == [register.FADEN, register.ORT]
+
+
 def test_der_zweite_klick_auf_denselben_knopf_aendert_nichts(stelle, bot):
     _config, unsere = stelle
     sitzung = sitzung_mit_notiz(unsere)

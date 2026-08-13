@@ -109,6 +109,13 @@ OFFEN_VORGESCHLAGEN = "vorgeschlagen als {art}"
 BESTAETIGT = "»{name}« steht jetzt als {art} im Register."
 VERWORFEN = "»{name}« ist verworfen."
 SCHON_ENTSCHIEDEN = "Darüber ist schon entschieden — ich habe nichts geändert."
+SCHON_IM_REGISTER = (
+    "»{name}« steht schon als {art} im Register — den doppelten Vorschlag habe ich weggeräumt."
+)
+NICHT_EINGETRAGEN = (
+    "»{name}« als {art} einzutragen ging nicht: der Name ist unter dieser Art vergeben. "
+    "Der Vorschlag steht weiter offen — »Nein« räumt ihn weg."
+)
 
 ZUORDNUNG_TITEL = "Wer spricht als wer"
 ZUORDNUNG_HINWEIS = (
@@ -404,15 +411,29 @@ def offen(runde: Runde, *, meldung: str = "") -> Offen:
 
 
 def entscheiden(runde: Runde, eintrag_id: int, art: str) -> str:
-    """Ein Knopf, eine Entscheidung — und beim zweiten Klick eine ehrliche Auskunft."""
+    """Ein Knopf, eine Entscheidung — und beim zweiten Klick eine ehrliche Auskunft.
+
+    Gesagt wird, was ``decide`` *getan* hat, nicht was geklickt wurde: derselbe Name unter
+    zwei Arten ist ein alltäglicher Vorschlag des Modells, und die Bestätigung der zweiten
+    Zeile lief vorher ins Leere, während die Antwort »steht jetzt im Register« behauptete
+    (#183).
+    """
     wartend = {eintrag.id: eintrag for eintrag in register.pending(runde)}
     eintrag = wartend.get(eintrag_id)
     if eintrag is None:
         return SCHON_ENTSCHIEDEN
-    register.decide(runde, {eintrag_id: register.Entscheidung(ja=bool(art), kind=art)})
+    ergebnis = register.decide(runde, {eintrag_id: register.Entscheidung(ja=bool(art), kind=art)})
+    stand = ergebnis[eintrag_id]
+    label = register.EINZAHL.get(art, art)
+    if stand == register.UNVERAENDERT:
+        if not art:
+            return SCHON_ENTSCHIEDEN
+        return NICHT_EINGETRAGEN.format(name=eintrag.name, art=label)
     if not art:
         return VERWORFEN.format(name=eintrag.name)
-    return BESTAETIGT.format(name=eintrag.name, art=register.EINZAHL.get(art, art))
+    if stand == register.DOPPELT:
+        return SCHON_IM_REGISTER.format(name=eintrag.name, art=label)
+    return BESTAETIGT.format(name=eintrag.name, art=label)
 
 
 def _zuordnungszeile(person: people.Person) -> str:
