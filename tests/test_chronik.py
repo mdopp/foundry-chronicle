@@ -1930,6 +1930,20 @@ def test_ein_dokument_ohne_datum_wird_nicht_geraten(stelle, bot):
     assert ctx.ansichten == [None]
 
 
+def test_abende_ohne_text_meldet_die_vorschau_als_uebersprungen(stelle, bot):
+    """#172: was nicht angelegt wird, muss dastehen — sonst hält die Runde es für abgelegt."""
+    _config, unsere = stelle
+
+    ctx, _klick = einlesen_fahren(bot, "## 01.01.2026 — Leer\n\n## 02.01.2026 — Auch leer\n")
+
+    (antwort,) = ctx.antworten
+    assert "»01.01.2026 — Leer«" in antwort and "»02.01.2026 — Auch leer«" in antwort
+    assert chronik.DOKUMENT_NUR_OHNE_TEXT.format(name="notizen.md") in antwort
+    assert chronik.DOKUMENT_FRAGE not in antwort
+    assert ctx.ansichten == [None], "was nicht entsteht, hat nichts zu bestätigen"
+    assert notes.sessions(unsere) == ()
+
+
 def test_eine_zu_grosse_datei_bleibt_liegen(stelle, bot):
     _config, unsere = stelle
 

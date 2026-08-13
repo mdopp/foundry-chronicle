@@ -23,6 +23,12 @@ Drei Sätze tragen alles Weitere:
 * **Kein Datum, keine Sitzung.** Eine Abendüberschrift ohne lesbares Datum wird benannt
   und übersprungen, nie geraten. Gelesen werden ``12.03.2026`` und ``2026-03-12``; ein
   ``12.03.`` ohne Jahr ist nicht sicher zu lesen und gilt deshalb als kein Datum.
+* **Kein Text, keine Sitzung.** Ein Abend, unter dem kein einziger Satz steht, wird ebenso
+  benannt und übersprungen (#172). Er trüge nichts in die Chronik und wäre über die Suche
+  nicht zu finden — vor allem aber wäre er beim nächsten Mal nicht wiederzuerkennen: die
+  Herkunft unten hängt an einer **Notiz**, und ohne Text entsteht keine. Angelegt entstünde
+  er bei jedem Einlesen aufs Neue. Ein Satz irgendwo unter dem Abend genügt, auch erst unter
+  einer Szenenüberschrift.
 
 Die Herkunft der entstehenden Notizen ist **nicht** die des Transkripts: ``merge`` verwirft
 vor jedem Lauf alles Abgeleitete seiner Herkunft und legt es neu. Ein eingelesenes Dokument
@@ -86,6 +92,9 @@ class Aufteilung:
     # Die Überschriften, die auf der Abend-Ebene stehen und kein Datum tragen. Sie sind
     # kein Fehler des Dokuments, sondern die eine Frage, die die Vorschau stellt.
     ohne_datum: tuple[str, ...] = ()
+    # Die Abendüberschriften, unter denen kein Satz steht. Auch sie sind kein Fehler,
+    # sondern eine Auskunft der Vorschau — angelegt werden sie nicht (#172).
+    ohne_text: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -168,6 +177,7 @@ def lesen(text: str) -> Aufteilung:
 
     abende: list[Abend] = []
     ohne_datum: list[str] = []
+    ohne_text: list[str] = []
     for abschnitt in abschnitte:
         kopf = abschnitt[0]
         datum, titel = datum_aus(kopf.ueberschrift)
@@ -182,6 +192,9 @@ def lesen(text: str) -> Aufteilung:
             szenen.append(Szene(titel=None, text=vorspann))
         for k in abschnitt[1:]:
             szenen.append(Szene(titel=k.ueberschrift or None, text=_absatz(k.zeilen)))
+        if not any(szene.text for szene in szenen):
+            ohne_text.append(kopf.ueberschrift)
+            continue
         abende.append(
             Abend(
                 datum=datum,
@@ -190,7 +203,9 @@ def lesen(text: str) -> Aufteilung:
                 abdruck=_abdruck(abschnitt),
             )
         )
-    return Aufteilung(abende=tuple(abende), ohne_datum=tuple(ohne_datum))
+    return Aufteilung(
+        abende=tuple(abende), ohne_datum=tuple(ohne_datum), ohne_text=tuple(ohne_text)
+    )
 
 
 def herkunft(abend: Abend) -> str:

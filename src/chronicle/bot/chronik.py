@@ -142,6 +142,17 @@ DOKUMENT_OHNE_DATUM = (
     "und schick die Datei noch einmal — raten tue ich es nicht."
 )
 
+# Ein Abend ohne einen einzigen Satz wird nicht angelegt (#172). Der Satz sagt beides: was
+# ausgelassen wurde und wie es hereinkäme — sonst hielte die Runde den Abschnitt für abgelegt.
+DOKUMENT_OHNE_TEXT = (
+    "Ohne einen Satz darunter und deshalb ausgelassen: {liste}. Eine Sitzung, die nichts "
+    "trägt, lege ich nicht an — schreib etwas darunter und schick die Datei noch einmal."
+)
+
+# Der Nachsatz allein trüge die Antwort nicht: »eine Sitzung erkenne ich an einem Datum«
+# wäre hier falsch, das Datum steht ja da.
+DOKUMENT_NUR_OHNE_TEXT = "In »{name}« steht unter keinem Abend ein Satz. Angelegt habe ich nichts."
+
 DOKUMENT_SCHON_DA = "Das steht schon da und bleibt, wie es ist: {liste}."
 
 DOKUMENT_FRAGE = "Soll ich das so anlegen? Bis du bestätigst, ist nichts geschrieben."
@@ -605,10 +616,16 @@ async def dokument_vorschau(runde: Runde, datei: Notizdatei) -> Vorschau:
                 liste=", ".join(f"»{kopf}«" for kopf in aufteilung.ohne_datum)
             )
         )
+    if aufteilung.ohne_text:
+        nachsatz.append(
+            DOKUMENT_OHNE_TEXT.format(liste=", ".join(f"»{kopf}«" for kopf in aufteilung.ohne_text))
+        )
     if schon:
         nachsatz.append(DOKUMENT_SCHON_DA.format(liste=_abendliste(schon)))
     if not frisch:
-        return Vorschau(" ".join((DOKUMENT_OHNE_ABENDE.format(name=datei.filename), *nachsatz)))
+        leer = aufteilung.ohne_text and not (aufteilung.abende or aufteilung.ohne_datum)
+        anfang = DOKUMENT_NUR_OHNE_TEXT if leer else DOKUMENT_OHNE_ABENDE
+        return Vorschau(" ".join((anfang.format(name=datei.filename), *nachsatz)))
     kopf = DOKUMENT_VORSCHAU.format(
         name=datei.filename, sitzungen=_anzahl(len(frisch), "Sitzung", "Sitzungen")
     )
