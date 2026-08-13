@@ -10,6 +10,7 @@ from conftest import GRENZE, runde, warte_bis
 from chronicle import db, jobs, lebenszyklus, notes, protocol, recordings
 from chronicle import runde as runden
 from chronicle.config import Config
+from chronicle.discord import rueckblick
 from chronicle.foundry import service as foundry
 from chronicle.foundry.client import FoundryUnreachable
 from chronicle.transcribe import service as transcribe
@@ -238,6 +239,21 @@ def test_der_chronik_lauf_schreibt_chronik_und_rueckblick(stelle):
     finally:
         scope.close()
     assert arten == {"chronik", "rueckblick"}
+
+
+def test_eine_misslungene_zustellung_steht_in_der_antwort_des_laufs(stelle, monkeypatch):
+    """#182: der Rückgabewert von ``deliver`` wurde verworfen — das Schweigen las sich wie
+    eine gelungene Zustellung."""
+    sitzung_id = notes.create_session(runde(stelle), played_on="2026-08-05", title="Keller")
+    szene = notes.session(runde(stelle), sitzung_id).scenes[0]
+    notes.add_note(runde(stelle), szene.id, "Wir brechen bei Sonnenaufgang auf.")
+    monkeypatch.setattr(
+        jobs,
+        "deliver",
+        lambda config, eine, sitzung: rueckblick.Zustellung("Nirgends angekommen.", True),
+    )
+
+    assert "Nirgends angekommen." in jobs.chronik(stelle, runde(stelle), sitzung_id)
 
 
 def test_der_lauf_traegt_das_transkript_selbst_in_die_szenen(stelle):

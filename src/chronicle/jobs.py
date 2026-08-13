@@ -434,7 +434,7 @@ def chronik(config: Config, runde: Runde, session_id: int) -> str:
         # die Runde ruht, seit der Lauf begann. »Gibt es nicht mehr« wäre dann falsch.
         raise JobError(lebenszyklus.RUHT if lebenszyklus.ruht(runde) else OHNE_SITZUNG)
     recap_session(config, runde, session_id)
-    deliver(config, runde, session_id)
+    zustellung = deliver(config, runde, session_id)
     ausgabe = anhaengen(config, runde, session_id)
     vorschlaege = register.suggest(config, runde, session_id)
     vorlauf = "" if not wartend else VERSCHRIFTET.format(anzahl=wartend, mehr=mehrzahl(wartend))
@@ -442,7 +442,9 @@ def chronik(config: Config, runde: Runde, session_id: int) -> str:
     # Der Hinweis auf offene Vorschläge steht bewusst im Ergebnis des Laufs: wird das
     # Bestätigen nicht angestoßen, wird es übersprungen, und das Register verfällt.
     nachsatz = "" if not vorschlaege.count else f" {vorschlaege.message}"
-    return vorlauf + stand + nachsatz + (f" {ausgabe}" if ausgabe else "")
+    # Und eine misslungene Zustellung genauso: sie war der stille Ausfall aus #182.
+    liegengeblieben = f" {zustellung.meldung}" if zustellung.gescheitert else ""
+    return vorlauf + stand + liegengeblieben + nachsatz + (f" {ausgabe}" if ausgabe else "")
 
 
 def nacherzaehlung(config: Config, runde: Runde, von: int, bis: int, kanal_id: str) -> str:

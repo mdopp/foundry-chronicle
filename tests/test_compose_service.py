@@ -72,6 +72,17 @@ def fakt(scope, szene_id, message_id="m-wurf"):
     )
 
 
+def _gilde_setzen(config, guild_id):
+    connection = db.connect(config.database_path)
+    try:
+        with connection:
+            connection.execute(
+                "UPDATE runde SET guild_id = ? WHERE id = ?", (guild_id, runde(config).id)
+            )
+    finally:
+        connection.close()
+
+
 def protokolle(scope, sitzung_id):
     return scope.execute(
         "SELECT kind, text, created_at FROM protocol WHERE runde_id = ? AND session_id = ?",
@@ -256,11 +267,14 @@ def test_der_stapelaufruf_stellt_den_rueckblick_genau_einmal_zu(
         runde(config),
         {"discord_bot_token": "bot-token-nur-fuer-den-test", "discord_recap_channel": "chronik"},
     )
+    # Der Stapelaufruf nimmt die erste Runde; die trägt seit dem Runden-Modell eine Gilde,
+    # und ohne sie wüsste die Zustellung nicht, in welcher sie den Kanal suchen soll.
+    _gilde_setzen(config, "g-runde")
     gepostet = []
 
     class Briefkasten:
-        def channel_id(self, name):
-            return f"c-{name}"
+        def guild_channel_id(self, gilde, kanal):
+            return f"{gilde}/{kanal}"
 
         def post_embed(self, kanal, eingebettet):
             gepostet.append((kanal, eingebettet))
@@ -278,7 +292,7 @@ def test_der_stapelaufruf_stellt_den_rueckblick_genau_einmal_zu(
 
     zeilen = protokolle(scope, sitzung_id)
     abgelegt = next(z["text"] for z in zeilen if z["kind"] == RUECKBLICK)
-    assert gepostet == [("c-chronik", rueckblick.embed(abgelegt))]
+    assert gepostet == [("g-runde/chronik", rueckblick.embed(abgelegt))]
     assert "war schon zugestellt" in capsys.readouterr().out
 
 

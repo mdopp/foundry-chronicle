@@ -15,6 +15,23 @@ Seine eigenen Überschriften bleiben stehen, und sie sind der Punkt: »Offene F�
 Deutung des Modells, keine Fakten« steht im Embed genauso da wie im abgelegten Text. Wer
 ihn vor der nächsten Sitzung liest, sieht damit, was belegt ist und was gedeutet.
 
+**Welcher Kanal, steht in zwei Formen da.** ``/setup`` schreibt die Id des gewählten
+Kanals, ältere Runden und ``DISCORD_RECAP_CHANNEL`` tragen seinen Namen. Beides wird
+angenommen und nichts gewandert: eine Wanderung müsste Namen gegen Discord auflösen, um
+sie in Ids zu übersetzen — zu einem Zeitpunkt, an dem kein Bot läuft und kein Netz zugesagt
+ist —, und was sie nicht auflösen kann, träfe sie am Ende leer. Die Umgebungsvariable
+bleibt ohnehin ein Name, also bleiben beide Formen lebendig, gewandert oder nicht.
+
+Gesucht wird **in der Gilde dieser Runde**, nie darüber hinaus: »chronik« heißt in jeder
+zweiten Gilde ein Kanal. Eine Runde ohne Gilde hat keinen Ort, an den etwas gehen könnte;
+dann wird nicht geraten, sondern gesagt.
+
+**Was nicht ankommt, wird gesagt.** Der Rückgabewert trägt deshalb nicht nur einen Satz,
+sondern auch, ob er die Gruppe angeht: der Fehler aus #182 war nicht die verwechselte
+Kanalform allein, sondern dass beide Aufrufer die Meldung verwarfen und das Schweigen
+sich wie eine gelungene Zustellung las. Ein gescheiterter Versuch steht jetzt im Ergebnis
+des Laufs — im Nachtbericht und in der Antwort auf ``/chronik`` — und als Warnung im Log.
+
 **Eine Sitzung, eine Zustellung.** Der Zeitpunkt steht in ``protocol.delivered_at``; ein
 zweiter Lauf sieht ihn und schweigt. Eine neu komponierte Fassung wird deshalb *nicht*
 noch einmal gepostet: der Kanal ist die Zeitachse der Gruppe, ein zweiter Rückblick darin
@@ -25,6 +42,7 @@ Sitzungs-Thread — dort ist der Ort für Fassungen, siehe ``chronicle.discord.a
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from chronicle import db, settings
@@ -45,13 +63,37 @@ TEXT_GRENZE = EMBED_TEXT
 
 NICHT_EINGERICHTET = "Kein Bot-Token — der Rückblick bleibt in der Chronik."
 KEIN_ZUSTELLKANAL = "Kein Zustellkanal eingetragen — der Rückblick bleibt in der Chronik."
-KEIN_KANAL = "Kein Kanal #{kanal} — der Bot sieht ihn nicht, oder er heißt anders."
+# Der eingetragene Wert steht bewusst nicht drin: als Id sagt er niemandem etwas, und als
+# Id aus einer fremden Gilde wäre er das eine, was hier nicht hinausgehen soll. Ins Log
+# gehört er, dorthin sieht der Betreiber.
+KEIN_KANAL = (
+    "Den eingestellten Zustellkanal sehe ich in eurer Gilde nicht — der Rückblick zur "
+    "Sitzung {sitzung} blieb liegen. Wähl den Kanal in `/setup` noch einmal."
+)
+OHNE_GILDE = (
+    "Diese Runde hängt an keiner Discord-Gilde — den Rückblick zur Sitzung {sitzung} kann "
+    "ich nirgends zustellen. Richte sie mit `/setup` in eurer Gilde ein."
+)
 KEIN_RUECKBLICK = "Sitzung {sitzung} hat keinen Rückblick."
 SCHON_ZUGESTELLT = "Rückblick zur Sitzung {sitzung} war schon zugestellt."
-ZUGESTELLT = "Rückblick zur Sitzung {sitzung} nach #{kanal} zugestellt."
+ZUGESTELLT = "Rückblick zur Sitzung {sitzung} zugestellt."
 GESCHEITERT = "Rückblick zur Sitzung {sitzung} nicht zugestellt: {grund}"
 
 GEKUERZT = "\n\n… hier gekürzt. Die ganze Sitzung steht in der Chronik-Datei im Thread."
+
+
+@dataclass(frozen=True)
+class Zustellung:
+    """Was über die Zustellung zu sagen ist — und ob es die Gruppe angeht.
+
+    ``meldung`` steht immer da; sie ist die Zeile für den Stapelaufruf und das Log.
+    ``gescheitert`` trennt davon die Fälle, in denen etwas **nicht** ankam, obwohl es
+    sollte. Ohne diese Trennung müsste jeder Aufrufer die Sätze wieder auseinanderraten —
+    und genau das taten sie nicht, sondern warfen den Rückgabewert weg (#182).
+    """
+
+    meldung: str
+    gescheitert: bool = False
 
 
 def _now() -> str:
@@ -111,34 +153,48 @@ def embed(text: str) -> dict[str, str]:
 
 def deliver(
     config: Config, runde: Runde, session_id: int, *, client: DiscordClient | None = None
-) -> str:
+) -> Zustellung:
     """Stellt den Rückblick dieser Sitzung zu, wenn er noch nicht zugestellt ist."""
     zugang = settings.effective(config, runde)
     if not zugang.discord_configured:
-        return NICHT_EINGERICHTET
-    kanalname = (zugang.discord_recap_channel or "").strip().lstrip("#")
-    if not kanalname:
-        return KEIN_ZUSTELLKANAL
+        return Zustellung(NICHT_EINGERICHTET)
+    gewaehlt = (zugang.discord_recap_channel or "").strip().lstrip("#")
+    if not gewaehlt:
+        return Zustellung(KEIN_ZUSTELLKANAL)
 
     abgelegt = _protokoll(runde, session_id)
     if abgelegt is None:
-        return KEIN_RUECKBLICK.format(sitzung=session_id)
+        return Zustellung(KEIN_RUECKBLICK.format(sitzung=session_id))
     text, zugestellt = abgelegt
     if zugestellt is not None:
-        return SCHON_ZUGESTELLT.format(sitzung=session_id)
+        return Zustellung(SCHON_ZUGESTELLT.format(sitzung=session_id))
+
+    if not runde.guild_id:
+        logger.warning(
+            "Runde %s hat keine Gilde — Rückblick zur Sitzung %s bleibt liegen.",
+            runde.id,
+            session_id,
+        )
+        return Zustellung(OHNE_GILDE.format(sitzung=session_id), gescheitert=True)
 
     bot = client if client is not None else DiscordClient(zugang)
     try:
-        kanal = bot.channel_id(kanalname)
+        kanal = bot.guild_channel_id(runde.guild_id, gewaehlt)
         if kanal is None:
-            return KEIN_KANAL.format(kanal=kanalname)
+            logger.warning(
+                "Zustellkanal %s liegt nicht in Gilde %s — Rückblick zur Sitzung %s bleibt liegen.",
+                gewaehlt,
+                runde.guild_id,
+                session_id,
+            )
+            return Zustellung(KEIN_KANAL.format(sitzung=session_id), gescheitert=True)
         bot.post_embed(kanal, embed(text))
     except DiscordError as fehler:
         # Der Rückblick steht bereits in der Datenbank; ein Discord, das gerade nicht
         # antwortet, macht daraus keinen fehlgeschlagenen Stapellauf. ``delivered_at``
         # bleibt leer, der nächste Lauf holt die Zustellung nach.
-        return GESCHEITERT.format(sitzung=session_id, grund=fehler)
+        return Zustellung(GESCHEITERT.format(sitzung=session_id, grund=fehler), gescheitert=True)
     # Erst posten, dann merken: ein fehlgeschlagener Post soll wiederholt werden. Die
     # Lücke dazwischen ist ein Prozessabbruch zwischen HTTP-200 und einem lokalen UPDATE.
     _merken(runde, session_id, _now())
-    return ZUGESTELLT.format(sitzung=session_id, kanal=kanalname)
+    return Zustellung(ZUGESTELLT.format(sitzung=session_id))

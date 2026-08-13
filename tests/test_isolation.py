@@ -1019,3 +1019,45 @@ def test_nachbarrunde_wird_nicht_ueber_fremdschluessel_erreicht(zwei_runden):
     finally:
         scope.close()
     assert protocol.stored(a, ids[2]["sitzung"]) is None
+
+
+def test_der_rueckblick_erreicht_keinen_kanal_einer_fremden_gilde(zwei_runden):
+    """Der Kanal ist der Ort, an dem die Gruppe ihren Rückblick liest (#182).
+
+    Beide Gilden haben einen Kanal namens »chronik« — gleichnamig ist Absicht, wie überall
+    hier. Eine Suche über alle Gilden des Bots fände die erstbeste, und eine Id lässt sich
+    ohnehin von Hand in die Einstellung schreiben. Beides muss an der Gilde der Runde
+    enden, sonst läse eine fremde Gruppe die Sitzung dieser hier.
+    """
+    config, _a, b, ids = zwei_runden
+    settings.save(b, {"discord_bot_token": "platzhalter-token"})
+
+    class ZweiGilden:
+        """Zwei Gilden, in beiden ein Kanal »chronik«."""
+
+        kanaele = {"gilde-a": "kanal-der-fremden", "gilde-b": "kanal-von-b"}
+
+        def __init__(self):
+            self.gepostet = []
+
+        def guild_channel_id(self, guild_id, kanal):
+            kennung = self.kanaele.get(guild_id)
+            if kennung is None:
+                return None
+            return kennung if kanal in (kennung, "chronik") else None
+
+        def post_embed(self, kanal, eingebettet):
+            self.gepostet.append(kanal)
+
+    settings.save(b, {"discord_recap_channel": "kanal-der-fremden"})
+    bot = ZweiGilden()
+    fremd = discord_rueckblick.deliver(config, b, ids[2]["sitzung"], client=bot)
+
+    assert bot.gepostet == []
+    assert fremd.gescheitert
+
+    settings.save(b, {"discord_recap_channel": "chronik"})
+    eigen = discord_rueckblick.deliver(config, b, ids[2]["sitzung"], client=bot)
+
+    assert bot.gepostet == ["kanal-von-b"]
+    assert not eigen.gescheitert

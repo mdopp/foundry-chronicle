@@ -13,6 +13,7 @@ from chronicle import db, jobs, lebenszyklus, nightly, notes, settings, zugang
 from chronicle import runde as runden
 from chronicle.app import create_app
 from chronicle.config import Config
+from chronicle.discord import rueckblick
 from chronicle.discord import service as diktat
 from chronicle.foundry.model import SyncState
 
@@ -206,6 +207,34 @@ def test_geschrieben_wird_nur_wo_material_juenger_ist_als_die_chronik(stelle):
     szene = notes.session(runde(stelle), sitzung_id).scenes[0]
     notes.add_note(runde(stelle), szene.id, "Und dann kam der Drache.")
     assert [eintrag[0] for eintrag in nightly.offen(runde(stelle))] == [sitzung_id]
+
+
+def test_eine_misslungene_zustellung_steht_auf_der_karte_der_nacht(stelle, monkeypatch):
+    """Der stille Ausfall aus #182: die Nacht meldete »geschrieben« und verschwieg, dass
+    der Rückblick nirgends ankam."""
+    mit_notiz(stelle)
+    monkeypatch.setattr(
+        nightly,
+        "deliver",
+        lambda config, eine, sitzung: rueckblick.Zustellung("Nirgends angekommen.", True),
+    )
+
+    schritte = {s["name"]: s for s in json.loads(nightly.lauf(stelle, runde(stelle)))}
+
+    assert "Nirgends angekommen." in schritte[nightly.CHRONIK]["text"]
+
+
+def test_eine_gelungene_zustellung_bleibt_von_der_karte_weg(stelle, monkeypatch):
+    mit_notiz(stelle)
+    monkeypatch.setattr(
+        nightly,
+        "deliver",
+        lambda config, eine, sitzung: rueckblick.Zustellung("Alles gut gegangen."),
+    )
+
+    schritte = {s["name"]: s for s in json.loads(nightly.lauf(stelle, runde(stelle)))}
+
+    assert "Alles gut gegangen." not in schritte[nightly.CHRONIK]["text"]
 
 
 def test_eine_leere_sitzung_bekommt_keine_chronik(stelle):
