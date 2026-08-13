@@ -290,10 +290,15 @@ class Aufnahme:
         )
         if art == consent.ANSAGE:
             self._angesagt = True
+        # Der Kanalname steht eine Zeile höher im Nachweis und dort mit Grund — er belegt,
+        # wo die Ansage lief (§201). Ins Log gehört er nicht: er beschreibt die Struktur
+        # einer fremden Gilde. Die Kennung des Nachweises führt in einem Schritt zu ihm
+        # zurück und nennt für sich genommen niemanden.
         logger.info(
-            "Einwilligung %s in #%s protokolliert: %s Anwesende",
+            "Einwilligung %s für Sitzung %s protokolliert: Nachweis %s, %s Anwesende",
             art,
-            self.kanal.name,
+            self.session_id,
+            kennung,
             len(mitglieder),
         )
         return kennung
@@ -515,7 +520,9 @@ async def pruefen(config: Config, stimme: Stimme, runde: Runde) -> Probe:
     dafür noch hergibt — und es kommt vor dem Trennen, weil das Trennen ihn ohnehin beendet.
     """
     aufnahme = await starten(config, stimme, runde)
-    logger.info("Empfangstest in #%s: %s Sekunden", stimme.kanal.name, PROBE_DAUER)
+    # Die Sitzung statt des Kanalnamens (#206): sie sagt dem Betreiber, welcher Lauf hier
+    # lauschte, und beschreibt dabei keine fremde Gilde.
+    logger.info("Empfangstest für Sitzung %s: %s Sekunden", aufnahme.session_id, PROBE_DAUER)
     try:
         await asyncio.sleep(PROBE_DAUER)
     finally:
