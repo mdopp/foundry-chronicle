@@ -27,8 +27,8 @@ Adresse als eigene; dort trägt die Prüfung nicht, und es zählt allein die Lis
 **Falls doch einmal ausgesperrt** — die Seite antwortet 403, obwohl die Anmeldung am
 Proxy geklappt hat: ``CHRONICLE_TRUSTED_PROXIES`` in der Dienstbeschreibung auf die
 Adresse setzen, von der der Proxy anwählt, und den Dienst neu starten. Eine
-kommagetrennte Liste aus Adressen oder Netzen: ``192.168.178.100``,
-``192.168.178.0/24``, ``127.0.0.1``, ``::1``. Gesetzt **ersetzt** sie die errechnete
+kommagetrennte Liste aus Adressen oder Netzen: ``192.0.2.10``,
+``192.0.2.0/24``, ``127.0.0.1``, ``::1``. Gesetzt **ersetzt** sie die errechnete
 Antwort, leer bleibt es bei der Maschine selbst. Welche Adresse gemeint ist, sagt die
 Logzeile bei jeder Abweisung. Ein neues Abbild braucht es dafür nicht.
 """
@@ -77,7 +77,7 @@ def netze(eintraege: Iterable[str]) -> tuple[Netz, ...]:
 def adresse(wert: str | None) -> Adresse | None:
     """Der Absender als Adresse — ``None``, wenn daraus keine wird.
 
-    Ein v6-Horcher meldet einen v4-Aufruf als ``::ffff:192.168.178.100``; ohne das
+    Ein v6-Horcher meldet einen v4-Aufruf als ``::ffff:192.0.2.10``; ohne das
     Zurückfalten läge derselbe Absender einmal in der Liste und einmal nicht.
     """
     if not wert:

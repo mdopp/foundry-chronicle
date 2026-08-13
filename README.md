@@ -124,7 +124,7 @@ Port direkt erreicht, schreibt sie sich selbst hin. Geglaubt wird sie — und
 Maschine** trägt (#190); der Proxy läuft auf derselben Box und tut genau das. Steht er
 einmal woanders, sagt die Seite 403, obwohl die Anmeldung geklappt hat. Der Weg zurück
 ist `CHRONICLE_TRUSTED_PROXIES`: eine kommagetrennte Liste aus Adressen oder Netzen
-(`192.168.178.100`, `10.0.0.0/8`, `::1`), die die errechnete Antwort **ersetzt** —
+(`192.0.2.10`, `10.0.0.0/8`, `::1`), die die errechnete Antwort **ersetzt** —
 gesetzt zählt nur noch, was dort steht. Welche Adresse gemeint ist, sagt die Logzeile
 jeder Abweisung; leer bleibt es bei der Maschine selbst, weil die Box an DHCP hängt und
 eine abgeschriebene Adresse nach der nächsten Lease aussperrte. `/healthz` steht vor
