@@ -33,11 +33,6 @@ im Spiel ist —, lebt im Arbeitsspeicher und wird vom Abgleich verbraucht (#64/
 beim Start keines gibt, wird beim Abschluss gefragt; und gefragt wird auch, wessen
 Abschluss auf der Eingabe eines anderen säße. Alles andere kommt aus Foundry.
 
-Solange die Sitzung offen ist, **liest** der Ereignisstrom (#97) denselben Merkzettel, ohne
-ihn zu verbrauchen — sonst sähe er genau einmal nach. Abgelegt oder verlängert wird dabei
-nichts: es bleibt bei den zwölf Stunden aus #64, und der Abschluss löst ihn ein. Ist er
-abgelaufen oder eingelöst, endet der Strom von selbst und sagt es einmal.
-
 Wie der Zugriff auf Foundry technisch läuft, steht in [`foundry-zugriff.md`](foundry-zugriff.md).
 
 ```mermaid
@@ -133,15 +128,6 @@ Für den Präsenzweg bleibt die Szenenfolge die einzige Zeitachse.
 **Foundry liefert die Zahlen, der Text die Erzählung.** Würfe, Schaden und Beute
 werden nie aus gesprochener oder getippter Sprache rekonstruiert, sondern aus dem
 Chat-Log eingesetzt. Das Modell ordnet und verknüpft; es rechnet und rät nicht.
-
-Seit #97 kommen sie **während** der Sitzung: liegt ein Passwort im Speicher, sieht der Bot
-alle zwei Minuten nach und stellt neue Würfe in den Thread — durch denselben
-Berechtigungsfilter und denselben System-Adapter wie der Abgleich, und ohne Rückkanal.
-Damit ist die Reihenfolge keine Rekonstruktion aus Zeitstempeln mehr: der Wurf hängt an der
-Szene, die lief, als er fiel. Angehängt wird er als **Fakt** an dieser Szene und nicht als
-Notiz — sonst verlöre die Chronik genau die Grenze zwischen Belegtem und Verbindungssatz,
-für die es diesen Weg gibt. Wie oft nachgesehen wird, ist eine Betriebsfrage: eine Runde
-soll ein fremdes Foundry nicht wund fragen.
 
 **Alles nach der Aufnahme läuft im Stapel.** Keine Echtzeit-Transkription, damit keine
 GPU-Konkurrenz und keine Latenzfrage. Läuft nachts; auf CPU langsam genug, um ohne

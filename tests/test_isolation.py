@@ -25,7 +25,7 @@ import inspect
 import sqlite3
 
 import pytest
-from conftest import UNSER_KONTO, WELT, warte_auf_laeufe
+from conftest import warte_auf_laeufe
 
 from chronicle import (
     consent,
@@ -438,7 +438,6 @@ SCHREIBER = frozenset(
         # weiter unten mit einer fremden Sitzungskennung — dieselbe Nummer, andere Runde.
         "notes.delete_session",
         "merge.uebernehmen",
-        "notes.link_foundry_message",
         "recordings.enqueue",
         "recordings.mark",
         "recordings.sweep",
@@ -462,7 +461,6 @@ SCHREIBER = frozenset(
         "settings.save_nightly_zone",
         "settings.save_foundry_quelle",
         "service.sync",
-        "service.beobachten",
         "service.abzug",
         "zugang.merken",
         "zugang.vergiss",
@@ -604,28 +602,6 @@ def test_notiz_landet_nicht_in_der_fremden_szene(zwei_runden):
     assert notes.session(b, ids[2]["sitzung"]).scenes[0].title is None
     assert notes.session(a, ids[2]["sitzung"]) is None
     assert notes.session_of_scene(a, ids[2]["szene"]) is None
-    # Und der Ereignisstrom hängt seine Würfe nicht in die Szene von nebenan: dort stünden
-    # sie in einer fremden Chronik, ohne dass jemand sie dort je gesehen hätte.
-    assert notes.link_foundry_message(a, ids[2]["szene"], "m-neu") is False
-    assert notes.link_foundry_message(a, ids[1]["szene"], "m-neu") is True
-
-
-def test_der_ereignisstrom_sieht_und_schreibt_nur_die_eigene_runde(zwei_runden):
-    """Ein Blick nach Foundry ist ein Schreiber wie der Abgleich — und ebenso eingezäunt."""
-
-    class NurUnsereWelt:
-        def fetch_world(self):
-            return UNSER_KONTO, WELT
-
-    config, a, b, _ids = zwei_runden
-    ergebnis = foundry_service.beobachten(config, a, client=NurUnsereWelt())
-
-    assert [nachricht.id for nachricht in ergebnis.neu] == ["m-wurf"]
-    eigene = {nachricht.id for nachricht in _mit_scope(a, foundry_store.load).messages}
-    fremde = _mit_scope(b, foundry_store.load).messages
-    assert "m-wurf" in eigene
-    assert [nachricht.id for nachricht in fremde] == ["m-1"]
-    assert all(nachricht.vanished_at is None for nachricht in fremde)
 
 
 def test_der_thread_der_fremden_runde_ist_keine_sitzung(zwei_runden):

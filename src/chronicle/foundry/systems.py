@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
-from chronicle.foundry.model import ChatMessage, Die, Roll
+from chronicle.foundry.model import Die, Roll
 
 DAGGERHEART = "daggerheart"
 
@@ -39,18 +39,6 @@ def _dice(system: str, block: Mapping) -> tuple[Die, ...]:
             continue
         gewuerfelt.append(Die(name=name, faces=str(eintrag.get("dice") or ""), value=wert))
     return tuple(gewuerfelt)
-
-
-def lohnt(nachricht: ChatMessage) -> bool:
-    """Ob dieses Ereignis den Weg in den laufenden Sitzungs-Thread lohnt.
-
-    Die Frage gehört hierher, weil ihre Antwort am Regelwerk hängt: was ein Wurf ist,
-    steht in ``message.system.roll``, und dessen Form bestimmt das System. Heute fällt sie
-    für alle gleich aus — was Zahlen trägt, lohnt; blanker Chat nicht. Der steht ohnehin
-    schon im Thread, getippt von denen, die dort sitzen, und ein Strom, der ihn spiegelt,
-    ertränkt die Sitzung in ihrem eigenen Echo.
-    """
-    return nachricht.roll is not None
 
 
 def read_roll(system: str, message: Mapping) -> Roll | None:
