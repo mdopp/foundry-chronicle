@@ -28,8 +28,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Awaitable, Callable, Sequence
-from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from dataclasses import dataclass
 from pathlib import Path
 
 from chronicle import (
@@ -45,8 +44,6 @@ from chronicle import (
 from chronicle import runde as runden
 from chronicle.bot import BotFehler
 from chronicle.config import Config
-from chronicle.foundry import service as foundry
-from chronicle.foundry.model import ChatMessage
 from chronicle.runde import Runde
 
 logger = logging.getLogger(__name__)
@@ -342,13 +339,12 @@ START_HINWEIS = "Leer lassen geht: dann eben ohne die Zahlen."
 
 MIT_FOUNDRY = (
     "Das Passwort liegt bis zum Abschluss bereit — gespeichert wird es nirgends, und "
-    "`/chronik fertig` fragt nicht noch einmal. Ab jetzt stelle ich hier ein, was in eurem "
-    "Foundry gewürfelt wird, während ihr spielt."
+    "`/chronik fertig` fragt nicht noch einmal."
 )
 
 OHNE_FOUNDRY = (
-    "Ohne Foundry-Passwort: die Sitzung läuft, nur die Zahlen fehlen. Die Würfe kommen "
-    "dann erst beim Abschluss dazu, und `/chronik fertig` fragt noch einmal danach."
+    "Ohne Foundry-Passwort: die Sitzung läuft, nur die Zahlen fehlen. `/chronik fertig` "
+    "fragt dann noch einmal danach."
 )
 
 KEIN_FOUNDRY = (
@@ -360,33 +356,6 @@ KEIN_FOUNDRY = (
 # Der Platzhalter des Abschlussfensters, wenn ein anderes Mitglied etwas hinterlegt hat.
 # Discord kürzt Platzhalter bei 100 Zeichen — deshalb der kurze Satz.
 FREMDES_HINWEIS = "Es liegt eines von jemand anderem bereit — es gilt deines."
-
-# Wie oft der Strom nach Foundry sieht. Zwei Minuten sind eine Betriebsentscheidung und
-# keine technische: jeder Blick ist ein vollständiger Handschlag — anmelden, Welt holen,
-# abmelden —, und die Runde fragt damit ein **fremdes** Foundry an, das ihr gehört und
-# nicht uns. Zwei Minuten halten das bei rund dreißig Anfragen die Stunde und bündeln
-# zugleich, was am Tisch in einem Zug passiert: der Schlagabtausch einer Kampfrunde landet
-# als **eine** Nachricht im Thread statt als acht. Wer beides anders gewichtet, ändert
-# diese Zahl — dass sie hier steht und nicht in einem Feld, ist Absicht: sie betrifft den
-# Betrieb der Box, nicht die Gruppe.
-STROM_ABSTAND = 120.0
-
-# Der Ursprung, sichtbar in einer Zeile: was hier steht, kommt aus Foundry und nicht vom
-# Tisch. Der Rest der Zeile ist Abschrift — kein Wort davon ist ergänzt.
-EREIGNIS = "🎲 {zeile}"
-
-WURF = "Wurf"
-KRITISCH = "kritisch"
-
-AUSFALL = (
-    "Ich komme gerade nicht an euer Foundry: {grund} Ich versuche es still weiter und "
-    "sage erst wieder etwas, wenn es zurück ist — was in der Zwischenzeit fällt, hole ich "
-    "dann nach."
-)
-
-WIEDER_DA = "Euer Foundry ist wieder da."
-
-STROM_ENDET = "Ich sehe von hier an nicht mehr nach Foundry: {grund}"
 
 
 class ChronikFehler(BotFehler):
@@ -446,34 +415,6 @@ class Nachricht:
     zeitpunkt: str = ""
     anhaenge: tuple[Anhang, ...] = ()
     autor_id: str | None = None
-
-
-@dataclass
-class Strom:
-    """Was der Beobachter einer laufenden Sitzung zwischen zwei Blicken behält.
-
-    Alles davon lebt im Arbeitsspeicher und nur so lange wie die Sitzung: ein Neustart
-    beendet den Strom, und das ist richtig so — das Passwort ist dann ohnehin fort.
-    """
-
-    runde: Runde
-    session_id: int
-    gesehen: set[str] = field(default_factory=set)
-    # Der erste Blick zählt nur, was schon dastand. Ohne ihn schriebe der Strom beim
-    # Anfang das ganze Chat-Log der Welt in den Thread — bei einer Runde, die seit Wochen
-    # nicht abgeglichen hat, sind das hunderte Würfe von Abenden, die längst geschrieben
-    # sind.
-    grundlinie: bool = True
-    # Ein Ausfall wird einmal gesagt, nicht einmal je Durchlauf.
-    gemeldet: bool = False
-
-
-@dataclass(frozen=True)
-class Meldung:
-    """Was der Strom in den Thread stellt — und ob es einen nächsten Blick lohnt."""
-
-    text: str = ""
-    weiter: bool = True
 
 
 def runde_der_gilde(config: Config, guild_id: str) -> Runde | None:
@@ -984,70 +925,6 @@ def notiz_aendern(runde: Runde, thread_id: str, nachricht: Nachricht) -> Notizwe
 
 def notiz_entfernen(runde: Runde, message_id: str) -> bool:
     return notes.remove_note(runde, message_id)
-
-
-def _wurfzeile(nachricht: ChatMessage) -> str:
-    """Ein Wurf, wie er im Chat-Log steht — abgeschrieben, nicht gerechnet.
-
-    Was Foundry nicht mitliefert, steht auch nicht da: ohne Summe keine Summe, ohne Titel
-    das Wort »Wurf«. Eine Zeile, die eine fehlende Zahl freundlich ergänzt, wäre genau die
-    Erfindung, gegen die dieser ganze Weg gebaut ist.
-    """
-    wurf = nachricht.roll
-    kopf = wurf.title or WURF
-    if wurf.total is not None:
-        kopf = f"{kopf}: **{wurf.total}**"
-    wuerfel = ", ".join(f"{einzeln.name} {einzeln.value}" for einzeln in wurf.dice)
-    zeile = " · ".join(teil for teil in (kopf, wuerfel, KRITISCH if wurf.critical else "") if teil)
-    wer = nachricht.speaker_alias
-    return EREIGNIS.format(zeile=f"**{wer}** — {zeile}" if wer else zeile)
-
-
-def ereignisse_abholen(config: Config, strom: Strom) -> Meldung:
-    """Ein Blick nach Foundry und was davon in den Thread gehört.
-
-    Jedes Ereignis genau einmal: gesehen ist gesehen, und der Merkzettel dafür liegt im
-    Strom und nicht in der Datenbank — er beschreibt diesen einen Abend.
-
-    Ein Ausfall wird **einmal** gesagt und danach still weiter versucht; kommt Foundry
-    zurück, wird auch das einmal gesagt. Ein Fehler je Durchlauf wäre hier ein Fehler alle
-    zwei Minuten, und der Thread einer Sitzung mit ausgefallenem Server bestünde am Ende
-    aus nichts anderem.
-
-    Eine ruhende Runde bekommt nichts und erfährt auch nichts: sie ist verabschiedet, und
-    ein Satz in ihren Thread wäre der einer Instanz, die sie nicht mehr bedient.
-    """
-    gemeint = lebenszyklus.dieselbe(strom.runde)
-    if gemeint is None or gemeint.gesperrt:
-        return Meldung(weiter=False)
-    ergebnis = foundry.beobachten(config, gemeint, gesehen=frozenset(strom.gesehen))
-    if ergebnis.grund is not None:
-        if strom.gemeldet:
-            return Meldung(weiter=ergebnis.weiter)
-        strom.gemeldet = True
-        vorlage = AUSFALL if ergebnis.weiter else STROM_ENDET
-        return Meldung(text=vorlage.format(grund=ergebnis.grund), weiter=ergebnis.weiter)
-    vorlauf = []
-    if strom.gemeldet:
-        strom.gemeldet = False
-        vorlauf.append(WIEDER_DA)
-    strom.gesehen.update(nachricht.id for nachricht in ergebnis.neu)
-    if strom.grundlinie:
-        # Der Ausfall von vorhin wird trotzdem aufgelöst: hätte der erste Blick nichts
-        # gesagt, bliebe die Runde mit »ich komme nicht dran« sitzen, während es längst
-        # wieder geht.
-        strom.grundlinie = False
-        return Meldung(text="\n".join(vorlauf))
-    jetzt = datetime.now(UTC).isoformat(timespec="seconds")
-    szene = notes.scene_at(gemeint, strom.session_id, jetzt)
-    if szene is None:
-        # Keine Szene heißt: diese Sitzung gibt es nicht mehr. Weiterzusehen hieße, Würfe
-        # zu sammeln, die nirgends mehr hingehören.
-        return Meldung(weiter=False)
-    for nachricht in ergebnis.neu:
-        notes.link_foundry_message(gemeint, szene, nachricht.id)
-    vorlauf.extend(_wurfzeile(nachricht) for nachricht in ergebnis.neu)
-    return Meldung(text="\n".join(vorlauf))
 
 
 def _mit_meldung(arbeit: Callable[[], str], melden: Callable[[str], None]) -> Callable[[], str]:

@@ -213,8 +213,7 @@ ABGERISSEN = (
 
 BEFEHLE = (
     "• `/chronik start` — ich lege die Sitzung an und öffne ihren Thread; ab dort wird jede "
-    "Nachricht eine Notiz. Das Fenster davor nimmt das Foundry-Passwort; gebt ihr eines, "
-    "stelle ich die Würfe aus eurem Foundry ein, während ihr spielt.\n"
+    "Nachricht eine Notiz. Das Fenster davor nimmt das Foundry-Passwort.\n"
     "• `/szene <Name>` — die Trennlinie zur nächsten Szene.\n"
     "• `/aufnahme start` — ich komme in deinen Sprachkanal, spiele eine hörbare Ansage "
     "und schneide **erst danach** mit, je Stimme eine eigene Spur.\n"
@@ -600,9 +599,6 @@ class _Lauf:
         # Wieder an der Aufnahme und nicht allein an der Person: an ihr hinge der Vermerk
         # über das Ende hinaus und verschluckte die Frage der nächsten Aufnahme.
         self.gefragt: tuple[Aufnahme, set[str]] | None = None
-        # Je offener Sitzung ein Beobachter von Foundry. Anders als der Mitschnitt gibt es
-        # ihn mehrfach: der Bot bedient mehrere Gilden, und deren Abende überschneiden sich.
-        self.stroeme: dict[int, object] = {}
 
 
 async def _mitschnitt_beenden(lauf: _Lauf, runde: Runde | None = None) -> tuple[str, ...]:
@@ -969,51 +965,6 @@ async def _abschied_beim_kanalverlust(bot, lauf: _Lauf, aufnahme: Aufnahme, woan
     )
 
 
-async def _ereignisstrom(config: Config, bot, lauf: _Lauf, strom: chronik.Strom) -> None:
-    """Solange die Sitzung offen ist: nachsehen, was in Foundry fällt, und es einstellen.
-
-    Der Blick selbst läuft in einem Faden daneben — er redet über das Netz mit einem
-    fremden Server und über SQLite mit unserer Platte, und beides hielte sonst den ganzen
-    Bot an.
-
-    Er endet von selbst, sobald ein nächster nichts mehr brächte: kein Passwort mehr, eine
-    fremde Welt, die Runde oder der Thread fort. Ein unerwarteter Fehler beendet ihn
-    ebenso — er käme sonst alle zwei Minuten wieder, und ein Log, das im Minutentakt
-    dieselbe Ausnahme schreibt, verdeckt jede andere. Verloren geht dabei nichts: der
-    Abschluss holt die Zahlen ohnehin noch einmal ganz.
-    """
-    try:
-        while True:
-            await asyncio.sleep(chronik.STROM_ABSTAND)
-            try:
-                meldung = await asyncio.to_thread(chronik.ereignisse_abholen, config, strom)
-                zugestellt = not meldung.text or await _in_den_sitzungsthread(
-                    bot, strom.runde, strom.session_id, meldung.text
-                )
-            except Exception:  # noqa: BLE001
-                logger.exception("Der Blick nach Foundry ist gescheitert — der Strom endet")
-                return
-            if not zugestellt or not meldung.weiter:
-                return
-    finally:
-        # Auch beim Abbestellen: der Eintrag ist die Antwort auf »läuft für diese Sitzung
-        # noch einer«, und ein Eintrag ohne Faden dahinter beantwortete sie falsch.
-        lauf.stroeme.pop(strom.session_id, None)
-
-
-def _strom_stellen(config: Config, bot, lauf: _Lauf, runde: Runde, session_id: int) -> None:
-    """Den Beobachter dieser Sitzung bestellen — einen je Sitzung, und nur mit Passwort."""
-    strom = chronik.Strom(runde=runde, session_id=session_id)
-    lauf.stroeme[session_id] = asyncio.create_task(_ereignisstrom(config, bot, lauf, strom))
-
-
-def _strom_abbestellen(lauf: _Lauf, session_id: int) -> None:
-    """Beim Abschluss ist Schluss: der Abgleich löst das Passwort ein und holt alles ganz."""
-    faden = lauf.stroeme.pop(session_id, None)
-    if faden is not None:
-        faden.cancel()
-
-
 def _erledigt(faden) -> bool:
     """Ob dieser dauerhafte Faden neu gestartet gehört — nie gelaufen zählt auch."""
     return faden is None or faden.done()
@@ -1188,9 +1139,9 @@ def _gefenstert(rueckruf):
 
 
 async def _sitzung_eroeffnen(
-    config: Config, bot, lauf: _Lauf, ziel, runde, titel: str, eingabe: str, wer: str
+    config: Config, ziel, runde, titel: str, eingabe: str, wer: str
 ) -> str:
-    """Thread, Sitzung, Passwort, Beobachter — ein Satz, der jeden Ausgang unterscheidbar macht.
+    """Thread, Sitzung, Passwort — und ein Satz, der jeden Ausgang unterscheidbar macht.
 
     Der breite Fang ist das Sicherheitsnetz, das ``@antwortet`` sonst um den Befehlsrumpf
     legt: aus dem Rückruf eines Fensters entkäme eine Ausnahme in py-cords ``on_error``,
@@ -1201,7 +1152,7 @@ async def _sitzung_eroeffnen(
     """
     try:
         thread = await _thread_anlegen(ziel, chronik.threadname(titel))
-        sitzung = chronik.sitzung_anlegen(runde, str(thread.id), titel)
+        chronik.sitzung_anlegen(runde, str(thread.id), titel)
         gemerkt = chronik.passwort_merken(runde, eingabe, wer)
     except BotFehler as fehler:
         return GESCHEITERT.format(grund=str(fehler))
@@ -1209,11 +1160,6 @@ async def _sitzung_eroeffnen(
         logger.exception("Sitzungsstart gescheitert")
         return GESCHEITERT.format(grund=UNERWARTET.format(typ=type(fehler).__name__))
     hinweis = chronik.starthinweis(config, runde, gemerkt)
-    # Nur mit hinterlegtem Passwort: ohne eines käme der Beobachter beim ersten Blick an
-    # keinen Server und beendete sich sofort. Der Strom hängt damit an derselben
-    # Entscheidung wie die Zahlen selbst — wer es nicht gibt, spielt ohne beides weiter.
-    if gemerkt:
-        _strom_stellen(config, bot, lauf, runde, sitzung)
     try:
         await _zustellen(thread.send, chronik.ANGELEGT)
     except Exception:  # noqa: BLE001
@@ -1222,7 +1168,7 @@ async def _sitzung_eroeffnen(
     return f"{chronik.THREAD_STEHT.format(thread=thread.mention)} {hinweis}"
 
 
-def _startfenster(config: Config, bot, lauf: _Lauf, runde, titel: str):
+def _startfenster(config: Config, runde, titel: str):
     """Das Passwort wird beim Start erfragt — freiwillig, damit Foundry den Abend über offen ist.
 
     Ein Modal und kein Befehls-Argument: ein Argument stünde als Klartext in der
@@ -1255,14 +1201,7 @@ def _startfenster(config: Config, bot, lauf: _Lauf, runde, titel: str):
                 await _sagen(interaction, chronik.VERALTET)
                 return
             antwort = await _sitzung_eroeffnen(
-                config,
-                bot,
-                lauf,
-                interaction,
-                gemeint,
-                titel,
-                self.children[0].value or "",
-                _wer(interaction),
+                config, interaction, gemeint, titel, self.children[0].value or "", _wer(interaction)
             )
             await _sagen(interaction, antwort)
 
@@ -1285,10 +1224,6 @@ async def _abschliessen(
     einmal gefragt und das Gemerkte auch nicht überschrieben. ``merken=False`` heißt, dass
     es schon im Merkzettel liegt und dort nicht mit neuer Frist erneuert werden darf.
     """
-    # Vor allem anderen: von hier an holt der eine Lauf die Zahlen, und er verbraucht dabei
-    # das Passwort. Ein Beobachter, der daneben weiterliefe, fände beim nächsten Blick
-    # keines mehr vor und sagte es in einen Thread, dessen Sitzung gerade geschrieben wird.
-    _strom_abbestellen(lauf, session_id)
     meldungen: tuple[str, ...] = ()
     try:
         meldungen = await _mitschnitt_beenden(lauf, runde)
@@ -2274,13 +2209,13 @@ def baue(config: Config):
             await ctx.defer(ephemeral=True)
             await _zustellen(
                 ctx.respond,
-                await _sitzung_eroeffnen(config, bot, lauf, ctx, runde, titel, "", _wer(ctx)),
+                await _sitzung_eroeffnen(config, ctx, runde, titel, "", _wer(ctx)),
                 ephemeral=True,
             )
             return
         # Kein ``defer`` davor: ein Fenster geht nur als *erste* Antwort auf den Befehl.
         # Deshalb entsteht die Sitzung erst im Rückruf des Fensters, der selbst aufschiebt.
-        await ctx.send_modal(_startfenster(config, bot, lauf, runde, titel))
+        await ctx.send_modal(_startfenster(config, runde, titel))
 
     @chronikgruppe.command(
         name="fertig", description="Sitzung abschließen und die Chronik anstoßen"
