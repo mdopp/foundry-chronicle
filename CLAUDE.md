@@ -149,6 +149,24 @@ Bot macht deshalb eine hörbare Ansage und protokolliert die Zustimmung. Wer an 
 Einwilligung, Zugangsdaten oder der Personen-Zuordnung arbeitet, öffnet einen **Draft-PR
 und wartet auf menschliche Review**, statt automatisch zu mergen.
 
+**Wo die Grenze verläuft** (Operator-Entscheidung 2026-08-14, nach #212). Maßgeblich ist,
+was eine Änderung **tut**, nicht in welcher Datei sie steht:
+
+- **Draft**, wenn sie ändert, **was** aufgenommen, eingewilligt, gespeichert oder
+  zugeordnet wird — wer erfasst wird, worauf sich die Zustimmung bezieht, wie lange etwas
+  liegt, wem eine Stimme zugeschrieben wird, wer etwas löschen oder fortnehmen darf.
+- **Kein Draft**, wenn sie an denselben Stellen die Preisgabe nur **verringert** oder
+  nichts an ihr ändert: einen Namen aus einer Logzeile nehmen, einen Text umformulieren,
+  einen Test nachziehen, einen Kommentar schreiben.
+
+Der Grund für die Schärfung: nach dem Dateikriterium ist derselbe Handgriff dreimal
+verschieden ausgefallen — #164 wurde als Draft nachgereicht (#168), #194, #206 und #212
+liefen durch. Alle vier nahmen einen Namen aus einem Log. Eine Regel, die bei gleicher
+Arbeit verschieden entscheidet, schützt niemanden; sie erzeugt nur Zeremonie an
+zufälligen Stellen. Wer unsicher ist, nimmt den Draft — die Frage »verringert das die
+Preisgabe oder nicht« lässt sich in einem Satz beantworten, und im Zweifel ist die
+Antwort nein.
+
 Audiospuren sind nach erfolgreichem Lauf löschbar und gehören **nicht** ins Backup. Die
 SQLite-Datei ist klein und enthält alles Unersetzliche.
 
