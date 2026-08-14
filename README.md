@@ -169,6 +169,14 @@ auf die CPU zurück, statt den Nachtlauf abzubrechen. Ein Feld dafür gibt es ni
 dieser Sitzung vorgespannt — erst, wer im Chat-Log gesprochen hat, dann der übrige
 Foundry-Zwischenspeicher, hart auf rund 224 Token gekappt.
 
+**Die Stille läuft nicht durchs Modell** (#209). Der Aufnahme-Bot füllt die Sprechpausen
+jeder Spur auf, damit alle Spuren auf einer Zeitachse liegen — eine Vier-Stunden-Sitzung
+ergibt je Sprecher vier Stunden Spur bei vielleicht einer Stunde Rede. Eine
+Stille-Erkennung sortiert die Pausen vor dem Modell aus: **auf langer Stille erfindet
+Whisper Sätze**, und die Rechenzeit ginge fast vollständig für sie drauf. Abschaltbar ist
+das nicht — ein Schutz mit Schalter ist einer, den man abgeschaltet vorfindet. Die
+Zeitstempel bleiben davon unberührt und zählen weiter ab dem Aufnahmebeginn.
+
 `faster-whisper` steckt im Extra `transcribe`: das Image bringt es mit, eine
 Dev-Installation muss es nicht laden. Die Tests setzen ein erfundenes Modell ein und
 laden nie ein echtes herunter.
