@@ -507,8 +507,23 @@ Geschichte; das Transkript bleibt ohnehin.
 
 Discord trennt die Audiodaten ohnehin pro Client. Damit entfällt die Sprechertrennung
 nicht bloß billiger, sondern exakt — jede Diarisierung rät bei Überlappungen, und in einer
-Rollenspielrunde reden fünf Leute durcheinander. Geschrieben wird **eine Datei je Sprecher
-für die ganze Sitzung**, im Strom auf die Platte und nie in einen Puffer im Speicher.
+Rollenspielrunde reden fünf Leute durcheinander. Geschrieben wird im Strom auf die Platte
+und nie in einen Puffer im Speicher.
+
+Je Sprecher entsteht dabei eine **Folge von Häppchen** von je dreißig Minuten und nicht
+mehr eine Datei über den ganzen Abend (#217). Jedes wird eingereiht, sobald es voll ist —
+die Verschriftung kann damit schon während der Sitzung laufen statt vollständig hinter
+ihr. Geschnitten wird nach der Zeit und nicht an Sprechpausen: py-cord füllt die Pausen
+vor unserem `write` auf, sie sind an dieser Stelle also gar nicht greifbar. Der Preis ist
+ein Wort je Schnitt.
+
+**Jedes Häppchen bringt seinen Startversatz mit** (`recording.offset_ms`), und daran hängt
+die Zusammenführung. `transcript_segment.start_ms` ist sitzungsabsolut; eine Datei fängt
+für den Erkenner aber wieder bei null an. Der Versatz wird deshalb aufgeschlagen, bevor
+gespeichert wird, und er wird aus den geschriebenen Bytes **gerechnet** und nicht nach der
+Wanduhr geschätzt: weil py-cord die Pausen auffüllt, *ist* die Byte-Position die Position
+auf der Sitzungsuhr. Ohne ihn stünde jedes Häppchen wieder am Anfang des Abends, die
+Verschränkung zerfiele und jede Äußerung landete in der falschen Szene — still.
 
 Empfangenes Audio ist von Discord nicht offiziell unterstützt: `discord.py` kann es nicht.
 Wir nehmen **py-cord**, weil es die Senken-API mitbringt, regelmäßig veröffentlicht wird
