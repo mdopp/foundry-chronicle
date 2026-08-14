@@ -122,7 +122,12 @@ Den Übergang vom Transkript zur Notiz geht seit #140 der Abschluss selbst
 Gespräch in die Szenen, und zwar über die **Sitzungsuhr** — jede Äußerung fällt in die
 Szene ihres Startzeitpunkts. Voraussetzung ist, dass der Nullpunkt dieser Uhr in
 `recording.started_at` steht; er wird beim Start des Mitschnitts festgehalten, nie
-später geschätzt. Ein Auswahlweg in Discord ist bewusst verworfen. Was aus den Spuren
+später geschätzt. Seit #217 schneidet der Recorder eine Sprecherspur in **Häppchen** von
+dreißig Minuten, damit die Verschriftung schon während der Sitzung laufen kann; alle
+Häppchen einer Aufnahme tragen denselben Nullpunkt, und wo die einzelne Datei auf der Uhr
+liegt, sagt `recording.offset_ms`. Aufgeschlagen wird er vor dem Speichern — was in
+`transcript_segment` steht, bleibt sitzungsabsolut, und die Verschränkung merkt vom
+Schnitt nichts. Ein Auswahlweg in Discord ist bewusst verworfen. Was aus den Spuren
 kommt, wird bei jedem Lauf ersetzt (`note.origin`); was ein Mensch geschrieben hat,
 bleibt unangetastet. **Ein Diktat hat keine Sitzungsuhr** und wird deshalb nicht
 verschränkt — es bekommt seine Szene über den Zeitpunkt der **Nachricht**, mit der es im

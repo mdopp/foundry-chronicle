@@ -11,6 +11,13 @@ auf (siehe ``chronicle.bot.gateway``); Millisekunde 0 jeder Bot-Spur liegt desha
 demselben Moment, und ``transcript_segment.start_ms`` ist bereits sitzungsabsolut. Ein
 zweiter Versatz je Spur wäre eine geratene Zeitrechnung neben der vorhandenen.
 
+Dass das auch dann gilt, wenn eine Spur aus mehreren **Dateien** besteht, ist keine
+Selbstverständlichkeit, sondern eine Zusage einer Stufe davor: der Mitschnitt läuft seit
+#217 in Häppchen, jede Datei fängt für den Erkenner wieder bei null an, und
+``transcribe.service.segment_rows`` schlägt ``recording.offset_ms`` auf, bevor gespeichert
+wird. Hier kommt deshalb weiter eine Zeitachse an. Wer dort etwas ändert, ändert das hier
+mit — und zwar still.
+
 Zusammengeführt werden allein die Spuren des Bots — an ihnen hängt eine Discord-Id. Ein
 Diktat vom Heimweg hat keinen Bezug zu einer Sitzungsuhr; es auf dieselbe Achse zu legen
 hieße, einen Zeitstempel zu erfinden. Für die Präsenzrunde bleibt die Szenenfolge die
