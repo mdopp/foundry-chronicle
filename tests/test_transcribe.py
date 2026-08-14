@@ -514,8 +514,23 @@ def test_der_erkenner_bekommt_die_ganze_spur_und_den_vorspann(tmp_path):
     assert modell.aufruf == {
         "pfad": str(tmp_path / "mira.ogg"),
         "initial_prompt": "Namen: Aelin.",
+        "vad_filter": True,
     }
     assert teile == [Segment(start=1.0, end=2.0, text="Aus dem Modell.")]
+
+
+def test_die_stille_erreicht_das_modell_nicht(tmp_path):
+    """Die Spuren des Bots bestehen ueberwiegend aus Stille — und darauf erfindet Whisper.
+
+    Gemessen an einer Spur aus reiner Stille: ohne Stille-Erkennung fuenf Minuten Nichts,
+    acht erfundene Segmente; mit ihr keins (#209).
+    """
+    modell = Spur()
+    erkenner = FasterWhisper("small", loader=lambda *a, **k: modell)
+
+    list(erkenner.transcribe(tmp_path / "mira.wav"))
+
+    assert modell.aufruf["vad_filter"] is True
 
 
 def test_ohne_vorspann_wird_keiner_gesetzt(tmp_path):

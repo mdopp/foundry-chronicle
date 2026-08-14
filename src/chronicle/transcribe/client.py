@@ -18,6 +18,32 @@ damit nirgends zur Voraussetzung; die Erkennung ist überschreibbar (``config``)
 Und sie ist **nicht verlässlich frei**: Ollama hält sein Modell geladen und teilt sich
 dieselben 16 GB. Schlägt das Laden auf der Karte fehl, fällt der Lauf auf die CPU
 zurück, statt die Nacht abzubrechen — ein langsamer Lauf schlägt einen gescheiterten.
+
+**Die Stille wird übersprungen (#209).** py-cord füllt die Sprechpausen jeder Spur mit
+Stille auf, damit alle Spuren auf **einer** Zeitachse liegen; bei vier Stunden Sitzung
+ist deshalb jede Sprecherspur vier Stunden lang, auch wenn die Person zwanzig Minuten
+geredet hat. Ohne Stille-Erkennung läuft das Modell über all das hinweg — und **auf
+langer Stille erfindet Whisper Sätze**: fünf Minuten reine Stille ergaben acht Segmente
+im 30-Sekunden-Raster, mit ihr keins. Das trifft die oberste Hausregel, und es kostet
+obendrein die Rechenzeit, die ein größeres Modell auf der CPU bräuchte (#141) — an einer
+Spur mit 20 % Sprechanteil 143 s gegen 29 s.
+
+Ein Schalter dagegen ist bewusst **nicht** vorgesehen: die Schranke gegen erfundene
+Sätze (``service.MINDESTDAUER``, #142) hat auch keinen, und ein abschaltbarer Schutz ist
+einer, den man eines Tages abgeschaltet vorfindet. Die Vorgabewerte der Bibliothek
+bleiben stehen — an einer Schwelle wird gedreht, wenn ein echter Lauf zeigt, dass ein
+leiser Sprecher verschluckt wird, nicht vorher. Das Stille-Modell liegt im Rad von
+faster-whisper (``assets/silero_vad_v6.onnx``), es wird nichts nachgeladen; eine Box
+ohne Netz merkt davon nichts.
+
+**Die Zeitstempel bleiben sitzungsabsolut.** faster-whisper rechnet die Segmentzeiten
+auf die Originalspur zurück; daran hängt die ganze Zusammenführung. Ausgeführt geprüft
+gegen bekannte Sprechinseln, nicht der Dokumentation geglaubt: jeder Segmentbeginn liegt
+in der Insel, zu der er gehört, der Einsatz auf ±0,4 s genau — die Vorlaufkante ist die
+Polsterung der Stille-Erkennung. **Ohne** sie lagen fünf von zehn Einsätzen 20 bis 30
+Sekunden zu früh, weil Whisper den Text auf das nächste 30-Sekunden-Fenster legt; der
+erste Satz der Spur stand bei 0 s statt bei 20 s. Die Stille-Erkennung verschiebt die
+Achse also nicht, sie richtet sie gerade.
 """
 
 from __future__ import annotations
@@ -165,6 +191,8 @@ class FasterWhisper:
 
     def transcribe(self, audio_path: Path, *, vocabulary: str = "") -> Iterator[Segment]:
         logger.info("Spracherkenner %s auf %s, %s", self._name, self._device, self._compute_type)
-        segmente, _ = self._model.transcribe(str(audio_path), initial_prompt=vocabulary or None)
+        segmente, _ = self._model.transcribe(
+            str(audio_path), initial_prompt=vocabulary or None, vad_filter=True
+        )
         for teil in segmente:
             yield Segment(start=float(teil.start), end=float(teil.end), text=str(teil.text))
