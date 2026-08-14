@@ -279,6 +279,15 @@ CREATE TABLE IF NOT EXISTS transcript (
 -- ein Verschriften läuft eine gute Stunde je Sitzungsstunde, und stirbt der Prozess dabei,
 -- stünde die Zeile ohne sie für immer auf ``laeuft``. Dann bekäme die Spur nie ein
 -- Transkript und verlöre nach der Frist trotzdem ihre Audiodatei (#181).
+--
+-- ``offset_ms`` sagt, wo diese Datei auf der Sitzungsuhr **beginnt**. Der Mitschnitt wird
+-- in Häppchen geschnitten (#217), damit die Verschriftung schon während der Sitzung laufen
+-- kann; jede Datei fängt für sich bei null an, und der Erkenner liefert seine Zeiten
+-- relativ zu ihr. Ohne diesen Versatz stünde jedes Häppchen wieder bei Millisekunde 0 —
+-- die Verschränkung der Sprecher zerfiele und die Szenenzuordnung würde falsch, und zwar
+-- still. Addiert wird er **vor** dem Speichern: ``transcript_segment.start_ms`` bleibt
+-- damit sitzungsabsolut, so wie ``chronicle.transcribe.merge`` es voraussetzt. ``0`` steht
+-- beim ersten Häppchen, bei Diktaten und bei allem aus der Zeit vor dieser Spalte.
 CREATE TABLE IF NOT EXISTS recording (
     id          INTEGER PRIMARY KEY,
     runde_id    INTEGER NOT NULL REFERENCES runde (id) ON DELETE CASCADE,
@@ -296,6 +305,7 @@ CREATE TABLE IF NOT EXISTS recording (
     discord_user_id TEXT,
     besitzer    TEXT,
     herzschlag  TEXT,
+    offset_ms   INTEGER NOT NULL DEFAULT 0,
     FOREIGN KEY (session_id, runde_id) REFERENCES session (id, runde_id) ON DELETE CASCADE
 );
 

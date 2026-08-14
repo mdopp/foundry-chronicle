@@ -12,6 +12,13 @@ Angenommen wird woanders: der Thread in ``chronicle.bot.chronik``, der Mitschnit
 ``chronicle.bot.recorder``. Beide legen die Datei ab und rufen dann ``enqueue`` — was
 leer ankam, kommt hier gar nicht erst an.
 
+**Eine Sprecherspur ist mehrere Zeilen** (#217): der Mitschnitt wird in Häppchen
+geschnitten und jedes einzeln eingereiht, damit die Verschriftung schon während der
+Sitzung laufen kann. Jede Zeile trägt dann denselben ``started_at`` — den Nullpunkt der
+Sitzungsuhr — und ihr eigenes ``offset_ms``, den Abstand ihres Dateianfangs von diesem
+Nullpunkt. Alles hier gilt der einzelnen Datei: Frist, Besitzer, Herzschlag und Stand
+hängen an der Zeile, nicht am Sprecher.
+
 **Die Aufbewahrungsfrist steht hier**, und zwar als Zahl: der Bot sagt sie im Sprachkanal
 zu (``chronicle.bot.ansage``), und derselbe Wert setzt sie durch. Ein Versprechen, das nur
 im Ansagetext steht, wäre keins — deshalb formatiert die Ansage ihre Frist aus
@@ -64,16 +71,20 @@ RETENTION_TAGE = 7
 # in Wochen ohne Stapellauf.
 SWEEP_ABSTAND = 24 * 60 * 60
 
-NACH_FRIST = "Spur »{source}«: Aufnahme nach {tage} Tagen gelöscht — die Frist aus der Ansage."
+# Gezählt je Sitzung und nicht je Datei: eine Spur wird in Häppchen geschnitten (#217),
+# und vier Stunden mit fünf Sprechern sind vierzig Dateien. Vierzigmal denselben Satz zu
+# schreiben verdeckt genau das, was daneben steht — und der Stamm eines Spurnamens ist der
+# Anzeigename des Sprechers (#194), der hier in einer Meldung stünde, die auch ins Log geht.
+NACH_FRIST = "Sitzung {sitzung}: {was} nach {tage} Tagen gelöscht — die Frist aus der Ansage."
 
 # Die Frist gilt auch der Spur, die es nie durch die Verschriftung geschafft hat: sie ist
 # eine Zusage an Menschen, deren Stimme aufgenommen wurde, und keine Belohnung für einen
 # geglückten Lauf. Aber sie darf nicht **still** greifen — hier geht eine Stunde
 # gesprochener Abend, von der es keinen Text gibt und nie einen geben wird.
 OHNE_TEXT = (
-    "Spur »{source}«: die Aufnahme ist nach {tage} Tagen gelöscht — die Frist aus der "
-    "Ansage —, und verschriftet wurde sie nie. Von dieser Spur gibt es keinen Text, und "
-    "nachholen lässt sich das nicht."
+    "Sitzung {sitzung}: {was} nach {tage} Tagen gelöscht — die Frist aus der Ansage — und "
+    "nie verschriftet. Von diesem Ton gibt es keinen Text, und nachholen lässt sich das "
+    "nicht."
 )
 
 # Was an der Zeile stehen bleibt. Ohne diesen Satz sagte sie »wartet« über eine Aufnahme,
@@ -155,6 +166,7 @@ class Recording:
     discord_user_id: str | None = None
     started_at: str | None = None
     message_at: str | None = None
+    offset_ms: int = 0
 
 
 def _now() -> str:
@@ -181,6 +193,7 @@ def _eintrag(row: sqlite3.Row, text: str = "") -> Recording:
         discord_user_id=row["discord_user_id"],
         started_at=row["started_at"] if "started_at" in row.keys() else None,
         message_at=row["message_at"] if "message_at" in row.keys() else None,
+        offset_ms=row["offset_ms"] if "offset_ms" in row.keys() else 0,
     )
 
 
@@ -209,6 +222,7 @@ def enqueue(
     discord_user_id: str | None = None,
     started_at: str | None = None,
     message_at: str | None = None,
+    offset_ms: int = 0,
 ) -> Recording:
     """Reiht eine Spur ein.
 
@@ -227,6 +241,11 @@ def enqueue(
     ausdrücklich nicht ``uploaded_at``: das steht auf dem Ablegen, und ein Diktat vom
     Heimweg käme damit in der Szene an, die gerade zufällig die letzte ist.
 
+    ``offset_ms`` sagt, wo diese Datei auf der Sitzungsuhr beginnt. Ein Mitschnitt wird in
+    Häppchen geschnitten (#217); das zweite fängt als Datei wieder bei null an, liegt auf
+    der Uhr aber eine halbe Stunde später. Wer den Versatz nicht mitgibt, bekommt ``0`` —
+    für ein Diktat und für die erste Datei einer Spur ist das die Wahrheit.
+
     Liegt die Datei schon in der Warteschlange, kommt ``BereitsEingereiht`` — ein zweiter
     Anlauf über mehrere Spuren soll die schon eingereihten überspringen können, statt an
     ihnen hängenzubleiben.
@@ -237,8 +256,8 @@ def enqueue(
         with scope:
             cursor = scope.execute(
                 "INSERT INTO recording (runde_id, session_id, filename, source, uploaded_at, "
-                "status, updated_at, discord_user_id, started_at, message_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "status, updated_at, discord_user_id, started_at, message_at, offset_ms) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     scope.runde_id,
                     session_id,
@@ -250,6 +269,7 @@ def enqueue(
                     discord_user_id,
                     started_at,
                     message_at,
+                    offset_ms,
                 ),
             )
     except sqlite3.IntegrityError as fehler:
@@ -268,6 +288,7 @@ def enqueue(
         discord_user_id=discord_user_id,
         started_at=started_at,
         message_at=message_at,
+        offset_ms=offset_ms,
     )
 
 
@@ -290,7 +311,7 @@ def _mit_transkript(scope: db.Scope, row: sqlite3.Row) -> Recording:
 # Lauf ersetzt die Transkript-Zeile im Ganzen, ihre Id wäre also nicht haltbar.
 AUSWAHL = (
     "SELECT r.id, r.session_id, r.filename, r.source, r.uploaded_at, r.status, r.detail, "
-    "r.deleted_at, r.discord_user_id, r.started_at, r.message_at, "
+    "r.deleted_at, r.discord_user_id, r.started_at, r.message_at, r.offset_ms, "
     "t.id AS transcript_id FROM recording r "
     "LEFT JOIN transcript t ON t.runde_id = r.runde_id AND t.session_id = r.session_id "
     "AND t.source = r.source WHERE r.runde_id = ? "
@@ -528,6 +549,10 @@ def _verschriftet(aufnahme: Recording) -> bool:
     return aufnahme.transcript_id is not None or aufnahme.status == FERTIG
 
 
+def _was(anzahl: int) -> str:
+    return "eine Aufnahme" if anzahl == 1 else f"{anzahl} Aufnahmen"
+
+
 def sweep(config, runde: Runde, *, tage: int = RETENTION_TAGE) -> tuple[str, ...]:
     """Setzt die zugesagte Frist durch: Audio weg, Zeile bleibt.
 
@@ -540,17 +565,25 @@ def sweep(config, runde: Runde, *, tage: int = RETENTION_TAGE) -> tuple[str, ...
     gesprochener Abend, von der es keinen Text gibt und nie mehr einen geben wird. Also
     eine eigene Meldung und ein ehrlicher Stand an der Zeile statt eines »wartet«, auf das
     niemand mehr wartet (#181).
+
+    Gelöscht wird Datei für Datei, **gemeldet** wird je Sitzung: seit dem Schnitt in
+    Häppchen (#217) hat ein Abend keine fünf Zeilen mehr, sondern vierzig, und vierzigmal
+    derselbe Satz ist keine Meldung mehr, sondern eine Wand.
     """
-    meldungen = []
+    geraeumt: dict[tuple[int, bool], int] = {}
     for aufnahme in expired(runde, tage=tage):
         (config.recordings_dir / aufnahme.filename).unlink(missing_ok=True)
-        if _verschriftet(aufnahme):
-            _als_geloescht_vermerken(runde, aufnahme.id)
-            meldung = NACH_FRIST.format(source=aufnahme.source, tage=tage)
+        verschriftet = _verschriftet(aufnahme)
+        _als_geloescht_vermerken(runde, aufnahme.id, status=None if verschriftet else GESCHEITERT)
+        schluessel = (aufnahme.session_id, verschriftet)
+        geraeumt[schluessel] = geraeumt.get(schluessel, 0) + 1
+    meldungen = []
+    for (session_id, verschriftet), anzahl in geraeumt.items():
+        vorlage = NACH_FRIST if verschriftet else OHNE_TEXT
+        meldung = vorlage.format(sitzung=session_id, was=_was(anzahl), tage=tage)
+        if verschriftet:
             logger.info("%s", meldung)
         else:
-            _als_geloescht_vermerken(runde, aufnahme.id, status=GESCHEITERT)
-            meldung = OHNE_TEXT.format(source=aufnahme.source, tage=tage)
             logger.warning("%s", meldung)
         meldungen.append(meldung)
     return tuple(meldungen)

@@ -416,7 +416,7 @@ def test_die_meldung_sagt_warum_die_aufnahme_weg_ist(config, sitzung_id):
     (meldung,) = recordings.sweep(config, runde(config))
 
     assert meldung == recordings.NACH_FRIST.format(
-        source=aufnahme.source, tage=recordings.RETENTION_TAGE
+        sitzung=sitzung_id, was="eine Aufnahme", tage=recordings.RETENTION_TAGE
     )
     assert recordings.get(runde(config), aufnahme.id).deleted_at
     assert recordings.pending(runde(config)) == ()
@@ -435,7 +435,7 @@ def test_eine_nie_verschriftete_spur_verschwindet_nicht_stillschweigend(config, 
     (meldung,) = recordings.sweep(config, runde(config))
 
     assert meldung == recordings.OHNE_TEXT.format(
-        source=aufnahme.source, tage=recordings.RETENTION_TAGE
+        sitzung=sitzung_id, was="eine Aufnahme", tage=recordings.RETENTION_TAGE
     )
     nachher = recordings.get(runde(config), aufnahme.id)
     assert nachher.status == recordings.GESCHEITERT
@@ -460,7 +460,7 @@ def test_eine_absichtlich_uebersprungene_spur_ist_kein_solcher_verlust(config, s
     (meldung,) = recordings.sweep(config, runde(config))
 
     assert meldung == recordings.NACH_FRIST.format(
-        source=aufnahme.source, tage=recordings.RETENTION_TAGE
+        sitzung=sitzung_id, was="eine Aufnahme", tage=recordings.RETENTION_TAGE
     )
     assert recordings.get(runde(config), aufnahme.id).status == recordings.FERTIG
 

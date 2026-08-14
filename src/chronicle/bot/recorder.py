@@ -6,12 +6,27 @@ protokolliert ist — ein Aufrufer, der die Reihenfolge dreht, bekommt einen Feh
 keine Datei.
 
 Discord trennt die Audiodaten ohnehin je Client; damit entfällt die Sprechertrennung
-nicht bloß billiger, sondern exakt. Geschrieben wird **eine Datei je Sprecher für die
-ganze Sitzung**, im Strom auf die Platte. Kein Puffer im Speicher: vier Stunden Runde
-sind je Spur ein knappes Gigabyte, und in kleine Schnipsel geschnitten verlöre die
-Erkennung genau den Kontext, von dem sie lebt.
+nicht bloß billiger, sondern exakt. Geschrieben wird im Strom auf die Platte, ohne Puffer
+im Speicher: vier Stunden Runde sind je Spur ein knappes Gigabyte.
 
-Die fertige Spur reiht sich in dieselbe Warteschlange ein wie ein Diktat-Upload — einen
+**Je Sprecher entsteht dabei eine Folge von Häppchen und nicht mehr eine Datei über den
+ganzen Abend** (#217). Jedes wird eingereiht, sobald es voll ist, also läuft die
+Verschriftung schon **während** der Sitzung; wenn `/chronik fertig` kommt, ist das meiste
+getan statt alles noch offen. Die Länge steht in ``HAEPPCHEN_MINUTEN`` und ist die
+Abwägung dazu: lang genug, dass die Erkennung den Kontext behält, von dem sie lebt, kurz
+genug, dass am Ende nur ein Häppchen je Sprecher übrig ist.
+
+**Jedes Häppchen bringt seinen Startversatz mit** (``offset_ms`` an der Warteschlangenzeile),
+und daran hängt die ganze Zusammenführung: ``transcript_segment.start_ms`` ist
+sitzungsabsolut, Millisekunde 0 jeder Spur liegt auf demselben Moment, und
+``merge.conversation`` verschränkt die Sprecher danach. Eine Datei fängt für sich wieder
+bei null an — ohne den Versatz stünde jedes Häppchen erneut am Anfang des Abends, die
+Verschränkung zerfiele und die Szenenzuordnung würde falsch, und zwar **still**. Der
+Versatz wird deshalb nicht geschätzt, sondern aus den geschriebenen Bytes gerechnet: py-cord
+füllt die Sprechpausen vor unserem ``write`` mit Stille auf, also *ist* die Byte-Position
+die Zeit.
+
+Ein fertiges Häppchen reiht sich in dieselbe Warteschlange ein wie ein Diktat-Upload — einen
 zweiten Verarbeitungsweg gibt es nicht. Der Empfangstest ist davon keine Ausnahme: er
 schneidet mit wie jeder andere Lauf, Ansage und Protokoll eingeschlossen, und **wirft**
 danach weg, statt einzureihen. Gelöscht wird eine Aufnahme nur auf ausdrückliches
@@ -62,7 +77,13 @@ GESTARTET = (
     "`/aufnahme hilfe` sagt den Rest."
 )
 NICHTS_GESPROCHEN = "Es hat niemand gesprochen — keine Spur abgelegt."
+
+# Eine Zeile je Sprecher und nicht je Häppchen: vier Stunden mit fünf Sprechern sind
+# vierzig Dateien, und vierzig Zeilen im Kanal sagen weniger als fünf.
 EINGEREIHT = "Spur »{spur}« → Sitzung {sitzung}, wartet auf den Stapel."
+EINGEREIHT_HAEPPCHEN = (
+    "Spur »{spur}« in {anzahl} Häppchen → Sitzung {sitzung}, wartet auf den Stapel."
+)
 
 # Eine Spur ohne Zeile in der Warteschlange ist für jeden Aufräumweg unsichtbar: sie wird
 # weder verschriftet noch nach der zugesagten Frist gelöscht. Deshalb wird gesagt, welche
@@ -149,8 +170,34 @@ PROBE_AUFGERAEUMT_REST = (
 )
 
 
+# Wie lang ein Häppchen wird — die eine Zahl, an der dieser Schnitt hängt (#217).
+#
+# Dreißig Minuten und nicht zehn. Geschnitten wird nach der **Zeit** und nicht an
+# Sprechpausen: py-cord füllt die Pausen vor unserem ``write`` mit Stille auf — genau das
+# hält die Spuren auf einer Zeitachse —, sie sind hier also gar nicht greifbar. Über die
+# Amplitude ginge es, das ist Bastelei und gehört nicht in den ersten Wurf. Jeder Schnitt
+# fällt damit blind, im schlechtesten Fall mitten in ein Wort; der Preis ist ein Wort je
+# Häppchen. Bei zehn Minuten wäre er dreimal so hoch für einen Gewinn, den es nicht gibt:
+# offen ist am Ende einer Sitzung immer nur **ein** Häppchen je Sprecher, und dreißig
+# Minuten Ton sind nach der Stille-Erkennung (#209) wenige Minuten Arbeit. Kürzer nimmt der
+# Erkennung außerdem den Kontext, von dem sie lebt.
+HAEPPCHEN_MINUTEN = 30
+
+# Ein Rahmen ist ``KANAELE * BREITE`` Bytes, davon ``RATE`` je Sekunde. Gerechnet wird in
+# Bytes und nicht nach der Wanduhr: py-cord füllt die Sprechpausen auf, die Byte-Position
+# **ist** damit die Position auf der Sitzungsuhr. Eine Wanduhr daneben wäre eine zweite,
+# geratene Zeitrechnung neben der vorhandenen — und aus ihr fiele jede Äußerung in die
+# falsche Szene.
+BYTES_JE_SEKUNDE = ansage.RATE * ansage.KANAELE * ansage.BREITE
+HAEPPCHEN_BYTES = HAEPPCHEN_MINUTEN * 60 * BYTES_JE_SEKUNDE
+
+
 def _now() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds")
+
+
+def _millisekunden(bytes_geschrieben: int) -> int:
+    return bytes_geschrieben * 1000 // BYTES_JE_SEKUNDE
 
 
 @dataclass(frozen=True)
@@ -205,17 +252,23 @@ class Stimme(Protocol):
 
 
 class _Spur:
-    """Ein Sprecher, eine Datei, im Strom geschrieben.
+    """Ein Häppchen einer Sprecherspur — eine Datei, im Strom geschrieben.
 
     ``writeframes`` schreibt den WAV-Kopf bei jedem Aufruf mit fort. Stirbt der Prozess
     mitten in der Sitzung, liegt trotzdem eine abspielbare Spur da statt eines Rumpfes.
+
+    ``offset_ms`` sagt, wo diese Datei auf der Sitzungsuhr **beginnt**; ``eingereiht`` hält
+    fest, dass sie schon in der Warteschlange steht, damit ein zweiter Anlauf sie
+    überspringt statt an der UNIQUE-Bedingung hängenzubleiben.
     """
 
-    def __init__(self, pfad: Path, sprecher: str) -> None:
+    def __init__(self, pfad: Path, sprecher: str, *, offset_ms: int = 0) -> None:
         self.pfad = pfad
         # Der Anzeigename, nicht der Dateiname: der Empfangstest sagt dem Aufrufer, von wem
         # etwas ankam, und ``sitzung3-20260811T2030-Mira`` beantwortet das schlechter.
         self.sprecher = sprecher
+        self.offset_ms = offset_ms
+        self.eingereiht = False
         self.bytes = 0
         self._datei = wave.open(str(pfad), "wb")
         self._datei.setnchannels(ansage.KANAELE)
@@ -257,7 +310,10 @@ class Aufnahme:
         self.kanal = kanal
         self.runde = runde
         self._config = config
+        # Das **offene** Häppchen je Sprecher; was voll ist, wandert nach ``_fertig`` und
+        # steht dann schon in der Warteschlange. Beides zusammen ist die Spur eines Abends.
         self._spuren: dict[str, _Spur] = {}
+        self._fertig: dict[str, list[_Spur]] = {}
         self._angesagt = False
         self.begonnen_at: str | None = None
         # Nur gezählt, nicht gedeutet: wie oft überhaupt etwas zu schreiben ankam. Das ist
@@ -314,17 +370,76 @@ class Aufnahme:
         """
         self.begonnen_at = _now()
 
+    def _anlegen(self, sprecher: consent.Member, *, offset_ms: int) -> _Spur:
+        self._config.recordings_dir.mkdir(parents=True, exist_ok=True)
+        ziel = recordings.target_path(
+            self._config.recordings_dir, self.session_id, _spurname(sprecher)
+        )
+        return _Spur(ziel, sprecher.name, offset_ms=offset_ms)
+
+    def _haeppchen(self, user_id: str) -> tuple[_Spur, ...]:
+        """Alle Dateien dieses Sprechers in der Reihenfolge ihrer Zeitachse."""
+        offen = self._spuren.get(user_id)
+        return (*self._fertig.get(user_id, ()), *(() if offen is None else (offen,)))
+
+    def _alle_haeppchen(self) -> tuple[_Spur, ...]:
+        return tuple(spur for user_id in self._spuren for spur in self._haeppchen(user_id))
+
+    def _einreihen(self, gemeint: Runde, user_id: str, spur: _Spur) -> None:
+        """Ein geschlossenes Häppchen in die Warteschlange — mit seinem Platz auf der Uhr.
+
+        ``started_at`` ist bei allen Häppchen einer Aufnahme dasselbe: der Nullpunkt der
+        Sitzungsuhr. Wo die einzelne Datei auf ihr liegt, sagt ``offset_ms`` und sonst
+        nichts — ein zweiter Nullpunkt je Häppchen wäre genau die geratene Zeitrechnung,
+        gegen die die Zusammenführung gebaut ist.
+        """
+        if spur.eingereiht:
+            return
+        try:
+            recordings.enqueue(
+                gemeint,
+                self.session_id,
+                spur.pfad.name,
+                discord_user_id=user_id,
+                started_at=self.begonnen_at,
+                offset_ms=spur.offset_ms,
+            )
+        except recordings.BereitsEingereiht:
+            pass
+        spur.eingereiht = True
+
+    def _weiterschneiden(self, sprecher: consent.Member, spur: _Spur) -> None:
+        """Das volle Häppchen schließen und einreihen, das nächste öffnen.
+
+        Der Versatz des nächsten wird aus den Bytes **aller** vorigen gerechnet und nicht
+        von Häppchen zu Häppchen aufaddiert: so bleibt es bei dem Rundungsfehler der einen
+        Ganzzahldivision, statt dass er mit jedem Schnitt wächst.
+
+        Was hier scheitert, hält den Mitschnitt nicht auf — das läuft im Empfangsfaden, und
+        ein Fehler darin nähme den Rest des Abends mit. Das Häppchen bleibt gemerkt und
+        ``beenden`` holt es nach; dasselbe gilt, wenn die Runde inzwischen fort ist.
+        """
+        fertig = self._fertig.setdefault(sprecher.id, [])
+        fertig.append(spur)
+        try:
+            spur.schliessen()
+            self._einreihen(self._gemeint(), sprecher.id, spur)
+        except Exception:
+            # Ohne den Dateinamen: er trägt den Anzeigenamen des Sprechers (#194).
+            logger.exception("Ein Häppchen ließ sich nicht abschließen oder einreihen")
+        self._spuren[sprecher.id] = self._anlegen(
+            sprecher, offset_ms=_millisekunden(sum(teil.bytes for teil in fertig))
+        )
+        logger.info(
+            "Sitzung %s: %s. Häppchen einer Spur abgeschlossen", self.session_id, len(fertig)
+        )
+
     def schreiben(self, sprecher: consent.Member, pcm: bytes) -> None:
         if not self._angesagt:
             raise NichtAngesagt(NICHT_ANGESAGT)
         spur = self._spuren.get(sprecher.id)
         if spur is None:
-            self._config.recordings_dir.mkdir(parents=True, exist_ok=True)
-            ziel = recordings.target_path(
-                self._config.recordings_dir, self.session_id, _spurname(sprecher)
-            )
-            spur = _Spur(ziel, sprecher.name)
-            self._spuren[sprecher.id] = spur
+            spur = self._spuren[sprecher.id] = self._anlegen(sprecher, offset_ms=0)
             # Gezählt statt benannt: der Anzeigename ist es, der hier spricht, und der
             # Dateiname trägt ihn im Stamm (#194). Was der Betreiber an dieser Zeile
             # braucht, ist, dass eine weitere Spur aufgemacht wurde und zu welchem Abend —
@@ -332,6 +447,8 @@ class Aufnahme:
             logger.info("Sitzung %s: %s. Spur begonnen", self.session_id, len(self._spuren))
         spur.schreiben(pcm)
         self.pakete += 1
+        if spur.bytes >= HAEPPCHEN_BYTES:
+            self._weiterschneiden(sprecher, spur)
 
     def beenden(self) -> tuple[str, ...]:
         """Schließt die Spuren und reiht sie ein; leere Spuren bleiben nicht liegen.
@@ -361,62 +478,85 @@ class Aufnahme:
         steht sie in der Warteschlange und ist für ``recordings.sweep`` sichtbar — eine
         Spur, deren Verschriftung scheitern mag, ist besser als eine, die niemand findet
         und niemand löscht.
+
+        Zu tun ist hier seit dem Schnitt in Häppchen (#217) meist wenig: die vollen
+        Häppchen stehen längst in der Warteschlange, offen ist je Sprecher genau eines.
+        Gemeldet wird trotzdem **je Sprecher** und nicht je Datei — vierzig gleichlautende
+        Zeilen im Kanal sagen weniger als fünf.
         """
         gemeint = lebenszyklus.dieselbe(self.runde)
         if gemeint is None:
-            geblieben = 0
-            for spur in self._spuren.values():
-                try:
-                    spur.schliessen()
-                except Exception:
-                    logger.exception("Eine Spur ließ sich nicht abschließen")
-                # Auch die nicht geschlossene Spur wird gelöscht: ``close`` gibt die Datei
-                # im ``finally`` frei, und hier ist Löschen das Ziel, nicht Einreihen.
-                if not _loeschen(spur):
-                    geblieben += 1
-            logger.warning(
-                "Aufnahme ohne Runde beendet: %s Spuren gelöscht, %s liegengeblieben",
-                len(self._spuren) - geblieben,
-                geblieben,
-            )
-            if geblieben:
-                raise AufnahmeFehler(RUNDE_FORT_REST)
-            self._spuren.clear()
-            self._angesagt = False
-            return (RUNDE_FORT,)
+            return self._ohne_runde()
         meldungen = []
         liegengeblieben = []
-        for user_id, spur in self._spuren.items():
-            try:
-                spur.schliessen()
-                if not spur.bytes:
-                    # Ein Fehlschlag wird hier nicht der Runde gemeldet: eine leere Spur
-                    # wird nie eingereiht, ein zweiter Anlauf scheiterte identisch weiter —
-                    # die Zusage aus NICHT_EINGEREIHT wäre eine falsche.
-                    _loeschen(spur)
-                    continue
+        for user_id, offen in self._spuren.items():
+            haeppchen = self._haeppchen(user_id)
+            gestolpert = False
+            for spur in haeppchen:
                 try:
-                    recordings.enqueue(
-                        gemeint,
-                        self.session_id,
-                        spur.pfad.name,
-                        discord_user_id=user_id,
-                        started_at=self.begonnen_at,
+                    if spur is offen:
+                        spur.schliessen()
+                    if not spur.bytes:
+                        # Ein Fehlschlag wird hier nicht der Runde gemeldet: eine leere Spur
+                        # wird nie eingereiht, ein zweiter Anlauf scheiterte identisch
+                        # weiter — die Zusage aus NICHT_EINGEREIHT wäre eine falsche.
+                        _loeschen(spur)
+                        continue
+                    self._einreihen(gemeint, user_id, spur)
+                except Exception:
+                    # Ohne den Dateinamen: er trägt den Anzeigenamen des Sprechers, und für
+                    # den Grund braucht ihn der Traceback nicht. Wen es traf, sagt die
+                    # Meldung an die Runde.
+                    logger.exception("Eine Spur ließ sich nicht abschließen oder einreihen")
+                    gestolpert = True
+            if gestolpert:
+                liegengeblieben.append(offen.sprecher)
+                continue
+            eingereiht = sum(1 for spur in haeppchen if spur.eingereiht)
+            if eingereiht == 1:
+                meldungen.append(EINGEREIHT.format(spur=offen.sprecher, sitzung=self.session_id))
+            elif eingereiht:
+                meldungen.append(
+                    EINGEREIHT_HAEPPCHEN.format(
+                        spur=offen.sprecher, anzahl=eingereiht, sitzung=self.session_id
                     )
-                except recordings.BereitsEingereiht:
-                    pass
-                meldungen.append(EINGEREIHT.format(spur=spur.pfad.stem, sitzung=self.session_id))
-            except Exception:
-                # Ohne den Dateinamen: er trägt den Anzeigenamen des Sprechers, und für den
-                # Grund braucht ihn der Traceback nicht. Welche Spur es traf, sagt die
-                # Meldung an die Runde.
-                logger.exception("Eine Spur ließ sich nicht abschließen oder einreihen")
-                liegengeblieben.append(spur.pfad.stem)
+                )
         if liegengeblieben:
             raise AufnahmeFehler(NICHT_EINGEREIHT.format(spuren=", ".join(liegengeblieben)))
         self._spuren.clear()
+        self._fertig.clear()
         self._angesagt = False
         return tuple(meldungen) or (NICHTS_GESPROCHEN,)
+
+    def _ohne_runde(self) -> tuple[str, ...]:
+        """Die Runde ist fort: alles schließen, alles löschen, nichts einreihen.
+
+        Auch die Häppchen, die während der Sitzung schon eingereiht wurden — ihre Zeilen
+        sind mit der Runde gefallen, und was bliebe, wäre eine Stunde fremder Stimmen, die
+        keine Frist mehr findet.
+        """
+        geblieben = 0
+        haeppchen = self._alle_haeppchen()
+        for spur in haeppchen:
+            try:
+                spur.schliessen()
+            except Exception:
+                logger.exception("Eine Spur ließ sich nicht abschließen")
+            # Auch die nicht geschlossene Spur wird gelöscht: ``close`` gibt die Datei
+            # im ``finally`` frei, und hier ist Löschen das Ziel, nicht Einreihen.
+            if not _loeschen(spur):
+                geblieben += 1
+        logger.warning(
+            "Aufnahme ohne Runde beendet: %s Dateien gelöscht, %s liegengeblieben",
+            len(haeppchen) - geblieben,
+            geblieben,
+        )
+        if geblieben:
+            raise AufnahmeFehler(RUNDE_FORT_REST)
+        self._spuren.clear()
+        self._fertig.clear()
+        self._angesagt = False
+        return (RUNDE_FORT,)
 
     def verwerfen(self) -> tuple[Spurbericht, ...]:
         """Schließt die Spuren, sagt was ankam — und löscht sie. Eingereiht wird nichts.
@@ -428,9 +568,13 @@ class Aufnahme:
 
         Wie beim Beenden steht jede Spur für sich, und was liegen bleibt, wird gesagt: eine
         Probespur ohne Zeile in der Warteschlange ist für jeden Aufräumweg unsichtbar.
+
+        Häppchen entstehen hier keine: der Empfangstest lauscht ``PROBE_DAUER`` Sekunden,
+        ``HAEPPCHEN_MINUTEN`` liegt um Größenordnungen darüber. Gelöscht wird trotzdem, was
+        da ist, und nicht nur das zuletzt Geöffnete.
         """
         berichte = []
-        for spur in self._spuren.values():
+        for spur in self._alle_haeppchen():
             try:
                 spur.schliessen()
             except Exception:
@@ -442,6 +586,7 @@ class Aufnahme:
             )
         logger.info("Empfangstest beendet: %s Spuren verworfen", len(berichte))
         self._spuren.clear()
+        self._fertig.clear()
         self._angesagt = False
         return tuple(berichte)
 

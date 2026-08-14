@@ -1,10 +1,15 @@
 """Der Stapellauf: Spur lesen, Namen vorspannen, Segmente ablegen.
 
-Ein Lauf ist eine Spur. Er läuft eine gute Stunde je Sitzungsstunde und darf jederzeit
-abgebrochen und **von vorn** wiederholt werden: das Transkript einer Spur wird im
-Ganzen ersetzt, ein zweiter Lauf hinterlässt also keine Dubletten. Mitten in einer Spur
-weiterzumachen ginge nur mit einem zweiten, geschnittenen Modelllauf — und genau davon
-lebt die Erkennung nicht.
+Ein Lauf ist eine Datei. Er darf jederzeit abgebrochen und **von vorn** wiederholt werden:
+das Transkript einer Quelle wird im Ganzen ersetzt, ein zweiter Lauf hinterlässt also keine
+Dubletten. Mitten in einer Datei weiterzumachen ginge nur mit einem zweiten, geschnittenen
+Modelllauf — und genau davon lebt die Erkennung nicht.
+
+Eine Sprecherspur sind seit #217 mehrere Dateien: der Mitschnitt wird in Häppchen
+geschnitten, damit diese Stufe schon **während** der Sitzung arbeitet statt erst danach.
+Für den Lauf ändert das nichts — jede Datei ist eine Quelle wie zuvor —, außer an einer
+Stelle: ``recording.offset_ms`` sagt, wo die Datei auf der Sitzungsuhr beginnt, und
+``segment_rows`` schlägt ihn auf. Was gespeichert wird, bleibt damit sitzungsabsolut.
 
 Gemeldet wird, wo im Band der Lauf steht, nicht wann er fertig ist. Eine Restzeit wäre
 geraten, und geraten wird hier nichts.
@@ -83,6 +88,21 @@ class Transcript:
     uebersprungen: bool = False
 
     @property
+    def stumm(self) -> bool:
+        """Der Lauf fand keine einzige Äußerung — und hat damit nichts zu melden.
+
+        Seit der Mitschnitt in Häppchen läuft (#217) ist das der Normalfall: wer eine halbe
+        Stunde zuhört, hinterlässt ein Häppchen ohne ein Wort darin. Erfundene Sätze fängt
+        die Stille-Erkennung (#209) davor ab; bliebe die Meldung, läse die Runde am Ende
+        einer Sitzung zwanzigmal denselben Satz über nichts. Der Stand steht weiter an der
+        Zeile — er ist gesucht auffindbar, drängt sich aber niemandem auf.
+
+        Nicht dasselbe wie ``uebersprungen``: das ist der Fall, in dem gar nicht erst
+        gerechnet wurde, und **der** gehört gesagt.
+        """
+        return not self.uebersprungen and not self.segment_count
+
+    @property
     def message(self) -> str:
         if self.uebersprungen:
             return UEBERSPRUNGEN.format(source=self.source, sekunden=f"{self.audio_seconds:.2f}")
@@ -143,19 +163,29 @@ def names(scope: db.Scope, session_id: int) -> tuple[str, ...]:
     return tuple(zeile["name"] for zeile in (*gesprochen, *bekannt))
 
 
-def segment_rows(segments: Iterable[Segment]) -> tuple[tuple[int, int, str], ...]:
+def segment_rows(
+    segments: Iterable[Segment], *, offset_ms: int = 0
+) -> tuple[tuple[int, int, str], ...]:
     """Sekunden werden Millisekunden; leere Segmente fallen weg.
 
     Ein Ende vor dem Anfang kommt aus dem Modell und nicht aus der Wirklichkeit — es
     wird auf den Anfang gezogen, damit die Zusammenführung später eine Zeitachse hat.
+
+    ``offset_ms`` ist der Platz der **Datei** auf der Sitzungsuhr. Der Erkenner zählt ab
+    dem Anfang dessen, was er bekommen hat; ein Häppchen aus der Mitte eines Abends (#217)
+    fängt für ihn deshalb wieder bei null an. Hier — und nur hier — wird das gerade
+    gezogen: was in ``transcript_segment`` landet, ist sitzungsabsolut, so wie
+    ``chronicle.transcribe.merge`` es voraussetzt. Ohne diesen Zuschlag zerfiele die
+    Verschränkung der Sprecher und jede Äußerung fiele in die falsche Szene, und zwar
+    still.
     """
     zeilen = []
     for teil in segments:
         text = teil.text.strip()
         if not text:
             continue
-        beginn = max(0, round(teil.start * 1000))
-        zeilen.append((beginn, max(beginn, round(teil.end * 1000)), text))
+        beginn = offset_ms + max(0, round(teil.start * 1000))
+        zeilen.append((beginn, max(beginn, offset_ms + round(teil.end * 1000)), text))
     return tuple(zeilen)
 
 
@@ -224,6 +254,7 @@ def transcribe_session(
     source: str | None = None,
     job_id: int | None = None,
     delete_audio: bool = False,
+    offset_ms: int = 0,
 ) -> Transcript | None:
     db.init(config.database_path)
     scope = db.scoped(runde)
@@ -255,7 +286,8 @@ def transcribe_session(
 
         logger.info("%s: Spur beginnt, %s Namen vorgespannt", marke, len(eigennamen))
         segmente = segment_rows(
-            _mit_fortschritt(erkenner.transcribe(audio_path, vocabulary=vorspann), marke)
+            _mit_fortschritt(erkenner.transcribe(audio_path, vocabulary=vorspann), marke),
+            offset_ms=offset_ms,
         )
         store(scope, session_id, spur, segmente, _now())
     finally:
@@ -306,10 +338,14 @@ def run_queue(
         erkenner = model if model is not None else model_from_config(config)
         for aufnahme in wartend:
             with recordings.in_arbeit(runde, aufnahme.id):
-                meldung, gelungen = _eine_spur(config, runde, aufnahme, erkenner, delete_audio)
+                meldung, gelungen, stumm = _eine_spur(
+                    config, runde, aufnahme, erkenner, delete_audio
+                )
                 stand = recordings.FERTIG if gelungen else recordings.GESCHEITERT
                 recordings.mark(runde, aufnahme.id, stand, meldung)
-            meldungen.append(meldung)
+            # Der Stand steht an der Zeile, gemeldet wird nur, was etwas ergab.
+            if not stumm:
+                meldungen.append(meldung)
     meldungen.extend(recordings.sweep(config, runde))
     return tuple(meldungen)
 
@@ -320,10 +356,11 @@ def _eine_spur(
     aufnahme: recordings.Recording,
     erkenner: SpeechModel,
     delete_audio: bool,
-) -> tuple[str, bool]:
+) -> tuple[str, bool, bool]:
+    """Meldung, ob es gelang, und ob der Lauf stumm blieb — Letzteres bleibt ungesagt."""
     pfad = recording_path(config, aufnahme.filename)
     if not pfad.is_file():
-        return f"Spur »{aufnahme.source}«: {pfad} liegt nicht mehr da.", False
+        return f"Spur »{aufnahme.source}«: {pfad} liegt nicht mehr da.", False, False
     try:
         transkript = transcribe_session(
             config,
@@ -334,8 +371,9 @@ def _eine_spur(
             source=aufnahme.source,
             job_id=aufnahme.id,
             delete_audio=delete_audio,
+            offset_ms=aufnahme.offset_ms,
         )
-        return transkript.message, True
+        return transkript.message, True, transkript.stumm
     # Eine kaputte Spur — abgebrochene Aufnahme, umbenannte Textdatei — darf die übrigen
     # Jobs der Nacht nicht mitnehmen.
     except Exception as fehler:  # noqa: BLE001
@@ -344,4 +382,4 @@ def _eine_spur(
         # ganze Text geht trotzdem nicht verloren — er steht in der Meldung an die Runde
         # und im Stand der Aufnahme, wo er die Gruppe angeht und nicht den Betreiber.
         logger.warning("%s: %s", kennung(aufnahme.session_id, aufnahme.id), type(fehler).__name__)
-        return f"Spur »{aufnahme.source}«: {fehler}", False
+        return f"Spur »{aufnahme.source}«: {fehler}", False, False
