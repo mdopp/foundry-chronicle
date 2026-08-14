@@ -23,7 +23,7 @@ import types
 import wave
 from array import array
 from dataclasses import replace
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -64,6 +64,8 @@ from chronicle.config import DEFAULT_TTS_URL, Config
 from chronicle.discord import grenzen
 from chronicle.foundry import store as foundry_store
 from chronicle.foundry.model import Player, WorldSnapshot
+from chronicle.transcribe import merge, service
+from chronicle.transcribe.client import Segment
 
 TOKEN = "aufnahme-bot-token-nur-fuer-den-test"
 
@@ -993,6 +995,351 @@ def test_eine_aufnahme_schreibt_nicht_in_die_runde_von_nachher(
     assert recordings.pending(frisch) == ()
     assert consent.for_session(frisch, sitzung_id) == ()
     assert list(konfiguration.recordings_dir.glob("**/Mira.wav")) == []
+
+
+# -- Der Schnitt in Häppchen (#217) ----------------------------------------------------
+#
+# Die harte Bedingung steht in ``test_die_verschraenkung_ist_mit_haeppchen_dieselbe``: die
+# Zeiten müssen dieselben sein wie ohne Schnitt. Alles andere hier hängt daran.
+
+# Ein Häppchen von einer Sekunde — die echten dreißig Minuten wären 345 MB Stille je Test.
+SEKUNDE_BYTES = recorder.BYTES_JE_SEKUNDE
+
+# Wie py-cord liefert: 20 ms je Paket. Ein Häppchen von einer Sekunde endet damit auf einer
+# Paketgrenze, so wie im Betrieb auch — geschnitten wird zwischen zwei Paketen, nie mitten
+# in eines.
+PAKET_RAHMEN = ansage.RATE // 50
+PAKETE_JE_SEKUNDE = 50
+
+
+def paket(wert: int) -> bytes:
+    """Zwanzig Millisekunden auf einem Pegel — ``0`` ist die Stille, die py-cord einfüllt."""
+    return array("h", [wert] * (PAKET_RAHMEN * ansage.KANAELE)).tobytes()
+
+
+class Inselerkenner:
+    """Ein Modell, das die Sprechinseln einer Datei liest — **relativ zu ihr**.
+
+    Genau das tut der echte Erkenner: er weiß nichts von der Sitzung, sondern zählt ab dem
+    Anfang dessen, was ihm gereicht wurde. Ein Häppchen aus der Mitte des Abends fängt für
+    ihn wieder bei null an — und daran hängt der ganze Beweis.
+
+    Der Text einer Insel kommt aus ihrem **Pegel** und nicht aus ihrer Lage: nur so ist er
+    in beiden Läufen derselbe und die Gegenüberstellung überhaupt eine.
+    """
+
+    name = "inselerkenner"
+
+    def transcribe(self, audio_path, *, vocabulary=""):
+        with wave.open(str(audio_path), "rb") as datei:
+            rate = datei.getframerate()
+            werte = array("h", datei.readframes(datei.getnframes()))[:: ansage.KANAELE]
+        if not len(werte):
+            return
+        anfang = 0
+        for stelle in range(1, len(werte) + 1):
+            if stelle < len(werte) and werte[stelle] == werte[anfang]:
+                continue
+            if werte[anfang]:
+                yield Segment(start=anfang / rate, end=stelle / rate, text=f"Insel {werte[anfang]}")
+            anfang = stelle
+
+
+# Drei Sekunden Abend, drei Sprechinseln, und keine über einer Häppchengrenze: die Zeitachse
+# wird hier geprüft, nicht der Preis eines Schnitts mitten im Wort. Der steht daneben in
+# ``test_ein_schnitt_mitten_im_wort_zerreisst_die_zeitachse_nicht``.
+ABEND_PAKETE = 150
+INSELN = {
+    MIRA.id: {**dict.fromkeys(range(25, 40), 1000), **dict.fromkeys(range(125, 140), 3000)},
+    BROK.id: dict.fromkeys(range(60, 80), 2000),
+}
+
+
+def abend(konfiguration, sitzung_id, *, inseln=None) -> tuple:
+    """Einen Abend mitschneiden, verschriften und die Unterhaltung zurückgeben."""
+    unsere = unsere_runde(konfiguration)
+    aufnahme = asyncio.run(recorder.starten(konfiguration, FakeStimme(), unsere))
+    wer_wann = INSELN if inseln is None else inseln
+    for nummer in range(ABEND_PAKETE):
+        for wer in (MIRA, BROK):
+            aufnahme.schreiben(wer, paket(wer_wann[wer.id].get(nummer, 0)))
+    aufnahme.beenden()
+    service.run_queue(konfiguration, unsere, model=Inselerkenner())
+    return merge.conversation(unsere, sitzung_id, mit_uhr=True)
+
+
+@pytest.fixture
+def haeppchen(monkeypatch):
+    """Die Häppchenlänge für einen Test — danach steht wieder die echte da."""
+
+    def setzen(bytes_je_haeppchen: int) -> int:
+        monkeypatch.setattr(recorder, "HAEPPCHEN_BYTES", bytes_je_haeppchen)
+        return bytes_je_haeppchen
+
+    return setzen
+
+
+def test_eine_lange_spur_wird_in_haeppchen_geschnitten(
+    konfiguration, sitzung_id, ohne_espeak, haeppchen
+):
+    """Drei Sekunden Abend, Häppchen von einer Sekunde: drei Zeilen je Sprecher.
+
+    Die Gegenprobe steht darunter — mit der echten Länge bleibt es bei einer.
+    """
+    haeppchen(SEKUNDE_BYTES)
+
+    abend(konfiguration, sitzung_id)
+
+    spuren = recordings.for_session(unsere_runde(konfiguration), sitzung_id)
+    je_sprecher = {}
+    for spur in spuren:
+        je_sprecher.setdefault(spur.discord_user_id, []).append(spur.offset_ms)
+    assert je_sprecher == {MIRA.id: [0, 1000, 2000], BROK.id: [0, 1000, 2000]}
+    assert len({spur.filename for spur in spuren}) == 6
+
+
+def test_ohne_haeppchengrenze_bleibt_es_bei_einer_datei_je_sprecher(
+    konfiguration, sitzung_id, ohne_espeak
+):
+    """Die Gegenprobe: dieselben drei Sekunden, aber die echten dreißig Minuten Grenze."""
+    abend(konfiguration, sitzung_id)
+
+    spuren = recordings.for_session(unsere_runde(konfiguration), sitzung_id)
+    assert sorted(spur.offset_ms for spur in spuren) == [0, 0]
+
+
+def test_der_versatz_ist_gerechnet_und_nicht_nach_der_wanduhr_geraten(
+    konfiguration, sitzung_id, ohne_espeak, haeppchen
+):
+    """Bytes sind die Zeit: py-cord füllt die Pausen auf, also *ist* die Position die Uhr.
+
+    Geprüft an einer Grenze, die nicht auf einer runden Sekunde liegt — eine Wanduhr käme
+    hier auf einen anderen Wert, und der wäre still falsch.
+    """
+    krumm = haeppchen(SEKUNDE_BYTES // 2 + PAKET_RAHMEN * ansage.KANAELE * ansage.BREITE)
+
+    abend(konfiguration, sitzung_id)
+
+    versaetze = sorted(
+        spur.offset_ms
+        for spur in recordings.for_session(unsere_runde(konfiguration), sitzung_id)
+        if spur.discord_user_id == MIRA.id
+    )
+    schritt = recorder._millisekunden(krumm)
+    assert schritt == 520
+    assert versaetze == [0, schritt, 2 * schritt, 3 * schritt, 4 * schritt, 5 * schritt]
+
+
+def test_die_verschraenkung_ist_mit_haeppchen_dieselbe(tmp_path, ohne_espeak, haeppchen):
+    """**Die Bedingung, an der alles hängt.** Ausgeführt belegt, nicht der Doku geglaubt.
+
+    Zwei Sprecher, bekannte Sprechinseln, derselbe Abend zweimal: einmal in einem Stück,
+    einmal in drei Häppchen je Sprecher. Reihenfolge, Sprecher, Text **und die
+    Millisekunden** müssen dieselben sein. Sind sie es nicht, ist die Verschränkung
+    zerfallen und jede Äußerung fiele in die falsche Szene — still.
+    """
+
+    def lauf(name: str):
+        konfiguration = Config(
+            discord_bot_token=TOKEN,
+            data_dir=tmp_path / name / "daten",
+            recordings_dir=tmp_path / name / "aufnahmen",
+        )
+        sitzung_id = notes.create_session(unsere_runde(konfiguration), played_on="2026-08-06")
+        return abend(konfiguration, sitzung_id)
+
+    am_stueck = lauf("ganz")
+    haeppchen(SEKUNDE_BYTES)
+    zerteilt = lauf("haeppchen")
+
+    assert [(a.start_ms, a.end_ms, a.speaker, a.text) for a in am_stueck] == [
+        (500, 800, "Mira", "Insel 1000"),
+        (1200, 1600, "Brok", "Insel 2000"),
+        (2500, 2800, "Mira", "Insel 3000"),
+    ]
+    assert zerteilt == am_stueck
+
+
+def test_ein_schnitt_mitten_im_wort_zerreisst_die_zeitachse_nicht(
+    konfiguration, sitzung_id, ohne_espeak, haeppchen
+):
+    """Was ein blinder Schnitt kostet — und was er nicht kostet.
+
+    Die Insel liegt über der Häppchengrenze und wird deshalb zu **zwei** Äußerungen statt
+    einer; das ist der bezahlte Preis, ein Wort je Häppchen. Bezahlt wird er in Text und
+    nicht in Zeit: die beiden Stücke stoßen auf der Sitzungsuhr aneinander, ohne Lücke und
+    ohne Überlappung, und sie beginnen dort, wo die ungeteilte Insel begann.
+    """
+    haeppchen(SEKUNDE_BYTES)
+    ueber_die_grenze = {
+        MIRA.id: dict.fromkeys(range(45, 56), 1000),
+        BROK.id: {},
+    }
+
+    aussagen = abend(konfiguration, sitzung_id, inseln=ueber_die_grenze)
+
+    # ``_verschraenken`` fasst zwei Äußerungen desselben Sprechers zusammen; die Zeiten
+    # dahinter bleiben ablesbar an Anfang und Ende.
+    (eine,) = aussagen
+    assert (eine.start_ms, eine.end_ms) == (900, 1120)
+    assert eine.text == "Insel 1000 Insel 1000"
+
+
+def test_ein_haeppchen_steht_in_der_warteschlange_bevor_die_sitzung_endet(
+    konfiguration, sitzung_id, ohne_espeak, haeppchen
+):
+    """Der Ertrag des ganzen Umbaus: die Arbeit läuft **während** der Sitzung.
+
+    Stünde das volle Häppchen erst bei ``/aufnahme stop`` in der Warteschlange, hinge die
+    Verschriftung weiter vollständig hinter dem Abend — und dieser Schnitt brächte nichts.
+    """
+    haeppchen(SEKUNDE_BYTES)
+    aufnahme = asyncio.run(
+        recorder.starten(konfiguration, FakeStimme(), unsere_runde(konfiguration))
+    )
+
+    for _ in range(PAKETE_JE_SEKUNDE + 1):
+        aufnahme.schreiben(MIRA, paket(1000))
+
+    wartend = recordings.pending(unsere_runde(konfiguration))
+    assert [spur.offset_ms for spur in wartend] == [0]
+    assert (konfiguration.recordings_dir / wartend[0].filename).is_file()
+
+
+def test_am_ende_steht_eine_zeile_je_sprecher_und_nicht_je_haeppchen(
+    konfiguration, sitzung_id, ohne_espeak, haeppchen
+):
+    """Vierzig gleichlautende Zeilen im Kanal sagen weniger als fünf."""
+    haeppchen(SEKUNDE_BYTES)
+    aufnahme = asyncio.run(
+        recorder.starten(konfiguration, FakeStimme(), unsere_runde(konfiguration))
+    )
+    for _ in range(3 * PAKETE_JE_SEKUNDE):
+        for wer in (MIRA, BROK):
+            aufnahme.schreiben(wer, paket(1000))
+
+    meldungen = aufnahme.beenden()
+
+    assert len(meldungen) == 2
+    assert sorted(meldungen) == sorted(
+        recorder.EINGEREIHT_HAEPPCHEN.format(spur=name, anzahl=3, sitzung=sitzung_id)
+        for name in (MIRA.name, BROK.name)
+    )
+
+
+def test_ein_haeppchen_ohne_sprache_meldet_nichts_und_scheitert_nicht(
+    konfiguration, sitzung_id, ohne_espeak, haeppchen
+):
+    """Wer eine Weile schweigt, ist der Normalfall — und kein Ereignis.
+
+    Von sechs Häppchen tragen drei eine Äußerung. Gemeldet werden drei, gescheitert ist
+    keines, und in der Datenbank steht kein erfundener Satz.
+    """
+    haeppchen(SEKUNDE_BYTES)
+    unsere = unsere_runde(konfiguration)
+    aufnahme = asyncio.run(recorder.starten(konfiguration, FakeStimme(), unsere))
+    for nummer in range(ABEND_PAKETE):
+        for wer in (MIRA, BROK):
+            aufnahme.schreiben(wer, paket(INSELN[wer.id].get(nummer, 0)))
+    aufnahme.beenden()
+
+    meldungen = service.run_queue(konfiguration, unsere, model=Inselerkenner())
+
+    assert len(meldungen) == 3
+    spuren = recordings.for_session(unsere, sitzung_id)
+    assert len(spuren) == 6
+    assert {spur.status for spur in spuren} == {recordings.FERTIG}
+    assert [spur.text for spur in spuren if spur.text] != []
+    assert sum(1 for spur in spuren if not spur.text) == 3
+
+
+def test_die_frist_meldet_je_sitzung_und_nicht_je_haeppchen(
+    konfiguration, sitzung_id, ohne_espeak, haeppchen
+):
+    """Aus einer Spur werden viele — die Zusage gilt jeder Datei, die Meldung bleibt eine."""
+    haeppchen(SEKUNDE_BYTES)
+    abend(konfiguration, sitzung_id)
+    unsere = unsere_runde(konfiguration)
+    verbindung = db.connect(konfiguration.database_path)
+    try:
+        with verbindung:
+            verbindung.execute("UPDATE recording SET uploaded_at = '2020-01-01T00:00:00+00:00'")
+    finally:
+        verbindung.close()
+
+    meldungen = recordings.sweep(konfiguration, unsere)
+
+    assert meldungen == (
+        recordings.NACH_FRIST.format(
+            sitzung=sitzung_id, was="6 Aufnahmen", tage=recordings.RETENTION_TAGE
+        ),
+    )
+    assert list(konfiguration.recordings_dir.glob("sitzung*")) == []
+
+
+def test_das_loeschen_der_sitzung_nimmt_alle_haeppchen_und_nur_ihre(
+    konfiguration, sitzung_id, ohne_espeak, haeppchen
+):
+    """Der Glob aus #171 muss alle Häppchen finden — und keines der Nachbarsitzung.
+
+    ``sitzung1-*`` darf ``sitzung10-*`` nicht treffen; mit Häppchen sind es mehr Dateien,
+    die Grenze bleibt dieselbe.
+    """
+    haeppchen(SEKUNDE_BYTES)
+    unsere = unsere_runde(konfiguration)
+    abend(konfiguration, sitzung_id)
+    nachbar = konfiguration.recordings_dir / f"sitzung{sitzung_id}0-20260806T2030-Mira.wav"
+    nachbar.write_bytes(b"gehoert einem anderen Abend")
+    marke = notes.sitzungsmarke(notes.session(unsere, sitzung_id))
+
+    gefunden = notes.delete_session(konfiguration, unsere, marke)
+
+    assert gefunden.audio == 6
+    assert list(konfiguration.recordings_dir.glob(f"sitzung{sitzung_id}-*")) == []
+    assert nachbar.is_file()
+
+
+def test_ein_fremdes_haeppchen_wird_nicht_mit_zurueckgestellt(
+    konfiguration, sitzung_id, ohne_espeak, haeppchen
+):
+    """Besitzer und Herzschlag gelten je Datei — mit Häppchen sind es nur mehr Zeilen.
+
+    Das eine Häppchen gehört einem Nachbarprozess, der eben noch geatmet hat; das andere
+    einem, der es nicht mehr tut. Zurück kommt genau eines.
+    """
+    haeppchen(SEKUNDE_BYTES)
+    unsere = unsere_runde(konfiguration)
+    abend(konfiguration, sitzung_id)
+    spuren = [
+        spur
+        for spur in recordings.for_session(unsere, sitzung_id)
+        if spur.discord_user_id == MIRA.id
+    ]
+    lebt, verstummt = spuren[0], spuren[1]
+    verbindung = db.connect(konfiguration.database_path)
+    try:
+        with verbindung:
+            verbindung.execute(
+                "UPDATE recording SET status = ?, besitzer = 'nachbar', herzschlag = ? "
+                "WHERE id = ?",
+                (recordings.LAEUFT, datetime.now(UTC).isoformat(), lebt.id),
+            )
+            verbindung.execute(
+                "UPDATE recording SET status = ?, besitzer = 'toter-nachbar', herzschlag = ? "
+                "WHERE id = ?",
+                (
+                    recordings.LAEUFT,
+                    (datetime.now(UTC) - timedelta(hours=1)).isoformat(),
+                    verstummt.id,
+                ),
+            )
+    finally:
+        verbindung.close()
+
+    zurueck = recordings.zurueckstellen(unsere)
+
+    assert zurueck == (verstummt.source,)
+    assert recordings.get(unsere, lebt.id).status == recordings.LAEUFT
 
 
 def test_die_einwilligung_ueberlebt_das_loeschen_ihrer_sitzung(
@@ -2401,6 +2748,30 @@ def test_die_senke_schreibt_je_sprecher_eine_spur(konfiguration, sitzung_id, ohn
     }
     assert spuren == {"Mira.wav", "Brok.wav"}
     assert "wartet auf den Stapel" in ctx.antworten[0]
+
+
+def test_was_nach_dem_hinauswurf_ankommt_faellt_weg_und_nicht_in_ein_haeppchen(
+    konfiguration, sitzung_id, ohne_espeak, runde
+):
+    """**Die Einwilligung hängt am Rahmen, nicht am Lauf** — und auch nicht am Häppchen.
+
+    Zwischen dem Verschieben und dem Ereignis, das den Mitschnitt beendet, liefert py-cord
+    weiter. Was in dieser Lücke ankommt, wurde in einem Kanal gesprochen, für den niemand
+    gefragt wurde. ``SpurSenke.write`` wirft es weg, und der Schnitt in Häppchen (#217)
+    darf daran nichts ändern: der Schnitt liegt eine Ebene tiefer, hinter dieser Schranke.
+    """
+    bot = gateway.baue(konfiguration)
+    asyncio.run(befehl(bot, "start")(FakeCtx(runde.mira)))
+    senke = runde.kanal.verbindung.senke
+    senke.write(sprachdaten(stille(480)), runde.mira)
+
+    verschieben(runde)
+    senke.write(sprachdaten(stille(480)), runde.mira)
+    asyncio.run(befehl(bot, "stop")(FakeCtx(runde.mira)))
+
+    (spur,) = recordings.pending(unsere_runde(konfiguration))
+    with wave.open(str(konfiguration.recordings_dir / spur.filename), "rb") as datei:
+        assert datei.getnframes() == 480
 
 
 def test_stop_ohne_aufnahme_sagt_es(konfiguration, sitzung_id, ohne_espeak, runde):

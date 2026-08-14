@@ -25,7 +25,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:  # pragma: no cover - nur für die Typprüfung
     from chronicle.runde import Runde
 
-SCHEMA_VERSION = 27
+SCHEMA_VERSION = 28
 
 # Der Zeiger, den der Diktat-Lauf je Runde führt — ``chronicle.discord.service`` nennt ihn
 # ebenso. Er steht auch hier, weil die Wanderung ihn einmal verwerfen muss und die
@@ -118,6 +118,7 @@ NACHGETRAGEN = (
     ("recording", "herzschlag", "TEXT"),
     ("foundry_message", "aus_testwelt", "INTEGER NOT NULL DEFAULT 0"),
     ("session", "token", "TEXT"),
+    ("recording", "offset_ms", "INTEGER NOT NULL DEFAULT 0"),
 )
 
 # Woran erkannt wird, ob die Prüfbedingung von ``job`` die jüngste Art Lauf schon kennt.
