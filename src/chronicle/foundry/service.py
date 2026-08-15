@@ -13,10 +13,12 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import UTC, datetime
+from collections.abc import Mapping
+from dataclasses import replace
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from chronicle import db, lebenszyklus, settings, zugang
+from chronicle import db, lebenszyklus, notes, settings, zugang
 from chronicle.config import Config
 from chronicle.foundry import store, systems, testwelt
 from chronicle.foundry.client import FoundryClient, FoundryError
@@ -65,8 +67,20 @@ ANDERE_WELT = (
 )
 
 
+# Foundry stempelt eine Chat-Nachricht mit ``Date.now()``: Millisekunden seit der Epoche,
+# in UTC. Die Trennlinien der Szenen stehen als ISO-Zeichenkette derselben Zone in der
+# Datenbank. Ohne diese Umrechnung verglichen wir eine Zahl mit einem Text — und zwar
+# still, denn SQLite vergleicht beides klaglos und gibt nie den Treffer, den man meinte.
+EPOCHE = datetime(1970, 1, 1, tzinfo=UTC)
+
+
 def _now() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds")
+
+
+def _augenblick(timestamp: int) -> str:
+    """Foundrys Zeitstempel im Format der Szenen-Trennlinien — Sekunden, UTC."""
+    return (EPOCHE + timedelta(milliseconds=timestamp)).isoformat(timespec="seconds")
 
 
 def _open(config: Config, runde: Runde) -> db.Scope:
@@ -225,9 +239,12 @@ def beobachten(
     »darf dieses Konto das sehen«, und für die Chronik ist sie die richtige. Für den Thread
     ist sie die falsche: dort liest die **ganze Gruppe** mit. Was ihn erreicht, entscheidet
     deshalb ``fuer_die_gruppe`` enger — ein Geflüster an unser Konto und ein blinder Wurf
-    bleiben draußen, gleich wie hoch das Konto steht, mit dem wir angemeldet sind. Das
-    Archiv bleibt davon unberührt voll: eingeengt wird der Weg in den Thread, nicht der in
-    die Chronik.
+    bleiben draußen, gleich wie hoch das Konto steht, mit dem wir angemeldet sind.
+
+    Voll bleibt dabei allein das **Archiv** (``foundry_message``). Die frühere Fassung
+    sagte, eingeengt sei nur der Weg in den Thread und nicht der in die Chronik — das war
+    ungenau (#219): die Chronik liest ``scene_foundry_message``, und dort steht nur, was
+    diesen engeren Filter passiert hat. Hier im Strom wie beim Nachtrag des Abschlusses.
 
     Der Fehlschlag wird **nicht** als Abgleichsfehler vermerkt: der Strom sieht zu, er
     führt den Stand nicht. Wer den letzten Abgleich beurteilen will, liest den des
@@ -277,12 +294,54 @@ def beobachten(
     return Ereignisse(neu=tuple(neu))
 
 
+def _nachtragen(runde: Runde, session_id: int, raw: Mapping, schnappschuss: WorldSnapshot) -> int:
+    """Die Zahlen dieses Abends nachträglich an ihre Szenen hängen (#219).
+
+    Bis hierher war der Ereignisstrom (#93/#97) der **einzige** Schreiber von
+    ``scene_foundry_message`` — und nur was dort steht, wird in der Chronik zur Tatsache.
+    Wer beim Sitzungsstart kein Passwort hinterlegte, spielte damit einen Abend, an dessen
+    Ende der Abgleich zwar das ganze Chat-Log holte, die Chronik aber keine einzige Zahl
+    trug. #93 sagt ausdrücklich zu, dass man beim Start weglassen und beim Abschluss neu
+    gefragt werden darf; für die Aufnahme stimmte das, für die Zahlen nicht.
+
+    Drei Dinge halten den Nachtrag auf der sicheren Seite:
+
+    * **Dieselbe engere Sicht wie im Strom** — ``fuer_die_gruppe`` und nicht
+      ``message_visible``. Die zweite fragt, ob *dieses Konto* etwas sehen darf, und ist
+      fürs Archiv die richtige; mit einem GM-Zugang (#78) brächte sie hier durch die
+      Hintertür ein, was der Strom draußen hält: geflüsterte und blinde Würfe.
+    * **Nichts doppelt.** Lief der Strom, hängen die Würfe schon. Sie ein zweites Mal zu
+      hängen hieße, dieselbe Zahl in zwei Szenen zu schreiben — ``INSERT OR IGNORE`` fängt
+      das nicht, denn der Schlüssel ist Szene *und* Nachricht.
+    * **Keine Auffanglinie** (``notes.scene_of_moment``): das Chat-Log trägt die ganze
+      Kampagne, und ein Wurf, der in keine Szene dieser Sitzung fällt, wird nicht
+      untergebracht, sondern gar nicht.
+
+    Der Rohabzug wird gebraucht, weil ``fuer_die_gruppe`` an ihm hängt und nicht am
+    Gespeicherten: was geflüstert war, steht im Archiv ohne diesen Vermerk.
+    """
+    fuer_alle = fuer_die_gruppe(raw)
+    schon = notes.verknuepfte_foundry_ereignisse(runde)
+    getan = 0
+    for nachricht in schnappschuss.messages:
+        if nachricht.id in schon or nachricht.id not in fuer_alle:
+            continue
+        if not systems.lohnt(nachricht):
+            continue
+        szene = notes.scene_of_moment(runde, session_id, _augenblick(nachricht.timestamp))
+        if szene is not None and notes.link_foundry_message(runde, szene, nachricht.id):
+            getan += 1
+    logger.info("Nachtrag: %d Foundry-Ereignisse einer Sitzung zugeordnet", getan)
+    return getan
+
+
 def sync(
     config: Config,
     runde: Runde,
     *,
     passwort: str | None = None,
     umhaengen: bool = False,
+    session_id: int | None = None,
     client: FoundryClient | None = None,
 ) -> SyncState:
     """Ein Abgleich. Das Passwort ist flüchtig, die Welt-Kennung wird geprüft.
@@ -293,6 +352,10 @@ def sync(
 
     ``umhaengen`` bindet die Runde an die Welt, die dieser Server gerade zeigt. Das ist der
     ausdrückliche Weg für eine Runde, die wirklich in einer neuen Welt weitergeht.
+
+    ``session_id`` hängt die geholten Würfe zusätzlich an die Szenen dieser Sitzung
+    (``_nachtragen``). Der Abschluss gibt sie mit, der Abgleich für sich nicht: ein
+    Abgleich hat keine Sitzung, und die Zuordnung ist keine Nebenwirkung des Holens.
     """
     zeitpunkt = _now()
     scope = _open(config, runde)
@@ -326,14 +389,18 @@ def sync(
                 logger.warning("Foundry zeigt eine andere Welt: %s", gefunden.id)
                 store.record_failure(scope, grund, zeitpunkt)
                 return _state(store.load(scope), grund, zeitpunkt)
-            store.save(scope, project(raw, user_id, fetched_at=zeitpunkt))
+            schnappschuss = project(raw, user_id, fetched_at=zeitpunkt)
+            store.save(scope, schnappschuss)
             store.bind_world(scope, gefunden)
+            nachgetragen = (
+                0 if session_id is None else _nachtragen(runde, session_id, raw, schnappschuss)
+            )
             # Gemeldet wird der Bestand, nicht die Lieferung: die Nachrichten sind ein
             # Archiv, und ein Abgleich, der »3 Chat-Nachrichten« meldet, während 200
             # gespeichert sind, zählte das Falsche.
             snapshot = store.load(scope)
             logger.info("Foundry-Abgleich fertig: %s", _umfang(snapshot))
-            return _state(snapshot, None, None)
+            return replace(_state(snapshot, None, None), nachgetragen=nachgetragen)
         finally:
             zugang.vergiss(runde)
     finally:

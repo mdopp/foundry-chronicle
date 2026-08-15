@@ -321,6 +321,10 @@ ABFRAGEN = {
     "notes.sitzungsmarke": lambda c, r, i: notes.sitzungsmarke(notes.session(r, i["sitzung"])),
     "notes.gemeinte_sitzung": lambda c, r, i: notes.gemeinte_sitzung(r, _marke(r, i)),
     "notes.scene_at": lambda c, r, i: notes.scene_at(r, i["sitzung"], "2026-05-01T20:00:00+00:00"),
+    "notes.scene_of_moment": lambda c, r, i: notes.scene_of_moment(
+        r, i["sitzung"], "2026-05-01T20:00:00+00:00"
+    ),
+    "notes.verknuepfte_foundry_ereignisse": lambda c, r, i: notes.verknuepfte_foundry_ereignisse(r),
     "notes.today": lambda c, r, i: notes.today(),
     "protocol.stored": lambda c, r, i: protocol.stored(r, i["sitzung"]),
     "protocol.entries": lambda c, r, i: protocol.entries(r),
@@ -655,6 +659,13 @@ def test_notiz_landet_nicht_in_der_fremden_szene(zwei_runden):
     # sie in einer fremden Chronik, ohne dass jemand sie dort je gesehen hätte.
     assert notes.link_foundry_message(a, ids[2]["szene"], "m-neu") is False
     assert notes.link_foundry_message(a, ids[1]["szene"], "m-neu") is True
+    # Und der Nachtrag des Abschlusses sucht die Szene eines Zeitpunkts nur im eigenen
+    # Zaun: die Sitzung von nebenan hat für ihn keine. Gefragt wird über **alle** Szenen
+    # der Runde — genau deshalb muss die Runde stimmen.
+    irgendwann = "2099-01-01T00:00:00+00:00"
+    assert notes.scene_of_moment(a, ids[2]["sitzung"], irgendwann) is None
+    assert notes.scene_of_moment(a, ids[2]["spaeter"], irgendwann) is None
+    assert notes.scene_of_moment(a, ids[1]["spaeter"], irgendwann) is not None
 
 
 def test_der_ereignisstrom_sieht_und_schreibt_nur_die_eigene_runde(zwei_runden):

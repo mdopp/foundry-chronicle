@@ -212,7 +212,9 @@ def test_ein_ausgefallenes_foundry_beendet_den_abgleich_als_gescheitert(stelle, 
     monkeypatch.setattr(
         jobs,
         "sync",
-        lambda config, eine, passwort=None: foundry.sync(config, eine, client=ausfall),
+        lambda config, eine, passwort=None, session_id=None: foundry.sync(
+            config, eine, client=ausfall, session_id=session_id
+        ),
     )
     with pytest.raises(jobs.JobError) as fehler:
         jobs.abgleich(stelle, runde(stelle))
@@ -311,7 +313,9 @@ def test_der_abschluss_holt_erst_die_zahlen_und_schreibt_dann(stelle, welt, monk
     monkeypatch.setattr(
         jobs,
         "sync",
-        lambda config, eine, passwort=None: foundry.sync(config, eine, client=Abgleich(welt)),
+        lambda config, eine, passwort=None, session_id=None: foundry.sync(
+            config, eine, client=Abgleich(welt), session_id=session_id
+        ),
     )
     sitzung_id = eine_sitzung_mit_notiz(stelle)
 
@@ -327,7 +331,9 @@ def test_ein_ausgefallenes_foundry_kostet_nicht_die_ganze_chronik(stelle, monkey
     monkeypatch.setattr(
         jobs,
         "sync",
-        lambda config, eine, passwort=None: foundry.sync(config, eine, client=ausfall),
+        lambda config, eine, passwort=None, session_id=None: foundry.sync(
+            config, eine, client=ausfall, session_id=session_id
+        ),
     )
     sitzung_id = eine_sitzung_mit_notiz(stelle)
 
@@ -336,6 +342,83 @@ def test_ein_ausgefallenes_foundry_kostet_nicht_die_ganze_chronik(stelle, monkey
     assert "nicht erreichbar" in meldung
     assert "stehen bereit" in meldung
     assert protokollarten(stelle, sitzung_id) == {"chronik", "rueckblick"}
+
+
+def _abend_mit_wurf(welt, *, in_sekunden=60):
+    """Dieselbe Welt, aber mit einem Wurf, der **heute** fiel.
+
+    Die Zeitstempel der Fixture liegen 1970; ein Nachtrag über die Uhr fände dafür keine
+    Szene dieses Abends — und der Test prüfte am Ende, dass nichts passiert.
+    """
+    moment = datetime.now(UTC) + timedelta(seconds=in_sekunden)
+    return dict(
+        welt,
+        messages=[
+            {
+                "_id": "w-abschluss",
+                "timestamp": int(moment.timestamp() * 1000),
+                "author": "u-mira",
+                "content": "",
+                "speaker": {"actor": "a-brok", "alias": "Brok Eisenfaust"},
+                "system": {"roll": {"title": "Wurf", "total": 7, "formula": "1d12"}},
+            }
+        ],
+    )
+
+
+def _verknuepft(config, sitzung_id):
+    """Was in dieser Sitzung als Tatsache an einer Szene hängt."""
+    scope = db.scoped(runde(config))
+    try:
+        return {
+            zeile["message_id"]
+            for zeile in scope.execute(
+                "SELECT v.message_id FROM scene_foundry_message v "
+                "JOIN scene c ON c.id = v.scene_id "
+                "WHERE v.runde_id = ? AND c.session_id = ?",
+                (scope.runde_id, sitzung_id),
+            )
+        }
+    finally:
+        scope.close()
+
+
+def test_der_abschluss_ordnet_die_zahlen_den_szenen_zu(stelle, welt, monkeypatch):
+    """#219: lief kein Ereignisstrom, trug die Chronik bis hierher keine einzige Zahl.
+
+    Der Abgleich füllte das Archiv, die Verknüpfung zur Szene entstand dabei nicht — und
+    nur sie macht aus einem Wurf eine Tatsache in der Chronik.
+    """
+    abend = _abend_mit_wurf(welt)
+    monkeypatch.setattr(
+        jobs,
+        "sync",
+        lambda config, eine, passwort=None, session_id=None: foundry.sync(
+            config, eine, client=Abgleich(abend), session_id=session_id
+        ),
+    )
+    sitzung_id = eine_sitzung_mit_notiz(stelle)
+
+    meldung = jobs.abschluss(stelle, runde(stelle), sitzung_id)
+
+    assert _verknuepft(stelle, sitzung_id) == {"w-abschluss"}
+    assert meldung.startswith(jobs.NACHGETRAGEN_EINER)
+    assert "stehen bereit" in meldung
+
+
+def test_ein_abend_ohne_passwort_bekommt_keine_zahlen_und_erfaehrt_es(stelle):
+    """Fehlt das Passwort auch beim Abschluss, kommt keine Zahl — gesagt statt verschwiegen.
+
+    Das ist die andere Hälfte von #219: die Zusage aus #93, beim Start weglassen zu dürfen,
+    bleibt — sie kostet aber die Zahlen, und wer auslöst, soll das im ersten Satz lesen.
+    """
+    sitzung_id = eine_sitzung_mit_notiz(stelle)
+
+    meldung = jobs.abschluss(stelle, runde(stelle), sitzung_id)
+
+    assert jobs.OHNE_ZAHLEN in meldung
+    assert "stehen bereit" in meldung
+    assert _verknuepft(stelle, sitzung_id) == set()
 
 
 def protokollarten(config, sitzung_id):
