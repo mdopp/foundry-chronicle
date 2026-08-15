@@ -70,5 +70,14 @@ def message_fuer_die_gruppe(message: Mapping) -> bool:
 
     Nach dem Konto wird deshalb gar nicht erst gefragt: geflüstert ist geflüstert, blind ist
     blind — an wen und für wen sichtbar, ändert daran nichts.
+
+    **Die bewusste Grenze** (#219): ein Flüstern an ausdrücklich *alle* Konten war für alle
+    bestimmt und bleibt hier trotzdem draußen. Das ist geprüft und so gewollt. Die Liste
+    gegen die bekannten Konten zu halten hieße, hier eine zweite Frage zu stellen — »wer
+    gehört heute dazu« —, und die hat keine sichere Antwort: eine Foundry-Welt führt
+    ausgeschiedene Konten weiter, ein Flüstern an alle **aktiven** ist also eines an fast
+    alle, und wo »fast« anfängt, müsste geraten werden. Der Preis der Grenze ist eine
+    fehlende Zahl, ihr Ertrag ein GM-Wurf, der nicht in der Chronik landet. Diese Rechnung
+    geht nur in eine Richtung auf: eine Lücke sieht man, eine Preisgabe nicht.
     """
     return not message.get("whisper") and not message.get("blind")

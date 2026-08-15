@@ -101,6 +101,19 @@ BELEGT_EIGEN = (
 
 NICHT_DURCHGEKOMMEN = "Der Lauf ist nicht durchgekommen: {grund}"
 
+# Was der Abschluss nachträglich an die Szenen gehängt hat (#219). Gesagt wird es, weil es
+# sonst niemand sähe: die Zahlen erscheinen still in der Chronik, und ob welche kamen, ist
+# genau die Frage, die an einem Abend ohne Ereignisstrom offen war.
+NACHGETRAGEN = "{anzahl} Würfe aus Foundry sind den Szenen dieser Sitzung zugeordnet. "
+NACHGETRAGEN_EINER = "Ein Wurf aus Foundry ist einer Szene dieser Sitzung zugeordnet. "
+
+# Und der Gegenfall, ebenso ausdrücklich: ohne Abgleich kommt keine Zahl mehr dazu. Das
+# still zu übergehen hieße, eine Chronik ohne Belege als fertig zu melden.
+OHNE_ZAHLEN = (
+    "Aus Foundry kommt damit nichts mehr dazu: in dieser Chronik stehen nur die Zahlen, "
+    "die der Ereignisstrom während der Sitzung geholt hat — lief keiner, steht keine. "
+)
+
 STEHT = "Chronik und Rückblick stehen bereit."
 STEHT_OHNE_MODELL = (
     "Chronik und Rückblick stehen bereit — ohne Sprachmodell geordnet statt formuliert."
@@ -460,9 +473,21 @@ def abschluss(config: Config, runde: Runde, session_id: int, *, passwort: str | 
     ``passwort`` reicht der Auslöser durch, damit dieser Faden nicht selbst im Merkzettel
     nachsieht: dort kann inzwischen die Eingabe eines anderen liegen. ``None`` heißt
     »keines mitgebracht« — dann liest der Abgleich den Merkzettel wie eh und je.
+
+    Der Abgleich bekommt die Sitzung mit: er holt das Chat-Log ohnehin, und seit #219 hängt
+    er die Würfe dieses Abends auch an ihre Szenen. Vorher tat das allein der
+    Ereignisstrom, und ein Abend ohne Strom bekam eine Chronik ohne eine einzige Zahl.
+    Kommt der Abgleich nicht durch, kommt auch keine Zahl — und dann steht das im Satz.
     """
-    zustand = sync(config, runde, passwort=passwort)
-    vorlauf = "" if not zustand.stale else f"{zustand.message} "
+    zustand = sync(config, runde, passwort=passwort, session_id=session_id)
+    if zustand.stale:
+        vorlauf = f"{zustand.message} {OHNE_ZAHLEN}"
+    elif zustand.nachgetragen == 1:
+        vorlauf = NACHGETRAGEN_EINER
+    elif zustand.nachgetragen:
+        vorlauf = NACHGETRAGEN.format(anzahl=zustand.nachgetragen)
+    else:
+        vorlauf = ""
     return vorlauf + chronik(config, runde, session_id)
 
 

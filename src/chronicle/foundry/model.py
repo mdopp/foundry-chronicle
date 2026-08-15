@@ -114,9 +114,18 @@ class WorldSnapshot:
 
 @dataclass(frozen=True)
 class SyncState:
+    """``nachgetragen`` zählt, was dieser Abgleich einer Sitzung zugeordnet hat (#219).
+
+    Nur der Abschluss fragt danach; ein Abgleich für sich hat keine Sitzung und lässt die
+    Zahl auf null. Sie steht hier und nicht in einer eigenen Rückgabe, weil der Aufrufer
+    beides in **einem** Satz sagt: was der Abgleich brachte und was davon in der Chronik
+    ankam.
+    """
+
     message: str
     stale: bool = False
     snapshot: WorldSnapshot | None = None
+    nachgetragen: int = 0
 
 
 @dataclass(frozen=True)

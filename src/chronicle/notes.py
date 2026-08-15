@@ -318,6 +318,52 @@ def scene_at(runde: Runde, session_id: int, moment: str) -> int | None:
     return None if row is None else int(row["id"])
 
 
+def scene_of_moment(runde: Runde, session_id: int, moment: str) -> int | None:
+    """In welche Szene **dieser** Sitzung ein Zeitpunkt fällt — ohne Auffanglinie.
+
+    Der Unterschied zu ``scene_at`` ist der Absender. Dort kommt der Zeitpunkt aus einer
+    Notiz, die zu dieser Sitzung gehört, also fängt die erste Szene auf, was vor jeder
+    Trennlinie liegt. Hier kommt er aus Foundrys Chat-Log, und das trägt die **ganze**
+    Kampagne: dieselbe Auffanglinie zöge die Würfe aller früheren Abende in die erste
+    Szene dieses einen.
+
+    Gefragt wird deshalb über alle Szenen der Runde, und geantwortet wird nur, wenn die
+    letzte Trennlinie vor dem Zeitpunkt zu dieser Sitzung gehört. Das setzt beide Grenzen
+    auf einmal: was vor ihrem Beginn liegt, gehört einem früheren Abend, was danach kommt,
+    dem nächsten — und ein Wurf ohne Szene wird nicht untergebracht, sondern gar nicht.
+    """
+    scope = db.scoped(runde)
+    try:
+        row = scope.execute(
+            "SELECT id, session_id FROM scene WHERE runde_id = ? AND created_at <= ? "
+            "ORDER BY created_at DESC, id DESC LIMIT 1",
+            (scope.runde_id, moment),
+        ).fetchone()
+    finally:
+        scope.close()
+    if row is None or int(row["session_id"]) != session_id:
+        return None
+    return int(row["id"])
+
+
+def verknuepfte_foundry_ereignisse(runde: Runde) -> frozenset[str]:
+    """Welche Foundry-Ereignisse schon an einer Szene hängen — gleich an welcher.
+
+    Runden-weit und nicht je Sitzung, weil die Frage runden-weit ist: ein Wurf ist an
+    einem Zeitpunkt gefallen und gehört zu genau einer Szene. Wer sie schon hat, behält
+    sie — der Nachtrag beim Abschluss darf denselben Wurf nicht ein zweites Mal, in einer
+    zweiten Szene, in die Chronik hängen.
+    """
+    scope = db.scoped(runde)
+    try:
+        zeilen = scope.execute(
+            "SELECT message_id FROM scene_foundry_message WHERE runde_id = ?", (scope.runde_id,)
+        ).fetchall()
+    finally:
+        scope.close()
+    return frozenset(zeile["message_id"] for zeile in zeilen)
+
+
 def session_of_scene(runde: Runde, scene_id: int) -> int | None:
     scope = db.scoped(runde)
     try:

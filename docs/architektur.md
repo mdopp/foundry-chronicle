@@ -147,12 +147,28 @@ soll ein fremdes Foundry nicht wund fragen.
 Grenze als vor dem Archiv: dort entscheidet die Berechtigungsstufe des angemeldeten Kontos,
 was gespeichert wird — hier entscheidet, ob die Nachricht für **alle** bestimmt war. Ein
 Geflüster an unser Konto ist es nicht, ein blinder Wurf auch nicht, und mit einem
-GM-Zugang (#78) käme sonst beides mitten im Spiel dort an, wo die Runde mitliest. Das
-Archiv bleibt davon unberührt voll; eingeengt wird nur der Weg in den Thread.
+GM-Zugang (#78) käme sonst beides mitten im Spiel dort an, wo die Runde mitliest. Voll
+bleibt davon unberührt das **Archiv** (`foundry_message`); die Chronik nicht — sie liest
+`scene_foundry_message`, und dort steht nur, was diese engere Grenze passiert hat. Die
+frühere Fassung sagte, eingeengt sei nur der Weg in den Thread; das war ungenau (#219).
+
+**Und der Abschluss trägt nach, was der Strom nicht geholt hat** (#219). Der Strom war
+lange der einzige Schreiber von `scene_foundry_message` — wer beim Sitzungsstart kein
+Passwort hinterlegte, spielte einen Abend, an dessen Ende der Abgleich zwar das ganze
+Chat-Log holte, die Chronik aber keine einzige Zahl trug. Seither hängt `/chronik fertig`
+die Würfe dieses Abends über ihre Zeitstempel an die Szenen: durch **denselben** engeren
+Filter wie der Strom, ohne anzufassen, was schon hängt, und ohne Auffanglinie — ein Wurf,
+der in keine Szene dieser Sitzung fällt, wird nicht untergebracht, sondern gar nicht. Das
+Chat-Log trägt die ganze Kampagne, und eine erste Szene, die alles Frühere auffängt, wäre
+die teuerste Sorte Zuordnung. Kommt der Abgleich nicht durch — kein Passwort, Foundry aus
+—, kommt auch keine Zahl, und der Abschluss sagt das im ersten Satz statt es zu übergehen.
 
 Die Grenze des Weges: der Strom lebt im Arbeitsspeicher wie das Passwort. Ein Neustart des
 Bots beendet ihn **stumm** — verloren geht nichts, der Abschluss holt alles noch einmal
-ganz, aber bis dahin spielt die Runde in dem Glauben weiter, die Würfe kämen noch.
+ganz und ordnet es seit #219 auch zu, aber bis dahin spielt die Runde in dem Glauben
+weiter, die Würfe kämen noch. Was der Nachtrag nicht heilt, ist eine Sitzung, die **nach**
+dem Spielabend angelegt wurde: liegen alle Würfe vor ihrer ersten Trennlinie, gehören sie
+keiner ihrer Szenen, und geraten wird nicht.
 
 **Alles nach der Aufnahme läuft im Stapel.** Keine Echtzeit-Transkription, damit keine
 GPU-Konkurrenz und keine Latenzfrage. Läuft nachts; auf CPU langsam genug, um ohne

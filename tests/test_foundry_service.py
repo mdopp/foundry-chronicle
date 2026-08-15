@@ -1,10 +1,12 @@
 import json
 import logging
+from datetime import UTC, datetime
 
 import pytest
 from conftest import (
     GM_FIGUR,
     GM_GEFLUESTER,
+    LEITUNG,
     PASSWORT,
     UNBETEILIGTES_KONTO,
     UNSER_KONTO,
@@ -15,10 +17,10 @@ from conftest import (
 )
 
 import chronicle.foundry.__main__ as batch
-from chronicle import db, lebenszyklus, settings, zugang
+from chronicle import db, lebenszyklus, notes, settings, zugang
 from chronicle import runde as runden
 from chronicle.compose import service as compose_service
-from chronicle.foundry import service, store
+from chronicle.foundry import permissions, service, store
 from chronicle.foundry.client import FoundryUnreachable
 from chronicle.foundry.model import NICHT_MEHR_VORHANDEN, World
 
@@ -649,3 +651,278 @@ def test_kein_passwort_in_den_logzeilen_des_stroms(config, welt, caplog):
         strom(config, welt)
         strom(config, fehler=FoundryUnreachable("Verbindung abgelehnt"))
     assert PASSWORT not in caplog.text
+
+
+# -- Der Nachtrag beim Abschluss (#219) -------------------------------------------------
+#
+# Der Strom war lange der einzige Schreiber von ``scene_foundry_message``, und nur was dort
+# steht, wird in der Chronik zur Tatsache. Ein Abend ohne hinterlegtes Passwort bekam damit
+# eine Chronik ohne eine einzige Zahl — obwohl der Abschluss das ganze Chat-Log holte.
+
+SZENE_EINS = "2026-08-05T20:00:00+00:00"
+SZENE_ZWEI = "2026-08-05T21:00:00+00:00"
+FRUEHERER_ABEND = "2026-07-29T20:30:00+00:00"
+
+
+def _ms(zeitpunkt: str) -> int:
+    """Ein Zeitpunkt, wie Foundry ihn stempelt: Millisekunden seit der Epoche, UTC."""
+    return int(datetime.fromisoformat(zeitpunkt).timestamp() * 1000)
+
+
+def _wurf(kennung, zeitpunkt, **rest):
+    return {
+        "_id": kennung,
+        "timestamp": _ms(zeitpunkt),
+        "author": LEITUNG,
+        "content": "",
+        "speaker": {"actor": "a-brok", "alias": "Brok Eisenfaust"},
+        "system": {"roll": {"title": "Wurf", "total": 7, "formula": "1d12"}},
+        **rest,
+    }
+
+
+def _abendwelt(welt, nachrichten):
+    """Dieselbe Welt, aber mit dem Chronisten als Spielleitung — der Fall aus #78.
+
+    Nur mit einem GM-Zugang stehen ein Geflüster und ein blinder Wurf überhaupt im Archiv;
+    ein Spielerkonto verliert sie schon vor dem Speicher, und der Nachtrag käme nie in die
+    Lage, sie durchzulassen. Genau deshalb ist das hier die interessante Welt.
+    """
+    konten = [
+        dict(konto, role=4) if konto["_id"] == UNSER_KONTO else konto for konto in welt["users"]
+    ]
+    return dict(welt, users=konten, messages=nachrichten)
+
+
+def _sitzung(config, eine, szenen, *, played_on="2026-08-05", titel="Der Keller"):
+    """Eine Sitzung mit Trennlinien zu festen Zeitpunkten."""
+    scope = db.scoped(eine)
+    try:
+        with scope:
+            sitzung = int(
+                scope.execute(
+                    "INSERT INTO session (runde_id, played_on, title, created_at) "
+                    "VALUES (?, ?, ?, ?)",
+                    (scope.runde_id, played_on, titel, szenen[0][1]),
+                ).lastrowid
+            )
+            for position, (name, zeitpunkt) in enumerate(szenen, start=1):
+                scope.execute(
+                    "INSERT INTO scene (runde_id, session_id, position, title, created_at) "
+                    "VALUES (?, ?, ?, ?, ?)",
+                    (scope.runde_id, sitzung, position, name, zeitpunkt),
+                )
+    finally:
+        scope.close()
+    return sitzung
+
+
+def _szenen_ids(eine, sitzung):
+    return [szene.id for szene in notes.session(eine, sitzung).scenes]
+
+
+def _fakten(eine, sitzung):
+    """Was in der Chronik dieser Sitzung als Tatsache steht — je Szenenposition."""
+    scope = db.scoped(eine)
+    try:
+        stoff = compose_service.material(scope, sitzung)
+    finally:
+        scope.close()
+    return {szene.position: [fakt.id for fakt in szene.facts] for szene in stoff.scenes}
+
+
+DER_ABEND = (
+    _wurf("w-offen-1", "2026-08-05T20:30:00+00:00"),
+    _wurf("w-fluester", "2026-08-05T20:40:00+00:00", whisper=[UNSER_KONTO]),
+    _wurf("w-blind", "2026-08-05T21:10:00+00:00", blind=True),
+    _wurf("w-offen-2", "2026-08-05T21:20:00+00:00"),
+)
+
+
+def _abschluss_abgleich(config, welt, sitzung, eine=None):
+    """Der Abgleich, wie der Abschluss ihn macht — mit der Sitzung im Gepäck."""
+    return service.sync(
+        config,
+        eine or runde(config),
+        client=Abgleich(welt),
+        passwort=PASSWORT,
+        session_id=sitzung,
+    )
+
+
+def test_foundrys_zeitstempel_wird_als_millisekunde_in_utc_gelesen():
+    """Die Einheit einmal festgenagelt: ``Date.now()``, nicht Sekunden, nicht Ortszeit.
+
+    Still danebenzugreifen hieße hier, jeden Wurf in die falsche Szene zu hängen — und
+    zwar ohne Fehler, weil SQLite eine Zahl und einen Text klaglos vergleicht.
+    """
+    assert service._augenblick(946684800000) == "2000-01-01T00:00:00+00:00"
+    assert service._augenblick(_ms(SZENE_ZWEI)) == SZENE_ZWEI
+
+
+def test_der_abschluss_traegt_die_zahlen_nach(config, welt):
+    """Der Befund aus #219: ohne Strom trug die Chronik keine einzige Zahl."""
+    sitzung = _sitzung(config, runde(config), [("Aufbruch", SZENE_EINS), ("Keller", SZENE_ZWEI)])
+    assert _fakten(runde(config), sitzung) == {1: [], 2: []}
+
+    zustand = _abschluss_abgleich(config, _abendwelt(welt, DER_ABEND), sitzung)
+
+    assert not zustand.stale and zustand.nachgetragen == 2
+    assert _fakten(runde(config), sitzung) == {1: ["w-offen-1"], 2: ["w-offen-2"]}
+
+
+def test_der_nachtrag_bringt_kein_gm_geheimnis_in_die_chronik(config, welt):
+    """Dieselbe engere Sicht wie im Strom — sonst käme sie hier durch die Hintertür.
+
+    Beides steht mit einem GM-Zugang sehr wohl im Archiv; die Chronik liest die ganze
+    Runde, und für sie war weder das Geflüster noch der blinde Wurf bestimmt.
+    """
+    sitzung = _sitzung(config, runde(config), [("Aufbruch", SZENE_EINS), ("Keller", SZENE_ZWEI)])
+    _abschluss_abgleich(config, _abendwelt(welt, DER_ABEND), sitzung)
+
+    verknuepft = set().union(*_fakten(runde(config), sitzung).values())
+    assert "w-fluester" not in verknuepft
+    assert "w-blind" not in verknuepft
+    # Und das Archiv bleibt trotzdem voll — eingeengt ist der Weg in die Chronik.
+    archiviert = {zeile["id"] for zeile in _archiv(config)}
+    assert {"w-fluester", "w-blind"} <= archiviert
+
+
+def test_die_gegenprobe_mit_der_weiteren_sicht_faellt_durch(config, welt, monkeypatch):
+    """Ohne die engere Frage stünden Geflüster und blinder Wurf in der Chronik.
+
+    Der Test darüber wäre sonst grün, ohne etwas zu halten: er soll rot werden, wenn
+    jemand ``message_visible`` einsetzt — die Frage »darf **dieses Konto** das sehen«.
+    """
+    monkeypatch.setattr(
+        service,
+        "fuer_die_gruppe",
+        lambda raw: frozenset(
+            nachricht["_id"]
+            for nachricht in raw["messages"]
+            if permissions.message_visible(nachricht, UNSER_KONTO, True)
+        ),
+    )
+    sitzung = _sitzung(config, runde(config), [("Aufbruch", SZENE_EINS), ("Keller", SZENE_ZWEI)])
+    _abschluss_abgleich(config, _abendwelt(welt, DER_ABEND), sitzung)
+
+    verknuepft = set().union(*_fakten(runde(config), sitzung).values())
+    assert {"w-fluester", "w-blind"} <= verknuepft
+
+
+def test_der_nachtrag_haengt_nichts_ein_zweites_mal(config, welt):
+    """Lief der Strom, hängen die Würfe schon — an der Szene, die lief, als sie fielen.
+
+    Ein zweites Anhängen wäre kein Doppeleintrag, den der Schlüssel fängt, sondern
+    dieselbe Zahl in zwei Szenen: der Schlüssel ist Szene **und** Nachricht.
+    """
+    sitzung = _sitzung(config, runde(config), [("Aufbruch", SZENE_EINS), ("Keller", SZENE_ZWEI)])
+    zweite = _szenen_ids(runde(config), sitzung)[1]
+    # Wie der Strom es tut: an die Szene, die beim Blick gerade lief.
+    notes.link_foundry_message(runde(config), zweite, "w-offen-1")
+
+    zustand = _abschluss_abgleich(config, _abendwelt(welt, DER_ABEND), sitzung)
+
+    assert zustand.nachgetragen == 1
+    assert _fakten(runde(config), sitzung) == {1: [], 2: ["w-offen-1", "w-offen-2"]}
+
+
+def test_ein_zweiter_abschluss_traegt_nichts_dazu(config, welt):
+    """Zweimal auslösen ist keine zweite Zuordnung."""
+    sitzung = _sitzung(config, runde(config), [("Aufbruch", SZENE_EINS), ("Keller", SZENE_ZWEI)])
+    _abschluss_abgleich(config, _abendwelt(welt, DER_ABEND), sitzung)
+    vorher = _fakten(runde(config), sitzung)
+
+    zustand = _abschluss_abgleich(config, _abendwelt(welt, DER_ABEND), sitzung)
+
+    assert zustand.nachgetragen == 0
+    assert _fakten(runde(config), sitzung) == vorher
+
+
+def test_die_wuerfe_fremder_abende_bleiben_drau_en(config, welt):
+    """Das Chat-Log trägt die ganze Kampagne — nicht nur diesen Abend.
+
+    Eine Auffanglinie wie in ``scene_at`` zöge jeden früheren Wurf in die erste Szene
+    dieser Sitzung, und der nächste Abend hinge an ihrer letzten. Beides wäre eine
+    Zuordnung, die niemand je gesehen hat.
+    """
+    sitzung = _sitzung(config, runde(config), [("Aufbruch", SZENE_EINS), ("Keller", SZENE_ZWEI)])
+    _sitzung(
+        config,
+        runde(config),
+        [("Weiter", "2026-08-12T20:00:00+00:00")],
+        played_on="2026-08-12",
+        titel="Der Turm",
+    )
+    nachrichten = (
+        _wurf("w-vorher", FRUEHERER_ABEND),
+        *DER_ABEND,
+        _wurf("w-danach", "2026-08-12T20:30:00+00:00"),
+    )
+
+    zustand = _abschluss_abgleich(config, _abendwelt(welt, nachrichten), sitzung)
+
+    assert zustand.nachgetragen == 2
+    assert _fakten(runde(config), sitzung) == {1: ["w-offen-1"], 2: ["w-offen-2"]}
+
+
+def test_strom_und_nachtrag_ordnen_denselben_wurf_derselben_szene_zu(config, welt):
+    """Ein Abend **mit** Strom sieht aus wie einer ohne — geprüft an beiden Wegen.
+
+    Gefallen sind die Würfe in der laufenden Szene; der Strom hängt sie an die Szene von
+    jetzt, der Nachtrag an die ihres Zeitstempels. Kommen dabei zwei verschiedene Chroniken
+    heraus, ist eine davon falsch.
+    """
+    laufend = datetime.now(UTC).isoformat(timespec="seconds")
+    jetzige = tuple(
+        _wurf(kennung, laufend, **rest)
+        for kennung, rest in (
+            ("w-offen-1", {}),
+            ("w-fluester", {"whisper": [UNSER_KONTO]}),
+            ("w-blind", {"blind": True}),
+            ("w-offen-2", {}),
+        )
+    )
+    abend = _abendwelt(welt, jetzige)
+    szenen = [("Aufbruch", SZENE_EINS), ("Keller", SZENE_ZWEI)]
+
+    mit_strom = runden.anlegen(config.database_path, "Mit Strom", guild_id="gilde-strom")
+    a = _sitzung(config, mit_strom, szenen)
+    zugang.merken(mit_strom, PASSWORT, wer="7001")
+    ergebnis = service.beobachten(config, mit_strom, client=NurLesen(abend))
+    # Was ``bot.chronik`` mit dem Ergebnis tut: an die Szene von jetzt.
+    szene_jetzt = notes.scene_at(mit_strom, a, datetime.now(UTC).isoformat(timespec="seconds"))
+    for nachricht in ergebnis.neu:
+        notes.link_foundry_message(mit_strom, szene_jetzt, nachricht.id)
+    service.sync(config, mit_strom, client=Abgleich(abend), passwort=PASSWORT, session_id=a)
+
+    ohne_strom = runden.anlegen(config.database_path, "Ohne Strom", guild_id="gilde-ohne")
+    b = _sitzung(config, ohne_strom, szenen)
+    _abschluss_abgleich(config, abend, b, eine=ohne_strom)
+
+    assert _fakten(mit_strom, a) == {1: [], 2: ["w-offen-1", "w-offen-2"]}
+    assert _fakten(ohne_strom, b) == _fakten(mit_strom, a)
+
+
+def test_ohne_passwort_traegt_der_abschluss_nichts_nach(config, welt):
+    """Der Abgleich kommt nicht durch — dann kommt auch keine Zahl, und das ist richtig."""
+    sitzung = _sitzung(config, runde(config), [("Aufbruch", SZENE_EINS), ("Keller", SZENE_ZWEI)])
+
+    # Ohne ``client`` geht der echte Weg: kein Passwort im Speicher, kein Handschlag.
+    zustand = service.sync(config, runde(config), session_id=sitzung)
+
+    assert zustand.stale and zustand.nachgetragen == 0
+    assert "fehlt das Foundry-Passwort" in zustand.message
+    assert _fakten(runde(config), sitzung) == {1: [], 2: []}
+
+
+def test_ein_abgleich_ohne_sitzung_ordnet_nichts_zu(config, welt):
+    """Ein Abgleich für sich hat keine Sitzung — die Zuordnung ist keine Nebenwirkung."""
+    sitzung = _sitzung(config, runde(config), [("Aufbruch", SZENE_EINS), ("Keller", SZENE_ZWEI)])
+
+    zustand = service.sync(
+        config, runde(config), client=Abgleich(_abendwelt(welt, DER_ABEND)), passwort=PASSWORT
+    )
+
+    assert zustand.nachgetragen == 0
+    assert _fakten(runde(config), sitzung) == {1: [], 2: []}
