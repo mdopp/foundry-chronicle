@@ -33,6 +33,7 @@ from chronicle import (
     dokument,
     instanz,
     jobs,
+    kette,
     lebenszyklus,
     nightly,
     notes,
@@ -77,6 +78,7 @@ SCHICHT = (
     people,
     consent,
     jobs,
+    kette,
     nightly,
     settings,
     foundry_service,
@@ -419,6 +421,7 @@ ABFRAGEN = {
     "lebenszyklus.frist_datum": lambda c, r, i: lebenszyklus.frist_datum(r),
     "lebenszyklus.ruht": lambda c, r, i: lebenszyklus.ruht(r),
     "lebenszyklus.dieselbe": lambda c, r, i: lebenszyklus.dieselbe(r),
+    "kette.warum_nicht": lambda c, r, i: kette.warum_nicht(r),
 }
 
 # Schreibende Aufrufe. Sie werden nicht auf eine Antwort geprüft, sondern darauf, dass sie
@@ -455,6 +458,10 @@ SCHREIBER = frozenset(
         "jobs.abgleich",
         "jobs.abschluss",
         "jobs.chronik",
+        # Die Reihenfolge hinter ``jobs.chronik``, dem Nachtlauf und dem Stapelaufruf: sie
+        # schreibt Notizen und Protokolle einer Sitzung — mit verwechselter Runde in eine
+        # fremde.
+        "kette.schreiben",
         "jobs.nacherzaehlung",
         "nightly.lauf",
         "settings.save",

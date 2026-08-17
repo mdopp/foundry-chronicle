@@ -77,6 +77,10 @@ class Message:
     content: str
     from_bot: bool
     attachments: tuple[Attachment, ...] = ()
+    # Wann sie eingeworfen wurde, nicht wann sie abgeholt wird: der Briefkasten wird
+    # nachts geleert, und ein Diktat vom Heimweg fände seine Szene sonst eine Nacht
+    # später (#222).
+    timestamp: str = ""
 
 
 def _http_session() -> requests.Session:
@@ -103,6 +107,7 @@ def _nachricht(rohdaten: Mapping) -> Message:
             for eintrag in (anhaenge if isinstance(anhaenge, list) else ())
             if isinstance(eintrag, Mapping)
         ),
+        timestamp=str(rohdaten.get("timestamp") or ""),
     )
 
 

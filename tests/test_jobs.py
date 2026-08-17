@@ -7,7 +7,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from conftest import GRENZE, runde, warte_bis
 
-from chronicle import db, jobs, lebenszyklus, notes, protocol, recordings
+from chronicle import db, jobs, kette, lebenszyklus, notes, protocol, recordings
 from chronicle import runde as runden
 from chronicle.config import Config
 from chronicle.discord import rueckblick
@@ -248,7 +248,7 @@ def test_eine_misslungene_zustellung_steht_in_der_antwort_des_laufs(stelle, monk
     szene = notes.session(runde(stelle), sitzung_id).scenes[0]
     notes.add_note(runde(stelle), szene.id, "Wir brechen bei Sonnenaufgang auf.")
     monkeypatch.setattr(
-        jobs,
+        kette,
         "deliver",
         lambda config, eine, sitzung: rueckblick.Zustellung("Nirgends angekommen.", True),
     )
@@ -286,7 +286,7 @@ def test_der_lauf_traegt_das_transkript_selbst_in_die_szenen(stelle):
 def test_eine_verschwundene_sitzung_beendet_den_lauf_ehrlich(stelle):
     with pytest.raises(jobs.JobError) as fehler:
         jobs.chronik(stelle, runde(stelle), 999)
-    assert str(fehler.value) == jobs.OHNE_SITZUNG
+    assert str(fehler.value) == kette.OHNE_SITZUNG
 
 
 def test_die_ruhende_runde_bekommt_ihren_eigenen_grund(stelle, monkeypatch):

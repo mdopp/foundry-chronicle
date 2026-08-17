@@ -31,6 +31,9 @@ from chronicle.discord.client import (
     DiscordUnreachable,
 )
 from chronicle.discord.service import run
+from chronicle.transcribe import merge
+from chronicle.transcribe import service as transcribe
+from chronicle.transcribe.client import Segment
 
 TOKEN = "bot-token-nur-fuer-den-test"
 
@@ -44,6 +47,12 @@ FREMDER_KANAL = "c-nachbardiktat"
 CDN = "https://cdn.discord.example"
 
 DIKTAT = b"kein echtes Audio, aber Bytes"
+
+# Wann eingeworfen wurde. Discord schickt den Zeitpunkt an jeder Nachricht mit, und er ist
+# der Anker, über den ein Diktat ohne Sitzungsuhr seine Szene findet (#222).
+EINWURF = "2026-08-06T22:14:00+00:00"
+
+GESPROCHEN = "Die Wirtin hat auf dem Heimweg gelogen."
 
 
 class Antwort:
@@ -65,10 +74,11 @@ class Antwort:
         yield from (self._inhalt[i : i + groesse] for i in range(0, len(self._inhalt), groesse))
 
 
-def nachricht(kennung, *, text="", anhaenge=(), bot=False, typ=0):
+def nachricht(kennung, *, text="", anhaenge=(), bot=False, typ=0, zeitpunkt=EINWURF):
     return {
         "id": kennung,
         "type": typ,
+        "timestamp": zeitpunkt,
         "content": text,
         "author": {"id": "u-erzaehler", "bot": bot},
         "attachments": [
@@ -314,6 +324,37 @@ def test_eine_sprachnachricht_landet_in_derselben_warteschlange(config, sitzung_
     spur = config.recordings_dir / warteschlange[0].filename
     assert spur.read_bytes() == DIKTAT
     assert "wartet auf den Stapel" in meldungen[0]
+
+
+class Erkenner:
+    """Ein Spracherkenner, der nichts lädt und sagt, was dieser Test hören will."""
+
+    name = "erfundenes-modell"
+
+    def transcribe(self, audio_path, *, vocabulary=""):
+        yield Segment(start=0.0, end=2.0, text=f" {GESPROCHEN}")
+
+
+def test_ein_diktat_aus_dem_briefkasten_kommt_bis_in_die_notiz(config, sitzung_id):
+    """Der ganze Weg: Nachricht, Spur, Transkript, Notiz — bis #222 endete er lautlos.
+
+    ``merge.DIKTATE`` verlangt den Zeitpunkt der Nachricht; ohne ihn wurde das Diktat
+    abgeholt, gespeichert und verschriftet und erreichte trotzdem nie eine Szene. Der
+    Anker ist der **Einwurf**, nicht das Abholen: der Briefkasten wird nachts geleert.
+    """
+    api = FakeDiscord(
+        nachricht("100", anhaenge=[("voice-message.ogg", len(DIKTAT))]),
+        dateien={"voice-message.ogg": DIKTAT},
+    )
+
+    leeren(config, api)
+    assert [zeile.message_at for zeile in recordings.pending(runde(config))] == [EINWURF]
+
+    transcribe.run_queue(config, runde(config), model=Erkenner())
+    merge.uebernehmen(runde(config), sitzung_id)
+
+    szene = notes.session(runde(config), sitzung_id).scenes[-1]
+    assert any(GESPROCHEN in eintrag.text for eintrag in szene.notes)
 
 
 def test_audio_wird_mit_haken_und_genau_einer_antwort_quittiert(config, sitzung_id):
