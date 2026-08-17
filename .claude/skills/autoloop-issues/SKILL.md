@@ -52,11 +52,11 @@ Run `python3 .claude/skills/autoloop-issues/queue.py <verb>` (add `--offline` to
 | `plan '<unit-json>'` | planner | record a planned unit + label its issues `autoloop:queued` |
 | `next` | builder | the next planned unit to build |
 | `claim <id>` | builder | **cross-instance claim** (`autoloop:building`) before building |
-| `built <id> [--pr N]` | builder | mark the unit built onto the batch |
+| `built <id> [--pr N]` | builder | mark the unit built onto the batch (refuses a `security: true` unit — it never rides the batch; it exits via `park … review`) |
 | `batch new\|seal\|reset [--branch …]` | builder/orch | batch lifecycle (`reset` drops the shipped units) |
 | `verify-set <sha> <status> [--pr N]` | builder/orch | set verify state + mirror the release-PR label |
 | `verify-get` | orchestrator | read verify state (auto-resets a dead `verifying`) |
-| `park <issue> <blocked\|refinement\|review\|device-test\|upstream-wait> [--comment …]` | planner | durably park to GitHub (label + comment) |
+| `park <issue> <blocked\|refinement\|review\|device-test\|upstream-wait> [--comment …]` | planner/builder | durably park to GitHub (label + comment); releases the `autoloop:building` claim and takes the unit out of `next`'s rotation |
 | `note "<one line>"` | any | append to the bounded run-scoped ring |
 | `mirror [--pr N]` | orchestrator | prune the cache + re-project labels (one-way) |
 | `rebuild [--release-pr N]` | orchestrator | cold-start: reconstruct the cache from GitHub |

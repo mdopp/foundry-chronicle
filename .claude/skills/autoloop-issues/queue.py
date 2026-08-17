@@ -288,6 +288,14 @@ def v_built(c: Cache, a) -> None:
     u = d["units"].get(str(a.unit))
     if not u:
         sys.exit(f"queue.py: no unit {a.unit}")
+    # A security unit rides its own sec/... branch and never joins the batch, so
+    # booking it out here would count a commit `git log main..batch/<id>` cannot
+    # show — and the seal-at-8 check would fire early. It exits via `park`.
+    if u.get("security"):
+        sys.exit(
+            f"queue.py: {a.unit} is a security unit — it never joins the batch; "
+            f"exit it with `park <issue> review --comment ...`"
+        )
     u["status"] = "built"
     if a.pr:
         u["pr"] = a.pr
@@ -384,6 +392,21 @@ def _park_units(d: dict, issue: int) -> list[str]:
     return parked
 
 
+def _park_edit_args(issue: int, label: str) -> list[str]:
+    """The label edit a park performs: park is terminal, so it releases the claim too."""
+    return [
+        "issue",
+        "edit",
+        str(issue),
+        "--add-label",
+        label,
+        "--remove-label",
+        L_QUEUED,
+        "--remove-label",
+        L_BUILDING,
+    ]
+
+
 def v_park(c: Cache, a) -> None:
     """Park an issue durably in GitHub: a label + (optional) a comment with the reason."""
     label = PARK_LABELS[a.state]
@@ -392,19 +415,7 @@ def v_park(c: Cache, a) -> None:
     if parked_units:
         c.save(d)
     if not a.offline:
-        gh(
-            _repo_args(a.repo)
-            + [
-                "issue",
-                "edit",
-                str(a.issue),
-                "--add-label",
-                label,
-                "--remove-label",
-                L_QUEUED,
-            ],
-            check=False,
-        )
+        gh(_repo_args(a.repo) + _park_edit_args(a.issue, label), check=False)
         if a.comment:
             gh(
                 _repo_args(a.repo)
@@ -565,6 +576,35 @@ def v_selftest(c: Cache, a) -> None:
             )
             self._run(v_park, issue=99999, state="review", comment="")
             self.assertEqual(self._next()["id"], "z2")
+
+        def _plan_security_unit(self):
+            self._run(
+                v_plan,
+                unit='{"id":"s1","kind":"issue","issues":[77777],'
+                '"gate":"normal","security":true}',
+            )
+            self._run(v_batch, action="new", branch="batch/x")
+            self._run(v_claim, unit="s1")
+
+        def test_built_refuses_a_security_unit(self):
+            self._plan_security_unit()
+            with self.assertRaises(SystemExit):
+                self._run(v_built, unit="s1", pr=99)
+            self.assertEqual(self.c.load()["batch"]["count"], 0)
+
+        def test_park_review_is_the_draft_units_exit(self):
+            self._plan_security_unit()
+            self._run(v_park, issue=77777, state="review", comment="drafted #99")
+            back = self.c.load()
+            self.assertEqual(back["units"]["s1"]["status"], "parked")
+            self.assertIsNone(self._next())  # does not come back round
+            self.assertEqual(back["batch"]["count"], 0)
+            self.assertEqual(back["batch"]["unit_ids"], [])
+
+        def test_park_releases_the_building_claim(self):
+            args = _park_edit_args(77777, L_REVIEW)
+            self.assertIn(L_BUILDING, args)
+            self.assertEqual(args[args.index(L_BUILDING) - 1], "--remove-label")
 
         def test_verify_set_without_detail_keeps_the_checklist(self):
             self._run(
