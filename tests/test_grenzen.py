@@ -10,7 +10,22 @@ from __future__ import annotations
 
 import pytest
 
-from chronicle.discord import grenzen
+from chronicle.bot import einrichten, erinnern
+from chronicle.discord import ausgabe, grenzen
+
+
+def test_discords_masse_stehen_auch_dort_richtig_wo_sie_gebraucht_werden():
+    """Die Zahlen, die von außen kommen — gemeinsam geprüft, weil sie zusammengehören.
+
+    Oberhalb dieser Werte weist Discord die Interaktion mit HTTP 400 ab: ein Menü ginge ab
+    der sechsundzwanzigsten Zeile schlicht nicht mehr auf. Jeder andere Test setzt die
+    Konstante ein und verschöbe sich mit ihr, deshalb steht die Zahl hier ausgeschrieben.
+    """
+    assert erinnern.PRO_SEITE == 5
+    assert erinnern.OPTIONEN_GRENZE == 25
+    assert einrichten.KANAL_GRENZE == 25
+    assert erinnern.KNOPF_GRENZE == 80
+    assert ausgabe.MAX_BYTES == 8 * 1024 * 1024
 
 
 def test_ein_kurzer_text_bleibt_eine_nachricht():

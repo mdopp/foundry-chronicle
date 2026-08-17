@@ -96,6 +96,11 @@ def test_die_grenze_ist_grosszuegig_genug_fuer_einen_abend():
     assert recordings.MAX_BYTES >= 256 * 1024 * 1024
 
 
+def test_die_grenze_ist_ein_halbes_gigabyte():
+    """Die Zahl benannt, nicht eingesetzt — sonst wandert der Test mit ihr mit."""
+    assert recordings.MAX_BYTES == 512 * 1024 * 1024
+
+
 def test_ein_diktat_zu_einer_unbekannten_sitzung_gibt_es_nicht(config, sitzung_id):
     with pytest.raises(sqlite3.IntegrityError):
         hochladen(config, 999)
@@ -330,6 +335,15 @@ def altern(config, aufnahme_id, tage):
             )
     finally:
         verbindung.close()
+
+
+def test_die_frist_ist_sieben_tage():
+    """Die Zusage aus der Ansage an Menschen, deren Stimme mitgeschnitten wurde.
+
+    Jeder andere Test setzt die Konstante ein und verschöbe sich mit ihr; hier steht die
+    Zahl selbst, damit sie nicht still auf einen beliebigen Wert fallen kann.
+    """
+    assert recordings.RETENTION_TAGE == 7
 
 
 def test_was_aelter_ist_als_die_frist_wird_geloescht(config, sitzung_id):

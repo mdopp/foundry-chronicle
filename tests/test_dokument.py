@@ -125,6 +125,11 @@ def gliederung(runde):
 # -- Aufteilen --------------------------------------------------------------------------
 
 
+def test_die_grenze_ist_ein_megabyte():
+    """Was der Bot ganz in den Speicher liest — die Zahl benannt statt eingesetzt."""
+    assert dokument.MAX_BYTES == 1024 * 1024
+
+
 def test_das_beispiel_ergibt_genau_drei_abende():
     abende = dokument.lesen(BEISPIEL).abende
 
