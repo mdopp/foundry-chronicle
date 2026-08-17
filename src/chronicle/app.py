@@ -23,10 +23,8 @@ Altweg und ``/healthz`` als Install-Gate der Box.
 Diese Oberfläche kennt **keine Runden**: die Instanz-Werte stehen zwar in ``instanz``,
 ``settings.effective`` will aber eine Runde, und für die Anzeige tut es die erste.
 
-Der nächtliche Lauf hängt an ``dienst()`` und nicht an ``create_app``: eine App, die nur
-befragt wird — im Test, im Skript —, soll nicht anfangen zu arbeiten. Er läuft hier und
-nicht im Aufnahme-Bot, weil es den ohne Bot-Token gar nicht gibt (siehe
-``chronicle.nightly``).
+Der nächtliche Lauf hängt seit #229 **nicht** mehr hier, sondern am Bot-Prozess
+(``chronicle.bot.gateway``). Diese Seite antwortet nur noch, sie arbeitet nicht.
 """
 
 from __future__ import annotations
@@ -35,7 +33,7 @@ import logging
 
 from flask import Flask, Response, redirect, render_template, request, url_for
 
-from chronicle import db, herkunft, instanz, nightly, roles, settings
+from chronicle import db, herkunft, instanz, roles, settings
 from chronicle import runde as runden
 from chronicle.compose import client as sprachmodell
 from chronicle.compose.client import ModelError
@@ -52,7 +50,7 @@ VERWALTUNG = frozenset({"einstellungen", "einstellungen_speichern"})
 BESTAETIGT = "gruppe_bestaetigt"
 
 
-def create_app(config: Config | None = None, *, zeitplan: bool = False) -> Flask:
+def create_app(config: Config | None = None) -> Flask:
     app = Flask(__name__)
     basis = config if config is not None else Config.from_env()
     app.config["CHRONICLE"] = basis
@@ -66,8 +64,6 @@ def create_app(config: Config | None = None, *, zeitplan: bool = False) -> Flask
     # trotzdem.
     if basis.require_remote_user and not vertrauen:
         herkunft.selbstprobe()
-    if zeitplan:
-        nightly.starten(basis)
 
     @app.before_request
     def tuersteher() -> tuple[str, int] | None:
@@ -188,15 +184,6 @@ def create_app(config: Config | None = None, *, zeitplan: bool = False) -> Flask
         return {"status": "ok"}
 
     return app
-
-
-def dienst() -> Flask:
-    """Der Einstieg des Servers — dieselbe App, dazu der nächtliche Zeitplan.
-
-    Der Faden hängt hier und nicht an ``create_app``, damit eine App, die nur befragt
-    wird, nicht anfängt zu arbeiten.
-    """
-    return create_app(zeitplan=True)
 
 
 def _modelle(adresse: str) -> tuple[tuple[str, ...], str, bool]:

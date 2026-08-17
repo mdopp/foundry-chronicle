@@ -6,7 +6,10 @@ und ``test_kette``. Hier bleiben die Haustür (ADR 0001), der Bot-Token, das Spr
 und die Frage, wer verwalten darf.
 """
 
+import importlib
 import logging
+import re
+from pathlib import Path
 
 import pytest
 from conftest import GM_FIGUR, UNSER_KONTO, runde, systemsprache
@@ -20,6 +23,8 @@ from chronicle.compose.client import ModelUnreachable
 from chronicle.config import Config
 from chronicle.foundry import service
 from chronicle.foundry.client import FoundryUnreachable
+
+WURZEL = Path(__file__).resolve().parents[1]
 
 PASSWORT = "passwort-taucht-nirgends-auf"
 BOT_TOKEN = "bot-token-taucht-nirgends-auf"
@@ -508,7 +513,7 @@ def test_main_liest_host_und_port_aus_der_umgebung(monkeypatch):
         def run(self, **kwargs):
             aufruf.update(kwargs)
 
-    monkeypatch.setattr(entry, "dienst", lambda: Attrappe())
+    monkeypatch.setattr(entry, "create_app", lambda: Attrappe())
     monkeypatch.setenv("CHRONICLE_HOST", "127.0.0.2")
     monkeypatch.setenv("CHRONICLE_PORT", "9001")
     entry.main()
@@ -522,7 +527,7 @@ def test_main_hat_vorgaben(monkeypatch):
         def run(self, **kwargs):
             aufruf.update(kwargs)
 
-    monkeypatch.setattr(entry, "dienst", lambda: Attrappe())
+    monkeypatch.setattr(entry, "create_app", lambda: Attrappe())
     monkeypatch.delenv("CHRONICLE_HOST", raising=False)
     monkeypatch.delenv("CHRONICLE_PORT", raising=False)
     entry.main()
@@ -812,3 +817,17 @@ def test_ein_formular_ohne_das_feld_nimmt_die_rolle_nicht_still_zurueck(tmp_path
     config, client = mit_gruppe(tmp_path)
     client.post("/einstellungen", data={"ollama_model": "gemma4:12b"}, headers=VERWALTUNG)
     assert instanz.admin_group(config.database_path) == GRUPPE
+
+
+def test_das_image_ruft_eine_app_die_es_wirklich_gibt():
+    """``--call`` im Dockerfile nennt einen Namen, den es hier geben muss.
+
+    Bis #229 hieß er ``dienst`` und hing den nächtlichen Lauf an; der hängt jetzt am
+    Bot-Prozess, und der Name ist mit ihm gegangen. Ein Name, der nicht mehr stimmt,
+    fiele erst auf der Box auf — und dann steht die Seite nicht.
+    """
+    dockerfile = (WURZEL / "Dockerfile").read_text(encoding="utf-8")
+    ziel = re.search(r"--call ([\w.]+:[\w.]+)", dockerfile).group(1)
+    modul, _, name = ziel.partition(":")
+
+    assert callable(getattr(importlib.import_module(modul), name))

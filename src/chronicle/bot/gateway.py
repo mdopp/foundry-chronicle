@@ -26,7 +26,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 
-from chronicle import consent, lebenszyklus, recordings
+from chronicle import consent, lebenszyklus, nightly, recordings
 from chronicle.bot import (
     BotFehler,
     BotHaelt,
@@ -2717,8 +2717,14 @@ def baue(config: Config):
 def run(config: Config) -> None:
     logger.info("Aufnahme-Bot: verbinde mit dem Discord-Gateway")
     discord = _discord()
+    bot = baue(config)
+    # Der nächtliche Lauf hängt an diesem Prozess (#229) — aber neben der Schleife, nicht
+    # in ihr: ``nightly.starten`` gibt einen eigenen Faden, und der Lauf selbst bekommt in
+    # ``jobs.start`` noch einen. Auf der Ereignisschleife bliebe während einer Verschriftung
+    # der Herzschlag zu Discord aus, und der Bot fiele mitten in der Nacht vom Gateway.
+    nightly.starten(config)
     try:
-        baue(config).run(config.discord_bot_token)
+        bot.run(config.discord_bot_token)
     except discord.errors.PrivilegedIntentsRequired as fehler:
         raise BotHaelt(RECHTE_FEHLEN) from fehler
     except discord.errors.LoginFailure as fehler:

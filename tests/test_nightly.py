@@ -3,7 +3,6 @@
 import json
 import threading
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -424,8 +423,8 @@ def test_die_gespeicherte_uhrzeit_bestimmt_den_zeitpunkt(stelle, monkeypatch):
 
 
 def test_eine_verabschiedete_runde_bekommt_keine_nacht_mehr(stelle, monkeypatch):
-    """Dieser Faden läuft im Webdienst und sähe den Rauswurf sonst nie — er verschriftete
-    dreißig Tage lang weiter, was eine Gruppe längst widerrufen hat."""
+    """Dieser Faden sähe den Rauswurf sonst nie — er verschriftete dreißig Tage lang
+    weiter, was eine Gruppe längst widerrufen hat."""
     monkeypatch.setattr(nightly, "lauf", lambda config, eine: "durch")
     unsere = runden.anlegen(stelle.database_path, "Der Krumme Ast", guild_id="1101")
     lebenszyklus.sperren(stelle.database_path, "1101")
@@ -599,24 +598,21 @@ def test_ein_laufender_lauf_zeigt_sich_als_unterwegs(stelle):
 # --- Wo der Zeitplan hängt -----------------------------------------------------------
 
 
-def test_der_dienst_stellt_den_zeitplan_an_die_blosse_app_nicht(stelle, monkeypatch):
+def test_die_betreiberseite_stellt_keinen_zeitplan_mehr_an(stelle, monkeypatch):
+    """Der Zeitplan hängt seit #229 am Bot-Prozess.
+
+    Bliebe er hier stehen, sähen zwei Prozesse auf dieselbe Uhr und stießen dieselbe Nacht
+    an — die Seite arbeitet nicht mehr, sie antwortet nur noch.
+    """
     gestartet = []
     monkeypatch.setattr(nightly, "starten", lambda config: gestartet.append(config))
 
     create_app(stelle)
+
     assert gestartet == []
 
-    create_app(stelle, zeitplan=True)
-    assert len(gestartet) == 1
 
-
-def test_das_image_startet_den_dienst_und_nicht_die_blosse_app():
-    """Startete der Container ``create_app``, liefe nachts nie etwas — und niemand merkte es."""
-    dockerfile = (Path(__file__).resolve().parents[1] / "Dockerfile").read_text(encoding="utf-8")
-    assert "chronicle.app:dienst" in dockerfile
-
-
-def test_der_faden_laeuft_neben_dem_dienst(stelle, monkeypatch):
+def test_der_faden_laeuft_neben_dem_bot(stelle, monkeypatch):
     monkeypatch.setattr(nightly, "betreiben", lambda config, **kwargs: None)
     faden = nightly.starten(stelle)
     faden.join(timeout=5)

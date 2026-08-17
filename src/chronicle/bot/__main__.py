@@ -7,6 +7,9 @@ wird. Er läuft deshalb neben dem Webdienst, nicht in ihm.
 Ohne Token startet er nicht und sagt das in einem Satz — der Token wird unter
 ``/einstellungen`` gepflegt und ein dort gesetzter Wert schlägt die Umgebung.
 
+Seit #229 trägt er außerdem den nächtlichen Lauf — angestoßen wird er in
+``gateway.run``, und zwar in einem Faden neben der Gateway-Verbindung.
+
 Seit #228 bedient dieser Prozess außerdem ``/healthz``, das Install-Gate der Box. Das
 ändert, was »liegen bleiben« heißt: bisher endete der Bot ohne Token mit 0 und der
 Container blieb aus. Am Gate hängt jetzt die Installation, und ein fehlender Token ist
