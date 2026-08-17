@@ -425,7 +425,15 @@ python -m chronicle.bot              # ein eigener, dauerhafter Prozess
 Der Aufnahme-Bot ist **kein Stapellauf**: er hält eine Gateway-Verbindung, weil Sprache
 nur mitgeschnitten werden kann, während sie gesprochen wird. Auf der Box läuft er deshalb
 als zweiter Container im selben Pod, mit demselben Image und `python -m chronicle.bot`.
-Ohne Bot-Token startet er nicht und sagt das in einem Satz.
+Ohne Bot-Token verbindet er sich nicht und sagt das in einem Satz.
+
+Er trägt seit #228 auch **`/healthz`, das Install-Gate der Box** — zehn Zeilen HTTP, kein
+Flask, auf `CHRONICLE_HEALTH_PORT` und **nur auf `127.0.0.1`**: der Pod liegt im Host-Netz,
+ein `0.0.0.0` stünde im ganzen LAN offen (#190). Ist die Variable nicht gesetzt, bindet er
+nichts — auf einer Entwicklungsmaschine braucht das Gate niemand. Weil daran die
+Installation hängt, **beendet** er sich ohne Token nicht mehr, sondern bleibt liegen und
+antwortet weiter: bei der Erstinstallation ist der fehlende Token der Normalfall, und der
+Poller fände sonst niemanden. Ein neuer Anmeldeversuch wird daraus trotzdem nicht.
 
 Im Sprachkanal: **`/aufnahme start`** holt den Bot in den Kanal des Aufrufers — eine
 Kanal-Konfiguration braucht es deshalb nicht —, **`/aufnahme stop`** beendet die Aufnahme

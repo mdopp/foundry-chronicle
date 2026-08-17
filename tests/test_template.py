@@ -70,10 +70,28 @@ def test_pflichtannotationen(manifest: dict) -> None:
     assert annotationen["servicebay.dependencies"] == "nginx,auth"
 
 
-def test_healthcheck_zeigt_auf_healthz(manifest: dict, variablen: dict) -> None:
+def test_healthcheck_zeigt_auf_das_gate_des_bots(manifest: dict, variablen: dict) -> None:
+    # Seit #228 bedient der Bot-Prozess das Install-Gate, nicht mehr die Betreiber-Seite:
+    # er ist der Prozess, der bleibt, wenn die Seite mit #227 fällt. Der Port ist ein
+    # anderer als der der Seite — beide Container teilen den Netz-Namensraum.
     probe = yaml.safe_load(manifest["metadata"]["annotations"]["servicebay.healthcheck"])
-    port = variablen["CHRONICLE_PORT"]["default"]
+    port = variablen["CHRONICLE_HEALTH_PORT"]["default"]
     assert probe["url"] == f"http://localhost:{port}/healthz"
+    assert port != variablen["CHRONICLE_PORT"]["default"]
+
+
+def test_das_gate_bekommt_der_bot_und_wird_nicht_veroeffentlicht(
+    manifest: dict, variablen: dict
+) -> None:
+    # Es hört auf 127.0.0.1 (``chronicle.bot.healthz``) und ist damit weder aus dem LAN
+    # erreichbar noch etwas, das der Proxy anfassen dürfte. Ein Eintrag in
+    # servicebay.ports oder ein containerPort behauptete das Gegenteil.
+    port = variablen["CHRONICLE_HEALTH_PORT"]["default"]
+    container = {eintrag["name"]: eintrag for eintrag in manifest["spec"]["containers"]}
+    bot = {eintrag["name"]: eintrag["value"] for eintrag in container["bot"]["env"]}
+    assert bot["CHRONICLE_HEALTH_PORT"] == port
+    assert "CHRONICLE_HEALTH_PORT" not in {e["name"] for e in container["chronik"]["env"]}
+    assert port not in manifest["metadata"]["annotations"]["servicebay.ports"]
 
 
 def test_das_hostnetz_bleibt_samt_seiner_begruendung(manifest: dict, rohtext: str) -> None:

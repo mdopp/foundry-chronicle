@@ -38,6 +38,12 @@ REMOTE_USER_VARIABLE = "CHRONICLE_REQUIRE_REMOTE_USER"
 # steht. Siehe ``chronicle.herkunft``.
 TRUSTED_PROXIES_VARIABLE = "CHRONICLE_TRUSTED_PROXIES"
 
+# Der Port, auf dem der Bot-Prozess das Install-Gate der Box bedient (#228). Ohne ihn
+# bindet er nichts — gesetzt wird er von der Vorlage, wie ``CHRONICLE_REQUIRE_REMOTE_USER``
+# auch. Eine Adresse gibt es dazu nicht: gebunden wird die Schleife und sonst nichts
+# (``chronicle.bot.healthz``).
+HEALTH_PORT_VARIABLE = "CHRONICLE_HEALTH_PORT"
+
 # Der Box-Standard: unser Pod läuft im Host-Netz, Ollama hört daneben auf 11434. Er steht
 # hier und nirgends sonst — Oberfläche, Einrichtung und Komposition fragen denselben Wert,
 # sonst verspräche die Seite eine Adresse, gegen die der Lauf nicht redet.
@@ -76,6 +82,11 @@ def _liste(env: Mapping[str, str], name: str) -> tuple[str, ...]:
     return tuple(teil.strip() for teil in (env.get(name) or "").split(",") if teil.strip())
 
 
+def _port(env: Mapping[str, str], name: str) -> int | None:
+    roh = _value(env, name)
+    return None if roh is None else int(roh)
+
+
 def _flag(env: Mapping[str, str], name: str) -> bool:
     return (env.get(name) or "").strip().lower() in ("1", "true", "yes", "on")
 
@@ -96,6 +107,7 @@ class Config:
     whisper_device: str | None = None
     require_remote_user: bool = False
     trusted_proxies: tuple[str, ...] = ()
+    health_port: int | None = None
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> Config:
@@ -115,6 +127,7 @@ class Config:
             whisper_device=_value(env, "CHRONICLE_WHISPER_DEVICE"),
             require_remote_user=_flag(env, REMOTE_USER_VARIABLE),
             trusted_proxies=_liste(env, TRUSTED_PROXIES_VARIABLE),
+            health_port=_port(env, HEALTH_PORT_VARIABLE),
         )
 
     @property
@@ -165,5 +178,6 @@ class Config:
             f"whisper_model={self.whisper_model!r}, "
             f"whisper_device={self.whisper_device!r}, "
             f"require_remote_user={self.require_remote_user!r}, "
-            f"trusted_proxies={self.trusted_proxies!r})"
+            f"trusted_proxies={self.trusted_proxies!r}, "
+            f"health_port={self.health_port!r})"
         )

@@ -6,10 +6,15 @@ Spiels entstehen, und dem Chat-Log aus Foundry VTT wird eine lesbare Chronik.
 **Bedient wird in Discord** (#62). Was die spielende Gruppe betrifft — Sitzung, Szene,
 Notiz, Diktat, Chronik, Suche, Register, Zuordnung, Einrichtung — ist seit #157 ein
 Befehl im eigenen Server. Über HTTP liefert dieser Dienst nur noch **eine Seite**: die
-Betreiber-Seite unter `/einstellungen`, dazu `/status` (301 dorthin), `/` (Weiterleitung
-dorthin) und `/healthz`. Dort steht, was *keiner Gilde gehört* und deshalb in Discord
+Betreiber-Seite unter `/einstellungen`, dazu `/status` (301 dorthin) und `/`
+(Weiterleitung dorthin). Dort steht, was *keiner Gilde gehört* und deshalb in Discord
 keinen Ort hat: der Discord-Bot-Token, Ollama-Adresse und -Modell, und wer diese Seite
 verwalten darf.
+
+`/healthz` steht daneben und nicht darin: das Install-Gate der Box kommt seit #228 aus
+dem **Bot**-Prozess, auf einem eigenen Port und nur auf `127.0.0.1`. Der Bot ist der
+Prozess, der bleibt, wenn die Seite mit #227 fällt — und ein Gate, das im LAN hörte,
+wäre wieder der offene Port aus #190.
 
 Die Seite ist serverseitig gerendertes HTML **ohne eigenes Login** — angemeldet wird an
 Authelia, der Proxy setzt `Remote-User`, und ein Request ohne diesen Header wird
@@ -218,7 +223,10 @@ ab, welcher Stand läuft.
 
 Nach dem Deploy gehört zur Abnahme:
 
-- `/healthz` liefert 200 — am Proxy vorbei, es ist das Install-Gate der Box.
+- `/healthz` liefert 200 — auf `CHRONICLE_HEALTH_PORT`, aus dem **Bot**-Prozess, am Proxy
+  vorbei: es ist das Install-Gate der Box (#228). Auf der Box gemessen, denn es hört nur
+  auf `127.0.0.1`; von einem anderen Rechner im LAN muss derselbe Port **abgewiesen**
+  werden, und der Bot muss dabei am Gateway hängen bleiben.
 - Die Subdomain antwortet unauthentifiziert mit 302 auf `auth.<domain>`, und ein Request
   ohne `Remote-User` wird mit 403 abgelehnt.
 - **Und mit erfundenem `Remote-User` auch:** von einem anderen Rechner im LAN direkt auf
