@@ -9,13 +9,25 @@ from zoneinfo import ZoneInfo
 import pytest
 from conftest import GRENZE, laufender_job, runde, warte_bis
 
-from chronicle import db, jobs, lebenszyklus, nightly, notes, settings, zugang
+from chronicle import (
+    db,
+    jobs,
+    kette,
+    lebenszyklus,
+    nightly,
+    notes,
+    protocol,
+    recordings,
+    settings,
+    zugang,
+)
 from chronicle import runde as runden
 from chronicle.app import create_app
 from chronicle.config import Config
 from chronicle.discord import rueckblick
 from chronicle.discord import service as diktat
 from chronicle.foundry.model import SyncState
+from chronicle.transcribe import service as transcribe
 
 
 @pytest.fixture
@@ -45,6 +57,30 @@ def mit_notiz(config, played_on="2026-08-05"):
     szene = notes.session(runde(config), sitzung_id).scenes[0]
     notes.add_note(runde(config), szene.id, "Wir brechen bei Sonnenaufgang auf.")
     return sitzung_id
+
+
+GESPROCHEN = "Da unten steht eine Tür."
+STAND = "2026-08-05T21:00:00+00:00"
+
+
+def mit_spur(config, sitzung_id, text=GESPROCHEN):
+    """Eine verschriftete Bot-Spur, wie sie nach dem Verschriften in der Datenbank steht."""
+    gastgeber = runde(config)
+    scope = db.scoped(gastgeber)
+    try:
+        beginn = scope.execute(
+            "SELECT created_at FROM scene WHERE runde_id = ? AND session_id = ? "
+            "ORDER BY position LIMIT 1",
+            (scope.runde_id, sitzung_id),
+        ).fetchone()["created_at"]
+        aufnahme = recordings.enqueue(
+            gastgeber, sitzung_id, "mira.wav", discord_user_id="4001", started_at=beginn
+        )
+        # Verschriftet ist sie schon — sonst lüde der Nachtlauf ein echtes Modell.
+        recordings.mark(gastgeber, aufnahme.id, recordings.FERTIG)
+        transcribe.store(scope, sitzung_id, "mira", ((0, 2000, text),), STAND)
+    finally:
+        scope.close()
 
 
 def chronik_altern(config, sitzung_id, sekunden=60):
@@ -100,9 +136,9 @@ def test_die_kette_laeuft_in_ihrer_reihenfolge(stelle, monkeypatch):
     monkeypatch.setattr(nightly, "diktat_abholen", merken("diktat", ("nichts",)))
     monkeypatch.setattr(nightly, "run_queue", merken("transkript", ()))
     monkeypatch.setattr(nightly, "sync", merken("abgleich", None))
-    monkeypatch.setattr(nightly, "compose_session", merken("chronik", None))
-    monkeypatch.setattr(nightly, "recap_session", lambda *a, **k: None)
-    monkeypatch.setattr(nightly, "deliver", lambda *a, **k: "")
+    monkeypatch.setattr(kette, "compose_session", merken("chronik", None))
+    monkeypatch.setattr(kette, "recap_session", lambda *a, **k: None)
+    monkeypatch.setattr(kette, "deliver", lambda *a, **k: "")
     mit_notiz(stelle)
 
     nightly.lauf(stelle, runde(stelle))
@@ -123,9 +159,9 @@ def test_mit_foundry_steht_der_abgleich_zwischen_aufnahmen_und_chronik(stelle, m
     monkeypatch.setattr(nightly, "diktat_abholen", merken("diktat", ("nichts",)))
     monkeypatch.setattr(nightly, "run_queue", merken("transkript", ()))
     monkeypatch.setattr(nightly, "sync", merken("abgleich", SyncState(message="Stand vom heute.")))
-    monkeypatch.setattr(nightly, "compose_session", merken("chronik", None))
-    monkeypatch.setattr(nightly, "recap_session", lambda *a, **k: None)
-    monkeypatch.setattr(nightly, "deliver", lambda *a, **k: "")
+    monkeypatch.setattr(kette, "compose_session", merken("chronik", None))
+    monkeypatch.setattr(kette, "recap_session", lambda *a, **k: None)
+    monkeypatch.setattr(kette, "deliver", lambda *a, **k: "")
     eingerichtet = Config(
         data_dir=stelle.data_dir,
         foundry_url="https://foundry.example/",
@@ -166,7 +202,7 @@ def test_ohne_bot_token_bleibt_der_briefkasten_zu_und_der_rest_laeuft(stelle):
     assert schritte[nightly.DIKTAT]["text"] == diktat.NICHT_EINGERICHTET
     assert schritte[nightly.DIKTAT]["gelungen"]
     assert schritte[nightly.TRANSKRIPT]["text"] == nightly.WARTESCHLANGE_LEER
-    assert "Chronik und Rückblick geschrieben" in schritte[nightly.CHRONIK]["text"]
+    assert jobs.STEHT_OHNE_MODELL in schritte[nightly.CHRONIK]["text"]
 
 
 def test_ohne_foundry_zugang_wird_nicht_abgeglichen(stelle, monkeypatch):
@@ -190,7 +226,42 @@ def test_ein_gescheiterter_schritt_nimmt_die_uebrigen_nicht_mit(stelle, monkeypa
 
     assert not schritte[nightly.DIKTAT]["gelungen"]
     assert "Discord antwortet nicht" in schritte[nightly.DIKTAT]["text"]
-    assert "Chronik und Rückblick geschrieben" in schritte[nightly.CHRONIK]["text"]
+    assert jobs.STEHT_OHNE_MODELL in schritte[nightly.CHRONIK]["text"]
+
+
+def test_der_nachtlauf_traegt_das_gesprochene_wort_in_die_chronik(stelle):
+    """Der Nachtlauf, wirklich gefahren — kein Schritt gestubbt.
+
+    Bis #221 fehlte ihm die Übernahme der Transkripte: er verschriftete die Aufnahmen und
+    komponierte daraus eine Chronik, in der kein gesprochenes Wort stand. Danach war die
+    Sitzung nicht mehr fällig — der Abend blieb dauerhaft stumm, bis jemand von Hand
+    ``/chronik fertig`` gab. Ein Test mit gestubbten Schritten sieht das nie.
+    """
+    gastgeber = runde(stelle)
+    sitzung_id = mit_notiz(stelle)
+    mit_spur(stelle, sitzung_id)
+
+    nightly.lauf(stelle, gastgeber)
+
+    szene = notes.session(gastgeber, sitzung_id).scenes[0]
+    # Ohne Einwilligungseintrag steht der Spurname da und kein geratener Name.
+    assert f"mira: {GESPROCHEN}" in [notiz.text for notiz in szene.notes]
+    assert GESPROCHEN in protocol.stored(gastgeber, sitzung_id).text
+    # Und danach ist die Sitzung von der Fälligkeitsliste — mit dem gesprochenen Wort
+    # darin, nicht ohne.
+    assert nightly.offen(gastgeber) == ()
+
+
+def test_ohne_sitzung_meldet_die_nacht_keine_chronik(stelle, monkeypatch):
+    """Eine Zusage ohne Deckung war der Fehler: »geschrieben« stand auch dann da, wenn
+    nichts entstand (#221, dieselbe Gestalt wie #182)."""
+    mit_notiz(stelle)
+    monkeypatch.setattr(lebenszyklus, "ruht", lambda _runde: True)
+
+    schritte = {s["name"]: s for s in json.loads(nightly.lauf(stelle, runde(stelle)))}
+
+    assert lebenszyklus.RUHT in schritte[nightly.CHRONIK]["text"]
+    assert not schritte[nightly.CHRONIK]["gelungen"]
 
 
 # --- Welche Sitzung neues Material hat -----------------------------------------------
@@ -214,7 +285,7 @@ def test_eine_misslungene_zustellung_steht_auf_der_karte_der_nacht(stelle, monke
     der Rückblick nirgends ankam."""
     mit_notiz(stelle)
     monkeypatch.setattr(
-        nightly,
+        kette,
         "deliver",
         lambda config, eine, sitzung: rueckblick.Zustellung("Nirgends angekommen.", True),
     )
@@ -227,7 +298,7 @@ def test_eine_misslungene_zustellung_steht_auf_der_karte_der_nacht(stelle, monke
 def test_eine_gelungene_zustellung_bleibt_von_der_karte_weg(stelle, monkeypatch):
     mit_notiz(stelle)
     monkeypatch.setattr(
-        nightly,
+        kette,
         "deliver",
         lambda config, eine, sitzung: rueckblick.Zustellung("Alles gut gegangen."),
     )

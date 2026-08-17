@@ -44,12 +44,10 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from chronicle import db, jobs, register, settings, zugang
+from chronicle import db, jobs, settings, zugang
 from chronicle import runde as runden
-from chronicle.compose.service import KIND, compose_session, recap_session
+from chronicle.compose.service import KIND
 from chronicle.config import Config
-from chronicle.discord.ausgabe import anhaengen
-from chronicle.discord.rueckblick import deliver
 from chronicle.discord.service import LEER as BRIEFKASTEN_LEER
 from chronicle.discord.service import run as diktat_abholen
 from chronicle.foundry.service import sync
@@ -80,7 +78,8 @@ NICHTS_ZU_SCHREIBEN = "Keine Sitzung mit neuem Material — es blieb alles, wie 
 WARTESCHLANGE_LEER = "Nichts in der Warteschlange."
 NICHT_DURCHGEKOMMEN = "Nicht durchgekommen: {grund}"
 
-GESCHRIEBEN = "Sitzung vom {datum}: Chronik und Rückblick geschrieben."
+VORSPANN = "Sitzung vom {datum}: "
+NICHT_GESCHRIEBEN = "keine Chronik — {grund}"
 
 
 @dataclass(frozen=True)
@@ -178,23 +177,25 @@ def offen(runde: Runde) -> tuple[tuple[int, str], ...]:
 
 
 def _chronik(config: Config, runde: Runde) -> Schritt:
+    """Jede fällige Sitzung durch dieselbe Kette, die auch ``/chronik fertig`` geht.
+
+    Sie schreibt den Satz, den die Karte zeigt — bis #221 stand hier eine eigene
+    Reihenfolge, der die Übernahme der Transkripte fehlte, und darüber ein »geschrieben«,
+    das auch dann kam, wenn nichts entstanden war.
+    """
     faellig = offen(runde)
     if not faellig:
         return Schritt(CHRONIK, NICHTS_ZU_SCHREIBEN)
     meldungen = []
+    gelungen = True
     for sitzung_id, datum in faellig:
-        compose_session(config, runde, sitzung_id)
-        recap_session(config, runde, sitzung_id)
-        zustellung = deliver(config, runde, sitzung_id)
-        ausgabe = anhaengen(config, runde, sitzung_id)
-        register.suggest(config, runde, sitzung_id)
-        # Eine misslungene Zustellung steht auf der Karte: verworfen war sie der stille
-        # Ausfall aus #182 — die Nacht meldete »geschrieben« und niemand erfuhr, dass der
-        # Rückblick nirgends ankam.
-        liegengeblieben = zustellung.meldung if zustellung.gescheitert else ""
-        gesagt = (GESCHRIEBEN.format(datum=datum), liegengeblieben, ausgabe)
-        meldungen.append(" ".join(satz for satz in gesagt if satz))
-    return Schritt(CHRONIK, " ".join(meldungen))
+        try:
+            satz = jobs.chronik(config, runde, sitzung_id)
+        except jobs.JobError as fehler:
+            gelungen = False
+            satz = NICHT_GESCHRIEBEN.format(grund=fehler)
+        meldungen.append(VORSPANN.format(datum=datum) + satz)
+    return Schritt(CHRONIK, " ".join(meldungen), gelungen=gelungen)
 
 
 def lauf(config: Config, runde: Runde) -> str:

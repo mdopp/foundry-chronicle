@@ -1,5 +1,10 @@
 """python -m chronicle.compose <sitzung> — Chronik, Rückblick, Zustellung, im Stapel.
 
+Gegangen wird ``kette.schreiben``, dieselbe Reihenfolge wie hinter ``/chronik fertig`` und
+im Nachtlauf; hier steht nur, was gedruckt wird. Bis #221 stand sie hier ein zweites Mal
+und ohne die Übernahme der Transkripte — dieser Stapel schrieb damit eine Chronik ohne
+gesprochenes Wort.
+
 Ein Lauf, zwei Ausgänge: der Rückblick liest die Chronik, die der erste Schritt gerade
 abgelegt hat. Ein eigener Aufruf daneben wäre ein zweiter Stapel für dieselbe
 Komposition; ein zweiter Lauf ersetzt ohnehin beides.
@@ -19,12 +24,9 @@ from __future__ import annotations
 import logging
 import sys
 
-from chronicle import register
+from chronicle import kette
 from chronicle import runde as runden
-from chronicle.compose.service import compose_session, recap_session
 from chronicle.config import Config
-from chronicle.discord.ausgabe import anhaengen
-from chronicle.discord.rueckblick import deliver
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -37,19 +39,19 @@ def main(argv: list[str] | None = None) -> int:
     config = Config.from_env()
     # Der Stapelaufruf kennt noch keine Runde; er nimmt die erste, wie die Oberfläche.
     runde = runden.erste(config.database_path)
-    chronik = compose_session(config, runde, sitzung)
-    if chronik is None:
-        print(f"Sitzung {sitzung} gibt es nicht.")
+    lauf = kette.schreiben(config, runde, sitzung)
+    if lauf is None:
+        print(kette.warum_nicht(runde))
         return 2
-    rueckblick = recap_session(config, runde, sitzung)
-    print(chronik.message)
-    print(rueckblick.message)
-    print(deliver(config, runde, sitzung).meldung)
-    hinweis = anhaengen(config, runde, sitzung)
-    if hinweis:
-        print(hinweis)
-    print(register.suggest(config, runde, sitzung).message)
-    return 1 if chronik.reason or rueckblick.reason else 0
+    print(lauf.chronik.message)
+    if lauf.rueckblick is not None:
+        print(lauf.rueckblick.message)
+    print(lauf.zustellung.meldung)
+    if lauf.ausgabe:
+        print(lauf.ausgabe)
+    print(lauf.vorschlaege.message)
+    ohne_modell = lauf.chronik.reason or (lauf.rueckblick is not None and lauf.rueckblick.reason)
+    return 1 if ohne_modell else 0
 
 
 if __name__ == "__main__":

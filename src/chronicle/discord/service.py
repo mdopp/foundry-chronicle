@@ -125,12 +125,30 @@ def _ist_audio(anhang: Attachment) -> bool:
 
 
 def _spur(
-    config: Config, runde: Runde, bot: DiscordClient, sitzung_id: int, anhang: Attachment
+    config: Config,
+    runde: Runde,
+    bot: DiscordClient,
+    sitzung_id: int,
+    anhang: Attachment,
+    nachricht: Message,
 ) -> str:
+    """Ein Anhang wird eine wartende Spur — mit dem Zeitpunkt der **Nachricht** daran.
+
+    Der Anker ist der Einwurf und nicht das Abholen (#222): der Briefkasten wird nachts
+    geleert, und mit der Abholzeit käme ein Diktat vom Heimweg in der Szene an, die gerade
+    zufällig die letzte ist. Ohne ihn erreicht es überhaupt keine — ``merge.DIKTATE``
+    verlangt ihn, weil eine Spur ohne Sitzungsuhr sonst keine Achse hat. Der Weg über den
+    Sitzungs-Thread reicht ihn seit #160 durch; hier fehlte er.
+
+    **Nachgetragen wird nichts.** Eine Spur aus der Zeit davor hat keine Nachricht mehr,
+    an der ein Anker abzulesen wäre — ``uploaded_at`` ist der Moment des Abholens und
+    stünde für einen Einwurf, den es so nie gab. Wer sie in der Chronik haben will, wirft
+    sie neu ein; einen geratenen Zeitpunkt bekommt sie nicht.
+    """
     config.recordings_dir.mkdir(parents=True, exist_ok=True)
     ziel = recordings.target_path(config.recordings_dir, sitzung_id, anhang.filename)
     bot.download(anhang, ziel)
-    recordings.enqueue(runde, sitzung_id, ziel.name)
+    recordings.enqueue(runde, sitzung_id, ziel.name, message_at=nachricht.timestamp.strip() or None)
     return ziel.name
 
 
@@ -178,7 +196,8 @@ def _eine_nachricht(
         return OHNE_SITZUNG, WARTET
 
     meldungen = [
-        f"Diktat »{_spur(config, runde, bot, sitzung.id, anhang)}« → Sitzung {sitzung.id}, "
+        f"Diktat »{_spur(config, runde, bot, sitzung.id, anhang, nachricht)}« → "
+        f"Sitzung {sitzung.id}, "
         "wartet auf den Stapel."
         for anhang in spuren
     ]

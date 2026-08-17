@@ -46,15 +46,12 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
-from chronicle import db, lebenszyklus, recordings, register
-from chronicle.compose.service import compose_session, erzaehlen, recap_session
+from chronicle import db, kette, lebenszyklus, register
+from chronicle.compose.service import erzaehlen
 from chronicle.config import Config
-from chronicle.discord.ausgabe import anhaengen, erzaehlung_zustellen
-from chronicle.discord.rueckblick import deliver
+from chronicle.discord.ausgabe import erzaehlung_zustellen
 from chronicle.foundry.service import sync
 from chronicle.runde import Runde
-from chronicle.transcribe.merge import uebernehmen
-from chronicle.transcribe.service import run_queue
 
 logger = logging.getLogger(__name__)
 
@@ -85,8 +82,6 @@ UNTERBROCHEN = (
     "Der Lauf wurde unterbrochen, weil der Dienst zwischendurch neu gestartet ist. "
     "Einfach noch einmal anstoßen."
 )
-
-OHNE_SITZUNG = "Diese Sitzung gibt es nicht mehr."
 
 OHNE_BEREICH = "In diesem Bereich liegt keine Sitzung mehr — nachzuerzählen gibt es nichts."
 
@@ -419,26 +414,18 @@ def abgleich(config: Config, runde: Runde, *, passwort: str | None = None) -> st
 
 
 def chronik(config: Config, runde: Runde, session_id: int) -> str:
-    """Erst die wartenden Aufnahmen verschriften, dann übernehmen, dann komponieren.
+    """Der Durchgang aus ``kette.schreiben``, in einem Satz beantwortet.
 
-    Die Übernahme steht zwischen beidem und nicht daneben: die Komposition liest Notizen,
-    und ein Transkript, das erst danach zur Notiz würde, käme eine Chronik zu spät. Genau
-    das war die Lücke aus #140.
+    Die Reihenfolge steht dort und nicht hier: sie ist dieselbe, die der Nachtlauf und der
+    Stapelaufruf gehen, und dreimal gepflegt lief sie auseinander (#221).
     """
-    wartend = len(recordings.pending(runde))
-    run_queue(config, runde)
-    uebernehmen(runde, session_id)
-    ergebnis = compose_session(config, runde, session_id)
-    if ergebnis is None:
-        # Zwei Wege hierher, und der Unterschied gehört gesagt: die Sitzung ist fort — oder
-        # die Runde ruht, seit der Lauf begann. »Gibt es nicht mehr« wäre dann falsch.
-        raise JobError(lebenszyklus.RUHT if lebenszyklus.ruht(runde) else OHNE_SITZUNG)
-    recap_session(config, runde, session_id)
-    zustellung = deliver(config, runde, session_id)
-    ausgabe = anhaengen(config, runde, session_id)
-    vorschlaege = register.suggest(config, runde, session_id)
+    lauf = kette.schreiben(config, runde, session_id)
+    if lauf is None:
+        raise JobError(kette.warum_nicht(runde))
+    wartend, zustellung, ausgabe = lauf.wartend, lauf.zustellung, lauf.ausgabe
+    vorschlaege = lauf.vorschlaege
     vorlauf = "" if not wartend else VERSCHRIFTET.format(anzahl=wartend, mehr=mehrzahl(wartend))
-    stand = STEHT if ergebnis.reason is None else STEHT_OHNE_MODELL
+    stand = STEHT if lauf.chronik.reason is None else STEHT_OHNE_MODELL
     # Der Hinweis auf offene Vorschläge steht bewusst im Ergebnis des Laufs: wird das
     # Bestätigen nicht angestoßen, wird es übersprungen, und das Register verfällt.
     nachsatz = "" if not vorschlaege.count else f" {vorschlaege.message}"
