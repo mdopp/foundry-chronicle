@@ -13,13 +13,15 @@ metadata:
     # Die Schrumpfung mit #157 nimmt ``auth`` nicht heraus: die verbliebene Betreiber-Seite
     # trägt den Discord-Bot-Token, ADR 0001 gilt für sie also unverändert.
     servicebay.dependencies: "nginx,auth"
-    # Install-Gate der Box: /healthz antwortet 200, sobald Flask das Schema angelegt hat.
-    # Der Poller fragt am Proxy vorbei, deshalb ist der Endpunkt vom Remote-User-Zwang
-    # ausgenommen (siehe chronicle/app.py). Geprüft wird /healthz und nicht die Wurzel —
-    # die antwortet seit #157 mit einer Weiterleitung auf /einstellungen und läge außerdem
-    # hinter dem Remote-User-Zwang, den der Poller gar nicht erfüllen kann.
+    # Install-Gate der Box: /healthz antwortet 200, sobald der Prozess steht. Seit #228
+    # bedient es der **Bot** und nicht mehr die Betreiber-Seite — er ist der Prozess, der
+    # bleibt, wenn die Seite mit #227 fällt. Sein Port ist ein anderer als der der Seite,
+    # weil beide im selben Netz-Namensraum liegen, und er hört **nur auf der Schleife**:
+    # der Poller läuft auf dieser Box, im LAN hat das Gate nichts zu suchen (#190).
+    # Deshalb steht CHRONICLE_HEALTH_PORT auch nicht in servicebay.ports — dort stehen
+    # die veröffentlichten Ports, und dieser ist keiner.
     servicebay.healthcheck: |
-      url: http://localhost:{{CHRONICLE_PORT}}/healthz
+      url: http://localhost:{{CHRONICLE_HEALTH_PORT}}/healthz
       interval: 30s
       timeout: 5s
       startup_timeout: 5m
@@ -48,6 +50,11 @@ spec:
   # 2026-08-10 hat Discord deswegen den Token zurückgesetzt. Der Bot endet in diesen
   # Fällen bewusst mit 0 (``chronicle.bot.BotHaelt``) — diese Zeile ist die andere
   # Hälfte der Abmachung: 0 heißt liegen lassen.
+  # Seit #228 hängt am Bot außerdem das Install-Gate, und dann bleibt er in genau diesen
+  # Fällen liegen, **ohne** sich zu beenden: ein fehlender Token ist bei der
+  # Erstinstallation der Normalfall, und ein beendeter Container ließe den Poller ins
+  # Leere greifen. Verbunden wird trotzdem nichts mehr. Für alles andere — einen echten
+  # Absturz — gilt OnFailure unverändert.
   restartPolicy: OnFailure
   containers:
   # Hinter dem Proxy-Host liegt seit #157 keine Anwendung mehr, sondern **eine Seite**:
@@ -127,6 +134,12 @@ spec:
         value: "/data"
       - name: CHRONICLE_RECORDINGS_DIR
         value: "/aufnahmen"
+      # Das Install-Gate der Box (#228). Gebunden wird 127.0.0.1 und sonst nichts — eine
+      # Variable für die Adresse gibt es nicht, weil es dafür keinen richtigen zweiten
+      # Wert gäbe: der Pod liegt im Host-Netz, 0.0.0.0 stünde im ganzen LAN offen.
+      # Deshalb kein containerPort und kein Eintrag in servicebay.ports.
+      - name: CHRONICLE_HEALTH_PORT
+        value: "{{CHRONICLE_HEALTH_PORT}}"
     volumeMounts:
       - mountPath: /data
         name: chronik-daten

@@ -145,6 +145,13 @@ def test_der_proxy_laesst_sich_nachtragen():
     assert config.trusted_proxies == ("192.168.178.100", "10.0.0.0/8")
 
 
+def test_der_port_des_install_gates_kommt_aus_der_umgebung():
+    # Ohne ihn bindet der Bot nichts — auf einer Entwicklungsmaschine braucht das Gate
+    # niemand, und ein belegter Port wäre nur lästig. Die Vorlage setzt ihn (#228).
+    assert Config.from_env({}).health_port is None
+    assert Config.from_env({"CHRONICLE_HEALTH_PORT": " 8701 "}).health_port == 8701
+
+
 def test_repr_maskiert_den_token():
     text = repr(Config.from_env(VOLLSTAENDIG))
     assert "bot-token-aus-der-umgebung" not in text

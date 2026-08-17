@@ -32,7 +32,16 @@ from conftest import runde as erste_runde
 import chronicle.bot.__main__ as entry
 from chronicle import consent, db, jobs, lebenszyklus, notes, people, recordings, settings
 from chronicle import runde as runden
-from chronicle.bot import BotFehler, BotHaelt, ansage, chronik, erinnern, gateway, recorder
+from chronicle.bot import (
+    BotFehler,
+    BotHaelt,
+    ansage,
+    chronik,
+    erinnern,
+    gateway,
+    healthz,
+    recorder,
+)
 from chronicle.bot.ansage import AnsageFehlt
 from chronicle.bot.recorder import Aufnahme, Kanal, NichtAngesagt
 from chronicle.config import DEFAULT_TTS_URL, Config
@@ -999,6 +1008,116 @@ def test_ohne_pycord_bleibt_der_rest_importierbar(monkeypatch):
 
     with pytest.raises(BotFehler):
         gateway._discord()
+
+
+# -- Das Install-Gate ------------------------------------------------------------------
+
+
+class FakeGate:
+    """Das Gate, ohne einen Port zu binden — ``warten`` bliebe sonst für immer stehen."""
+
+    def __init__(self):
+        self.gewartet = False
+        self.zu = False
+
+    def warten(self):
+        self.gewartet = True
+
+    def schliessen(self):
+        self.zu = True
+
+
+@pytest.fixture
+def gate():
+    server = healthz.starten(0)
+    try:
+        yield server
+    finally:
+        server.schliessen()
+
+
+def _gate_holen(gate, pfad="/healthz"):
+    host, port = gate.adresse
+    return requests.get(f"http://{host}:{port}{pfad}", timeout=5)
+
+
+def test_das_install_gate_antwortet_aus_dem_bot_prozess(gate):
+    """Der eine Endpunkt, an dem der Dienst hängt — 200, sonst gilt die Box als krank."""
+    antwort = _gate_holen(gate)
+    assert antwort.status_code == 200
+    assert antwort.json() == {"status": "ok"}
+
+
+def test_das_gate_hoert_nur_auf_der_schleife(gate):
+    """#228/#190: der Pod liegt im Host-Netz — ein 0.0.0.0 stünde im ganzen LAN offen.
+
+    Deshalb ist die Adresse keine Einstellung, sondern festgenagelt: es gäbe keinen
+    richtigen zweiten Wert. Der Poller der Box fragt ``localhost`` und liegt daneben.
+    """
+    assert healthz.HOST == "127.0.0.1"
+    assert gate.adresse[0] == "127.0.0.1"
+
+
+def test_das_gate_kennt_nur_seinen_einen_pfad(gate):
+    assert _gate_holen(gate, "/einstellungen").status_code == 404
+
+
+def test_ohne_token_bleibt_das_gate_erreichbar(tmp_path, monkeypatch, capsys):
+    """Bei der Erstinstallation ist der fehlende Token der Normalfall.
+
+    Bis #228 endete der Bot hier mit 0 und der Container blieb aus. Jetzt hängt am
+    Prozess das Install-Gate: beendete er sich, fände der Poller niemanden und die
+    Installation gälte als gescheitert, bevor jemand den Token eintragen konnte.
+    """
+    leer = Config(data_dir=tmp_path)
+    monkeypatch.setattr(entry.Config, "from_env", classmethod(lambda cls: leer))
+    offen = FakeGate()
+
+    def nie():
+        raise AssertionError("ohne Token darf nichts verbinden")
+
+    assert entry.main(gateway=nie, gesundheit=lambda _config: offen) == 0
+    assert offen.gewartet
+    assert entry.KEIN_TOKEN in capsys.readouterr().out
+
+
+def test_ein_haltender_bot_laesst_das_gate_stehen(tmp_path, monkeypatch, capsys):
+    """Ein abgelehnter Token heilt kein Neustart — verbunden wird nichts mehr, das Gate bleibt."""
+    config = Config(discord_bot_token=TOKEN, data_dir=tmp_path)
+    monkeypatch.setattr(entry.Config, "from_env", classmethod(lambda cls: config))
+    offen = FakeGate()
+
+    def haelt():
+        def run(_zugang):
+            raise BotHaelt(gateway.TOKEN_ABGELEHNT)
+
+        return run
+
+    assert entry.main(gateway=haelt, gesundheit=lambda _config: offen) == 0
+    assert offen.gewartet
+    assert TOKEN not in capsys.readouterr().out
+
+
+def test_eine_echte_stoerung_nimmt_das_gate_mit(tmp_path, monkeypatch):
+    """Was ein Neustart heilen kann, endet weiterhin mit 2 — und lässt keinen Port liegen."""
+    config = Config(discord_bot_token=TOKEN, data_dir=tmp_path)
+    monkeypatch.setattr(entry.Config, "from_env", classmethod(lambda cls: config))
+    offen = FakeGate()
+
+    def stoert():
+        def run(_zugang):
+            raise BotFehler("Netz weg")
+
+        return run
+
+    assert entry.main(gateway=stoert, gesundheit=lambda _config: offen) == 2
+    assert offen.zu
+    assert not offen.gewartet
+
+
+def test_ohne_port_bindet_der_bot_nichts(tmp_path):
+    """Auf einer Entwicklungsmaschine braucht das Gate niemand — die Vorlage setzt den Port."""
+    assert entry._gesundheit(Config(data_dir=tmp_path)) is None
 
 
 # -- Das Gateway -----------------------------------------------------------------------
