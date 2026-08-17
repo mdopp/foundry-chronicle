@@ -312,5 +312,5 @@ einem leeren Repo weder Symptome noch Startpunkte gibt.
 `.claude/skills/autoloop-issues/` orchestriert Planner → Builder → Verify. Zustand
 läuft ausschließlich über `queue.py`-Verben (GitHub-Labels + Issue-Kommentare als
 Wahrheit, ein winziger gitignorierter Cache für den laufenden Durchgang). Der
-Verify-Schritt setzt ein deployfähiges Artefakt voraus — das kommt mit #12; vorher
-meldet er ehrlich `owed` statt grün.
+Verify-Schritt prüft das deployte Artefakt auf der Box; was er nicht ausführen kann,
+meldet er ehrlich als `owed` statt grün.

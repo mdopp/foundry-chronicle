@@ -1,6 +1,6 @@
 # autoloop-issues — how to run (mdopp/foundry-chronicle)
 
-`autoloop-issues` is the **orchestrator** of a multi-agent pipeline. It spawns a fresh sub-agent per stage (Planner → Builder → Verify), coordinated through the `queue.py` state broker (durable state in GitHub labels/issues/PRs, a tiny gitignored local cache for in-flight run state), so the loop session stays clean. Foundry Chronicle is a standalone service — one instance per RPG group — that turns session notes plus Foundry's chat log into a chronicle, optionally with transcribed Discord audio.
+`autoloop-issues` is the **orchestrator** of a multi-agent pipeline. It spawns a fresh sub-agent per stage (Planner → Builder → Verify), coordinated through the `queue.py` state broker (durable state in GitHub labels/issues/PRs, a tiny gitignored local cache for in-flight run state), so the loop session stays clean. Foundry Chronicle is a standalone service — one instance carrying several rounds (#62) — that turns session notes plus Foundry's chat log into a chronicle, optionally with transcribed Discord audio.
 
 ## Self-paced loop (recommended)
 ```
@@ -9,9 +9,9 @@
 `/loop` re-fires the orchestrator on its own cadence. GitHub labels + the local cache persist progress between firings; each stage runs in its own sub-agent context.
 
 ## What each stage does
-- **Planner** (`stages/planner.md`) — grooms/clusters open issues into queue units, decomposes epics, routes ServiceBay-platform bugs upstream, runs the box e2e smoke when the queue is dry, and **bounces every underspecified issue to a `autoloop:needs-refinement` comment with a specific question.**
+- **Planner** (`stages/planner.md`) — grooms/clusters open issues into queue units, decomposes epics, runs the box e2e smoke when the queue is dry, and **bounces every underspecified issue to a `autoloop:needs-refinement` comment with a specific question.**
 - **Builder** (`stages/builder.md`) — implements one unit onto the persistent `batch/<id>` branch with **fast gates**; runs the **full** suite + diff-coverage + CI and merges at the batch boundary. Security/privacy units open as a **draft** PR (`autoloop:review`) and are never auto-merged.
-- **Verify** (`stages/verify.md`) — batched real-environment check for path-mandated changes, deployed through ServiceBay. **Not available until #12 ships a deployable artifact**; before that it reports `owed`, never green.
+- **Verify** (`stages/verify.md`) — batched real-environment check for path-mandated changes (`templates/**`), deployed through ServiceBay and exercised on the box. Anything it could not exercise comes back as `owed` with a reason — never as green.
 
 ## Where human attention goes
 1. Drain issues labeled `autoloop:needs-refinement` — sharpen ambiguous issues / answer the planner's questions (posted as issue comments).

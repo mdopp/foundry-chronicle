@@ -11,7 +11,7 @@ Read first: the orchestrator's shared rules in `.claude/skills/autoloop-issues/S
 | **Fast gate** | after **every** unit (per-issue) | `ruff check . && ruff format --check .` plus `pytest -q` for the package the unit touched; **if it touched `templates/**`** also hand-validate (YAML parses, mount names match volumes, declared ports don't collide). |
 | **Full gate** | once, at the **batch seal** | `ruff check . && ruff format --check . && pytest -q --cov --cov-report=xml` plus the diff-coverage check → push → CI. |
 
-This repo has no arch-ratchet — the per-issue structural check is ruff plus the tests for whatever the unit touched. The full suite + diff-coverage is the safety net at the seal; since you accumulate on one branch in one session, a red full-run is a cheap in-context bisect. **Until #2 lands there is no toolchain at all** — say so rather than reporting a gate you didn't run.
+This repo has no arch-ratchet — the per-issue structural check is ruff plus the tests for whatever the unit touched. The full suite + diff-coverage is the safety net at the seal; since you accumulate on one branch in one session, a red full-run is a cheap in-context bisect. **Never report a gate you didn't run** — name what you ran and what you skipped.
 
 The diff-coverage check fails the seal if changed lines fall below the **70 %** floor (CLAUDE.md); it's a no-op when no covered-path lines changed. Don't loosen the floor to make it pass — add the test.
 
@@ -30,7 +30,7 @@ The diff-coverage check fails the seal if changed lines fall below the **70 %** 
 
 ### 3. Read the unit
 - **Cluster** → read *every* member issue + its referenced files; implement all members as one coherent themed change (organize the diff by theme, not by issue).
-- **Issue** → read the body, referenced files, ~50 lines around any line ref. The package layout lands with #2 — until then there is no source tree to read, and an issue that names files is describing what to create.
+- **Issue** → read the body, referenced files, ~50 lines around any line ref.
 - **lint-sweep** → see §Lint-sweep.
 - **Ambiguous** (planner missed it) → don't guess: post the specific question (comment hygiene) via `queue.py park <issue> refinement --comment "<question>"`, revert partial work, return.
 
@@ -41,12 +41,12 @@ Smallest change that satisfies `acceptance`. **No** drive-by refactors / new abs
 Run the fast gate (table above) for the paths this unit touched. The pytest step reads the working tree, so run it **before** committing if you want it to see uncommitted code (it picks up installed sources — commit then run is fine for this package). A real failure → fix the root cause; never mock around or skip it. Lint must stay clean.
 
 ### 6. Commit to the batch branch (no push)
-- Conventional Commits; scope mirrors the path: `fix(gatekeeper):`, `feat(skill):`, `fix(template):`, `feat(foundry-chronicle):`, `chore(db):`, `docs:`. **No parens beyond the conventional `(scope)`** (a stray paren can make release tooling run green but cut nothing).
+- Conventional Commits; scope mirrors the path: `fix(foundry):`, `feat(discord):`, `fix(transcribe):`, `feat(ui):`, `fix(template):`, `chore(db):`, `docs:`. **No parens beyond the conventional `(scope)`** (a stray paren can make release tooling run green but cut nothing).
 - Body ends with `Closes #<N>` — **one line per member issue** for a cluster.
 - **No push, no PR, no CI.** `queue.py built <unit-id>` (bumps `batch.count` by the issue count). Return.
 
 ### `security: true` unit — pre-merge draft gate
-This project records people's voices and holds a Foundry token and a Discord bot token, so anything touching recordings, consent, credentials or the person mapping gets **human eyes before it ships** (a pre-merge opt-in, not a post-deploy glance). Build it on its **own** branch off `main` (not the shared batch branch — it must not ride a batch that auto-merges), and **don't** `queue.py claim`/`built` it against the batch:
+This project records people's voices and holds a Discord bot token, so the changes the draft rule in `CLAUDE.md` § »Aufnahmen sind personenbezogen« names get **human eyes before they ship** (a pre-merge opt-in, not a post-deploy glance). That rule is the single source — read it there, don't carry a copy of it in your head. Build it on its **own** branch off `main` (not the shared batch branch — it must not ride a batch that auto-merges), and **don't** `queue.py claim`/`built` it against the batch:
 ```bash
 git checkout main && git pull --ff-only && git checkout -b sec/issue-<N>-<slug>
 ```
@@ -66,7 +66,7 @@ Precondition (re-assert): (`batch.count >= 8` **or** `queue.py next` returns not
 git checkout <batch.branch> && git rebase origin/main
 ruff check . && ruff format --check .
 pytest -q --cov --cov-report=xml
-# plus the diff-coverage check once it exists (#2)
+python3 scripts/check_diff_coverage.py --base origin/main
 ```
 A full-suite/coverage failure the fast gate missed → identify the culprit commit (atomic `Closes #N` — cheap in-context bisect), fix, re-run. Push only when green: `git push -u origin <batch.branch>`.
 
@@ -83,23 +83,21 @@ exceptions below are unchanged and are not the operator's to waive per batch:
 a `security:true` unit ships as a **draft** and a human merges it, and the
 **release-please PR is never merged by any stage**.
 
-**CI does not exist yet** — it arrives with #2. Until then the gate is the full local gate above, and you say so in the PR body instead of claiming a green pipeline. Once #2 lands, CI applies only to the paths its `ci.yml` declares; a docs-only or template-only batch triggers none, and for those the gate stays local. If the batch touched any CI path: `gh pr checks <PR#> --watch`. Green → `gh pr merge <PR#> --rebase --delete-branch`, then `git checkout main && git pull --ff-only`. **Rebase, never `--merge`** — a `Merge pull request #N from …` subject is no Conventional Commit, and release-please falls back to the PR title for it, writing every batch into the changelog twice (CLAUDE.md § Releases). Red twice on the same SHA → post the failing-job link, leave open, return (orchestrator hard-exit #1).
+**CI runs on every PR**, but only in part: gitleaks and the commit-subject check are unfiltered, while ruff and pytest + diff-coverage are path-filtered to Python/config paths (`ci.yml`). A docs-only, skill-only or template-only batch therefore gets no lint and no tests from CI — for those the gate is the full local gate above plus the real-box `/verify`, and you say so in the PR body instead of claiming a pipeline that covered the change. Watch the checks either way: `gh pr checks <PR#> --watch`. Green → `gh pr merge <PR#> --rebase --delete-branch`, then `git checkout main && git pull --ff-only`. **Rebase, never `--merge`** — a `Merge pull request #N from …` subject is no Conventional Commit, and release-please falls back to the PR title for it, writing every batch into the changelog twice (CLAUDE.md § Releases). Red twice on the same SHA → post the failing-job link, leave open, return (orchestrator hard-exit #1).
 
 ### 4. Hand off to Verify
 If **any** merged file is path-mandated (list below), `queue.py verify-set <merge-SHA> owed --detail "<which paths + a concrete /verify checklist>"` — the orchestrator launches Verify **in the background** next firing (it flips `owed`→`verifying`); the release/tag stays blocked until green. `queue.py batch reset` (drops the shipped units from the cache — the durable record is the merged PR + closed issues). You only ever set verify to `owed`; `verifying`/`green`/`red` are written by the orchestrator (from the background agent's result file), never by you.
 
 ### Path-mandated paths (trigger verify status `owed`)
 ```
-templates/**          (the ServiceBay template, once #12 lands)
+templates/**          (the ServiceBay template — templates/daggerheart-chronik/ lives here)
 ```
-Rationale: everything else in this repo is verified by tests and CI. The template is the only artifact
-whose correctness can only be shown by installing it on a real node. **Until #12 exists this list is
-empty in practice** — no unit is path-mandated, verify stays `null`, and the seal never owes one.
-
-Rationale: a template is only shown correct by installing it on a real node — CI cannot do that. Everything else here is covered by tests.
+A merged file under this path means the seal **must** set `verify=owed`; the release stays blocked
+until the box says green. Rationale: a template is only shown correct by installing it on a real node
+— CI cannot do that. Everything else here is covered by tests and CI.
 
 ## Return
-- build: `Builder: built gatekeeper (#92,#94) onto batch/2026-..a, fast gate green, count 2/8.`
+- build: `Builder: built foundry-adapter (#92,#94) onto batch/2026-..a, fast gate green, count 2/8.`
 - seal: `Builder: sealed batch → PR #45 merged (closes #3 #5 #6); verify=owed (templates/).`
 - security: `Builder: drafted #88 → PR #46 (draft), parked review; NOT merged.`
 
