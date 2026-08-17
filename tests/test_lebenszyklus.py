@@ -922,6 +922,14 @@ def test_der_rauswurf_sperrt_die_runde_sofort(konfiguration, bot):
     assert chronik.runde_der_gilde(konfiguration, GILDE) is None
 
 
+def test_die_frist_ist_dreissig_tage():
+    """Nach #90 der einzige Weg, auf dem eine Runde ohne Zutun der Gruppe verschwindet.
+
+    Die Zeile darüber setzt die Konstante ein und hielte jeden Wert; hier steht die Zahl.
+    """
+    assert lebenszyklus.FRIST_TAGE == 30
+
+
 def test_die_gesperrte_runde_sagt_bis_wann_alles_noch_da_ist(konfiguration, bot):
     unsere = runden.anlegen(konfiguration.database_path, GILDENAME, guild_id=GILDE)
     austritt(bot, FakeGilde())

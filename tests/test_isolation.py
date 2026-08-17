@@ -603,6 +603,46 @@ def test_gleichnamiger_registereintrag_steht_zweimal(zwei_runden):
     assert beide[0].description != beide[1].description
 
 
+class DieselbenNamen:
+    """Ein Modell, das beiden Runden dieselben Namen vorschlägt.
+
+    »Mira« und »Die Wache« sind keine seltenen Namen, und zwei Gruppen auf einer Instanz
+    teilen keinen Namensraum — Gleichnamigkeit ist hier der Normalfall, nicht der Randfall.
+    """
+
+    name = "dieselben-namen"
+
+    def write(self, *, system, prompt):
+        return (
+            "figur | Mira | Kundschafterin, gerade erst wieder da.\n"
+            "figur | Die Wache | Steht am Tor und laesst niemanden durch."
+        )
+
+
+def test_der_registerlauf_legt_gleichnamige_figuren_in_beiden_runden_an(zwei_runden):
+    """Der echte Aufruf in **zwei** Runden — nicht zwei Zeilen, die per INSERT entstanden.
+
+    ``_ablegen`` sucht den soeben geschriebenen Eintrag über ``WHERE runde_id = ?`` wieder.
+    Ohne diese Schranke findet die zweite Runde den Eintrag der ersten, und ihr Verweis
+    darauf bricht mit ``FOREIGN KEY constraint failed`` ab — ihr ganzer Registerlauf
+    hinterlässt dann nichts.
+    """
+    config, a, b, ids = zwei_runden
+    beide = ((a, ids[1]), (b, ids[2]))
+
+    for runde, kennung in beide:
+        vorschlag = register.suggest(config, runde, kennung["sitzung"], model=DieselbenNamen())
+        assert vorschlag.count == 1
+
+    eigene = []
+    for runde, kennung in beide:
+        (wache,) = register.pending(runde)
+        assert wache.name == "Die Wache"
+        assert [erwaehnung.session_id for erwaehnung in wache.mentions] == [kennung["sitzung"]]
+        eigene.append(wache.id)
+    assert len(set(eigene)) == 2
+
+
 def test_notiz_landet_nicht_in_der_fremden_szene(zwei_runden):
     config, a, b, ids = zwei_runden
     assert notes.add_note(a, ids[2]["szene"], "Fremde Szene") is None
