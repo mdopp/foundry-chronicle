@@ -85,8 +85,8 @@ Der Pod hat zwei Container aus demselben Image:
 
 | Container | Befehl | Wofür |
 |---|---|---|
-| `chronik` | `waitress-serve` (Vorgabe des Images) | die Betreiber-Seite hinter Authelia **und der nächtliche Lauf** |
-| `bot` | `python -m chronicle.bot` | der Aufnahme-Bot am Discord-Gateway |
+| `chronik` | `waitress-serve` (Vorgabe des Images) | die Betreiber-Seite hinter Authelia |
+| `bot` | `python -m chronicle.bot` | der Aufnahme-Bot am Discord-Gateway **und der nächtliche Lauf** |
 
 Der Bot ist ein eigener, dauerhafter Prozess, weil Sprache nur mitgeschnitten werden kann,
 während sie gesprochen wird. Den Token liest er aus derselben SQLite wie die Betreiber-Seite —
@@ -95,13 +95,12 @@ wird von der Neustart-Regel des Pods wieder gestartet — das ist erwartet und k
 nach dem Eintragen unter `/einstellungen` findet ihn der nächste Start.
 
 **Einen dritten Container für den nächtlichen Lauf gibt es bewusst nicht.** Der Zeitplan
-hängt in `chronik`, und zwar aus zwei Gründen: der Bot existiert ohne Token gar nicht, eine
-Präsenzgruppe hat aber trotzdem Aufnahmen zu verschriften; und ein Lauf ist eine Zeile in
-der `job`-Tabelle, deren Absturzerkennung nur trägt, solange **ein** Prozess solche Zeilen
-anlegt. Wer hier einen Container ergänzt, macht aus jedem laufenden Lauf einen
-»unterbrochenen« im Auge des anderen Prozesses. Die Uhrzeit gehört der Runde und steht in
-Discord unter `/setup`, Vorgabe 04:00 nach der Zone der Runde; ein verpasstes Fenster wird
-nicht nachgeholt.
+hängt seit #229 in `bot`: ohne Bot gibt es keinen Eingang mehr — weder Notiz noch Aufnahme
+noch Runde —, also gibt es auch nichts zu verschriften, wo der Bot nicht läuft. Er sieht in
+einem Faden **neben** der Gateway-Verbindung auf die Uhr, und der Lauf selbst bekommt noch
+einen daneben; auf der Ereignisschleife bliebe während einer Verschriftung der Herzschlag
+zu Discord aus. Die Uhrzeit gehört der Runde und steht in Discord unter `/setup`, Vorgabe
+04:00 nach der Zone der Runde; ein verpasstes Fenster wird nicht nachgeholt.
 
 ## Der Pod hängt im Host-Netz — erklärte Abweichung von ADR 0007
 

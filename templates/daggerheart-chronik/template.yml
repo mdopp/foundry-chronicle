@@ -60,7 +60,7 @@ spec:
   # Hinter dem Proxy-Host liegt seit #157 keine Anwendung mehr, sondern **eine Seite**:
   # /einstellungen für Bot-Token, Ollama und die Verwaltungsgruppe, /status als Altweg
   # dorthin, / als Weiterleitung und /healthz als Install-Gate. Alles Spielbare ist ein
-  # Discord-Befehl. Derselbe Prozess trägt außerdem den nächtlichen Lauf.
+  # Discord-Befehl, und der nächtliche Lauf hängt seit #229 am Bot daneben.
   - name: chronik
     image: ghcr.io/mdopp/foundry-chronicle:{{CHRONICLE_IMAGE_TAG}}
     # Container-uid 0 ist unter rootless Podman der unprivilegierte Host-Benutzer, dem
@@ -123,6 +123,9 @@ spec:
   # gesprochen wird. Gleiches Image, anderer Befehl. Den Token holt er sich aus derselben
   # SQLite wie die Betreiber-Seite — deshalb teilen sie /data. Ohne Token beendet er sich
   # mit einem Satz, statt in einer Schleife abzustürzen.
+  # Seit #229 trägt derselbe Prozess außerdem den nächtlichen Lauf: er sieht in einem
+  # Faden neben der Gateway-Verbindung auf die Uhr, und der Lauf selbst bekommt noch
+  # einen daneben — auf der Ereignisschleife läge sonst der Herzschlag zu Discord still.
   - name: bot
     image: ghcr.io/mdopp/foundry-chronicle:{{CHRONICLE_IMAGE_TAG}}
     command: ["python", "-m", "chronicle.bot"]

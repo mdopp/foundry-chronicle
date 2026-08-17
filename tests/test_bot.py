@@ -23,14 +23,30 @@ import types
 import wave
 from array import array
 from dataclasses import replace
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import pytest
 import requests
+from conftest import GRENZE
 from conftest import runde as erste_runde
+from flask import Flask, jsonify
+from mocks import adresse, serve
 
 import chronicle.bot.__main__ as entry
-from chronicle import consent, db, jobs, lebenszyklus, notes, people, recordings, settings
+from chronicle import (
+    consent,
+    db,
+    jobs,
+    lebenszyklus,
+    nightly,
+    notes,
+    people,
+    protocol,
+    recordings,
+    settings,
+)
 from chronicle import runde as runden
 from chronicle.bot import (
     BotFehler,
@@ -131,6 +147,37 @@ def konfiguration(tmp_path):
         data_dir=tmp_path / "daten",
         recordings_dir=tmp_path / "aufnahmen",
     )
+
+
+@pytest.fixture(autouse=True)
+def keine_nacht_nebenher(request, monkeypatch):
+    """``gateway.run`` stellt den nächtlichen Zeitplan an — hier soll er nichts tun.
+
+    Sonst führe jeder Test, der den Bot startet, zwischen vier und fünf Uhr morgens
+    nebenher eine echte Nacht mit: derselbe Test wäre je nach Tageszeit ein anderer. Wer
+    die Nacht prüfen will, fordert ``nachtwache`` an und bekommt den echten Faden.
+    """
+    if "nachtwache" in request.fixturenames:
+        return
+    monkeypatch.setattr(nightly, "starten", lambda config: None)
+
+
+@pytest.fixture
+def nachtwache(monkeypatch):
+    """Der echte Zeitplan-Faden — durch die Nähte, die ``betreiben`` dafür schon hat.
+
+    An der Kette wird nichts gestubbt; der Faden schläft nur auf einem Ereignis statt auf
+    einer Minute, damit er am Ende des Tests wirklich aufhört.
+    """
+    echt = nightly.betreiben
+    halt = threading.Event()
+    monkeypatch.setattr(
+        nightly,
+        "betreiben",
+        lambda config, **_rest: echt(config, schlafen=halt.wait, weiter=lambda: not halt.is_set()),
+    )
+    yield
+    halt.set()
 
 
 def unsere_runde(konfiguration):
@@ -1634,6 +1681,108 @@ def test_eine_echte_stoerung_darf_weiter_scheitern(konfiguration, monkeypatch, c
         return run
 
     assert entry.main([], gateway=stoert) == 2
+
+
+MODELL = "chronist-mock"
+
+GESCHRIEBEN = "Die Gruppe brach bei Sonnenaufgang auf, wie sie es besprochen hatte."
+
+# So oft schlägt die Gateway-Schleife, während der Nachtlauf im Modell hängt. Die Zahl
+# selbst sagt nichts — dass sie überhaupt zustande kommt, ist die Aussage.
+SCHLAEGE = 20
+
+
+class ModellMitTuer:
+    """Ein Ollama, das erst antwortet, wenn ihm jemand die Tür aufmacht.
+
+    Damit hängt die Nacht dort, wo sie in Wirklichkeit hängt: minutenlang im Sprachmodell.
+    Aufgemacht wird die Tür von der Gateway-Schleife — schlägt die währenddessen nicht,
+    bleibt sie zu, und ``freigegeben`` sagt am Ende, dass die Antwort von der Zeitgrenze
+    kam und nicht von einem lebendigen Bot.
+    """
+
+    def __init__(self) -> None:
+        self.gefragt = threading.Event()
+        self.freigegeben = False
+        self._tuer = threading.Event()
+        self._server = serve(self._http())
+
+    @property
+    def url(self) -> str:
+        return adresse(self._server)
+
+    def oeffnen(self) -> None:
+        self._tuer.set()
+
+    def stop(self) -> None:
+        self._server.shutdown()
+
+    def _http(self) -> Flask:
+        app = Flask(__name__)
+
+        @app.post("/api/chat")
+        def chat():
+            self.gefragt.set()
+            self.freigegeben = self._tuer.wait(GRENZE)
+            return jsonify({"message": {"content": GESCHRIEBEN}})
+
+        return app
+
+
+@pytest.fixture
+def modell():
+    eines = ModellMitTuer()
+    yield eines
+    eines.stop()
+
+
+def _nacht_fertig(gastgeber) -> bool:
+    lauf = jobs.latest(gastgeber, jobs.NACHTLAUF)
+    return lauf is not None and lauf.state == jobs.FERTIG
+
+
+def test_der_nachtlauf_faehrt_aus_dem_bot_prozess_und_haelt_das_gateway_nicht_auf(
+    konfiguration, pycord, monkeypatch, nachtwache, modell
+):
+    """Die Nacht hängt seit #229 hier — und zwar neben der Schleife, nicht in ihr.
+
+    Gefahren wird die Kette wirklich: aus einer Notiz wird über ein echtes HTTP-Ollama
+    eine abgelegte Chronik. Das Modell antwortet aber erst, wenn die Gateway-Schleife ihm
+    die Tür aufmacht. Liefe der Lauf auf der Schleife oder hielte er sie an, käme sie dazu
+    nie — der Bot fiele in Wirklichkeit genau so vom Gateway, weil sein Herzschlag ausbliebe.
+    """
+    gastgeber = erste_runde(konfiguration)
+    sitzung = notes.create_session(gastgeber, played_on="2026-08-06", title="Keller")
+    szene = notes.session(gastgeber, sitzung).scenes[0]
+    notes.add_note(gastgeber, szene.id, "Wir brechen bei Sonnenaufgang auf.")
+    jetzt = datetime.now(ZoneInfo(settings.DEFAULT_NIGHTLY_ZONE))
+    settings.save_nightly_time(gastgeber, jetzt.strftime("%H:%M"))
+    config = replace(konfiguration, ollama_url=modell.url, ollama_model=MODELL)
+
+    schlaege = []
+
+    def verbindet(self, token):
+        """Was py-cord an dieser Stelle tut: die Ereignisschleife fahren."""
+
+        async def schleife():
+            while not modell.gefragt.is_set():
+                await asyncio.sleep(0.005)
+            for _ in range(SCHLAEGE):
+                schlaege.append(time.monotonic())
+                await asyncio.sleep(0)
+            modell.oeffnen()
+            while not _nacht_fertig(gastgeber):
+                await asyncio.sleep(0.005)
+
+        asyncio.run(asyncio.wait_for(schleife(), GRENZE * 4))
+
+    monkeypatch.setattr(FakeBot, "run", verbindet, raising=False)
+
+    gateway.run(config)
+
+    assert modell.freigegeben
+    assert len(schlaege) == SCHLAEGE
+    assert GESCHRIEBEN in protocol.stored(gastgeber, sitzung).text
 
 
 def test_der_bot_bringt_beide_befehle_mit_und_bekommt_den_token(konfiguration, pycord):

@@ -4,14 +4,10 @@ Der Knopf in der Oberfläche und der Stapelaufruf bleiben, was sie sind: der Weg
 »jetzt sofort«. Der Normalfall ist diese Kette, und sie ruft dieselben Funktionen auf —
 ein dritter Auslöser, kein dritter Weg.
 
-Sie läuft **im Webdienst**, in einem eigenen Faden, und nur dort. Der Aufnahme-Bot schiede
-aus, denn ohne Bot-Token gibt es ihn gar nicht, eine Präsenzgruppe hat trotzdem Aufnahmen
-zu verschriften und Chroniken zu schreiben; ein dritter Container wäre eine Betriebseinheit
-mehr für einen Faden, der einmal je Minute auf die Uhr sieht. (Die frühere Fassung nannte
-noch einen schärferen Grund: ``chronicle.jobs`` habe einen abgestürzten Lauf nur erkennen
-können, solange **ein** Prozess Zeilen anlegt. Die Vorlage hielt das nie ein — der Bot legt
-ebenfalls welche an —, und seit #178 hängt die Erkennung an Besitzer und Herzschlag in der
-Zeile statt an der Merkliste eines Prozesses.)
+Sie läuft **im Bot-Prozess**, in einem eigenen Faden neben der Gateway-Verbindung, und
+der Lauf selbst noch einmal in einem daneben (``jobs.start``). Auf der Ereignisschleife
+darf nichts davon liegen: eine Verschriftung dauert Minuten, und in der Zeit bliebe der
+Herzschlag zu Discord aus — der Bot fiele mitten in der Nacht vom Gateway.
 
 Ein verpasstes Fenster wird nicht nachgeholt. War der Server um vier Uhr aus, ist das
 Material am nächsten Morgen so alt wie vorher — ein Lauf um zehn Uhr vormittags brächte
@@ -279,9 +275,9 @@ _vorgemerkt: dict[int, datetime] = {}
 def _naechste(config: Config, jetzt: datetime) -> list[tuple[Runde, datetime, datetime | None]]:
     faellige = []
     for eine in runden.alle(config.database_path):
-        # Eine verabschiedete Runde bekommt keine Nacht mehr. Dieser Faden läuft im
-        # Webdienst und weiß vom Rauswurf nur hier: ohne diese Zeile verschriftete er
-        # dreißig Tage lang weiter, was eine Gruppe längst widerrufen hat.
+        # Eine verabschiedete Runde bekommt keine Nacht mehr. Dieser Faden weiß vom
+        # Rauswurf nur hier: ohne diese Zeile verschriftete er dreißig Tage lang weiter,
+        # was eine Gruppe längst widerrufen hat.
         if eine.gesperrt:
             _vorgemerkt.pop(eine.id, None)
             continue

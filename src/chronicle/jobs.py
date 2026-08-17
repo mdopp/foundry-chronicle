@@ -5,7 +5,7 @@ deshalb dem Server und nicht dem Browser: das Absenden legt die Zeile an und keh
 zurück, ein Neuladen der Seite liest denselben Zustand wieder, und das Schließen des
 Reiters hält nichts an.
 
-Getragen wird der Lauf von einem Faden — im Webdienst oder im Aufnahme-Bot, je nachdem,
+Getragen wird der Lauf von einem Faden — im Aufnahme-Bot oder im Stapelaufruf, je nachdem,
 wer angestoßen hat. Der Zustand steht ohnehin in der SQLite und nicht im Speicher.
 
 Zwei gleichzeitige Läufe derselben Art gibt es nicht: sie schrieben dieselben Zeilen, und
@@ -14,11 +14,11 @@ deshalb den laufenden zurück.
 
 Stirbt der Prozess mitten im Lauf, bleibt die Zeile auf ``laeuft`` stehen. Beim nächsten
 Blick wird sie ehrlich als unterbrochen vermerkt statt für immer zu laufen. Welcher das
-ist, steht in der Zeile und nicht im Speicher eines Prozesses: **die ausgelieferte
-Vorlage stellt zwei Container auf dieselbe Datei** — die Seite mit dem nächtlichen Lauf
-und ``python -m chronicle.bot``. Beide legen Zeilen an, und keiner sieht die Merkliste
-des anderen. Die frühere Annahme »Zeilen legt nur der Web-Prozess an« machte aus jedem
-laufenden Lauf des einen einen »unterbrochenen« im Auge des anderen (#178).
+ist, steht in der Zeile und nicht im Speicher eines Prozesses: **mehrere Prozesse legen
+Zeilen auf derselben Datei an** — ``python -m chronicle.bot`` mit dem nächtlichen Lauf
+darin (#229) und daneben jeder Stapelaufruf —, und keiner sieht die Merkliste des anderen.
+Die frühere Annahme »Zeilen legt nur der Web-Prozess an« machte aus jedem laufenden Lauf
+des einen einen »unterbrochenen« im Auge des anderen (#178).
 
 Getragen wird die Unterscheidung von zwei Spalten. ``besitzer`` ist ein Zufallswert je
 Prozess**start** — nicht die Prozess-Id, denn die vergibt die Box nach einem Neustart
