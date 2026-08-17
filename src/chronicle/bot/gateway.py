@@ -578,7 +578,11 @@ def antwortet(befehl):
 
 
 class _Lauf:
-    """Eine Instanz pro Gruppe — also höchstens eine Aufnahme zur Zeit."""
+    """Was in **einer** Runde gerade läuft — höchstens eine Aufnahme zur Zeit.
+
+    Eine Instanz trägt mehrere Runden (#62/#63), also gibt es diesen Zustand je Runde
+    und nicht je Prozess: sonst spräche eine Gilde für die andere mit.
+    """
 
     def __init__(self) -> None:
         self.stimme: Sprachverbindung | None = None
@@ -587,8 +591,6 @@ class _Lauf:
         # seine Verbindung selbst und räumt sie selbst ab. Läge er in ``aufnahme``, reihte
         # ``/aufnahme stop`` seine Probespuren ein — genau das, was nie geschehen darf.
         self.probe = False
-        self.frist = None
-        self.abschied = None
         self.leer = None
         # Die Aufnahme und die Personen, denen für sie schon gesagt wurde, dass sie allein
         # zurückbleiben. Beides zusammen: an der Person allein hinge der Vermerk über die
@@ -600,9 +602,42 @@ class _Lauf:
         # Wieder an der Aufnahme und nicht allein an der Person: an ihr hinge der Vermerk
         # über das Ende hinaus und verschluckte die Frage der nächsten Aufnahme.
         self.gefragt: tuple[Aufnahme, set[str]] | None = None
-        # Je offener Sitzung ein Beobachter von Foundry. Anders als der Mitschnitt gibt es
-        # ihn mehrfach: der Bot bedient mehrere Gilden, und deren Abende überschneiden sich.
+        # Je offener Sitzung dieser Runde ein Beobachter von Foundry. Anders als der
+        # Mitschnitt gibt es ihn mehrfach: eine Runde kann mehrere Sitzungen offen haben.
         self.stroeme: dict[int, object] = {}
+
+
+class _Laeufe:
+    """Ein ``_Lauf`` je Runde — und die Zuordnung, welcher Gilde welcher gehört.
+
+    Der Kern der Trennung zwischen Runden an dieser Stelle: ein Befehl bekommt nur den
+    Lauf **seiner** Runde zu fassen. Vorher stand hier ein einziger Lauf je Prozess, und
+    damit brach ein ``/aufnahme stop`` der einen Gilde den Abend einer anderen ab.
+
+    Prozessweit bleibt allein, was der Box gehört und keiner Gruppe: die beiden täglichen
+    Fristen.
+    """
+
+    def __init__(self) -> None:
+        self._nach_runde: dict[int, _Lauf] = {}
+        self._nach_gilde: dict[str, int] = {}
+        self.frist = None
+        self.abschied = None
+
+    def fuer(self, runde: Runde) -> _Lauf:
+        """Der Lauf dieser Runde — angelegt, sobald sie zum ersten Mal etwas tut."""
+        if runde.guild_id is not None:
+            self._nach_gilde[str(runde.guild_id)] = runde.id
+        return self._nach_runde.setdefault(runde.id, _Lauf())
+
+    def fuer_gilde(self, guild_id) -> _Lauf | None:
+        """Der Lauf dieser Gilde — ``None``, solange sie hier keinen hat.
+
+        Für die Ereignisse aus Discord, die keine Runde mitbringen, sondern eine Gilde:
+        gefragt wird nach *dieser* und nicht »läuft irgendwo etwas«.
+        """
+        runde_id = self._nach_gilde.get(str(guild_id))
+        return None if runde_id is None else self._nach_runde.get(runde_id)
 
 
 async def _mitschnitt_beenden(lauf: _Lauf, runde: Runde | None = None) -> tuple[str, ...]:
@@ -2198,7 +2233,7 @@ def baue(config: Config):
     absichten.messages = True
     absichten.message_content = True
     bot = discord.Bot(intents=absichten)
-    lauf = _Lauf()
+    laeufe = _Laeufe()
     gruppe = bot.create_group(GRUPPE, "Die Sitzung mitschneiden")
     chronikgruppe = bot.create_group(GRUPPE_CHRONIK, "Die Sitzung schreiben")
     registergruppe = bot.create_group(GRUPPE_REGISTER, "Das Register führen")
@@ -2206,6 +2241,12 @@ def baue(config: Config):
     @gruppe.command(name="start", description="Beitreten, ansagen, je Sprecher mitschneiden")
     @antwortet
     async def start(ctx) -> None:
+        # Dieselbe Schranke wie vor ``/chronik start``, und vor dem Beitreten: eine Gilde
+        # ohne eigene Runde nimmt nicht auf, eine ruhende erst recht nicht. Sie steht vor
+        # den beiden Fragen darunter, weil erst die Runde sagt, wessen Lauf gemeint ist:
+        # »Ich schneide schon mit« galt sonst einer Gruppe, bei der nichts mitläuft.
+        runde = chronik.runde_verlangen(config, ctx.guild_id)
+        lauf = laeufe.fuer(runde)
         if lauf.aufnahme is not None:
             await _zustellen(ctx.respond, LAEUFT_SCHON, ephemeral=True)
             return
@@ -2214,9 +2255,6 @@ def baue(config: Config):
         if lauf.probe:
             await _zustellen(ctx.respond, PROBE_LAEUFT, ephemeral=True)
             return
-        # Dieselbe Schranke wie vor ``/chronik start``, und vor dem Beitreten: eine Gilde
-        # ohne eigene Runde nimmt nicht auf, eine ruhende erst recht nicht.
-        runde = chronik.runde_verlangen(config, ctx.guild_id)
         kanal = getattr(getattr(ctx.author, "voice", None), "channel", None)
         if kanal is None:
             await _zustellen(ctx.respond, NICHT_IM_KANAL, ephemeral=True)
@@ -2256,11 +2294,15 @@ def baue(config: Config):
     @gruppe.command(name="stop", description="Aufnahme beenden und die Spuren einreihen")
     @antwortet
     async def stop(ctx) -> None:
+        # Auch hier zuerst die Runde: sie sagt, welcher Mitschnitt gemeint ist. Ohne sie
+        # beendete dieser Befehl den Abend irgendeiner Gruppe — der zuletzt begonnenen.
+        runde = chronik.runde_verlangen(config, ctx.guild_id)
+        lauf = laeufe.fuer(runde)
         if lauf.aufnahme is None:
             await _zustellen(ctx.respond, LAEUFT_NICHT, ephemeral=True)
             return
         await ctx.defer(ephemeral=True)
-        meldungen = await _mitschnitt_beenden(lauf)
+        meldungen = await _mitschnitt_beenden(lauf, runde)
         # Leer heißt: in der Zwischenzeit war ein anderer schneller — der leere Kanal etwa.
         # Das ist kein Fehlschlag, und so ausgesprochen zu werden verdient er auch nicht.
         await _zustellen(ctx.respond, " ".join(meldungen) or LAEUFT_NICHT, ephemeral=True)
@@ -2269,15 +2311,17 @@ def baue(config: Config):
     @antwortet
     async def empfangstest(ctx) -> None:
         """Die Frage »hört der Bot überhaupt?« — beantwortet in Discord statt im Log."""
+        # Dieselbe Schranke wie vor ``/aufnahme start``: eine Gilde ohne eigene Runde prüft
+        # hier nichts, eine ruhende erst recht nicht — es wird aufgezeichnet. Und wieder
+        # zuerst, weil die Aufnahme, die nicht gestört werden darf, die dieser Runde ist.
+        runde = chronik.runde_verlangen(config, ctx.guild_id)
+        lauf = laeufe.fuer(runde)
         if lauf.aufnahme is not None:
             await _zustellen(ctx.respond, PROBE_NICHT_STOEREN, ephemeral=True)
             return
         if lauf.probe:
             await _zustellen(ctx.respond, PROBE_LAEUFT, ephemeral=True)
             return
-        # Dieselbe Schranke wie vor ``/aufnahme start``: eine Gilde ohne eigene Runde prüft
-        # hier nichts, eine ruhende erst recht nicht — es wird aufgezeichnet.
-        runde = chronik.runde_verlangen(config, ctx.guild_id)
         kanal = getattr(getattr(ctx.author, "voice", None), "channel", None)
         if kanal is None:
             await _zustellen(ctx.respond, NICHT_IM_KANAL, ephemeral=True)
@@ -2330,13 +2374,15 @@ def baue(config: Config):
             await ctx.defer(ephemeral=True)
             await _zustellen(
                 ctx.respond,
-                await _sitzung_eroeffnen(config, bot, lauf, ctx, runde, titel, "", _wer(ctx)),
+                await _sitzung_eroeffnen(
+                    config, bot, laeufe.fuer(runde), ctx, runde, titel, "", _wer(ctx)
+                ),
                 ephemeral=True,
             )
             return
         # Kein ``defer`` davor: ein Fenster geht nur als *erste* Antwort auf den Befehl.
         # Deshalb entsteht die Sitzung erst im Rückruf des Fensters, der selbst aufschiebt.
-        await ctx.send_modal(_startfenster(config, bot, lauf, runde, titel))
+        await ctx.send_modal(_startfenster(config, bot, laeufe.fuer(runde), runde, titel))
 
     @chronikgruppe.command(
         name="fertig", description="Sitzung abschließen und die Chronik anstoßen"
@@ -2364,14 +2410,21 @@ def baue(config: Config):
                 # erneut abzulegen stellte die Frist aus #64 zurück — und bei belegter
                 # Maschine verbraucht es niemand, sodass jeder Versuch sie weiterschöbe.
                 await _abschliessen(
-                    config, runde, sitzung, geheim, lauf, ctx.channel, wer, merken=False
+                    config,
+                    runde,
+                    sitzung,
+                    geheim,
+                    laeufe.fuer(runde),
+                    ctx.channel,
+                    wer,
+                    merken=False,
                 ),
                 ephemeral=True,
             )
             return
         fremd = chronik.passwort_gehalten(runde)
         hinweis = chronik.FREMDES_HINWEIS if fremd else chronik.PASSWORT_HINWEIS
-        await ctx.send_modal(_passwortfrage(config, runde, sitzung, lauf, hinweis))
+        await ctx.send_modal(_passwortfrage(config, runde, sitzung, laeufe.fuer(runde), hinweis))
 
     @chronikgruppe.command(
         name="abgleich", description="Die Zahlen aus Foundry holen, ohne eine Sitzung zu führen"
@@ -2660,15 +2713,24 @@ def baue(config: Config):
         # Ein beendeter Faden ist nicht ``None``: ohne ``_erledigt`` bliebe eine Zusage
         # nach dem ersten Fehlschlag für immer liegen, und ``on_ready`` kommt bei jeder
         # Wiederverbindung noch einmal vorbei.
-        if _erledigt(lauf.frist):
-            lauf.frist = asyncio.create_task(recordings.taeglich(config))
-        # Zwei Fristen, zwei Läufe: die eine gilt jeder Audiospur auf dieser Box, die
-        # andere einer verabschiedeten Runde.
-        if _erledigt(lauf.abschied):
-            lauf.abschied = asyncio.create_task(lebenszyklus.taeglich(config))
+        if _erledigt(laeufe.frist):
+            laeufe.frist = asyncio.create_task(recordings.taeglich(config))
+        # Zwei Fristen, zwei Fäden: die eine gilt jeder Audiospur auf dieser Box, die
+        # andere einer verabschiedeten Runde. Beide gehören dem Prozess und keiner Runde.
+        if _erledigt(laeufe.abschied):
+            laeufe.abschied = asyncio.create_task(lebenszyklus.taeglich(config))
 
     @bot.event
     async def on_voice_state_update(member, before, after) -> None:
+        # Discord meldet hier keine Runde, sondern einen Kanal — und der sagt die Gilde.
+        # Ohne diesen Umweg beantwortete das Ereignis der einen Gilde die Frage »läuft
+        # etwas?« mit dem Mitschnitt einer anderen.
+        wo = after.channel or before.channel
+        if wo is None:
+            return
+        lauf = laeufe.fuer_gilde(wo.guild.id)
+        if lauf is None:
+            return
         aufnahme = lauf.aufnahme
         if aufnahme is None:
             return

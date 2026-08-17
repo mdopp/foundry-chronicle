@@ -1396,7 +1396,9 @@ def test_fertig_beendet_die_laufende_aufnahme_und_reiht_die_spuren_ein(
     sitzung_id = notes.session_of_thread(unsere, str(thread.id))
     assert jobs.latest(unsere, jobs.CHRONIK, sitzung_id).result == STEHT
 
-    danach = FakeSprechCtx(mitschnitt.wer)
+    # Aus **dieser** Gilde, nicht aus irgendeiner: seit #226 sieht ``stop`` nur den Lauf
+    # der eigenen Runde, und ein Aufruf von woanders erführe nichts über diesen hier.
+    danach = FakeSprechCtx(mitschnitt.wer, guild_id=GILDE)
     asyncio.run(bot.gruppen[gateway.GRUPPE].befehle["stop"](danach))
     assert danach.antworten == [gateway.LAEUFT_NICHT]
 

@@ -75,6 +75,11 @@ MIRA = consent.Member(id="4001", name="Mira")
 BROK = consent.Member(id="4002", name="Brok")
 SPAET = consent.Member(id="4003", name="Aelin")
 
+# Die zweite Gilde: eigene Kennung, eigene Runde, eigene Leute. Ohne sie gab es in dieser
+# Suite keinen zweiten Akteur — und damit keinen Test für die Trennung zwischen Runden.
+NACHBARGILDE = "12"
+SILDAR = consent.Member(id="4101", name="Sildar")
+
 # Eine Sekunde Ton in der Form, die espeak-ng liefert: 22050 Hz, Mono, 16 Bit.
 ESPEAK_RATE = 22050
 
@@ -1957,6 +1962,145 @@ def test_ein_zweiter_start_schneidet_nicht_doppelt(konfiguration, sitzung_id, oh
     assert len(runde.kanal.verbindung.gespielt) == 1
 
 
+# -- Zwei Gilden am selben Abend --------------------------------------------------------
+#
+# Der zweite Akteur, der hier bis #226 fehlte: eine Instanz trägt mehrere Runden (#62/#63),
+# und deren Abende überschneiden sich. Was für die eine Gruppe gilt, darf die andere weder
+# gesagt bekommen noch angetan.
+
+
+@pytest.fixture
+def nachbarn(pycord, konfiguration):
+    """Eine zweite Gilde mit eigener Runde, eigenem Kanal und eigener Sitzung."""
+    zweite = runden.anlegen(konfiguration.database_path, "Die Nachbarn", guild_id=NACHBARGILDE)
+    notes.create_session(zweite, played_on="2026-08-06")
+    gilde = FakeGilde(int(NACHBARGILDE))
+    wer = FakeMitglied(int(SILDAR.id), SILDAR.name)
+    chronist = FakeMitglied(998, "Chronik-Bot", bot=True, kanal=None)
+    kanal = FakeSprachkanal(gilde, wer, chronist)
+    kanal.id = 88
+    kanal.name = "Am Nachbartisch"
+    chronist.voice.channel = kanal
+    gilde.me = chronist
+    gilde.mitglieder[wer.id] = wer
+    wer.voice = types.SimpleNamespace(channel=kanal)
+    return types.SimpleNamespace(gilde=gilde, kanal=kanal, sildar=wer, runde=zweite)
+
+
+def nachbar_ctx(nachbarn):
+    """Ein Befehl aus der zweiten Gilde — dieselbe Instanz, eine andere Runde."""
+    return FakeCtx(nachbarn.sildar, guild_id=NACHBARGILDE)
+
+
+def test_die_zweite_gilde_schneidet_neben_der_ersten_mit(
+    konfiguration, sitzung_id, ohne_espeak, runde, nachbarn
+):
+    """»Ich schneide schon mit« galt bis #226 dem ganzen Prozess — und log damit.
+
+    Bei der zweiten Gruppe schnitt der Bot nichts mit; sie bekam den Satz trotzdem und
+    konnte den Abend nicht aufnehmen, solange die erste spielte.
+    """
+    bot = gateway.baue(konfiguration)
+    ctx = nachbar_ctx(nachbarn)
+
+    async def ablauf():
+        await befehl(bot, "start")(FakeCtx(runde.mira))
+        await befehl(bot, "start")(ctx)
+
+    asyncio.run(ablauf())
+
+    assert gateway.LAEUFT_SCHON not in ctx.antworten
+    assert ctx.antworten == [recorder.GESTARTET]
+    assert runde.kanal.verbindung.schneidet
+    assert nachbarn.kanal.verbindung.schneidet
+
+
+def test_aufnahme_stop_der_zweiten_gilde_beendet_nur_ihren_eigenen_abend(
+    konfiguration, sitzung_id, ohne_espeak, runde, nachbarn
+):
+    """Der Eingriff in eine fremde Runde: ``stop`` beendete den Mitschnitt der anderen."""
+    bot = gateway.baue(konfiguration)
+    ctx = nachbar_ctx(nachbarn)
+
+    async def ablauf():
+        await befehl(bot, "start")(FakeCtx(runde.mira))
+        await befehl(bot, "start")(nachbar_ctx(nachbarn))
+        runde.kanal.verbindung.senke.write(sprachdaten(stille(480)), runde.mira)
+        nachbarn.kanal.verbindung.senke.write(sprachdaten(stille(480)), nachbarn.sildar)
+        await befehl(bot, "stop")(ctx)
+
+    asyncio.run(ablauf())
+
+    assert nachbarn.kanal.verbindung.getrennt
+    assert not nachbarn.kanal.verbindung.schneidet
+    # Und der Abend der ersten Gruppe läuft weiter, als wäre nichts gewesen.
+    assert runde.kanal.verbindung.schneidet
+    assert not runde.kanal.verbindung.getrennt
+    (spur,) = recordings.pending(nachbarn.runde)
+    assert spur.filename.endswith(f"{SILDAR.name}.wav")
+    assert recordings.pending(unsere_runde(konfiguration)) == ()
+
+
+def test_aufnahme_stop_ohne_eigene_aufnahme_ruehrt_die_fremde_nicht_an(
+    konfiguration, sitzung_id, ohne_espeak, runde, nachbarn
+):
+    """Die schärfste Fassung desselben Fehlers: die zweite Gilde nahm gar nichts auf."""
+    bot = gateway.baue(konfiguration)
+    ctx = nachbar_ctx(nachbarn)
+
+    async def ablauf():
+        await befehl(bot, "start")(FakeCtx(runde.mira))
+        runde.kanal.verbindung.senke.write(sprachdaten(stille(480)), runde.mira)
+        await befehl(bot, "stop")(ctx)
+
+    asyncio.run(ablauf())
+
+    assert ctx.antworten == [gateway.LAEUFT_NICHT]
+    assert runde.kanal.verbindung.schneidet
+    assert not runde.kanal.verbindung.getrennt
+    assert recordings.pending(unsere_runde(konfiguration)) == ()
+
+
+def test_der_empfangstest_der_zweiten_gilde_stoert_die_erste_nicht(
+    konfiguration, sitzung_id, ohne_espeak, runde, nachbarn, kurze_probe
+):
+    """``PROBE_NICHT_STOEREN`` meint die Aufnahme *dieser* Runde — sonst keine."""
+    bot = gateway.baue(konfiguration)
+    ctx = nachbar_ctx(nachbarn)
+
+    async def ablauf():
+        await befehl(bot, "start")(FakeCtx(runde.mira))
+        runde.kanal.verbindung.senke.write(sprachdaten(PAKET), runde.mira)
+        await befehl(bot, "test")(ctx)
+
+    asyncio.run(ablauf())
+
+    assert gateway.PROBE_NICHT_STOEREN not in ctx.antworten
+    assert nachbarn.kanal.name in ctx.antworten[0]
+    # Die Probe der Nachbarn räumt sich selbst ab; die Aufnahme daneben läuft weiter.
+    assert nachbarn.kanal.verbindung.getrennt
+    assert runde.kanal.verbindung.schneidet
+    assert not runde.kanal.verbindung.getrennt
+
+
+def test_der_lauf_der_einen_gilde_ist_nicht_der_der_anderen(
+    konfiguration, sitzung_id, ohne_espeak, runde, nachbarn
+):
+    """Kein Zugriff ohne Runde: die Läufe hängen an ``runde.id``, nicht am Prozess."""
+    bot = gateway.baue(konfiguration)
+
+    asyncio.run(befehl(bot, "start")(FakeCtx(runde.mira)))
+
+    laeufe = die_laeufe(bot)
+    unser = laeufe.fuer(unsere_runde(konfiguration))
+    ihrer = laeufe.fuer(nachbarn.runde)
+    assert unser is not ihrer
+    assert unser.aufnahme is not None and ihrer.aufnahme is None
+    assert laeufe.fuer_gilde(NACHBARGILDE) is ihrer
+    # Und eine Gilde, die hier noch nie etwas getan hat, hat auch keinen Lauf.
+    assert laeufe.fuer_gilde("13") is None
+
+
 def test_start_ohne_sitzung_trennt_wieder(konfiguration, ohne_espeak, runde):
     unsere_runde(konfiguration)
     bot = gateway.baue(konfiguration)
@@ -1992,7 +2136,7 @@ def test_ein_gescheiterter_start_nimmt_die_vorstellung_dort_zurueck_wo_sie_steht
     assert "ich schneide nicht mit" in widerruf
     assert not runde.kanal.verbindung.schneidet
     assert runde.kanal.verbindung.getrennt
-    assert der_lauf(bot).aufnahme is None
+    assert der_lauf(bot, konfiguration).aufnahme is None
 
 
 def test_der_widerruf_nennt_bei_einem_unerwarteten_fehler_nur_die_art(
@@ -2037,7 +2181,7 @@ def test_ohne_zugestellte_vorstellung_wird_gar_nicht_erst_angesagt(
     assert runde.kanal.verbindung.gespielt == []
     assert not runde.kanal.verbindung.schneidet
     assert runde.kanal.verbindung.getrennt
-    assert der_lauf(bot).aufnahme is None
+    assert der_lauf(bot, konfiguration).aufnahme is None
     assert consent.for_session(unsere_runde(konfiguration), sitzung_id) == ()
     assert ctx.antworten[0].startswith("Das hat nicht geklappt:")
     # Im Kanal steht nichts — auch kein Widerruf. Versucht wird er trotzdem: dieser Kanal
@@ -2080,7 +2224,7 @@ def test_die_halb_zugestellte_vorstellung_wird_auch_zurueckgenommen(
     assert runde.kanal.verbindung.gespielt == []
     assert not runde.kanal.verbindung.schneidet
     assert runde.kanal.verbindung.getrennt
-    assert der_lauf(bot).aufnahme is None
+    assert der_lauf(bot, konfiguration).aufnahme is None
     assert consent.for_session(unsere_runde(konfiguration), sitzung_id) == ()
     assert ctx.antworten[0].startswith("Das hat nicht geklappt:")
 
@@ -2113,7 +2257,7 @@ def test_ein_stolperndes_trennen_nimmt_den_widerruf_nicht_mit(
     assert gesagt[-1] == gateway.WIDERRUF.format(grund=recorder.OHNE_SITZUNG)
     assert not runde.kanal.verbindung.getrennt
     assert not runde.kanal.verbindung.schneidet
-    assert der_lauf(bot).aufnahme is None
+    assert der_lauf(bot, konfiguration).aufnahme is None
     assert ctx.antworten[0].startswith("Das hat nicht geklappt:")
 
 
@@ -2162,7 +2306,7 @@ def test_der_widerruf_kommt_auch_wenn_die_vorstellung_selbst_abreisst(
         grund=gateway.UNERWARTET.format(typ="RuntimeError")
     )
     assert not runde.kanal.verbindung.getrennt
-    assert der_lauf(bot).aufnahme is None
+    assert der_lauf(bot, konfiguration).aufnahme is None
 
 
 def test_der_widerruf_kommt_auch_wenn_der_empfangstest_nicht_anlaeuft(
@@ -2212,7 +2356,7 @@ def test_wer_nach_einem_gescheiterten_start_dazukommt_wird_nicht_aufgenommen(
 
     assert len(runde.kanal.verbindung.gespielt) == gespielt_vorher
     assert not runde.kanal.verbindung.schneidet
-    assert der_lauf(bot).aufnahme is None
+    assert der_lauf(bot, konfiguration).aufnahme is None
 
 
 def test_der_widerruf_haelt_den_urspruenglichen_fehler_nicht_auf(
@@ -2484,7 +2628,7 @@ def test_der_empfangstest_ruehrt_eine_laufende_aufnahme_nicht_an(
 def test_waehrend_der_probe_beginnt_kein_mitschnitt(konfiguration, sitzung_id, ohne_espeak, runde):
     """Die Gegenrichtung: der Test hält die Verbindung und trennt sie gleich wieder."""
     bot = gateway.baue(konfiguration)
-    der_lauf(bot).probe = True
+    der_lauf(bot, konfiguration).probe = True
     ctx = FakeCtx(runde.mira)
 
     asyncio.run(befehl(bot, "start")(ctx))
@@ -2526,7 +2670,7 @@ def test_ein_zweiter_empfangstest_laeuft_nicht_daneben(
     konfiguration, sitzung_id, ohne_espeak, runde
 ):
     bot = gateway.baue(konfiguration)
-    der_lauf(bot).probe = True
+    der_lauf(bot, konfiguration).probe = True
     ctx = FakeCtx(runde.mira)
 
     asyncio.run(befehl(bot, "test")(ctx))
@@ -2559,7 +2703,7 @@ def test_der_empfangstest_ohne_sitzung_trennt_wieder(
 
     assert recorder.OHNE_SITZUNG in ctx.antworten[0]
     assert runde.kanal.verbindung.getrennt
-    assert der_lauf(bot).probe is False
+    assert der_lauf(bot, konfiguration).probe is False
     # Auch diese Ankündigung steht öffentlich im Kanal und kündigt zehn Sekunden Aufnahme
     # an — sie darf so wenig allein stehenbleiben wie die vor einer Sitzung.
     gesagt = [text for text, _ in runde.kanal.geschrieben]
@@ -2896,9 +3040,14 @@ def dritter_im_kanal(runde):
     return wer
 
 
-def der_lauf(bot):
-    """Der Zustand hinter den Ereignissen — er lebt in der Closure von ``baue``."""
-    return inspect.getclosurevars(bot.ereignisse["on_voice_state_update"]).nonlocals["lauf"]
+def die_laeufe(bot):
+    """Die Läufe hinter den Ereignissen — sie leben in der Closure von ``baue``."""
+    return inspect.getclosurevars(bot.ereignisse["on_voice_state_update"]).nonlocals["laeufe"]
+
+
+def der_lauf(bot, konfiguration):
+    """Der Zustand *einer* Runde — seit #226 gibt es ihn je Runde und nicht je Prozess."""
+    return die_laeufe(bot).fuer(unsere_runde(konfiguration))
 
 
 def test_der_satz_ans_alleinsein_zeigt_den_widerspruch_und_traegt_keinen_namen():
@@ -3217,7 +3366,7 @@ def test_der_vermerk_ans_alleinsein_ueberlebt_das_ende_der_aufnahme_nicht(
         await befehl(bot, "start")(FakeCtx(runde.mira))
         einer_bleibt(runde.kanal, runde.mira)
         await dazu(runde.brok, zustand(runde.kanal), zustand())
-        gemerkt = der_lauf(bot).allein
+        gemerkt = der_lauf(bot, konfiguration).allein
         await befehl(bot, "stop")(FakeCtx(runde.mira))
         await ruhen()
         return gemerkt
@@ -3227,7 +3376,7 @@ def test_der_vermerk_ans_alleinsein_ueberlebt_das_ende_der_aufnahme_nicht(
     # Erst dass überhaupt etwas dastand — sonst prüfte der zweite Satz nur eine Lücke.
     assert gemerkt is not None
     assert MIRA.id in gemerkt[1]
-    assert der_lauf(bot).allein is None
+    assert der_lauf(bot, konfiguration).allein is None
 
 
 def test_die_rueckkehr_setzt_dieselbe_aufnahme_fort(
@@ -4332,9 +4481,9 @@ def test_ein_vermerk_von_vorhin_verschluckt_die_frage_der_naechsten_aufnahme_nic
 
     async def ablauf():
         await befehl(bot, "start")(FakeCtx(runde.mira))
-        gemerkt = der_lauf(bot).gefragt
+        gemerkt = der_lauf(bot, konfiguration).gefragt
         await befehl(bot, "stop")(FakeCtx(runde.mira))
-        leer = der_lauf(bot).gefragt
+        leer = der_lauf(bot, konfiguration).gefragt
         await befehl(bot, "start")(FakeCtx(runde.mira))
         await ruhen()
         return gemerkt, leer
