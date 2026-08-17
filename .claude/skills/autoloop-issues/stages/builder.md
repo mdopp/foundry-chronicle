@@ -46,11 +46,14 @@ Run the fast gate (table above) for the paths this unit touched. The pytest step
 - **No push, no PR, no CI.** `queue.py built <unit-id>` (bumps `batch.count` by the issue count). Return.
 
 ### `security: true` unit — pre-merge draft gate
-This project records people's voices and holds a Discord bot token, so the changes the draft rule in `CLAUDE.md` § »Aufnahmen sind personenbezogen« names get **human eyes before they ship** (a pre-merge opt-in, not a post-deploy glance). That rule is the single source — read it there, don't carry a copy of it in your head. Build it on its **own** branch off `main` (not the shared batch branch — it must not ride a batch that auto-merges), and **don't** `queue.py claim`/`built` it against the batch:
+This project records people's voices and holds a Discord bot token, so the changes the draft rule in `CLAUDE.md` § »Aufnahmen sind personenbezogen« names get **human eyes before they ship** (a pre-merge opt-in, not a post-deploy glance). That rule is the single source — read it there, don't carry a copy of it in your head. Build it on its **own** branch off `main` (not the shared batch branch — it must not ride a batch that auto-merges):
 ```bash
+queue.py claim <unit-id>   # same cross-instance lock as any unit
 git checkout main && git pull --ff-only && git checkout -b sec/issue-<N>-<slug>
 ```
-implement → fast gate → commit `Closes #<N>` → push → `gh pr create --draft` with a full body (What/Why/Risk/Rollback/Verification). Then `queue.py park <issue> review --comment "drafted #<pr> — <one-line flag>"` (labels `autoloop:review`, the durable pre-merge worklist) and **return — do not merge.** The loop never merges a draft; a human reviews and merges it. (More than 3 such drafts accumulating without review is orchestrator hard-exit #2.)
+implement → fast gate → commit `Closes #<N>` → push → `gh pr create --draft` with a full body (What/Why/Risk/Rollback/Verification). Then `queue.py park <issue> review --comment "drafted #<pr> — <one-line flag>"` and **return — do not merge.** The loop never merges a draft; a human reviews and merges it. (More than 3 such drafts accumulating without review is orchestrator hard-exit #2.)
+
+**`park … review` is this unit's terminal verb, not `built`** — it labels `autoloop:review` (the durable pre-merge worklist), releases the `autoloop:building` claim, and takes the unit out of `next`'s rotation, all without touching `batch.count`. `built` books a unit **onto the batch branch**; a draft never rides it, so counting it there makes `batch.count` disagree with `git log main..<batch.branch>` and the seal-at-8 check fires early. `queue.py built` refuses a `security: true` unit outright.
 
 ### Lint-sweep unit
 Implement the one file/rule named. Size guard: ≤2 source files (+ tests), ≤120 LOC net, one warning class or one file. If even a bite-size fix won't fit → `queue.py park <issue> blocked --comment "<why>"` and return. Lint-sweep commits ride the batch branch (no `Closes #`); `queue.py note "lint-sweep: <file> <rule>"` at seal.
