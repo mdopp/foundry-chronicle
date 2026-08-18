@@ -9,7 +9,7 @@ COPY src ./src
 RUN apt-get update \
     && apt-get install -y --no-install-recommends git \
     && rm -rf /var/lib/apt/lists/* \
-    && pip install --no-cache-dir --prefix=/fertig ".[server,transcribe,discord]"
+    && pip install --no-cache-dir --prefix=/fertig ".[server,discord]"
 
 FROM python:3.12-slim
 
@@ -22,9 +22,10 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends libopus0 espeak-ng \
     && rm -rf /var/lib/apt/lists/*
 
-# Kein ffmpeg im Image: faster-whisper dekodiert über PyAV, und dessen Wheel bringt die
-# FFmpeg-Bibliotheken mit — m4a/AAC und ogg/opus vom Telefon gehen ohne ein Systempaket.
-# Die Ansage wird deshalb von Hand auf 48 kHz Stereo gebracht (chronicle/bot/ansage.py).
+# Kein ffmpeg und kein PyAV im Image: seit #216 dekodiert **niemand hier** mehr Audio.
+# Ein Diktat vom Telefon (m4a/AAC, ogg/opus) wird als Datei weitergereicht, und
+# entpackt wird es im Nachbardienst ``solaris-whisper-batch``. Die Ansage kommt darum
+# von Hand auf 48 kHz Stereo (chronicle/bot/ansage.py).
 #
 # /aufnahmen liegt neben /data und nicht darin: nur /data wird gesichert, und die
 # Audiospuren gehören nie ins Backup. Beide Container des Pods hängen dasselbe Volume
@@ -38,8 +39,7 @@ ENV PYTHONUNBUFFERED=1 \
     CHRONICLE_HOST=0.0.0.0 \
     CHRONICLE_PORT=8000 \
     CHRONICLE_DATA_DIR=/data \
-    CHRONICLE_RECORDINGS_DIR=/aufnahmen \
-    CHRONICLE_WHISPER_MODEL=small
+    CHRONICLE_RECORDINGS_DIR=/aufnahmen
 
 WORKDIR /data
 EXPOSE 8000

@@ -1,6 +1,6 @@
-"""Die Eigennamen der Sitzung als Vorspann — und die harte Kappung.
+"""Die Eigennamen der Sitzung als Wortvorgabe — und die harte Kappung.
 
-Whisper nimmt einen kurzen Vorspann entgegen und schreibt danach erfundene Namen
+Whisper nimmt je Anfrage eine Wortliste entgegen und schreibt danach erfundene Namen
 richtig. Das Feld fasst rund 224 Token; was darüber liegt, wird **still verworfen** —
 deshalb wird hier gekappt und nicht gehofft.
 
@@ -8,6 +8,12 @@ Gekappt wird nach Rangfolge, und die kommt vom Aufrufer: erst die Namen, die im
 Chat-Log dieser Sitzung gesprochen haben, dann der Rest des Zwischenspeichers. Ab dem
 ersten Namen, der nicht mehr ins Budget passt, ist Schluss — das ganze Kompendium
 gehört ohnehin nicht hinein.
+
+**Diese Liste bleibt unser**, auch seit die Erkennung im Nachbardienst läuft (#216): wer
+in dieser Sitzung gesprochen hat und wie die Figuren der Kampagne heißen, weiß der
+Dienst nie. Er zählt die Token mit dem echten Tokenizer nach und meldet, was er dabei
+fallen lässt; hier steht die Rangfolge davor und eine Schätzung, die eher zu viel
+verwirft als zu wenig.
 """
 
 from __future__ import annotations
@@ -21,8 +27,6 @@ MAX_TOKEN = 224
 # Zerlegung in kurze Stücke, und die Grenze muss halten statt ungefähr zu stimmen.
 ZEICHEN_JE_TOKEN = 3
 
-EINLEITUNG = "In dieser Sitzung kommen vor: "
-
 TRENNER = ", "
 
 
@@ -32,7 +36,7 @@ def tokens(text: str) -> int:
 
 def capped(names: Iterable[str], *, max_tokens: int = MAX_TOKEN) -> tuple[str, ...]:
     """Die Namen in Rangfolge, hart auf ``max_tokens`` geschätzte Token begrenzt."""
-    rest = max_tokens - tokens(EINLEITUNG)
+    rest = max_tokens
     gewaehlt: list[str] = []
     gesehen: set[str] = set()
     for name in names:
@@ -46,7 +50,3 @@ def capped(names: Iterable[str], *, max_tokens: int = MAX_TOKEN) -> tuple[str, .
         gesehen.add(sauber)
         gewaehlt.append(sauber)
     return tuple(gewaehlt)
-
-
-def prompt(names: tuple[str, ...]) -> str:
-    return f"{EINLEITUNG}{TRENNER.join(names)}." if names else ""

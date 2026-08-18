@@ -76,15 +76,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      # Mit dem transcribe-Extra: der Audio-Test schickt echte m4a- und ogg-Dateien durch
-      # PyAV. Ohne das Extra würde er still übersprungen — ein Test, der in der CI nie
-      # läuft, ist keiner.
-      - run: pip install -e ".[dev,transcribe]"
+      # Kein transcribe-Extra mehr: seit #216 lädt dieses Projekt kein Whisper-Modell und
+      # dekodiert kein Audio — die Verschriftung ist ein HTTP-Aufruf gegen
+      # ``solaris-whisper-batch``, und dessen Gegenstelle steht im Test als Attrappe.
+      - run: pip install -e ".[dev]"
       - run: pytest -q --cov --cov-report=xml
-        env:
-          # Dekodiert wird, geladen nicht: offline erzwingt, dass kein Whisper-Modell aus
-          # dem Hugging-Face-Hub nachgezogen wird.
-          HF_HUB_OFFLINE: "1"
       - name: Diff-Coverage
         if: github.event_name == 'pull_request'
         run: python3 scripts/check_diff_coverage.py --base "origin/${{ github.base_ref }}"

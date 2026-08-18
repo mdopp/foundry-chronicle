@@ -108,11 +108,13 @@ spec:
     # der Nachbar ollama seine hat (ServiceBay #1026/#2174, unser Fall als
     # mdopp/servicebay#2517). Der bekannte Fix ist ein einzelnes ``.container``-Quadlet
     # mit ``AddDevice=`` plus ``SecurityLabelDisable=true``; den gibt es für einen Pod aus
-    # zwei Containern, die sich ``/data`` teilen, nicht. Der beschlossene Weg führt
-    # deshalb nicht über eine eigene Karte, sondern über den vorhandenen
-    # ``solaris-whisper`` der Box (#141), sobald der Wortvorgaben annimmt
-    # (mdopp/solarisbay#1142). Bis dahin greift der CPU-Rückfall aus #84 — gewollt, nicht
-    # vergessen; ``CHRONICLE_WHISPER_DEVICE`` bleibt darum ungesetzt.
+    # zwei Containern, die sich ``/data`` teilen, nicht. **Seit #216 braucht dieser Pod
+    # auch keine:** er hält kein Whisper-Modell mehr. Verschriftet wird bei
+    # ``solaris-whisper-batch`` auf der Karte der Box (mdopp/solarisbay#1161), erreicht
+    # über die Schleife wie Ollama und solaris-tts auch — Vorgabe ``127.0.0.1:10301``,
+    # überschreibbar mit ``CHRONICLE_WHISPER_URL``. Einen CPU-Rückfall gibt es dafür
+    # **nicht** mehr: ist der Dienst aus, bleibt die Spur liegen und der Nachtlauf sagt
+    # es, statt eine Chronik ohne das gesprochene Wort zu schreiben.
     volumeMounts:
       - mountPath: /data
         name: chronik-daten

@@ -1,119 +1,88 @@
-"""Der Zugang zum Spracherkenner: faster-whisper, auf der Karte wenn eine da ist.
+"""Der Zugang zum Spracherkenner: ein HTTP-Aufruf gegen ``solaris-whisper-batch``.
 
-Die Schnittstelle ist absichtlich schmal — eine Datei hinein, Segmente heraus. Alles,
-was ein echtes Modell lädt, steckt in dieser Datei; die Tests setzen hier ein erfundenes
-Modell ein und laden deshalb nie etwas herunter.
+Wir halten **kein Whisper-Modell mehr im Prozess** (Betreiber-Entscheidung 2026-08-18,
+#216). Die Stapelarbeit macht der Nachbardienst auf seiner Karte; von faster-whisper,
+PyAV und onnxruntime bleibt in diesem Image nichts. Die Schnittstelle ist dieselbe
+schmale wie vorher — eine Datei hinein, Segmente heraus —, nur liegt das Modell jetzt
+auf der anderen Seite eines Sockets.
 
-Übergeben wird der **Pfad der ganzen Spur**, nie ein kleiner Puffer. Whisper ist auf
-30-Sekunden-Fenster trainiert und lebt vom Kontext; pro Redebeitrag geschnittene
-Schnipsel verschlechtern vor allem die Erkennung von Eigennamen — und ein Rollenspiel
-besteht aus erfundenen Eigennamen.
+**Das Modell wählt der Dienst, nicht wir.** ``POST /transcribe`` nimmt ``path``,
+``language`` und ``hotwords`` entgegen und sonst nichts; welches Modell rechnet, steht
+in seiner Unit (``WHISPER_BATCH_MODEL``, dort ``large-v3-turbo``,
+``mdopp/solarisbay#1161``). Deshalb meldet ``name`` den **Dienst** und nicht ein
+Modell: eine Modellbezeichnung, die wir nicht erfragen können, wäre geraten, und
+geraten wird hier nichts.
 
-**Die Zusage ist »läuft ohne Karte«, nicht »nutzt keine« (#84).** Ist CUDA da, läuft
-``large-v3-turbo`` in ``float16``; ist keine da, bleibt es bei ``cpu``/``int8`` und
-``small`` wie bisher. Erfundene Eigennamen erkennt das große Modell deutlich besser —
-mehr, als der auf 224 Token gedeckelte Vorspann je gutmachen kann. Eine Karte wird
-damit nirgends zur Voraussetzung; die Erkennung ist überschreibbar (``config``).
+**Übergeben wird ein Pfad, keine Bytes.** Beide Dienste laufen auf derselben Box, und
+der Dienst hängt das Aufnahmeverzeichnis schreibgeschützt unter seinem Host-Pfad ein.
+Vier Stunden × fünf Sprecher sind 439 MB je Spur auch in 16 kHz Mono — die durch einen
+Socket zu schieben brächte nichts, es ist ein Stapellauf. Geschickt wird der Name
+**relativ** zum Aufnahmeverzeichnis: unser Container sieht es unter ``/aufnahmen``,
+der Dienst unter seinem eigenen Pfad, und der gemeinsame Nenner ist der Name darin.
 
-Und sie ist **nicht verlässlich frei**: Ollama hält sein Modell geladen und teilt sich
-dieselben 16 GB. Schlägt das Laden auf der Karte fehl, fällt der Lauf auf die CPU
-zurück, statt die Nacht abzubrechen — ein langsamer Lauf schlägt einen gescheiterten.
+**Die Namen gehen als ``hotwords`` mit, nicht als Vorspann.** ``initial_prompt`` wirkt
+nur auf das erste 30-Sekunden-Fenster, ``hotwords`` wird in jedes wieder eingespeist —
+bei einer Sitzungsspur ist das der Unterschied zwischen »die ersten dreißig Sekunden
+kennen die Figuren« und »die ganze Spur«. Der Dienst passt die Liste selbst exakt ins
+Token-Budget und meldet, was er fallen ließ; unsere Kappung (``vocabulary.capped``)
+bleibt die Rangfolge davor.
 
-**Die Stille wird übersprungen (#209).** py-cord füllt die Sprechpausen jeder Spur mit
-Stille auf, damit alle Spuren auf **einer** Zeitachse liegen; bei vier Stunden Sitzung
-ist deshalb jede Sprecherspur vier Stunden lang, auch wenn die Person zwanzig Minuten
-geredet hat. Ohne Stille-Erkennung läuft das Modell über all das hinweg — und **auf
-langer Stille erfindet Whisper Sätze**: fünf Minuten reine Stille ergaben acht Segmente
-im 30-Sekunden-Raster, mit ihr keins. Das trifft die oberste Hausregel, und es kostet
-obendrein die Rechenzeit, die ein größeres Modell auf der CPU bräuchte (#141) — an einer
-Spur mit 20 % Sprechanteil 143 s gegen 29 s.
-
-Ein Schalter dagegen ist bewusst **nicht** vorgesehen: die Schranke gegen erfundene
-Sätze (``service.MINDESTDAUER``, #142) hat auch keinen, und ein abschaltbarer Schutz ist
-einer, den man eines Tages abgeschaltet vorfindet. Die Vorgabewerte der Bibliothek
-bleiben stehen — an einer Schwelle wird gedreht, wenn ein echter Lauf zeigt, dass ein
-leiser Sprecher verschluckt wird, nicht vorher. Das Stille-Modell liegt im Rad von
-faster-whisper (``assets/silero_vad_v6.onnx``), es wird nichts nachgeladen; eine Box
-ohne Netz merkt davon nichts.
-
-**Die Zeitstempel bleiben sitzungsabsolut.** faster-whisper rechnet die Segmentzeiten
-auf die Originalspur zurück; daran hängt die ganze Zusammenführung. Ausgeführt geprüft
-gegen bekannte Sprechinseln, nicht der Dokumentation geglaubt: jeder Segmentbeginn liegt
-in der Insel, zu der er gehört, der Einsatz auf ±0,4 s genau — die Vorlaufkante ist die
-Polsterung der Stille-Erkennung. **Ohne** sie lagen fünf von zehn Einsätzen 20 bis 30
-Sekunden zu früh, weil Whisper den Text auf das nächste 30-Sekunden-Fenster legt; der
-erste Satz der Spur stand bei 0 s statt bei 20 s. Die Stille-Erkennung verschiebt die
-Achse also nicht, sie richtet sie gerade.
+**Und es gibt keinen Rückfall mehr.** Der CPU-Weg aus #84 ist ersatzlos entfallen. Ist
+der Dienst aus, gibt es kein Transkript — dann bleibt die Spur liegen und sagt es,
+statt still eine Chronik ohne das gesprochene Wort entstehen zu lassen (#221). Dafür
+ist ``TranscriberUnreachable`` von ``TranscriberError`` getrennt: das eine heißt
+»später nochmal«, das andere »an dieser Spur«.
 """
 
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
+import requests
+
+from chronicle.config import DEFAULT_WHISPER_URL, Config
+
 logger = logging.getLogger(__name__)
 
-# Ohne Karte. Bleibt die Vorgabe, damit eine Instanz ohne CUDA genau wie bisher läuft.
-DEVICE = "cpu"
+TRANSCRIBE_PATH = "/transcribe"
 
-COMPUTE_TYPE = "int8"
+# Was in der Meldung steht, wenn jemand fragt, womit erkannt wurde. Der Dienst nennt
+# sein Modell nicht, und wir behaupten keins.
+NAME = "solaris-whisper-batch"
 
-CPU_MODEL = "small"
+SPRACHE = "de"
 
-# Mit Karte. ``large-v3-turbo`` statt ``large-v3``: fast dieselbe Güte bei deutlich
-# weniger VRAM — und die 16 GB teilt sich die Transkription mit Ollama.
-CUDA_DEVICE = "cuda"
+# Stapelbetrieb: die Antwort kommt erst, wenn die ganze Datei durch ist. Auf der Karte
+# ist eine Vier-Stunden-Spur ~10 min (mdopp/solarisbay#1161); eine Stunde Frist lässt
+# reichlich Luft und hängt trotzdem nicht bis in den nächsten Tag.
+DEFAULT_TIMEOUT = 3600.0
 
-CUDA_COMPUTE_TYPE = "float16"
+# Der Dienst lädt sein Modell, bevor er den Port bindet — 503 heißt also »noch nicht
+# so weit«, nicht »kaputt«. Beides gehört auf denselben Weg: warten.
+NICHT_BEREIT = 503
 
-CUDA_MODEL = "large-v3-turbo"
-
-
-def cuda_verfuegbar() -> bool:
-    """Ob ctranslate2 — der Unterbau von faster-whisper — eine Karte sieht.
-
-    Ohne das Paket ist die Antwort ``False`` statt ein Fehler: eine Dev-Installation
-    ohne das Extra ``transcribe`` soll die Erkennung trotzdem beantworten können.
-    """
-    try:
-        import ctranslate2
-    except ImportError:
-        return False
-    try:
-        return int(ctranslate2.get_cuda_device_count()) > 0
-    except Exception:  # pragma: no cover - Treiber da, aber unbrauchbar
-        return False
-
-
-def geraet_und_rechenart(gewuenscht: str | None, *, cuda: bool) -> tuple[str, str]:
-    """Gerät und Rechenart: der Wunsch schlägt den Fund, der Fund schlägt die Vorgabe.
-
-    Die Rechenart ist kein eigener Regler, sondern folgt dem Gerät — ``float16`` auf der
-    Karte, ``int8`` auf der CPU. Wer die Karte für Ollama frei braucht, setzt das Gerät
-    auf ``cpu`` und bekommt exakt das Verhalten von früher.
-    """
-    if gewuenscht == CUDA_DEVICE or (gewuenscht is None and cuda):
-        return CUDA_DEVICE, CUDA_COMPUTE_TYPE
-    return DEVICE, COMPUTE_TYPE
-
-
-def vorgabemodell(geraet: str) -> str:
-    """Das Modell, das zum Gerät passt — überschreibbar über die Konfiguration."""
-    return CUDA_MODEL if geraet == CUDA_DEVICE else CPU_MODEL
-
-
-NICHT_INSTALLIERT = (
-    "faster-whisper ist nicht installiert — im Image ist es dabei, "
-    "lokal nachrüsten mit: pip install '.[transcribe]'"
+NICHT_ERREICHBAR = (
+    "Der Spracherkenner {url} ist nicht erreichbar ({grund}) — die Spur bleibt liegen "
+    "und wird verschriftet, sobald er wieder da ist. Ohne ihn entsteht keine Chronik "
+    "aus dieser Sitzung; einen Rückfall auf die CPU gibt es seit #216 nicht mehr."
 )
+
+ABGEWIESEN = "Der Spracherkenner {url} hat die Spur abgewiesen: HTTP {code}."
+
+KEINE_SEGMENTE = "Der Spracherkenner {url} hat keine Segmente geliefert."
+
+# Der Pfad einer Spur trägt den Anzeigenamen des Sprechers (#194, #199) — er steht
+# deshalb nicht in dieser Meldung, obwohl sie von einem Pfad handelt.
+AUSSERHALB = "Diese Spur liegt nicht im Aufnahmeverzeichnis — der Spracherkenner liest nur dort."
 
 
 @dataclass(frozen=True)
 class Segment:
-    """Ein Stück Rede: Sekunden ab Spurbeginn, dazu der Text."""
+    """Ein Stück Rede: Sekunden ab Dateibeginn, dazu der Text."""
 
     start: float
     end: float
@@ -121,11 +90,11 @@ class Segment:
 
 
 class TranscriberError(RuntimeError):
-    """Alles, was den Lauf verhindert — ohne Modell gibt es keinen Text."""
+    """Was an dieser einen Spur scheitert — die übrigen laufen weiter."""
 
 
-class TranscriberNotInstalled(TranscriberError):
-    pass
+class TranscriberUnreachable(TranscriberError):
+    """Der Dienst antwortet nicht. Keine Spur wird deshalb als gescheitert vermerkt."""
 
 
 class SpeechModel(Protocol):
@@ -134,65 +103,90 @@ class SpeechModel(Protocol):
     @property
     def name(self) -> str: ...
 
-    def transcribe(self, audio_path: Path, *, vocabulary: str) -> Iterator[Segment]: ...
+    def transcribe(
+        self, audio_path: Path, *, hotwords: Sequence[str] = ()
+    ) -> Iterator[Segment]: ...
 
 
-def _whisper_model(model_size: str, *, device: str, compute_type: str):
-    # Lokal importiert: das Paket liegt im Image, aber nicht in jeder Dev-Installation —
-    # ohne es bleibt der Rest der Anwendung startbar.
-    try:
-        from faster_whisper import WhisperModel
-    except ImportError as fehler:
-        raise TranscriberNotInstalled(NICHT_INSTALLIERT) from fehler
-    return WhisperModel(model_size, device=device, compute_type=compute_type)
+def _http_session() -> requests.Session:
+    return requests.Session()
 
 
-class FasterWhisper:
+class WhisperBatch:
+    """Der dünne Client. Er lädt nichts, er hält nichts, er fragt."""
+
     def __init__(
         self,
-        model_size: str | None = None,
+        config: Config,
         *,
-        device: str | None = None,
-        cuda: bool | None = None,
-        loader: Callable[..., object] = _whisper_model,
+        http: Callable[[], object] = _http_session,
+        timeout: float = DEFAULT_TIMEOUT,
     ) -> None:
-        gefunden = cuda_verfuegbar() if cuda is None else cuda
-        geraet, rechenart = geraet_und_rechenart(device, cuda=gefunden)
-        name = model_size or vorgabemodell(geraet)
-        try:
-            self._model = loader(name, device=geraet, compute_type=rechenart)
-        except TranscriberNotInstalled:
-            # Gar kein faster-whisper — daran ändert die CPU nichts.
-            raise
-        except Exception as fehler:
-            if geraet == DEVICE:
-                raise
-            # Karte belegt, zu klein oder Treiber quer: die Nacht läuft langsam weiter,
-            # statt abzubrechen. Ollama teilt sich dieselben 16 GB (#84).
-            logger.warning("Karte nicht nutzbar (%s) — weiter auf der CPU", fehler)
-            geraet, rechenart = DEVICE, COMPUTE_TYPE
-            name = model_size or vorgabemodell(geraet)
-            self._model = loader(name, device=geraet, compute_type=rechenart)
-        self._name = name
-        self._device = geraet
-        self._compute_type = rechenart
+        self._base = (config.whisper_url or DEFAULT_WHISPER_URL).rstrip("/")
+        self._recordings_dir = config.recordings_dir
+        self._http = http()
+        self._timeout = timeout
 
     @property
     def name(self) -> str:
-        return self._name
+        return NAME
 
     @property
-    def device(self) -> str:
-        return self._device
+    def url(self) -> str:
+        return self._base
+
+    def _name_im_verzeichnis(self, audio_path: Path) -> str:
+        try:
+            return str(Path(audio_path).resolve().relative_to(self._recordings_dir.resolve()))
+        except ValueError:
+            raise TranscriberError(AUSSERHALB) from None
+
+    def transcribe(self, audio_path: Path, *, hotwords: Sequence[str] = ()) -> Iterator[Segment]:
+        pfad = self._name_im_verzeichnis(audio_path)
+        logger.info("Spracherkenner %s auf %s", NAME, self._base)
+        try:
+            antwort = self._http.post(
+                self._base + TRANSCRIBE_PATH,
+                json={"path": pfad, "language": SPRACHE, "hotwords": list(hotwords)},
+                timeout=self._timeout,
+            )
+        except requests.RequestException as fehler:
+            raise TranscriberUnreachable(
+                NICHT_ERREICHBAR.format(url=self._ziel, grund=type(fehler).__name__)
+            ) from None
+        if antwort.status_code == NICHT_BEREIT:
+            raise TranscriberUnreachable(
+                NICHT_ERREICHBAR.format(url=self._ziel, grund=f"HTTP {NICHT_BEREIT}")
+            )
+        if antwort.status_code >= 400:
+            raise TranscriberError(ABGEWIESEN.format(url=self._ziel, code=antwort.status_code))
+        return iter(self._segmente(antwort))
 
     @property
-    def compute_type(self) -> str:
-        return self._compute_type
+    def _ziel(self) -> str:
+        return self._base + TRANSCRIBE_PATH
 
-    def transcribe(self, audio_path: Path, *, vocabulary: str = "") -> Iterator[Segment]:
-        logger.info("Spracherkenner %s auf %s, %s", self._name, self._device, self._compute_type)
-        segmente, _ = self._model.transcribe(
-            str(audio_path), initial_prompt=vocabulary or None, vad_filter=True
+    def _segmente(self, antwort) -> tuple[Segment, ...]:
+        try:
+            rumpf = antwort.json()
+        except ValueError:
+            raise TranscriberUnreachable(
+                NICHT_ERREICHBAR.format(url=self._ziel, grund="kein JSON")
+            ) from None
+        teile = rumpf.get("segments") if isinstance(rumpf, Mapping) else None
+        if not isinstance(teile, list):
+            raise TranscriberError(KEINE_SEGMENTE.format(url=self._ziel))
+        # Nur die Anzahl: die gekappten Namen sind Figuren- und Spielernamen und haben
+        # im Log des Betreibers nichts verloren (#194, #199).
+        verworfen = rumpf.get("hotwords_dropped_count")
+        if verworfen:
+            logger.info("%s: %s Namen passten nicht ins Budget des Erkenners", NAME, verworfen)
+        return tuple(
+            Segment(
+                start=float(teil.get("start") or 0.0),
+                end=float(teil.get("end") or 0.0),
+                text=str(teil.get("text") or ""),
+            )
+            for teil in teile
+            if isinstance(teil, Mapping)
         )
-        for teil in segmente:
-            yield Segment(start=float(teil.start), end=float(teil.end), text=str(teil.text))

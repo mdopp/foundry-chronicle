@@ -1,4 +1,8 @@
-"""Der Stapellauf: Spur lesen, Namen vorspannen, Segmente ablegen.
+"""Der Stapellauf: Spur einreihen, Namen mitgeben, Segmente ablegen.
+
+Erkannt wird seit #216 nicht mehr hier, sondern bei ``solaris-whisper-batch``
+(``transcribe.client``). Warteschlange, Fristen, Besitzer und Herzschlag bleiben unser —
+und mit ihnen die Entscheidung, was mit einer Spur geschieht, die nicht drankam.
 
 Ein Lauf ist eine Datei. Er darf jederzeit abgebrochen und **von vorn** wiederholt werden:
 das Transkript einer Quelle wird im Ganzen ersetzt, ein zweiter Lauf hinterlässt also keine
@@ -40,7 +44,12 @@ from chronicle import runde as runden
 from chronicle.config import Config
 from chronicle.runde import Runde
 from chronicle.transcribe import vocabulary
-from chronicle.transcribe.client import FasterWhisper, Segment, SpeechModel
+from chronicle.transcribe.client import (
+    Segment,
+    SpeechModel,
+    TranscriberUnreachable,
+    WhisperBatch,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -240,8 +249,9 @@ def store(
 
 @runden.instanzweit
 def model_from_config(config: Config) -> SpeechModel:
-    # Beides darf leer sein: dann entscheidet der Fund der Karte (#84).
-    return FasterWhisper(config.whisper_model, device=config.whisper_device)
+    # Der Client redet nur; gebaut ist er in einer Zeile und ohne Netz. Erst der Aufruf
+    # merkt, ob der Dienst da ist.
+    return WhisperBatch(config)
 
 
 def transcribe_session(
@@ -281,12 +291,11 @@ def transcribe_session(
                 uebersprungen=True,
             )
         eigennamen = vocabulary.capped(names(scope, session_id))
-        vorspann = vocabulary.prompt(eigennamen)
         erkenner = model if model is not None else model_from_config(config)
 
-        logger.info("%s: Spur beginnt, %s Namen vorgespannt", marke, len(eigennamen))
+        logger.info("%s: Spur beginnt, %s Namen vorgegeben", marke, len(eigennamen))
         segmente = segment_rows(
-            _mit_fortschritt(erkenner.transcribe(audio_path, vocabulary=vorspann), marke),
+            _mit_fortschritt(erkenner.transcribe(audio_path, hotwords=eigennamen), marke),
             offset_ms=offset_ms,
         )
         store(scope, session_id, spur, segmente, _now())
@@ -337,12 +346,23 @@ def run_queue(
     if wartend:
         erkenner = model if model is not None else model_from_config(config)
         for aufnahme in wartend:
-            with recordings.in_arbeit(runde, aufnahme.id):
-                meldung, gelungen, stumm = _eine_spur(
-                    config, runde, aufnahme, erkenner, delete_audio
-                )
-                stand = recordings.FERTIG if gelungen else recordings.GESCHEITERT
-                recordings.mark(runde, aufnahme.id, stand, meldung)
+            try:
+                with recordings.in_arbeit(runde, aufnahme.id):
+                    meldung, gelungen, stumm = _eine_spur(
+                        config, runde, aufnahme, erkenner, delete_audio
+                    )
+                    stand = recordings.FERTIG if gelungen else recordings.GESCHEITERT
+                    recordings.mark(runde, aufnahme.id, stand, meldung)
+            except TranscriberUnreachable as fehler:
+                # **Nicht gescheitert, nur nicht drangekommen.** Seit der lokale Weg weg
+                # ist (#216), gibt es für einen abgeschalteten Erkenner keinen Rückfall
+                # mehr — also geht die Spur zurück in die Warteschlange, statt einen Stand
+                # zu bekommen, der »verloren« bedeutet. Die übrigen werden gar nicht erst
+                # versucht: sie liefen in denselben Fehler und stünden hinterher mit
+                # derselben Meldung da.
+                recordings.mark(runde, aufnahme.id, recordings.WARTET, str(fehler))
+                meldungen.append(str(fehler))
+                break
             # Der Stand steht an der Zeile, gemeldet wird nur, was etwas ergab.
             if not stumm:
                 meldungen.append(meldung)
@@ -374,6 +394,10 @@ def _eine_spur(
             offset_ms=aufnahme.offset_ms,
         )
         return transkript.message, True, transkript.stumm
+    # Der Erkenner ist aus — das ist keine Eigenschaft dieser Spur, und sie darf dafür
+    # keinen Stand bekommen. Der Aufrufer stellt sie zurück.
+    except TranscriberUnreachable:
+        raise
     # Eine kaputte Spur — abgebrochene Aufnahme, umbenannte Textdatei — darf die übrigen
     # Jobs der Nacht nicht mitnehmen.
     except Exception as fehler:  # noqa: BLE001

@@ -1030,7 +1030,7 @@ class Inselerkenner:
 
     name = "inselerkenner"
 
-    def transcribe(self, audio_path, *, vocabulary=""):
+    def transcribe(self, audio_path, *, hotwords=()):
         with wave.open(str(audio_path), "rb") as datei:
             rate = datei.getframerate()
             werte = array("h", datei.readframes(datei.getnframes()))[:: ansage.KANAELE]

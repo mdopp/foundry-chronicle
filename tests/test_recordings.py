@@ -21,7 +21,7 @@ from conftest import GRENZE, runde
 from chronicle import db, notes, recordings
 from chronicle.config import Config
 from chronicle.transcribe import service
-from chronicle.transcribe.client import Segment, TranscriberNotInstalled
+from chronicle.transcribe.client import Segment, TranscriberUnreachable
 
 DIKTAT = b"kein echtes Audio, aber Bytes"
 
@@ -38,7 +38,7 @@ class Erkenner:
         )
         self.fehler = fehler
 
-    def transcribe(self, audio_path, *, vocabulary=""):
+    def transcribe(self, audio_path, *, hotwords=()):
         if self.fehler is not None:
             raise self.fehler
         yield from self.segmente
@@ -168,11 +168,13 @@ def test_ein_gescheiterter_lauf_steht_mit_grund_an_der_spur(config, sitzung_id):
     hochladen(config, sitzung_id)
     aufnahme = recordings.pending(runde(config))[0]
 
-    recordings.mark(runde(config), aufnahme.id, recordings.GESCHEITERT, "faster-whisper fehlt.")
+    recordings.mark(
+        runde(config), aufnahme.id, recordings.GESCHEITERT, "Die Tondatei liegt nicht mehr da."
+    )
 
     nachher = recordings.get(runde(config), aufnahme.id)
     assert nachher.status == recordings.GESCHEITERT
-    assert nachher.detail == "faster-whisper fehlt."
+    assert nachher.detail == "Die Tondatei liegt nicht mehr da."
 
 
 # --- Derselbe Stapel, dieselbe Warteschlange ----------------------------------------
@@ -307,19 +309,23 @@ def test_die_spur_bleibt_liegen_und_geht_nur_auf_verlangen(config, sitzung_id):
     assert list(config.recordings_dir.iterdir()) == []
 
 
-def test_ein_fehlendes_faster_whisper_laesst_die_warteschlange_stehen(
-    config, sitzung_id, monkeypatch
-):
-    hochladen(config, sitzung_id)
+def test_ein_abgeschalteter_erkenner_laesst_die_spur_wartend(config, sitzung_id):
+    """Ohne Rueckfall (#216) darf »nicht drangekommen« nicht wie »verloren« aussehen.
 
-    def ohne_modell(_config):
-        raise TranscriberNotInstalled("faster-whisper ist nicht installiert")
+    Die Spur behaelt ``wartet`` und bekommt eine Meldung, die das sagt — nur so holt die
+    naechste Nacht sie nach, statt eine Chronik ohne das gesprochene Wort zu schreiben.
+    """
+    hochladen(config, sitzung_id, name="Sprachmemo 3.m4a")
+    hochladen(config, sitzung_id, name="Sprachmemo 4.m4a")
+    aus = Erkenner(fehler=TranscriberUnreachable("Der Spracherkenner ist nicht erreichbar"))
 
-    monkeypatch.setattr(service, "model_from_config", ohne_modell)
-    with pytest.raises(TranscriberNotInstalled):
-        service.run_queue(config, runde(config))
+    meldungen = service.run_queue(config, runde(config), model=aus)
 
-    assert recordings.pending(runde(config))[0].status == recordings.WARTET
+    wartend = recordings.pending(runde(config))
+    assert [eine.status for eine in wartend] == [recordings.WARTET, recordings.WARTET]
+    assert "nicht erreichbar" in " ".join(meldungen)
+    # Die zweite Spur wird gar nicht erst versucht — sie liefe in denselben Fehler.
+    assert wartend[1].detail is None
 
 
 # --- Die zugesagte Frist ------------------------------------------------------------
@@ -607,7 +613,7 @@ def test_die_spur_in_arbeit_gibt_lebenszeichen(config, sitzung_id, monkeypatch):
     tor = threading.Event()
 
     class Langsam(Erkenner):
-        def transcribe(self, audio_path, *, vocabulary=""):
+        def transcribe(self, audio_path, *, hotwords=()):
             tor.wait(GRENZE)
             yield from ()
 
