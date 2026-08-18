@@ -29,7 +29,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 import requests
-from conftest import GRENZE
+from conftest import GRENZE, warte_bis
 from conftest import runde as erste_runde
 from flask import Flask, jsonify
 from mocks import adresse, serve
@@ -1783,6 +1783,20 @@ def test_der_nachtlauf_faehrt_aus_dem_bot_prozess_und_haelt_das_gateway_nicht_au
     assert modell.freigegeben
     assert len(schlaege) == SCHLAEGE
     assert GESCHRIEBEN in protocol.stored(gastgeber, sitzung).text
+
+
+def test_der_nachtlauf_faden_meldet_sich_im_log_ohne_auf_vier_uhr_zu_warten(
+    konfiguration, pycord, nachtwache, caplog
+):
+    """Der Beleg, den der Box-Verify sucht: dass der Faden lebt, steht zu jeder Tageszeit da.
+
+    Bis #237 schrieb er nur, wenn eine Runde fällig war — wer mittags ins Log des Bots sah,
+    konnte einen gesunden Faden von einem nie gestarteten nicht unterscheiden.
+    """
+    with caplog.at_level(logging.INFO, logger="chronicle.nightly"):
+        gateway.run(konfiguration)
+
+        assert warte_bis(lambda: nightly.WACH % 0 in caplog.messages)
 
 
 def test_der_bot_bringt_beide_befehle_mit_und_bekommt_den_token(konfiguration, pycord):
