@@ -65,6 +65,12 @@ INTERVALL = 60.0
 # 04:20 einschaltet, bekommt seine Nacht noch; wer ihn erst mittags einschaltet, nicht.
 FENSTER = timedelta(hours=1)
 
+# Nach wie vielen Blicken auf die Uhr der Faden sagt, dass es ihn noch gibt — bei
+# ``INTERVALL`` also eine Viertelstunde.
+LEBENSZEICHEN = 15
+
+WACH = "Nachtlauf: der Faden lebt — %d Blicke auf die Uhr seit dem Start."
+
 OHNE_FOUNDRY = "Kein Zugang zu Foundry — die Zahlen wurden nicht geholt."
 OHNE_PASSWORT = (
     "Kein Foundry-Passwort im Speicher — die Zahlen wurden nicht geholt. Der Abgleich "
@@ -322,7 +328,27 @@ def tick(config: Config, *, jetzt: datetime | None = None) -> jobs.Job | None:
 
 @runden.instanzweit
 def betreiben(config: Config, *, schlafen=time.sleep, weiter=lambda: True) -> None:
+    """Der Blick auf die Uhr, immer wieder — und dazwischen ein Lebenszeichen.
+
+    Ein Blick, der nichts fällig findet, schreibt nichts. Außerhalb des Nachtfensters sahen
+    ein gesunder und ein stillgestorbener Faden im Log deshalb gleich aus, dreiundzwanzig
+    von vierundzwanzig Stunden lang: eine verschluckte Ausnahme beim Start fiele erst in
+    der ersten Nacht auf, in der eine Chronik fehlt (#237). Also sagt der Faden es selbst.
+
+    Nicht bei jedem Blick: eine Zeile je Minute wäre in einem Dienst, der monatelang läuft,
+    bald das Einzige, was im Log noch steht. Eine Viertelstunde ist kurz genug, dass ein
+    Blick ins Log sie trifft, ohne auf vier Uhr zu warten. Die mitgezählten Blicke
+    unterscheiden dabei einen Faden, der durchläuft, von einem Prozess, der immer wieder
+    neu anfängt.
+
+    In der Zeile steht diese Zahl und sonst nichts — kein Rundenname, keine angesetzte
+    Uhrzeit. Ein Lebenszeichen darf nicht verraten, wer wann spielt.
+    """
+    blicke = 0
     while weiter():
+        if blicke % LEBENSZEICHEN == 0:
+            logger.info(WACH, blicke)
+        blicke += 1
         try:
             tick(config)
         # Ein Fehler beim Blick auf die Uhr darf den Faden nicht beenden — sonst liefe

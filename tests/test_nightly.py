@@ -1,6 +1,7 @@
 """Der nächtliche Lauf: zur angesetzten Zeit, in einer Reihenfolge, ohne Doppelstart."""
 
 import json
+import logging
 import threading
 from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -445,6 +446,39 @@ def test_der_faden_dreht_sich_weiter_auch_wenn_ein_blick_scheitert(stelle, monke
     nightly.betreiben(stelle, schlafen=lambda _: None, weiter=lambda: len(runden) < 3)
 
     assert len(runden) == 3
+
+
+def _stiller_faden(monkeypatch, stelle, durchgaenge):
+    """So viele Blicke auf die Uhr, und keiner findet etwas — der Alltag des Fadens."""
+    gesehen = []
+    monkeypatch.setattr(nightly, "tick", lambda _config, **_k: gesehen.append(1))
+    nightly.betreiben(stelle, schlafen=lambda _: None, weiter=lambda: len(gesehen) < durchgaenge)
+
+
+def test_der_faden_sagt_ohne_faellige_nacht_dass_er_lebt(stelle, monkeypatch, caplog):
+    """Sonst sähen ein laufender und ein toter Faden 23 von 24 Stunden gleich aus (#237)."""
+    with caplog.at_level(logging.INFO, logger="chronicle.nightly"):
+        _stiller_faden(monkeypatch, stelle, 1)
+
+    assert nightly.WACH % 0 in caplog.messages
+
+
+def test_das_lebenszeichen_nennt_keine_runde(stelle, monkeypatch, caplog):
+    """Wer wann spielt, gehört in keine Logzeile — ein Lebenszeichen erst recht nicht."""
+    runden.anlegen(stelle.database_path, "Der Krumme Ast", guild_id="2202")
+
+    with caplog.at_level(logging.INFO, logger="chronicle.nightly"):
+        _stiller_faden(monkeypatch, stelle, 1)
+
+    assert "Der Krumme Ast" not in caplog.text
+
+
+def test_das_lebenszeichen_kommt_nicht_bei_jedem_blick(stelle, monkeypatch, caplog):
+    """Eine Zeile je Minute wäre bald das Einzige, was im Log des Bots noch steht."""
+    with caplog.at_level(logging.INFO, logger="chronicle.nightly"):
+        _stiller_faden(monkeypatch, stelle, nightly.LEBENSZEICHEN + 1)
+
+    assert caplog.messages == [nightly.WACH % 0, nightly.WACH % nightly.LEBENSZEICHEN]
 
 
 # --- Welche Uhr gemeint ist -----------------------------------------------------------
