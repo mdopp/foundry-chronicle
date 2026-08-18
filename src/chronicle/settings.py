@@ -5,18 +5,18 @@ Wert gewinnt.** Damit das keine zwei Wahrheiten werden, liest kein Aufrufer dies
 mehr selbst aus der Umgebung — er nimmt ``effective``.
 
 **Gepflegt wird je Runde.** Foundry-Adresse, Konto und Zustellkanal gehören der Gruppe,
-die spielt — was ihr Spiel betrifft. Der Instanz gehört ihre eigene Infrastruktur: der
-**Discord-Bot-Token** (unser Token) und **Ollama** (#87 — wohin gesprochenes Wort fließt,
-entscheidet nicht eine fremde Gruppe). Beides steht in ``chronicle.instanz`` und wird hier
-nur noch eingeblendet, damit ``effective`` eine vollständige ``Config`` liefert.
+die spielt — was ihr Spiel betrifft.
 
 **Das Foundry-Passwort gibt es hier nicht mehr** (#64). Es ist der Schlüssel zu einem
 fremden Server, und eine Instanz, die mehrere Runden trägt, hält kein fremdes Geheimnis
 vor. Es lebt im Arbeitsspeicher (``chronicle.zugang``) und wird vom Abgleich verbraucht.
 
-Der Bot-Token liegt dadurch als einziger im Klartext in der SQLite. Aus diesem Modul kommt
-er nur dahin zurück, wo er hingehört: in den Authorization-Header. Für die Anzeige gibt es
-``is_set`` — *ob* etwas gesetzt ist, nie *was*.
+**Der Bot-Token und Ollama sind seit #230 gar nicht mehr hier.** Sie gehören der Instanz
+(#87), und was der Instanz gehört, kommt aus der Umgebung: ``DISCORD_BOT_TOKEN``,
+``OLLAMA_URL``, ``OLLAMA_MODEL``. Gepflegt wird an ihnen nichts mehr — damit liegt kein
+Geheimnis dieses Dienstes in der SQLite und keines im Backup. Eine Runde konnte sie nie
+schreiben, und jetzt kann es niemand mehr. Für die Anzeige gibt es ``is_set`` — *ob*
+etwas gesetzt ist, nie *was*.
 """
 
 from __future__ import annotations
@@ -27,26 +27,19 @@ from datetime import time
 from urllib.parse import urlsplit
 from zoneinfo import available_timezones
 
-from chronicle import db, instanz
+from chronicle import db
 from chronicle.config import DEFAULT_OLLAMA_URL, Config
 from chronicle.runde import Runde
 
+# Was eine Runde pflegt — und nichts sonst. Der Bot-Token und die beiden Ollama-Werte
+# standen hier bis #230; sie kommen jetzt aus der Umgebung und werden nirgends gespeichert.
 KEYS = (
     "foundry_url",
     "foundry_user",
-    "discord_bot_token",
     "discord_recap_channel",
-    "ollama_url",
-    "ollama_model",
 )
 
-SECRET_KEYS = ("discord_bot_token",)
-
-# Die Werte aus KEYS, die nicht der Runde gehören. Sie werden nach ``chronicle.instanz``
-# durchgereicht, statt in der Einstellungstabelle einer Runde zu liegen.
-INSTANZ_KEYS = instanz.KEYS
-
-RUNDEN_KEYS = tuple(name for name in KEYS if name not in INSTANZ_KEYS)
+RUNDEN_KEYS = KEYS
 
 # Steht bewusst nicht in KEYS: die Uhrzeit des nächtlichen Laufs gibt es nur hier. Sie über
 # die Umgebung vorzugeben hieße, sie beim Deploy zu entscheiden — sie gehört aber der
@@ -98,7 +91,7 @@ def _lesen(runde: Runde, key: str) -> str | None:
 
 
 def stored(runde: Runde) -> dict[str, str]:
-    """Was gepflegt ist — die Werte der Runde und der eine der Instanz."""
+    """Was gepflegt ist — die Werte dieser Runde."""
     scope = db.scoped(runde)
     try:
         zeilen = scope.execute(
@@ -106,10 +99,7 @@ def stored(runde: Runde) -> dict[str, str]:
         ).fetchall()
     finally:
         scope.close()
-    gepflegt = {
-        z["key"]: z["value"] for z in zeilen if z["key"] in RUNDEN_KEYS and z["value"].strip()
-    }
-    return gepflegt | instanz.stored(runde.database_path)
+    return {z["key"]: z["value"] for z in zeilen if z["key"] in RUNDEN_KEYS and z["value"].strip()}
 
 
 def effective(config: Config, runde: Runde) -> Config:
@@ -232,10 +222,10 @@ def save_foundry_quelle(runde: Runde, value: str) -> bool:
 def save(runde: Runde, values: Mapping[str, str | None]) -> None:
     """Leerer Wert heißt: Eintrag weg, die Umgebung gilt wieder.
 
-    Ein Geheimnis, das unverändert bleiben soll, gehört deshalb gar nicht erst in
-    ``values`` — sonst löscht ein leer abgesendetes Formularfeld es.
+    Was nicht in ``erlaubt`` steht, wird still übergangen — namentlich der Bot-Token und
+    die beiden Ollama-Werte: sie kommen seit #230 aus der Umgebung, und ein Aufrufer, der
+    sie hier mitschickt, soll sie nicht durch die Hintertür in die Datei schreiben.
     """
-    instanz.save(runde.database_path, values)
     erlaubt = (*RUNDEN_KEYS, NIGHTLY_KEY, NIGHTLY_ZONE_KEY, QUELLE_KEY)
     scope = db.scoped(runde)
     try:

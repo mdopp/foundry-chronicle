@@ -264,10 +264,7 @@ def test_der_stapelaufruf_stellt_den_rueckblick_genau_einmal_zu(
     config, scope, welt, monkeypatch, capsys
 ):
     sitzung_id = eine_runde(scope, welt)
-    settings.save(
-        runde(config),
-        {"discord_bot_token": "bot-token-nur-fuer-den-test", "discord_recap_channel": "chronik"},
-    )
+    settings.save(runde(config), {"discord_recap_channel": "chronik"})
     # Der Stapelaufruf nimmt die erste Runde; die trägt seit dem Runden-Modell eine Gilde,
     # und ohne sie wüsste die Zustellung nicht, in welcher sie den Kanal suchen soll.
     _gilde_setzen(config, "g-runde")
@@ -282,6 +279,8 @@ def test_der_stapelaufruf_stellt_den_rueckblick_genau_einmal_zu(
 
     monkeypatch.setattr(rueckblick, "DiscordClient", lambda zugang: Briefkasten())
     monkeypatch.setenv("CHRONICLE_DATA_DIR", str(config.data_dir))
+    # Der Token kommt seit #230 aus der Umgebung und nirgends sonst her.
+    monkeypatch.setenv("DISCORD_BOT_TOKEN", "bot-token-nur-fuer-den-test")
     monkeypatch.delenv("OLLAMA_URL", raising=False)
     monkeypatch.delenv("OLLAMA_MODEL", raising=False)
 

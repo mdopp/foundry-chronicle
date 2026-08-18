@@ -14,9 +14,12 @@ statt Wochen später in einer fremden Chronik zu stehen.
 
 from __future__ import annotations
 
+import logging
+import os
 import re
 import secrets
 import sqlite3
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from importlib import resources
 from pathlib import Path
@@ -24,6 +27,8 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:  # pragma: no cover - nur für die Typprüfung
     from chronicle.runde import Runde
+
+logger = logging.getLogger(__name__)
 
 SCHEMA_VERSION = 29
 
@@ -88,6 +93,24 @@ INSTANZ_SCHLUESSEL = (
 # Umgekehrt: diese lagen in ``meta`` und gehören einer Runde. Sie wandern nach
 # ``runde_meta``.
 RUNDEN_SCHLUESSEL = ("discord_cursor", "foundry_last_error", "foundry_last_error_at")
+
+# Diese Werte wurden in der Datenbank gepflegt und kommen seit #230 aus der Umgebung:
+# links der Schlüssel, rechts die Variable, die ihn ablöst. Sie stehen getrennt von
+# ``VERWORFENE_SCHLUESSEL``, weil sie **nicht** bedingungslos gelöscht werden dürfen.
+ABGELOESTE_SCHLUESSEL = (
+    ("discord_bot_token", "DISCORD_BOT_TOKEN"),
+    ("ollama_url", "OLLAMA_URL"),
+    ("ollama_model", "OLLAMA_MODEL"),
+)
+
+# Kein Wert, nur zwei Namen: der Schlüssel und die Variable. Eine Logzeile ist der
+# wahrscheinlichste Weg, auf dem ein Token nach draußen gelangt.
+NICHT_ABGELOEST = (
+    "%s liegt noch in der Datenbank, aber %s ist nicht gesetzt. Der Wert bleibt stehen: "
+    "gelöscht wäre er unwiederbringlich — er steht nirgends sonst, und beim Bot-Token "
+    "hilft dann nur noch das Discord-Portal. Setze %s in den Template-Variablen dieses "
+    "Dienstes; der nächste Start räumt ihn hier fort. Bis dahin liest ihn niemand mehr."
+)
 
 # Diese Werte wurden gepflegt und werden es nicht mehr. Sie wandern nirgendwohin, sie
 # **verschwinden** — das Foundry-Passwort seit #64. Ein Bestand aus der Zeit davor liegt
@@ -363,6 +386,36 @@ def _briefkastenzeiger_verwerfen(connection: sqlite3.Connection) -> None:
     connection.execute("DELETE FROM runde_meta WHERE key = ?", (BRIEFKASTEN_ZEIGER,))
 
 
+def _abgeloeste_werte_verwerfen(
+    connection: sqlite3.Connection, umgebung: Mapping[str, str]
+) -> None:
+    """Bot-Token und Ollama räumen die Datei — aber erst, wenn ihr Ersatz wirklich steht.
+
+    Ein Wert hier ist die **einzige** Kopie: er steht nicht im Repo, nicht im Template und
+    nirgends sonst. Ihn zu löschen, während die Variable leer ist, nähme dem Betreiber den
+    Bot-Token ohne Weg zurück — er müsste ihn im Discord-Portal neu erzeugen, und bis
+    dahin schweigt der Bot in einer echten Gilde. Deshalb die Reihenfolge: **erst der
+    Ersatz, dann das Löschen.** Steht die Variable nicht, bleibt die Zeile liegen und
+    dieser Lauf sagt es bei jedem Start; lesen tut sie ohnehin niemand mehr.
+
+    Der umgekehrte Fehler wäre, sie für immer liegen zu lassen: ein Klartext-Token in
+    einer Datei, die ins Backup geht, und keine Zeile Code, die noch von ihm weiß. Genau
+    das ist der Grund, warum hier überhaupt geräumt wird.
+    """
+    for schluessel, variable in ABGELOESTE_SCHLUESSEL:
+        zeile = connection.execute("SELECT value FROM meta WHERE key = ?", (schluessel,)).fetchone()
+        steht_in_der_datei = zeile is not None and str(zeile["value"]).strip()
+        if not steht_in_der_datei:
+            continue
+        if not (umgebung.get(variable) or "").strip():
+            logger.warning(NICHT_ABGELOEST, schluessel, variable, variable)
+            continue
+        connection.execute("DELETE FROM meta WHERE key = ?", (schluessel,))
+        # Und, für eine Datenbank aus der Zeit vor dem Runden-Modell, die Zeilen, die
+        # ``_umziehen`` nicht erwischt hat — die kennt nur die erste Runde.
+        connection.execute("DELETE FROM settings WHERE key = ?", (schluessel,))
+
+
 def _geheimnisse_verwerfen(connection: sqlite3.Connection) -> None:
     """Ein nicht mehr gepflegter Wert wird gelöscht, nicht stehen gelassen."""
     for schluessel in VERWORFENE_SCHLUESSEL:
@@ -428,7 +481,9 @@ def _wandern(connection: sqlite3.Connection) -> None:
     connection.execute("PRAGMA legacy_alter_table = OFF")
 
 
-def init(database_path: Path) -> None:
+def init(database_path: Path, umgebung: Mapping[str, str] | None = None) -> None:
+    """Schema anlegen und wandern. ``umgebung`` ist nur für ``_abgeloeste_werte_verwerfen``."""
+    umgebung = os.environ if umgebung is None else umgebung
     database_path.parent.mkdir(parents=True, exist_ok=True)
     connection = connect(database_path)
     try:
@@ -453,6 +508,9 @@ def init(database_path: Path) -> None:
         # erkennt der Durchlauf, dass er schon war.
         _briefkastenzeiger_verwerfen(connection)
         _geheimnisse_verwerfen(connection)
+        # Nach ``_umziehen``: was aus der Zeit vor dem Runden-Modell noch in ``settings``
+        # lag, steht bis dahin nicht in ``meta``, und dann fände dieser Lauf es nicht.
+        _abgeloeste_werte_verwerfen(connection, umgebung)
         # Der Suchindex wird abgeleitet und deshalb zuletzt neu gebaut — er liest Spalten,
         # die die Wanderung erst angelegt hat.
         connection.executescript(suchindex_sql())

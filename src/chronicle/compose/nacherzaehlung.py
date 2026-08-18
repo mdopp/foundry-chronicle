@@ -64,7 +64,7 @@ VERWORFEN_UEBERSCHRIFT = (
 
 OHNE_MODELL = (
     "Noch kein Modell gewählt — der Bereich wurde aufgereiht statt erzählt. "
-    "Ein Modell wählst du in den Einstellungen."
+    "Ein Modell hinterlegt der Betreiber dieser Box."
 )
 
 REGISTER_ZEILE = "{label} »{name}« — {satz}"

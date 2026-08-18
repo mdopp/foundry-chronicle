@@ -19,6 +19,8 @@ Repo.
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import pytest
 from conftest import runde
 from mocks import foundry_mock, ollama_mock
@@ -120,18 +122,18 @@ def station_1_aufsetzen(tmp_path):
     # Der alte Status-Pfad steht in Lesezeichen; er landet auf der Betreiber-Seite.
     assert hole(client, "/status").status_code == 301
     seite = hole(client, "/status", folgen=True).get_data(as_text=True)
-    assert "Noch kein Bot-Token gesetzt" in seite
+    assert "er läuft oder er läuft nicht" in seite
     assert "dann wird nur geordnet, nicht formuliert" in seite
     return config, client
 
 
 def station_2_konfigurieren(config, client, mock_foundry, mock_ollama):
-    """Zwei Orte, zwei Zuständigkeiten: die Runde in Discord, die Instanz auf der Seite.
+    """Zwei Orte, zwei Zuständigkeiten: die Runde in Discord, die Instanz in der Umgebung.
 
     Was einer Gilde gehört — Foundry-Zugang, Zustellkanal, Nachtlauf — pflegt ``/setup``
-    (``bot.einrichten``); was der Instanz gehört, steht auf der Betreiber-Seite. Geprüft
-    wird hier der Schreibweg, nicht das Discord-Fenster darüber: das steht in
-    ``test_erinnern`` und ``test_bot``.
+    (``bot.einrichten``); was der Instanz gehört, kommt seit #230 aus der Umgebung und
+    wird beim Start gelesen. Der zweite ``create_app`` hier ist deshalb keine Umständlich-
+    keit, sondern genau der Handgriff des Betreibers: Wert hinterlegen, Dienst neu starten.
     """
     gruppe = runde(config)
     settings.save(
@@ -139,21 +141,20 @@ def station_2_konfigurieren(config, client, mock_foundry, mock_ollama):
         {"foundry_url": mock_foundry.url, "foundry_user": foundry_mock.BENUTZER},
     )
 
-    antwort = sende(
-        client, "/einstellungen", ollama_url=mock_ollama.url, ollama_model=ollama_mock.MODELL
-    )
-    assert antwort.status_code == 302
+    config = replace(config, ollama_url=mock_ollama.url, ollama_model=ollama_mock.MODELL)
+    client = create_app(config).test_client()
 
     aktuell = settings.effective(config, gruppe)
     assert aktuell.foundry_configured
     assert aktuell.ollama_model == ollama_mock.MODELL
 
-    formular = hole(client, "/einstellungen").get_data(as_text=True)
-    assert foundry_mock.PASSWORT not in formular
-    assert ollama_mock.MODELL in formular
-    assert ollama_mock.EINBETTUNG not in formular
+    seite = hole(client, "/einstellungen").get_data(as_text=True)
+    assert foundry_mock.PASSWORT not in seite
+    assert ollama_mock.MODELL in seite
+    assert ollama_mock.EINBETTUNG not in seite
     # Der Foundry-Zugang gehört der Runde: er steht auf der Betreiber-Seite nicht mehr.
-    assert foundry_mock.BENUTZER not in formular
+    assert foundry_mock.BENUTZER not in seite
+    return config, client
 
 
 def station_3_erster_abgleich(config, client):
@@ -261,7 +262,7 @@ def station_6_wiederfinden(config, sitzung_id):
 def test_vom_aufsetzen_bis_zur_ersten_chronik(tmp_path, mock_foundry, mock_ollama):
     """Aufsetzen, konfigurieren, abgleichen, mitschreiben, komponieren, wiederfinden."""
     config, client = station_1_aufsetzen(tmp_path)
-    station_2_konfigurieren(config, client, mock_foundry, mock_ollama)
+    config, client = station_2_konfigurieren(config, client, mock_foundry, mock_ollama)
     station_3_erster_abgleich(config, client)
     sitzung_id = station_4_erste_sitzung(config)
     station_5_erste_zusammenfassung(config, sitzung_id, mock_ollama)

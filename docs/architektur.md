@@ -27,7 +27,9 @@ steht ihm ohnehin alles offen — der Unterschied ist, dass es dafür kein Bedie
 Moduls: den Discord-Weg der Gruppe selbst.
 
 Konfiguration: Foundry-Adresse und -Benutzer je Runde, Discord-Bot-Token für die Instanz —
-das ist unser Token und nicht das einer Gruppe. Das Foundry-Passwort wird **nirgends**
+das ist unser Token und nicht das einer Gruppe. Er steht seit #230 in der Umgebung
+(`DISCORD_BOT_TOKEN`, gesetzt von den Template-Variablen der Box) und in keiner Zeile der
+SQLite; dasselbe gilt für Ollama-Adresse und -Modell. Das Foundry-Passwort wird **nirgends**
 gespeichert: es wird beim Sitzungsstart erfragt — freiwillig und nur, wo ein Foundry-Server
 im Spiel ist —, lebt im Arbeitsspeicher und wird vom Abgleich verbraucht (#64/#96). Wer
 beim Start keines gibt, wird beim Abschluss gefragt; und gefragt wird auch, wessen
@@ -208,7 +210,8 @@ passiert ist** — und Teile davon nacherzählen können.
 
 - Was einmal Web-Kästen waren — Notiz-Eingabe, Upload, Ansicht, Suche, Register — sind
   seit #157 Discord-Befehle. Übrig bleibt **eine** serverseitig gerenderte Seite: die
-  Betreiber-Seite mit Bot-Token, Ollama und der Verwaltungsgruppe.
+  Betreiber-Seite mit der Verwaltungsgruppe. Bot-Token und Ollama standen bis #230
+  daneben; sie kommen jetzt aus der Umgebung und werden nirgends mehr gepflegt.
 - **Die Haustür stellt die Plattform:** Subdomain hinter Authelia-Forward-Auth
   (ServiceBay-ADR 0001). Die Seite selbst kennt kein Login und keine Konten — sie
   erzwingt den `Remote-User`-Header und glaubt ihn nur, wenn der Aufruf von **dieser

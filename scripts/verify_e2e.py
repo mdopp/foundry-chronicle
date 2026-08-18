@@ -90,9 +90,10 @@ SZENE = "Der Keller"
 
 DIKTAT = "sprachnachricht.m4a"
 
-# Woran die Betreiber-Seite zu erkennen ist: das Feld für den Bot-Token. Es ist der Grund,
-# warum sie #69 überlebt (#89) — fehlt es, ist die Instanz ohne Weg zum Token.
-BETREIBERSEITE = 'name="discord_bot_token"'
+# Woran die Betreiber-Seite zu erkennen ist: das Feld für die Verwaltungsgruppe. Bis #230
+# war es das Feld für den Bot-Token; der kommt jetzt aus der Umgebung, und übrig ist der
+# eine Wert, der noch gepflegt wird — wer an diese Seite darf.
+BETREIBERSEITE = 'name="admin_group"'
 
 
 class Fehlschlag(AssertionError):
@@ -158,13 +159,13 @@ def warten(basis: str, prozess: subprocess.Popen) -> None:
 
 
 def betreiberseite(basis: str, lauf: Lauf) -> None:
-    """Was von der Weboberfläche bleibt: eine Seite, ein Geheimnis, eine geschlossene Tür."""
+    """Was von der Weboberfläche bleibt: eine Seite, ein Feld, eine geschlossene Tür."""
     status, seite, ziel = abruf(basis + "/")
     pruefe(status == 200, f"Betreiber-Seite: HTTP {status}")
     pfad = urllib.parse.urlsplit(ziel)
     pruefe(pfad.path == "/einstellungen", f"Betreiber-Seite: / landete auf {ziel}")
-    pruefe(BETREIBERSEITE in seite, "Betreiber-Seite: das Feld für den Bot-Token fehlt")
-    lauf.ok("Die Wurzel führt auf die Betreiber-Seite mit dem Bot-Token")
+    pruefe(BETREIBERSEITE in seite, "Betreiber-Seite: das Feld für die Verwaltungsgruppe fehlt")
+    lauf.ok("Die Wurzel führt auf die Betreiber-Seite mit der Verwaltungsgruppe")
 
     status, _, ziel = abruf(basis + "/status")
     pruefe(status == 200, f"Alter Status-Pfad: HTTP {status}")

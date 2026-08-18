@@ -73,7 +73,7 @@ TRENNER = "|"
 OHNE_CHRONIK = "Ohne Chronik gibt es fürs Register nichts vorzuschlagen."
 OHNE_MODELL = (
     "Noch kein Modell gewählt — das Register bekam keinen Vorschlag. "
-    "Ein Modell wählst du in den Einstellungen."
+    "Ein Modell hinterlegt der Betreiber dieser Box."
 )
 NICHT_ERREICHBAR = (
     "Das Sprachmodell war nicht erreichbar — das Register bekam keinen Vorschlag; "
