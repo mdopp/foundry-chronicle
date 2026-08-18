@@ -720,6 +720,37 @@ def test_eine_unlesbare_uhrzeit_laesst_die_bisherige_stehen(konfiguration, bot):
     assert "viertel nach drei" in interaktion.response.gesendet[0]["text"]
 
 
+def test_eine_adresse_aus_der_browserzeile_wird_abgewiesen_und_gesagt(konfiguration, bot):
+    """#243: ohne Schema liest ``urlsplit`` den Hostnamen als Schema — und niemand merkt es.
+
+    Genau diese Zeile stand auf der Box: kopiert, während der Anmeldebildschirm eines
+    Moduls offen war. Angenommen wurde sie, gespielt wurde einen Abend lang, angekommen
+    ist kein einziger Wurf.
+    """
+    aus_dem_browser = "danielfoundry.example:30000/modules/login.html?world=daggerheart"
+
+    interaktion = ausfuellen(
+        einrichtungsfenster(bot, FakeCtx(gilde=FakeGilde())), adresse=aus_dem_browser
+    )
+
+    unsere = runden.fuer_gilde(konfiguration.database_path, GILDE)
+    assert settings.stored(unsere).get("foundry_url") is None
+    gesagt = interaktion.response.gesendet[0]["text"]
+    assert aus_dem_browser[: einrichten.ECHO_GRENZE] in gesagt
+    assert "nicht** übernommen" in gesagt
+
+
+def test_die_wurzel_mit_schema_und_port_geht_durch(konfiguration, bot):
+    interaktion = ausfuellen(
+        einrichtungsfenster(bot, FakeCtx(gilde=FakeGilde())),
+        adresse="http://foundry.example:30000/",
+    )
+
+    unsere = runden.fuer_gilde(konfiguration.database_path, GILDE)
+    assert settings.effective(konfiguration, unsere).foundry_url == "http://foundry.example:30000/"
+    assert einrichten.ADRESSE_UNBRAUCHBAR[:20] not in interaktion.response.gesendet[0]["text"]
+
+
 def test_der_zustellkanal_wird_gewaehlt_und_wirkt_sofort(konfiguration, bot):
     kanal = FakeKanal("777", "chroniken")
     ctx = FakeCtx(gilde=FakeGilde(kanaele=(kanal,)))

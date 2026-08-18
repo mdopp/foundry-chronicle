@@ -90,6 +90,40 @@ def test_eine_zurueckgenommene_adresse_faellt_auf_den_standard_zurueck(tmp_path)
     assert settings.effective(leer, runde(leer)).ollama_url == settings.DEFAULT_OLLAMA_URL
 
 
+@pytest.mark.parametrize(
+    "wert",
+    [
+        "http://foundry.example",
+        "https://foundry.example/",
+        "http://foundry.example:30000",
+        "http://192.0.2.7:30000/",
+    ],
+)
+def test_die_wurzel_mit_schema_ist_eine_brauchbare_adresse(wert):
+    assert settings.brauchbare_adresse(wert)
+
+
+@pytest.mark.parametrize(
+    "wert",
+    [
+        "",
+        "foundry.example:30000",
+        "foundry.example:30000/modules/login.html?world=daggerheart",
+        "http://foundry.example:30000/join",
+        "https://foundry.example/?world=daggerheart",
+        "https://foundry.example/#anmelden",
+        "ftp://foundry.example",
+        "http://",
+        "http://foundry.example:dreissigtausend",
+    ],
+)
+def test_was_sich_nicht_zerlegen_laesst_wird_abgewiesen(config, wert):
+    """Abgewiesen heißt: die bisherige bleibt stehen — wie bei einer unbekannten Zone."""
+    assert not settings.brauchbare_adresse(wert)
+    assert not settings.save_foundry_url(runde(config), wert)
+    assert settings.effective(config, runde(config)).foundry_url == "https://umgebung.example"
+
+
 def test_die_gespeicherten_werte_stehen_fest():
     assert settings.KEYS == (
         "foundry_url",
