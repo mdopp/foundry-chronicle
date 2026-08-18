@@ -14,6 +14,7 @@ from chronicle.discord import rueckblick
 from chronicle.foundry import service as foundry
 from chronicle.foundry.client import FoundryUnreachable
 from chronicle.transcribe import service as transcribe
+from chronicle.transcribe.client import Segment, TranscriberUnreachable
 
 STAND = "2026-08-05T21:00:00+00:00"
 
@@ -307,6 +308,66 @@ def eine_sitzung_mit_notiz(stelle):
     szene = notes.session(runde(stelle), sitzung_id).scenes[0]
     notes.add_note(runde(stelle), szene.id, "Wir brechen bei Sonnenaufgang auf.")
     return sitzung_id
+
+
+class Abgeschaltet:
+    """Den Erkenner gibt es auf der Box nicht — genau der Stand vom 2026-08-18."""
+
+    name = "nicht-erreichbar"
+
+    def transcribe(self, audio_path, *, hotwords=()):
+        raise TranscriberUnreachable("Der Spracherkenner ist nicht erreichbar")
+
+
+class Erkenner:
+    """Ein Modell, das nichts lädt und einen Satz liefert."""
+
+    name = "erfundenes-modell"
+
+    def transcribe(self, audio_path, *, hotwords=()):
+        yield Segment(start=0.0, end=2.0, text=" Da unten steht eine Tür.")
+
+
+def eingereiht(stelle, sitzung_id, *namen):
+    stelle.recordings_dir.mkdir(parents=True, exist_ok=True)
+    for name in namen:
+        ziel = recordings.target_path(stelle.recordings_dir, sitzung_id, name)
+        ziel.write_bytes(b"kein echtes Audio, aber Bytes")
+        recordings.enqueue(runde(stelle), sitzung_id, ziel.name)
+
+
+def test_der_lauf_meldet_keine_verschriftung_die_nicht_stattfand(stelle, monkeypatch):
+    """#244: gemeldet wurde die Zahl der Wartenden, gezählt **vor** dem Lauf.
+
+    Der Erkenner ist aus, die Spuren stehen danach unverändert auf ``wartet``, und der Ton
+    verfällt trotzdem nach der Frist. Ein Satz, der Erfolg behauptet, nimmt der Runde den
+    einzigen Anlass, in der Woche davor nachzusehen.
+    """
+    sitzung_id = eine_sitzung_mit_notiz(stelle)
+    eingereiht(stelle, sitzung_id, "Mira.wav", "Brok.wav")
+    monkeypatch.setattr(transcribe, "model_from_config", lambda _config: Abgeschaltet())
+
+    meldung = jobs.chronik(stelle, runde(stelle), sitzung_id)
+
+    stände = [spur.status for spur in recordings.for_session(runde(stelle), sitzung_id)]
+    assert stände == [recordings.WARTET, recordings.WARTET]
+    assert "Aufnahmen verschriftet" not in meldung
+    assert "2 Aufnahmen konnte ich nicht verschriften" in meldung
+    assert f"nach {recordings.RETENTION_TAGE} Tagen gelöscht" in meldung
+
+
+def test_was_wirklich_verschriftet_wurde_steht_auch_so_da(stelle, monkeypatch):
+    sitzung_id = eine_sitzung_mit_notiz(stelle)
+    eingereiht(stelle, sitzung_id, "Mira.wav")
+    monkeypatch.setattr(transcribe, "model_from_config", lambda _config: Erkenner())
+
+    meldung = jobs.chronik(stelle, runde(stelle), sitzung_id)
+
+    assert [spur.status for spur in recordings.for_session(runde(stelle), sitzung_id)] == [
+        recordings.FERTIG
+    ]
+    assert "1 Aufnahme verschriftet" in meldung
+    assert "konnte ich nicht verschriften" not in meldung
 
 
 def test_der_abschluss_holt_erst_die_zahlen_und_schreibt_dann(stelle, welt, monkeypatch):

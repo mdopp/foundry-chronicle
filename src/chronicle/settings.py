@@ -24,6 +24,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import replace
 from datetime import time
+from urllib.parse import urlsplit
 from zoneinfo import available_timezones
 
 from chronicle import db, instanz
@@ -74,6 +75,10 @@ SERVER = "server"
 TESTWELT = "testwelt"
 QUELLEN = (SERVER, TESTWELT)
 DEFAULT_QUELLE = SERVER
+
+# Womit eine Foundry-Adresse anfangen muss. Mehr als eine Wahl gibt es nicht: der Client
+# spricht HTTP, und alles andere wäre ein Tippfehler, der als Schema durchginge.
+FOUNDRY_SCHEMATA = ("http", "https")
 
 FRONTEND = "Frontend"
 UMGEBUNG = "Umgebung"
@@ -183,6 +188,36 @@ def foundry_quelle(runde: Runde) -> str:
     """Echter Server oder eingebaute Testwelt — ein unbekannter Wert ist der Server."""
     wert = _lesen(runde, QUELLE_KEY)
     return wert if wert in QUELLEN else DEFAULT_QUELLE
+
+
+def brauchbare_adresse(wert: str) -> bool:
+    """Ob sich aus der Eingabe ein Foundry-Server ansprechen lässt.
+
+    Verlangt wird die **Wurzel** mit Schema. Ohne Schema liest ``urlsplit`` den Hostnamen
+    als Schema und liefert ``hostname=None`` — der Strom kam an keinen Server und schwieg
+    dazu einen ganzen Abend lang (#243). Ein Pfad samt Query ist derselbe Fund aus der
+    anderen Richtung: was aus der Browserzeile kopiert wurde, während der Anmeldebildschirm
+    offen stand, zeigt nicht auf den Server, sondern in eine Weltinstanz.
+    """
+    teile = urlsplit(wert)
+    if teile.scheme not in FOUNDRY_SCHEMATA or not teile.hostname:
+        return False
+    if teile.query or teile.fragment or teile.path.strip("/"):
+        return False
+    try:
+        # Ein unsinniger Port fällt erst beim Zugriff auf, nicht beim Zerlegen.
+        return teile.port is None or teile.port > 0
+    except ValueError:
+        return False
+
+
+def save_foundry_url(runde: Runde, value: str) -> bool:
+    """Speichert die Adresse; eine unbrauchbare lässt die bisherige stehen."""
+    gewaehlt = value.strip()
+    if not brauchbare_adresse(gewaehlt):
+        return False
+    save(runde, {"foundry_url": gewaehlt})
+    return True
 
 
 def save_foundry_quelle(runde: Runde, value: str) -> bool:

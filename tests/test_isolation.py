@@ -472,6 +472,7 @@ SCHREIBER = frozenset(
         "settings.save_nightly_time",
         "settings.save_nightly_zone",
         "settings.save_foundry_quelle",
+        "settings.save_foundry_url",
         "service.sync",
         "service.beobachten",
         "service.abzug",

@@ -36,7 +36,8 @@ OHNE_SITZUNG = "Diese Sitzung gibt es nicht mehr."
 class Lauf:
     """Was der Durchgang hinterlassen hat — jeder Aufrufer nimmt sich daraus seinen Satz."""
 
-    wartend: int
+    verschriftet: int
+    offen: int
     chronik: Composition
     rueckblick: Recap | None
     zustellung: Zustellung
@@ -53,14 +54,30 @@ def warum_nicht(runde: Runde) -> str:
     return lebenszyklus.RUHT if lebenszyklus.ruht(runde) else OHNE_SITZUNG
 
 
+def _stand(runde: Runde, vorher: tuple[recordings.Recording, ...]) -> tuple[int, int]:
+    """Wie viele der wartenden Spuren nun ein Transkript haben — und wie viele noch warten.
+
+    Gezählt wird **nach** dem Lauf und Spur für Spur. Die Zahl davor sagt nur, wie viele
+    anstanden; genau aus ihr wurde »4 Aufnahmen verschriftet«, während alle vier nach einem
+    nicht erreichbaren Erkenner unverändert auf ``wartet`` standen (#244). Und eine
+    gescheiterte Spur zählt hier zu keinem von beidem: sie ist weder verschriftet noch
+    liegt sie für den nächsten Lauf bereit.
+    """
+    danach = [recordings.get(runde, aufnahme.id) for aufnahme in vorher]
+    fertig = sum(1 for a in danach if a is not None and a.status == recordings.FERTIG)
+    wartet = sum(1 for a in danach if a is not None and a.status == recordings.WARTET)
+    return fertig, wartet
+
+
 def schreiben(config: Config, runde: Runde, session_id: int) -> Lauf | None:
     """Erst die wartenden Aufnahmen verschriften, dann übernehmen, dann komponieren.
 
     Die Übernahme steht zwischen beidem und nicht daneben — siehe den Kopf dieser Datei.
     ``None`` heißt: es ist nichts entstanden; ``warum_nicht`` sagt, warum.
     """
-    wartend = len(recordings.pending(runde))
+    wartende = recordings.pending(runde)
     run_queue(config, runde)
+    verschriftet, offen = _stand(runde, wartende)
     uebernehmen(runde, session_id)
     chronik = compose_session(config, runde, session_id)
     if chronik is None:
@@ -70,7 +87,8 @@ def schreiben(config: Config, runde: Runde, session_id: int) -> Lauf | None:
     ausgabe = anhaengen(config, runde, session_id)
     vorschlaege = register.suggest(config, runde, session_id)
     return Lauf(
-        wartend=wartend,
+        verschriftet=verschriftet,
+        offen=offen,
         chronik=chronik,
         rueckblick=rueckblick,
         zustellung=zustellung,

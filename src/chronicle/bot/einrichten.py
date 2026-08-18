@@ -194,6 +194,18 @@ STEHT_BEREIT = "Weiter geht es mit `/chronik start` — das legt die erste Sitzu
 
 UHRZEIT_UNLESBAR = "Mit »{wert}« kann ich nichts anfangen — ich bleibe bei {uhrzeit} Uhr."
 
+# Eine Adresse, die sich nicht zerlegen lässt, wird **abgewiesen** und nicht zurechtgebogen:
+# ein stillschweigend vorangestelltes »http://« erriete das Schema eines fremden Servers,
+# und ein abgeschnittener Pfad verschwiege, dass jemand die Browserzeile eines
+# Anmeldebildschirms kopiert hat. Beides endete wie #243 — eine Runde spielt einen Abend
+# lang, und es kommt kein einziger Wurf an, ohne dass irgendwo etwas dazu steht.
+ADRESSE_UNBRAUCHBAR = (
+    "Mit »{wert}« als Adresse kann ich nichts anfangen — ich habe sie **nicht** "
+    "übernommen. Gemeint ist die Wurzel eures Foundry mit Schema und Port und ohne alles "
+    "dahinter, z. B. https://foundry.example:30000 — nicht die Zeile aus dem Browser, "
+    "solange dort ein Anmeldebildschirm oder eine Welt offen steht."
+)
+
 # Eine unbekannte Zone wird **abgewiesen**, nicht stillschweigend übernommen: gespeichert
 # würde sie sonst, gelesen aber nicht — ``settings.nightly_zone`` fällt auf die Vorgabe
 # zurück, und der nächtliche Lauf liefe fortan zu einer anderen Stunde als der, die in der
@@ -290,6 +302,14 @@ def _uhrzeit(runde: Runde, wert: str) -> str:
     )
 
 
+def _adresse(runde: Runde, wert: str) -> str:
+    if not wert.strip():
+        return ""
+    if settings.save_foundry_url(runde, wert):
+        return ""
+    return ADRESSE_UNBRAUCHBAR.format(wert=zurueckgespiegelt(wert))
+
+
 def _zone(runde: Runde, wert: str) -> str:
     if not wert.strip():
         return ""
@@ -326,11 +346,10 @@ def einrichten(
     """
     beansprucht = lebenszyklus.beanspruchen(config, guild_id, gildenname)
     runde = beansprucht.runde
-    werte = {
-        "foundry_url": adresse.strip(),
-        "foundry_user": benutzer.strip(),
-    }
-    settings.save(runde, {name: wert for name, wert in werte.items() if wert})
+    benutzername = benutzer.strip()
+    if benutzername:
+        settings.save(runde, {"foundry_user": benutzername})
+    abgewiesen = _adresse(runde, adresse)
     saetze = (
         [EINGERICHTET.format(name=runde.name), KEIN_PASSWORT]
         if beansprucht.neu
@@ -338,9 +357,11 @@ def einrichten(
     )
     # Der Satz steht dort, wo die Wahl getroffen wird — aber nicht bei jedem Aufruf: wer
     # bloß die Uhrzeit richtet, hat über das Konto gerade nichts entschieden.
-    if beansprucht.neu or werte["foundry_user"]:
+    if beansprucht.neu or benutzername:
         saetze.append(AUGEN)
-    saetze.extend(satz for satz in (_uhrzeit(runde, uhrzeit), _zone(runde, zone)) if satz)
+    saetze.extend(
+        satz for satz in (abgewiesen, _uhrzeit(runde, uhrzeit), _zone(runde, zone)) if satz
+    )
     saetze.append(_offen(config, runde))
     return Eingerichtet(
         runde=runde, neu=beansprucht.neu, meldung=" ".join(saetze), ruhte=beansprucht.ruhte

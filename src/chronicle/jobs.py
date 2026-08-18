@@ -46,7 +46,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
-from chronicle import db, kette, lebenszyklus, register
+from chronicle import db, kette, lebenszyklus, recordings, register
 from chronicle.compose.service import erzaehlen
 from chronicle.config import Config
 from chronicle.discord.ausgabe import erzaehlung_zustellen
@@ -119,6 +119,15 @@ STEHT_OHNE_MODELL = (
     "Chronik und Rückblick stehen bereit — ohne Sprachmodell geordnet statt formuliert."
 )
 VERSCHRIFTET = "{anzahl} Aufnahme{mehr} verschriftet. "
+
+# Der Gegenfall, und er gehört gesagt: die Tonspuren werden nach der Frist gelöscht, ob
+# ein Transkript entstand oder nicht. Wer »4 Aufnahmen verschriftet« liest, sieht nicht
+# nach — und hat eine Woche später weder Text noch Ton (#244).
+NICHT_VERSCHRIFTET = (
+    "{anzahl} Aufnahme{mehr} konnte ich nicht verschriften; der Ton liegt weiter bereit "
+    "und kommt beim nächsten Lauf wieder dran, wird aber nach {tage} Tagen gelöscht — "
+    "verschriftet oder nicht. "
+)
 
 # Wer dieser Prozess ist — für die Dauer genau eines Starts. Ein Zufallswert und nicht
 # die Prozess-Id: die vergibt die Box nach einem Neustart wieder, und dann hielte der
@@ -435,9 +444,15 @@ def chronik(config: Config, runde: Runde, session_id: int) -> str:
     lauf = kette.schreiben(config, runde, session_id)
     if lauf is None:
         raise JobError(kette.warum_nicht(runde))
-    wartend, zustellung, ausgabe = lauf.wartend, lauf.zustellung, lauf.ausgabe
+    zustellung, ausgabe = lauf.zustellung, lauf.ausgabe
     vorschlaege = lauf.vorschlaege
-    vorlauf = "" if not wartend else VERSCHRIFTET.format(anzahl=wartend, mehr=mehrzahl(wartend))
+    vorlauf = ""
+    if lauf.verschriftet:
+        vorlauf += VERSCHRIFTET.format(anzahl=lauf.verschriftet, mehr=mehrzahl(lauf.verschriftet))
+    if lauf.offen:
+        vorlauf += NICHT_VERSCHRIFTET.format(
+            anzahl=lauf.offen, mehr=mehrzahl(lauf.offen), tage=recordings.RETENTION_TAGE
+        )
     stand = STEHT if lauf.chronik.reason is None else STEHT_OHNE_MODELL
     # Der Hinweis auf offene Vorschläge steht bewusst im Ergebnis des Laufs: wird das
     # Bestätigen nicht angestoßen, wird es übersprungen, und das Register verfällt.
