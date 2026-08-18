@@ -26,6 +26,11 @@ Diese Regeln gelten für jede Sitzung, Mensch oder Agent.
   Bot-Token darf, und die gehört dem Betrieb dieser Box (#90 regelt etwas anderes: über
   einer *Runde* steht niemand). Die Fassung vom 2026-08-11 zählte es hier heraus; mit
   #157 steht es wieder da, weil es sonst nirgends stünde.
+  **Für die ersten drei gilt das seit #230 anders:** »keiner Gilde« begründet einen Ort
+  außerhalb von Discord, aber keine *Seite*. Bot-Token, Ollama-Adresse und -Modell kommen
+  jetzt aus den **Template-Variablen der Box** und werden nirgends mehr gepflegt; auf der
+  Seite steht nur noch, wer sie öffnen darf. Was die Seite dabei verliert — die
+  Auswahlliste der installierten Modelle — ist bewusst in Kauf genommen (#227).
   Alles andere fällt. Wer eine neue Fähigkeit baut, baut sie **in Discord**,
   nicht in einer Seite — die Betreiber-Seite ist kein Ort für Spielinhalte. Seit #157
   trägt die Seite keine Spielinhalte mehr; einen zweiten Weg gibt es nicht.
@@ -106,34 +111,58 @@ der Zeit davor. Hashen scheidet aus — wir müssen es Foundry **vorzeigen**, ni
 also gilt die härtere Regel: gar nicht erst vorhalten. Es lebt in `chronicle.zugang` im
 Arbeitsspeicher, wird beim Abgleich erfragt und von ihm verbraucht, auch vom gescheiterten;
 was liegen bleibt, verfällt nach zwölf Stunden. Ergebnis: eine Instanz mit mehreren Runden
-speichert **kein fremdes Geheimnis**. Das löst die Operator-Entscheidung vom 2026-08-06
-für das Passwort ab; sie gilt weiter für den Bot-Token.
+speichert **kein fremdes Geheimnis**. Das löste die Operator-Entscheidung vom 2026-08-06
+zuerst für das Passwort ab; für den Bot-Token galt sie weiter — bis #230, siehe unten.
 
-**Operator-Entscheidung 2026-08-06 — der Bot-Token liegt in der SQLite.** Die Werte für
-Discord und Ollama werden auf der Betreiber-Seite gepflegt (#25, der Bot-Token seit #19),
-die für Foundry seit #157 in Discord unter `/setup` — die frühere Fassung nannte für
-alle drei »die Oberfläche«, weil es damals nur eine gab. Ein gepflegter Wert schlägt die
-Umgebung, die als Vorgabe beim ersten Start bleibt. Damit liegt der Bot-Token **im Klartext in `chronicle.sqlite3` — und die geht ins
-Backup.** Das ist bewusst so entschieden: eine Homelab-Instanz, Backup auf eigenem NAS,
-und der Betrieb wäre sonst nur über ServiceBay-Template-Variablen zu ändern. Er ist
-außerdem **unser** Token und nicht der einer fremden Gegenstelle. Die Abwägung hängt an
-drei Bedingungen, die nicht wegfallen dürfen — sie gelten für **jedes** Geheimnis in
-`settings.SECRET_KEYS`:
+**Der Bot-Token liegt nicht mehr in der SQLite (#230, seit 2026-08-18).** Er kommt —
+zusammen mit Ollama-Adresse und -Modell — aus den **Template-Variablen der Box**
+(`DISCORD_BOT_TOKEN`, `OLLAMA_URL`, `OLLAMA_MODEL`), wird beim Start gelesen und nirgends
+gespeichert. Es gibt kein Feld dafür, keinen Schreibweg und keine Zeile in der Datei; die
+Wanderung räumt einen Bestand aus der Zeit davor fort. Damit gilt für ihn dieselbe harte
+Regel wie seit #64 für das Foundry-Passwort: **gar nicht erst vorhalten.** Eine Instanz
+speichert danach **kein Geheimnis mehr** — weder ein fremdes noch ihr eigenes —, und die
+SQLite geht ohne eines ins Backup.
 
-- Die Seite steht **hinter Authelia und dem `Remote-User`-Guard**. Seit #157 ist sie die
-  einzige, die es gibt — die Bedingung ist damit nicht schwächer, sondern trägt allein.
-  **Was sie heißt, war bis #190 weniger, als hier stand:** der Guard prüfte nur, ob die
-  Kopfzeile da ist, und die schreibt sich jeder selbst, der den Port erreicht — der
-  liegt im Host-Netz auf `0.0.0.0`, der Proxy war ein Weg dorthin und nicht der einzige.
-  Ein Unangemeldeter im LAN konnte damit den Bot-Token überschreiben. Seither gilt sie
-  wieder, aber wörtlich: geglaubt werden `Remote-User` **und** `Remote-Groups` nur, wenn
-  der Aufruf **von dieser Maschine** kommt — dort läuft der Proxy (`chronicle.herkunft`).
-  Das ersetzt Authelia nicht, es macht Authelia zum einzigen Weg. Wer den Proxy woanders
-  hinstellt, trägt seine Adresse in `CHRONICLE_TRUSTED_PROXIES` nach; ohne das antwortet
-  die Seite 403, und der Bot-Token bleibt unerreichbar statt ungeschützt.
-- Der Wert wird **nirgends angezeigt** — nicht im Formular, nicht auf `/status`, nicht in
-  `repr`, Log oder Fehlermeldung; angezeigt wird nur, *ob* er gesetzt ist.
-- Übertragen wird **nur per POST**, nie in einer URL; ein leeres Feld heißt unverändert.
+Damit sind die drei Bedingungen der abgelösten Entscheidung **gegenstandslos, nicht
+gelockert**: sie schützten einen Wert, den es dort nicht mehr gibt. Geblieben ist die
+Zusage, die auch ohne sie trägt — **kein Token in einer Logzeile**, und der Prozess, der
+ihn nicht braucht, bekommt ihn auch nicht: die Betreiber-Seite läuft ohne ihn und zeigt
+nicht einmal mehr an, *ob* er gesetzt ist. Das sagt der Bot, indem er läuft oder nicht.
+
+**Die Wanderung löscht ihn nur gegen Ersatz.** Auf einer laufenden Instanz ist die Zeile
+in `meta` die einzige Kopie des echten Tokens; gelöscht, während die Variable leer ist,
+wäre er unwiederbringlich, und bis zum nächsten Gang ins Discord-Portal schwiege der Bot
+in einer echten Gilde. Deshalb: steht die Variable, wird gelöscht; steht sie nicht, bleibt
+der Wert liegen und `chronicle.db` sagt es bei jedem Start — mit den Namen, nie mit dem
+Wert (`db._abgeloeste_werte_verwerfen`, `tests/test_db.py`).
+
+> **Abgelöst: Operator-Entscheidung 2026-08-06 — der Bot-Token liegt in der SQLite.**
+> Die Werte für Discord und Ollama wurden auf der Betreiber-Seite gepflegt (#25, der
+> Bot-Token seit #19), die für Foundry seit #157 in Discord unter `/setup`. Ein gepflegter
+> Wert schlug die Umgebung, die als Vorgabe beim ersten Start blieb. Damit lag der
+> Bot-Token **im Klartext in `chronicle.sqlite3` — und die geht ins Backup.** Bewusst so
+> entschieden: eine Homelab-Instanz, Backup auf eigenem NAS, und der Betrieb wäre sonst
+> nur über ServiceBay-Template-Variablen zu ändern. Er ist außerdem **unser** Token und
+> nicht der einer fremden Gegenstelle. Die Abwägung hing an drei Bedingungen, die für
+> jedes Geheimnis in `settings.SECRET_KEYS` galten: die Seite steht hinter Authelia und
+> dem `Remote-User`-Guard (seit #190 wörtlich: geglaubt wird die Kopfzeile nur von einer
+> Adresse dieser Maschine, `chronicle.herkunft` — davor konnte ein Unangemeldeter im LAN
+> den Token überschreiben); der Wert wird nirgends angezeigt, sondern nur *ob* er gesetzt
+> ist; übertragen wird nur per POST, nie in einer URL, und ein leeres Feld heißt
+> unverändert.
+>
+> **Warum sie fällt:** der harte Einwand gegen Template-Variablen war #33 — der
+> Installations-Assistent würfelte für `type: secret` einen Zufallswert, der sich als
+> Bot-Token bei Discord anmeldete und in einer Neustart-Schleife mit 401 hing. Das
+> ServiceBay-Rezept *rotate-a-service-secret* beantwortet ihn: ein bei `install_template`
+> **übergebener** Wert gewinnt über den gespeicherten und wird nicht gewürfelt. Die
+> Variable ist trotzdem `type: text` und nicht `secret` — für einen Wert, den nur die
+> Gegenstelle kennt, ist ein Zufallswert kein Platzhalter, sondern ein falscher Wert, und
+> leer heißt ehrlich »nicht gesetzt«. Und die Begründung von damals — »der Betrieb wäre
+> sonst nur über Template-Variablen zu ändern« — war eine Bequemlichkeit; sie wog ein
+> Klartext-Geheimnis im Backup nicht auf. Der Umbau kostet die Auswahlliste der
+> installierten Ollama-Modelle: der einzige Punkt, an dem die Seite etwas konnte, was eine
+> Variable nicht kann (#227).
 
 Fixtures aus einem echten Foundry-Dump sind **personenbezogen**: der Weltabzug enthält
 die Klarnamen aller Beteiligten. Vor jedem Einchecken anonymisieren.
@@ -186,8 +215,10 @@ SQLite-Datei ist klein und enthält alles Unersetzliche.
   entscheidet Discord über seine eigenen Kanal- und Rollenrechte. Kein eigenes
   Rollenmodell mehr für Spielinhalte. **`chronicle.roles` bleibt trotzdem** (Nachtrag
   #157; die frühere Fassung sagte, es verschwinde mit #69): `ist_verwalter` und der
-  `Remote-Groups`-Header tragen die Antwort auf #90 — wer an den Bot-Token darf. Das ist
-  eine Frage des Betriebs, keine des Spiels, und hat in keiner Gilde einen Ort.
+  `Remote-Groups`-Header tragen die Antwort auf #90 — wer an die Betreiber-Seite darf.
+  Das ist eine Frage des Betriebs, keine des Spiels, und hat in keiner Gilde einen Ort.
+  Bis #230 hieß dieselbe Frage »wer an den Bot-Token darf«; der liegt nicht mehr hinter
+  dieser Seite, gepflegt wird dort aber weiter, wer sie selbst öffnen darf.
 - **Über der Runde steht niemand — der Betreiber löscht keine fremde Runde**
   (Operator-Entscheidung 2026-08-11, #90). Eine Runde verschwindet auf genau zwei Wegen:
   die **Gruppe selbst** löscht sie (`/chronik loeschen`, Administrator-Recht in ihrer
@@ -238,8 +269,9 @@ Assists (`get_assist`) lesen. Dieser Abschnitt ist der Extrakt, nicht der Ersatz
   baut, ist non-compliant. Kommt mit #12, ebenso pinned Tags statt `:latest`.
 - **UI folgt dem ServiceBay-Design-Standard** (`get_assist service-ui-design-standard`).
   Mit #62/#69 bleibt davon nur die **Betreiber-Seite** — für die gilt er weiter.
-  **ADR 0001 (Authelia-SSO) bleibt damit in Kraft**: auf dieser Seite liegt der
-  Bot-Token, also gibt es sehr wohl etwas zu schützen. Für die *spielenden* Rechte
+  **ADR 0001 (Authelia-SSO) bleibt damit in Kraft**: die Seite steht user-facing auf
+  einer Subdomain und entscheidet, wer sie selbst öffnen darf. Bis #230 stand hier »auf
+  dieser Seite liegt der Bot-Token« — der ist fort, die Haustür bleibt. Für die *spielenden* Rechte
   gilt die Ablösung trotzdem — die liefert Discord über seine Kanal- und Rollenrechte.
   (Die frühere Fassung sagte, ADR 0001 werde gegenstandslos; das galt für eine
   Instanz ganz ohne Seite und ist mit der Entscheidung vom 2026-08-10 überholt.)
@@ -263,7 +295,8 @@ Assists (`get_assist`) lesen. Dieser Abschnitt ist der Extrakt, nicht der Ersatz
   `hostPort`. **Was sie kostet, ist seit #190 belegt und nicht mehr vermutet:** Host-Netz
   ist der Grund, warum der Port auf `0.0.0.0` im ganzen LAN erreichbar war, und das war
   ausnutzbar — ein selbst erfundener `Remote-User` genügte, um auf die Betreiber-Seite und
-  damit an den Bot-Token zu kommen. Ohne Host-Netz wäre der Port nie im LAN gewesen. Die
+  damit an den Bot-Token zu kommen (der liegt seit #230 nicht mehr dort; der Vorfall
+  bleibt trotzdem der Beleg). Ohne Host-Netz wäre der Port nie im LAN gewesen. Die
   Rechnung dafür ist bezahlt, nicht gestundet: `chronicle.herkunft` glaubt `Remote-User`
   und `Remote-Groups` nur von einer Adresse **dieser Maschine**, `CHRONICLE_TRUSTED_PROXIES`
   ist der Ausweg für einen umgezogenen Proxy, und eine Selbstprobe beim Start sagt es, wenn

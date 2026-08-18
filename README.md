@@ -53,20 +53,24 @@ Weg. Die Stapel-Einstiege unten bleiben — sie sind der Weg für Cron und Betri
 
 **`/einstellungen` ist die Betreiber-Seite und bleibt genau deshalb bestehen, während
 [#157](../../issues/157) die übrige Oberfläche abräumt** (Owner-Entscheidung 2026-08-11,
-[#89](../../issues/89)): dort
-stehen der Discord-Bot-Token, Ollama-Adresse und -Modell sowie die Verwaltungsgruppe — die
-gehören der Instanz und keiner Gilde, haben also in Discord keinen Ort. Alles Runden-eigene
+[#89](../../issues/89)): dort steht die Verwaltungsgruppe — sie gehört der Instanz und
+keiner Gilde, hat also in Discord keinen Ort. **Discord-Bot-Token, Ollama-Adresse und
+-Modell standen bis [#230](../../issues/230) daneben**; sie kommen jetzt aus den
+Template-Variablen der Box und werden nirgends mehr gepflegt — die Seite zeigt nur noch,
+was steht. Alles Runden-eigene
 — Foundry-Adresse und -Benutzer, Zustellkanal, Uhrzeit des nächtlichen Laufs samt ihrer
 Zeitzone und die Quelle der Spieldaten — ist von dieser Seite verschwunden und wird in
 Discord mit `/setup` gepflegt; auch den Foundry-Abgleich stößt niemand mehr hier an,
 sondern `/chronik abgleich` oder `/chronik fertig` in Discord oder der nächtliche Lauf.
-Weil auf der Seite ein Geheimnis liegt, bleibt ADR 0001 (Authelia-SSO) für sie in Kraft.
+ADR 0001 (Authelia-SSO) bleibt für die Seite in Kraft: sie steht auf einer Subdomain und
+entscheidet, wer sie selbst öffnen darf.
 
-Die Werte liegen in der SQLite. Die Umgebung — `FOUNDRY_URL`, `FOUNDRY_USER`,
-`DISCORD_BOT_TOKEN`, `OLLAMA_URL`, `OLLAMA_MODEL` — bleibt als Vorgabe beim ersten Start
-lesbar und ist beim Entwickeln der bequeme Weg; **ein gepflegter Wert gewinnt**, und die
-Technikdetails der Betreiber-Seite zeigen je Instanz-Wert, woher er kommt. Das
-Box-Template setzt keine davon (siehe unten).
+Die Werte der **Runde** liegen in der SQLite und werden in Discord gepflegt; ein
+gepflegter Wert gewinnt über `FOUNDRY_URL` und `FOUNDRY_USER` aus der Umgebung. Die drei
+Werte der **Instanz** kommen seit [#230](../../issues/230) ausschließlich aus der
+Umgebung: `DISCORD_BOT_TOKEN`, `OLLAMA_URL`, `OLLAMA_MODEL`. Es gibt für sie keinen
+Schreibweg in die Datei mehr — damit liegt **kein Geheimnis dieses Dienstes im Backup**.
+Das Box-Template setzt sie als Variablen (siehe unten).
 
 **Woher die Spieldaten kommen, ist eine Auswahl je Runde:** *Echter Server* oder
 *Eingebaute Testwelt*. Die Testwelt ist eine Beispielwelt im Paket — 19 Konten, 91
@@ -100,11 +104,15 @@ Variable und keine Zeile in der SQLite. Gefragt wird beim Sitzungsstart, spätes
 Abschluss — und nur dort, wo überhaupt ein Foundry-Server im Spiel ist; der Abgleich
 verbraucht es und vergisst es, auch der, der auf der Testwelt oder an einer ruhenden Runde
 abbricht; ein Rest im Arbeitsspeicher verfällt spätestens nach zwölf Stunden. Hashen
-ginge nicht: Foundry will es vorgezeigt, nicht geprüft. Der Bot-Token bleibt gespeichert,
-wird aber nie angezeigt, nur *ob* er gesetzt ist; ein leer abgesendetes Feld heißt
-unverändert. Die Ollama-Adresse hat eine dritte Stufe: ist weder
-etwas gespeichert noch etwas in der Umgebung gesetzt, gilt `http://127.0.0.1:11434` — das
-Ollama der Box. Offen bleibt dann allein die Modellwahl. Rein aus der Umgebung kommen weiterhin
+ginge nicht: Foundry will es vorgezeigt, nicht geprüft. **Der Bot-Token wird seit
+[#230](../../issues/230) ebenfalls nirgends gespeichert:** er steht in
+`DISCORD_BOT_TOKEN` und wird nur dem Bot-Prozess gereicht — die Betreiber-Seite bekommt
+ihn nicht und sagt nicht einmal, *ob* er gesetzt ist; das sagt der Bot, indem er läuft
+oder nicht. Eine Wanderung räumt einen Bestand aus der Zeit davor aus der SQLite — aber
+erst, wenn die Variable gesetzt ist: gelöscht ohne Ersatz wäre der Token
+unwiederbringlich. Die Ollama-Adresse hat eine zweite Stufe: ist `OLLAMA_URL` nicht
+gesetzt, gilt `http://127.0.0.1:11434` — das Ollama der Box. Offen bleibt dann allein
+die Modellwahl über `OLLAMA_MODEL`. Rein aus der Umgebung kommen weiterhin
 `CHRONICLE_DATA_DIR` (Vorgabe `./data`), `CHRONICLE_RECORDINGS_DIR` (Vorgabe
 `./recordings`), `CHRONICLE_WHISPER_MODEL` und `CHRONICLE_WHISPER_DEVICE` (beide
 leer = automatisch, siehe [Transkription](#transkription)) sowie `TTS_URL` — die Adresse
@@ -334,8 +342,8 @@ Intent** — ohne sie kämen die Nachrichten leer an.
 Der Bot-Account entsteht im [Discord Developer Portal](https://discord.com/developers/applications):
 
 1. **New Application** anlegen (Name z. B. „Chronik"), links **Bot** öffnen, den
-   **Token** erzeugen. Der Token wird auf der Betreiber-Seite unter `/einstellungen`
-   eingetragen — nie ins Repo, nie in eine Nachricht.
+   **Token** erzeugen. Der Token wird als Template-Variable `DISCORD_BOT_TOKEN` des
+   Dienstes hinterlegt — nie ins Repo, nie in eine Nachricht.
 2. Unter **Bot** die **Message Content Intent** einschalten — ohne sie liefert die
    API keine Nachrichtentexte.
 3. **OAuth2 → URL Generator**: Scopes `bot` **und `applications.commands`** — ohne den
@@ -575,15 +583,19 @@ liegt das Pod-Template `daggerheart-chronik`. Auf der Box wird das Repo einmal i
 `config.registries[]` eingetragen (Git-URL dieses Repos), danach steht das Template im
 Installations-Assistenten neben den mitgelieferten.
 
-Der Assistent fragt nur nach Subdomain, Port und Image-Tag. **Bot-Token und Ollama werden
-nach dem ersten Start unter `/einstellungen` eingerichtet, der Foundry-Zugang in
-Discord**, nicht beim
-Installieren: Der Assistent würfelt für eine Variable vom Typ `secret` einen Zufallswert
-aus — richtig für ein internes Geheimnis, falsch für Zugangsdaten, die nur die
-Gegenstelle kennt. Ein solcher Wert meldete sich einmal als Bot-Token bei Discord an und
-scheiterte mit 401 in einer Neustart-Schleife. Deshalb deklariert das Template diese
-Werte gar nicht mehr, und ein frisch installierter Pod führt beim ersten Aufruf durch
-den Einrichtungs-Wizard.
+Der Assistent fragt nach Subdomain, Port, Image-Tag — und seit
+[#230](../../issues/230) nach `DISCORD_BOT_TOKEN`, `OLLAMA_URL` und `OLLAMA_MODEL`. Der
+**Foundry-Zugang** wird weiterhin in Discord unter `/setup` eingerichtet: er gehört der
+Runde, nicht der Instanz.
+
+Die drei Instanz-Variablen sind bewusst vom Typ `text` und **nicht** `secret`: für ein
+`secret` würfelt der Assistent einen Zufallswert aus — richtig für ein internes
+Geheimnis, falsch für Zugangsdaten, die nur die Gegenstelle kennt. Ein solcher Wert
+meldete sich einmal als Bot-Token bei Discord an und scheiterte mit 401 in einer
+Neustart-Schleife. Leer heißt deshalb ehrlich »nicht gesetzt«: der Bot sagt einen Satz
+und bleibt liegen. Nachtragen oder wechseln lässt sich ein Wert jederzeit mit
+`install_template(names=["daggerheart-chronik"], variables={"DISCORD_BOT_TOKEN": "…"})`;
+der übergebene Wert gewinnt (ServiceBay-Rezept *rotate-a-service-secret*).
 
 Das Image baut [`.github/workflows/build-images.yml`](.github/workflows/build-images.yml)
 und veröffentlicht es nach GHCR — der Publish-Job hängt an `needs: test`, es wird also

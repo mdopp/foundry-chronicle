@@ -13,15 +13,16 @@ seine Adresse setzen und den Dienst neu starten; das Abbild bleibt, wie es ist.
 
 **Spielinhalte gibt es hier keine mehr** (#157). Was die spielende Gruppe betrifft —
 Sitzung, Szene, Notiz, Diktat, Chronik, Suche, Register, Zuordnung, Einrichtung —, steht
-in Discord. Übrig bleibt, was *keiner Gilde gehört* und deshalb dort keinen Ort hat:
-Bot-Token, Ollama-Adresse und -Modell, und wer verwalten darf. Dazu ``/status`` als
-Altweg und ``/healthz`` als Install-Gate der Box.
+in Discord. Übrig bleibt **ein** Feld: wer verwalten darf. Dazu ``/status`` als Altweg
+und ``/healthz`` als Install-Gate der Box.
 
-``basis`` ist die Umgebung beim Start; gefragt wird nie sie, sondern
-``settings.effective(basis, runde)`` — ein gepflegter Wert gewinnt und wirkt ohne Neustart.
+**Bot-Token, Ollama-Adresse und -Modell werden hier seit #230 nicht mehr gepflegt.** Sie
+kommen aus der Umgebung, gesetzt von den Template-Variablen der Box; diese Seite zeigt nur
+noch, *ob* sie stehen. Damit fällt auch die Auswahlliste der installierten Modelle weg —
+sie war das Einzige, was die Seite konnte und eine Variable nicht kann, und der Verlust
+ist bewusst in Kauf genommen.
 
-Diese Oberfläche kennt **keine Runden**: die Instanz-Werte stehen zwar in ``instanz``,
-``settings.effective`` will aber eine Runde, und für die Anzeige tut es die erste.
+``basis`` ist die Umgebung beim Start und für diese drei Werte das letzte Wort.
 
 Der nächtliche Lauf hängt seit #229 **nicht** mehr hier, sondern am Bot-Prozess
 (``chronicle.bot.gateway``). Diese Seite antwortet nur noch, sie arbeitet nicht.
@@ -33,11 +34,8 @@ import logging
 
 from flask import Flask, Response, redirect, render_template, request, url_for
 
-from chronicle import db, herkunft, instanz, roles, settings
-from chronicle import runde as runden
-from chronicle.compose import client as sprachmodell
-from chronicle.compose.client import ModelError
-from chronicle.config import Config
+from chronicle import db, herkunft, instanz, roles
+from chronicle.config import DEFAULT_OLLAMA_URL, Config
 
 logger = logging.getLogger(__name__)
 
@@ -55,9 +53,6 @@ def create_app(config: Config | None = None) -> Flask:
     basis = config if config is not None else Config.from_env()
     app.config["CHRONICLE"] = basis
     db.init(basis.database_path)
-    # Die Betreiber-Seite kennt keine Runden — sie zeigt Instanz-Werte. ``settings.effective``
-    # verlangt trotzdem eine, also nimmt sie die erste.
-    runde = runden.erste(basis.database_path)
     vertrauen = herkunft.netze(basis.trusted_proxies)
     # Ohne gepflegte Liste hängt der Türsteher allein an der Frage an den Kern — und die
     # kann ein Kernschalter still entwerten. Einmal nachsehen; hochkommen darf der Dienst
@@ -95,54 +90,18 @@ def create_app(config: Config | None = None) -> Flask:
             return None
         return render_template("keine_verwaltung.html"), 403
 
-    def felder() -> dict[str, object]:
-        aktuell = settings.effective(basis, runde)
-        adresse = str(aktuell.ollama_url)
-        modelle, hinweis, erreichbar = _modelle(adresse)
-        return {
-            "bot_token_gesetzt": bool(aktuell.discord_bot_token),
-            "ollama_url": adresse,
-            "ollama_eigen": adresse != settings.DEFAULT_OLLAMA_URL,
-            "ollama_standard": settings.DEFAULT_OLLAMA_URL,
-            "ollama_model": aktuell.ollama_model or "",
-            "modelle": modelle,
-            "modell_hinweis": hinweis,
-            "modell_erreichbar": erreichbar,
-        }
-
-    def uebernehmen(namen: tuple[str, ...]) -> None:
-        """Der Schreibweg für die gepflegten Werte.
-
-        Ein gar nicht abgesendetes Feld heißt »unverändert«: sonst nähme ein POST ohne
-        dieses Feld der Runde still, was ihre Gilde über ``/setup`` in Discord gepflegt
-        hat. Ein abgesendetes leeres Feld heißt weiterhin »zurücknehmen« — daran hängt
-        »wieder das Ollama dieser Box«.
-
-        Beim Geheimnis heißt auch das leere Feld »unverändert«: es wird nie angezeigt,
-        ein Formular kann es also gar nicht gefüllt zurückschicken.
-        """
-        werte = {
-            name: request.form[name]
-            for name in namen
-            if name in request.form and name not in settings.SECRET_KEYS
-        }
-        for name in namen:
-            if name in settings.SECRET_KEYS and request.form.get(name, "").strip():
-                werte[name] = request.form[name]
-        settings.save(runde, werte)
-
     def einstellungsseite(sperr_gruppe: str | None = None) -> str:
         return render_template(
             "einstellungen.html",
-            quellen=settings.sources(basis, runde),
-            config=settings.effective(basis, runde),
+            config=basis,
+            ollama_url=basis.ollama_url or DEFAULT_OLLAMA_URL,
+            ollama_standard=DEFAULT_OLLAMA_URL,
             schema_version=db.current_schema_version(basis.database_path),
             remote_user=request.headers.get(REMOTE_USER_HEADER),
             admin_group=instanz.admin_group(basis.database_path)
             if sperr_gruppe is None
             else sperr_gruppe,
             sperr_gruppe=sperr_gruppe,
-            **felder(),
         )
 
     @app.get("/einstellungen")
@@ -151,9 +110,9 @@ def create_app(config: Config | None = None) -> Flask:
 
     @app.post("/einstellungen")
     def einstellungen_speichern() -> Response | str:
-        # Nur die Werte der Instanz: ein Formular, das die Runden-Felder gar nicht mehr
-        # zeigt, würde sie sonst mit jedem Speichern löschen — sie stehen in Discord.
-        uebernehmen(settings.INSTANZ_KEYS)
+        # Seit #230 wird hier genau ein Wert gepflegt. Bot-Token und Ollama kommen aus der
+        # Umgebung; ein POST, der sie mitschickt, schreibt nichts — es gibt keinen Weg mehr
+        # von hier in die Datei.
         # Ein gar nicht abgesendetes Feld heißt »unverändert«: ein Formular ohne dieses
         # Feld darf die Verwaltungsrolle nicht still zurücknehmen.
         gruppe = request.form.get(instanz.ADMIN_GROUP_KEY)
@@ -184,13 +143,3 @@ def create_app(config: Config | None = None) -> Flask:
         return {"status": "ok"}
 
     return app
-
-
-def _modelle(adresse: str) -> tuple[tuple[str, ...], str, bool]:
-    try:
-        namen = sprachmodell.installed_models(adresse)
-    except ModelError:
-        return (), "Die Auswahl lädt gerade nicht — Modellnamen von Hand eintragen.", False
-    if not namen:
-        return (), "Dort liegt noch kein Textmodell — Modellnamen von Hand eintragen.", True
-    return namen, f"{len(namen)} Modelle stehen zur Auswahl.", True

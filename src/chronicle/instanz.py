@@ -1,38 +1,31 @@
 """Was der Instanz gehört und keiner Runde.
 
-Fast alles in diesem System gehört einer Runde. Diese Werte nicht:
+Fast alles in diesem System gehört einer Runde. Dieser Wert nicht:
 
-- **Der Discord-Bot-Token.** Das ist *unser* Token, mit dem *unser* Bot in fremde Gilden
-  eingeladen wird — kein Geheimnis einer Gruppe. Er käme sonst pro Runde erneut zur
-  Pflege, und eine Gruppe könnte den Bot der übrigen abmelden.
-- **Ollama-Adresse und Modell** (#87). Wäre die Adresse runden-eigen, bestimmte eine
-  fremde Gruppe, an welchen Rechner die Stimmen ihrer Mitspielenden gehen — das ist keine
-  Einstellung, das ist eine Weitergabe. Und das Modell muss ohnehin auf der Box liegen;
-  ein Name, den das Ollama dort nicht kennt, ist keine Wahl, sondern ein Lauf, der
-  scheitert.
 - **Die Verwaltungsgruppe.** Sie stammt aus der Benutzerverwaltung der Box und gilt für
   die Betreiber-Seite dieser Instanz — und nur für sie: Rechte über eine fremde Runde
   trägt sie nicht und bekommt sie auch nicht (#90).
 
-Genau diese Werte sind der Grund, warum **eine kleine Betreiber-Seite bestehen bleibt**,
-wenn #69 die übrige Oberfläche abräumt (Owner-Entscheidung 2026-08-11, #89): sie gehören
-keiner Gilde und haben deshalb in Discord keinen Ort. ``/einstellungen`` ist auf sie
-eingedampft; der Merker des abgeschlossenen Erststarts fiel mit dem Wizard, der ihn setzte.
+**Bot-Token, Ollama-Adresse und -Modell standen hier bis #230** und stehen es nicht mehr.
+Sie kommen jetzt ausschließlich aus der Umgebung (``DISCORD_BOT_TOKEN``, ``OLLAMA_URL``,
+``OLLAMA_MODEL``), gesetzt von den Template-Variablen der Box. Die Begründung von damals
+— sie gehören keiner Gilde und haben deshalb in Discord keinen Ort — stimmt weiterhin;
+sie begründet aber nur einen Ort *außerhalb* von Discord, und die Umgebung ist einer.
+Was der Weg über die SQLite dagegen kostete, war ein Bot-Token im Klartext in der Datei,
+und die geht ins Backup. Der Einwand gegen die Umgebung war #33: der Installations-
+Assistent würfelte für ``type: secret`` einen Zufallswert. Das ServiceBay-Rezept
+*rotate-a-service-secret* beantwortet ihn — ein übergebener Wert gewinnt und wird nicht
+gewürfelt.
 
 Abgelegt wird in ``meta`` — der Schlüsselraum ohne Runde. ``settings`` daneben ist die
-Tabelle **einer** Runde, und dass diese Werte dort nicht liegen, ist keine
-Kleinigkeit: eine Gruppe soll den Token weder lesen noch überschreiben können.
+Tabelle **einer** Runde.
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from pathlib import Path
 
 from chronicle import db
-
-# Die Konfigurationswerte, die der Instanz gehören — dieselben Namen wie in ``Config``.
-KEYS = ("discord_bot_token", "ollama_url", "ollama_model")
 
 ADMIN_GROUP_KEY = "admin_group"
 
@@ -60,18 +53,6 @@ def _schreiben(database_path: Path, key: str, value: str | None) -> None:
                 connection.execute("DELETE FROM meta WHERE key = ?", (key,))
     finally:
         connection.close()
-
-
-def stored(database_path: Path) -> dict[str, str]:
-    werte = {name: _lesen(database_path, name) for name in KEYS}
-    return {name: wert for name, wert in werte.items() if wert and wert.strip()}
-
-
-def save(database_path: Path, values: Mapping[str, str | None]) -> None:
-    """Leerer Wert heißt: Eintrag weg, die Umgebung gilt wieder."""
-    for name, wert in values.items():
-        if name in KEYS:
-            _schreiben(database_path, name, (wert or "").strip())
 
 
 def admin_group(database_path: Path) -> str:

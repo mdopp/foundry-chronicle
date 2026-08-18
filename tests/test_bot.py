@@ -1375,10 +1375,11 @@ def test_ohne_token_startet_der_bot_nicht(tmp_path, monkeypatch, capsys):
     assert entry.KEIN_TOKEN in capsys.readouterr().out
 
 
-def test_der_token_aus_der_oberflaeche_schlaegt_die_umgebung(tmp_path, monkeypatch):
-    aus_der_umgebung = Config(discord_bot_token="alt", data_dir=tmp_path)
+def test_der_token_kommt_aus_der_umgebung_und_sonst_nirgendwoher(tmp_path, monkeypatch):
+    """Seit #230 gibt es keinen zweiten Ort mehr — ein gepflegter Wert schlägt nichts."""
+    aus_der_umgebung = Config(discord_bot_token=TOKEN, data_dir=tmp_path)
     db.init(aus_der_umgebung.database_path)
-    settings.save(erste_runde(aus_der_umgebung), {"discord_bot_token": TOKEN})
+    settings.save(erste_runde(aus_der_umgebung), {"discord_bot_token": "untergeschoben"})
     monkeypatch.setattr(entry.Config, "from_env", classmethod(lambda cls: aus_der_umgebung))
     gesehen = []
 

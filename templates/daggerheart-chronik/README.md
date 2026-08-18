@@ -7,9 +7,10 @@ Spiels entstehen, und dem Chat-Log aus Foundry VTT wird eine lesbare Chronik.
 Notiz, Diktat, Chronik, Suche, Register, Zuordnung, Einrichtung — ist seit #157 ein
 Befehl im eigenen Server. Über HTTP liefert dieser Dienst nur noch **eine Seite**: die
 Betreiber-Seite unter `/einstellungen`, dazu `/status` (301 dorthin) und `/`
-(Weiterleitung dorthin). Dort steht, was *keiner Gilde gehört* und deshalb in Discord
-keinen Ort hat: der Discord-Bot-Token, Ollama-Adresse und -Modell, und wer diese Seite
-verwalten darf.
+(Weiterleitung dorthin). Gepflegt wird dort seit #230 **ein** Wert: wer diese Seite
+verwalten darf. Discord-Bot-Token, Ollama-Adresse und -Modell standen bis dahin daneben;
+sie gehören ebenfalls keiner Gilde, kommen jetzt aber aus den Template-Variablen
+darunter und werden nirgends mehr gepflegt.
 
 `/healthz` steht daneben und nicht darin: das Install-Gate der Box kommt seit #228 aus
 dem **Bot**-Prozess, auf einem eigenen Port und nur auf `127.0.0.1`. Der Bot ist der
@@ -22,10 +23,12 @@ abgewiesen. **Die Kopfzeile allein ist dabei kein Beleg** (#190): der Port liegt
 Host-Netz offen, und wer ihn direkt erreicht, schreibt sie sich selbst hin. Geglaubt
 wird sie — und `Remote-Groups` mit ihr — nur einem Absender, der eine Adresse *dieser
 Maschine* trägt; das ist genau der Proxy, der auf derselben Box läuft. Aus dem übrigen
-LAN kommt niemand mehr an den Bot-Token, auch nicht mit erfundenen Kopfzeilen. Das ist
-kein Erbstück aus der Zeit der großen Oberfläche: auf dieser Seite liegt der Bot-Token,
-ServiceBay-ADR 0001 gilt für sie also unverändert. Subdomain, Proxy-Route und die
-`auth`-Abhängigkeit bleiben deshalb.
+LAN kommt niemand an diese Seite, auch nicht mit erfundenen Kopfzeilen. Das ist kein
+Erbstück aus der Zeit der großen Oberfläche: die Seite steht user-facing auf einer
+Subdomain und entscheidet, wer sie selbst öffnen darf — ServiceBay-ADR 0001 gilt für sie
+also unverändert. Subdomain, Proxy-Route und die `auth`-Abhängigkeit bleiben deshalb.
+Der Bot-Token liegt seit #230 nicht mehr dahinter; das ist der zweite Riegel und nicht
+der Ersatz für den ersten.
 
 **Eine Instanz trägt mehrere Runden** (#62). Eine Runde ist eine Discord-Gilde mit eigenem
 Foundry-Zugang; für eine zweite Gruppe wird der Bot in ihren Server eingeladen, nicht der
@@ -63,21 +66,30 @@ bei der Maschine selbst, und genau so ist es hier gemeint: die Box hängt an DHC
 abgeschriebene Adresse wäre nach der nächsten Lease dieselbe Aussperrung. Ein neues
 Abbild braucht es dafür nicht, nur diese Zeile und einen Neustart.
 
-## Eingerichtet wird nach dem ersten Start, nicht im Assistenten
+## Was der Instanz gehört, steht im Assistenten — was der Runde gehört, in Discord
 
-**Foundry-Adresse und -Benutzer, der Discord-Bot-Token sowie Ollama-Adresse und -Modell
-sind keine Template-Variablen.** Gepflegt werden sie an zwei Orten: Bot-Token,
-Ollama-Adresse und -Modell gehören der Instanz und stehen unter `/einstellungen`;
-Foundry-Adresse und -Benutzer gehören der Runde und werden in Discord unter `/setup`
-eingetragen. Beides liegt in der SQLite; der Dienst liest es von dort, nicht aus der
-Umgebung. Das Foundry-Passwort liegt auch dort nicht — es wird beim Abgleich gefragt und
-danach vergessen. Bis alles gesetzt ist, startet der Dienst trotzdem, und der Bot sagt in
-Discord, was noch fehlt.
+**Discord-Bot-Token, Ollama-Adresse und -Modell sind seit #230 Template-Variablen**
+(`DISCORD_BOT_TOKEN`, `OLLAMA_URL`, `OLLAMA_MODEL`). Sie gehören der Instanz, werden beim
+Start gelesen und **nirgends gespeichert**; damit liegt kein Geheimnis dieses Dienstes in
+`chronicle.sqlite3` und keines im Backup. Eine Wanderung räumt einen Bestand aus der Zeit
+davor fort — aber erst, wenn die jeweilige Variable gesetzt ist: gelöscht ohne Ersatz
+wäre der Bot-Token unwiederbringlich, und der Dienst sagte es erst, wenn der Bot schweigt.
+Bis dahin bleibt der Wert liegen und das Log nennt bei jedem Start die fehlende Variable —
+nie den Wert.
 
-Das ist kein Weglassen aus Bequemlichkeit: Der Assistent erzeugt für eine Variable vom
-Typ `secret` einen **Zufallswert**. Für ein internes Geheimnis ist das richtig, für
-Zugangsdaten einer fremden Gegenstelle falsch — der ausgewürfelte Bot-Token meldete sich
-bei Discord an und scheiterte mit 401 in einer Neustart-Schleife.
+**Foundry-Adresse und -Benutzer sind keine Variablen.** Sie gehören der Runde und werden
+in Discord unter `/setup` eingetragen; das Foundry-Passwort wird gar nicht vorgehalten —
+es wird beim Abgleich gefragt und danach vergessen. Bis alles gesetzt ist, startet der
+Dienst trotzdem, und der Bot sagt in Discord, was noch fehlt.
+
+Die drei Variablen sind bewusst vom Typ `text` und **nicht** `secret`: der Assistent
+erzeugt für ein `secret` einen **Zufallswert**. Für ein internes Geheimnis ist das
+richtig, für Zugangsdaten einer fremden Gegenstelle falsch — der ausgewürfelte Bot-Token
+meldete sich bei Discord an und scheiterte mit 401 in einer Neustart-Schleife (#33). Leer
+heißt hier ehrlich »nicht gesetzt«. Nachtragen oder wechseln geht jederzeit mit
+`install_template(names=["daggerheart-chronik"], variables={"DISCORD_BOT_TOKEN": "…"})` —
+der übergebene Wert gewinnt über den gespeicherten (Assist
+*recipe-rotate-a-service-secret*).
 
 ## Container
 
@@ -89,10 +101,12 @@ Der Pod hat zwei Container aus demselben Image:
 | `bot` | `python -m chronicle.bot` | der Aufnahme-Bot am Discord-Gateway **und der nächtliche Lauf** |
 
 Der Bot ist ein eigener, dauerhafter Prozess, weil Sprache nur mitgeschnitten werden kann,
-während sie gesprochen wird. Den Token liest er aus derselben SQLite wie die Betreiber-Seite —
-deshalb teilen beide Container `/data`. **Ohne Token beendet er sich mit einem Satz** und
-wird von der Neustart-Regel des Pods wieder gestartet — das ist erwartet und kein Fehler;
-nach dem Eintragen unter `/einstellungen` findet ihn der nächste Start.
+während sie gesprochen wird. Den Token bekommt er seit #230 aus **seiner eigenen
+Umgebung** — und nur er: die Seite braucht ihn nicht, und was ein Prozess nicht bekommt,
+kann er auch nicht in eine Logzeile schreiben. `/data` teilen beide Container trotzdem,
+denn dort liegt die Chronik. **Ohne Token beendet er sich mit einem Satz** und wird von
+der Neustart-Regel des Pods wieder gestartet — das ist erwartet und kein Fehler; nach dem
+Hinterlegen der Variablen findet ihn der nächste Start.
 
 **Einen dritten Container für den nächtlichen Lauf gibt es bewusst nicht.** Der Zeitplan
 hängt seit #229 in `bot`: ohne Bot gibt es keinen Eingang mehr — weder Notiz noch Aufnahme
@@ -116,7 +130,7 @@ ADR 0007 sieht benannte Ausnahmen vor; ob dieser Dienst eine ist, wurde in
 `mdopp/servicebay#2518` gefragt und **verneint** — die Liste bleibt geschlossen. Die
 Abweichung bleibt deshalb, aber nicht gratis: sie ist der Grund, warum der Port auf
 `0.0.0.0` im ganzen LAN stand und ein erfundener `Remote-User` bis an den Bot-Token
-führte (#190). Die Rechnung ist bezahlt — die Anmelde-Kopfzeilen gelten seither nur von
+führte (#190; der liegt seit #230 nicht mehr dort — der Vorfall bleibt der Beleg). Die Rechnung ist bezahlt — die Anmelde-Kopfzeilen gelten seither nur von
 einer Adresse dieser Maschine, siehe oben und `CHRONICLE_TRUSTED_PROXIES`.
 
 **Sie fällt, sobald Ollama und `solaris-tts` auch aus einem eigenen Netz-Namensraum

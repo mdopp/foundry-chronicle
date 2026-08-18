@@ -90,7 +90,7 @@ def test_ohne_modell_wird_geordnet_und_das_steht_im_protokoll():
     assert ergebnis.reason == OHNE_MODELL
     assert ergebnis.prose_count == 0
     assert "Noch kein Modell gewählt" in ergebnis.text
-    assert "in den Einstellungen" in ergebnis.text
+    assert "der Betreiber dieser Box" in ergebnis.text
     assert VERBINDUNG_TITEL not in ergebnis.text
     assert "Die Wirtin warnt." in ergebnis.text
 

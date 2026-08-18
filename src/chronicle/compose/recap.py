@@ -46,7 +46,7 @@ FAKTEN_ZEILE = "Aus dem Foundry-Chat-Log, unverändert:"
 
 OHNE_MODELL = (
     "Noch kein Modell gewählt — der Rückblick wurde geordnet statt erzählt. "
-    "Ein Modell wählst du in den Einstellungen."
+    "Ein Modell hinterlegt der Betreiber dieser Box."
 )
 
 VERWORFEN = "_Verworfen: der Absatz nannte eine Zahl, die in der Chronik nicht vorkommt._"
