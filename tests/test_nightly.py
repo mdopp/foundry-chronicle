@@ -7,6 +7,7 @@ from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import pytest
+import requests
 from conftest import GRENZE, laufender_job, runde, warte_bis
 
 from chronicle import (
@@ -27,6 +28,7 @@ from chronicle.config import Config
 from chronicle.discord import rueckblick
 from chronicle.discord import service as diktat
 from chronicle.foundry.model import SyncState
+from chronicle.transcribe import client as erkenner
 from chronicle.transcribe import service as transcribe
 
 
@@ -81,6 +83,13 @@ def mit_spur(config, sitzung_id, text=GESPROCHEN):
         transcribe.store(scope, sitzung_id, "mira", ((0, 2000, text),), STAND)
     finally:
         scope.close()
+
+
+def mit_wartender_spur(config, sitzung_id, name="mira.m4a"):
+    """Eine angenommene, noch nicht verschriftete Spur — Datei da, Zeile auf ``wartet``."""
+    config.recordings_dir.mkdir(parents=True, exist_ok=True)
+    (config.recordings_dir / name).write_bytes(b"kein echtes Audio, aber Bytes")
+    return recordings.enqueue(runde(config), sitzung_id, name, discord_user_id="4001")
 
 
 def chronik_altern(config, sitzung_id, sekunden=60):
@@ -250,6 +259,36 @@ def test_der_nachtlauf_traegt_das_gesprochene_wort_in_die_chronik(stelle):
     # Und danach ist die Sitzung von der Fälligkeitsliste — mit dem gesprochenen Wort
     # darin, nicht ohne.
     assert nightly.offen(gastgeber) == ()
+
+
+def test_ohne_erkenner_bleibt_die_spur_liegen_und_die_chronik_ungeschrieben(stelle, monkeypatch):
+    """Der Nachtlauf, wirklich gefahren, mit abgeschaltetem ``solaris-whisper-batch``.
+
+    Seit #216 gibt es keinen CPU-Rückfall mehr — das ist so entschieden. Dann darf die
+    Nacht aber **nichts** schreiben: eine Chronik ohne das gesprochene Wort sieht fertig
+    aus, die Sitzung fiele von der Fälligkeitsliste, und der Abend bliebe stumm. Genau
+    diese Gestalt war #221, nur von der anderen Seite.
+    """
+    gastgeber = runde(stelle)
+    sitzung_id = mit_notiz(stelle)
+    mit_wartender_spur(stelle, sitzung_id)
+
+    class Aus:
+        def post(self, *_args, **_kwargs):
+            raise requests.ConnectionError("connection refused")
+
+    monkeypatch.setattr(erkenner, "_http_session", Aus)
+
+    schritte = {s["name"]: s for s in json.loads(nightly.lauf(stelle, gastgeber))}
+
+    assert "nicht erreichbar" in schritte[nightly.TRANSKRIPT]["text"]
+    assert not schritte[nightly.TRANSKRIPT]["gelungen"]
+    assert not schritte[nightly.CHRONIK]["gelungen"]
+    assert "ohne das gesprochene Wort" in schritte[nightly.CHRONIK]["text"]
+    # Nichts geschrieben, nichts als gescheitert vermerkt — und die Sitzung bleibt fällig.
+    assert protocol.stored(gastgeber, sitzung_id) is None
+    assert recordings.pending(gastgeber)[0].status == recordings.WARTET
+    assert nightly.offen(gastgeber) != ()
 
 
 def test_ohne_sitzung_meldet_die_nacht_keine_chronik(stelle, monkeypatch):

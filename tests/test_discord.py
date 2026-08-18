@@ -331,7 +331,7 @@ class Erkenner:
 
     name = "erfundenes-modell"
 
-    def transcribe(self, audio_path, *, vocabulary=""):
+    def transcribe(self, audio_path, *, hotwords=()):
         yield Segment(start=0.0, end=2.0, text=f" {GESPROCHEN}")
 
 

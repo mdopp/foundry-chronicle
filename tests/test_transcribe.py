@@ -1,28 +1,27 @@
 """Von der Audiospur bis zu den Segmenten in der Datenbank.
 
-Kein Test lädt ein Modell herunter: der echte Spracherkenner steckt hinter
-``client.SpeechModel``, und hier steht ein erfundenes Modell an seiner Stelle.
+Kein Test lädt ein Modell herunter — es gibt seit #216 keins mehr zu laden. Der echte
+Spracherkenner steckt hinter ``client.SpeechModel``; an seiner Stelle steht hier ein
+erfundenes Modell, und für den dünnen Client eine Attrappe des Dienstes.
 """
 
-import sys
 import wave
 
 import pytest
+import requests
 from conftest import UNSER_KONTO, runde
 
 import chronicle.transcribe.__main__ as entry
 from chronicle import db, recordings, search
-from chronicle.config import Config
+from chronicle.config import DEFAULT_WHISPER_URL, Config
 from chronicle.foundry import store
 from chronicle.foundry.world import project
 from chronicle.transcribe import client, service, vocabulary
 from chronicle.transcribe.client import (
-    COMPUTE_TYPE,
-    DEVICE,
-    FasterWhisper,
     Segment,
-    TranscriberNotInstalled,
-    _whisper_model,
+    TranscriberError,
+    TranscriberUnreachable,
+    WhisperBatch,
 )
 
 STAND = "2026-08-05T20:00:00+00:00"
@@ -38,23 +37,47 @@ class Erkenner:
             Segment(start=0.0, end=2.5, text=" Wir brechen bei Sonnenaufgang auf."),
             Segment(start=2.5, end=61.25, text=" Aelin Sturmwind zieht das Schwert."),
         )
-        self.vokabular = None
+        self.vokabular = ()
 
-    def transcribe(self, audio_path, *, vocabulary=""):
-        self.vokabular = vocabulary
+    def transcribe(self, audio_path, *, hotwords=()):
+        self.vokabular = tuple(hotwords)
         yield from self.segmente
 
 
-class Spur:
-    """Der Platzhalter für ein geladenes faster-whisper-Modell."""
+class Antwort:
+    """So weit der Client in eine ``requests``-Antwort hineinsieht."""
 
-    def __init__(self):
-        self.aufruf = {}
+    def __init__(self, status_code=200, rumpf=None, kaputt=False):
+        self.status_code = status_code
+        self._rumpf = rumpf
+        self._kaputt = kaputt
 
-    def transcribe(self, pfad, **argumente):
-        self.aufruf = {"pfad": pfad, **argumente}
-        teile = [Segment(start=1.0, end=2.0, text="Aus dem Modell.")]
-        return iter(teile), {"duration": 2.0}
+    def json(self):
+        if self._kaputt:
+            raise ValueError("kein JSON")
+        return self._rumpf
+
+
+ANTWORT = {
+    "segments": [{"start": 1.0, "end": 2.0, "text": " Aus dem Dienst."}],
+    "hotwords_dropped_count": 0,
+    "hotwords_dropped": [],
+}
+
+
+class Gegenstelle:
+    """``solaris-whisper-batch`` als Attrappe: merkt sich den Aufruf, antwortet nach Vorgabe."""
+
+    def __init__(self, antwort=None, fehler=None):
+        self.antwort = Antwort(rumpf=ANTWORT) if antwort is None else antwort
+        self.fehler = fehler
+        self.aufruf = None
+
+    def post(self, url, *, json, timeout):
+        self.aufruf = {"url": url, "json": json, "timeout": timeout}
+        if self.fehler is not None:
+            raise self.fehler
+        return self.antwort
 
 
 @pytest.fixture
@@ -99,10 +122,10 @@ def segmente(scope, session_id):
 # --- Vokabular: die harte Kappung ---------------------------------------------------
 
 
-def test_der_vorspann_nennt_die_namen_der_sitzung():
-    gekappt = vocabulary.capped(("Aelin Sturmwind", "Brok Eisenfaust"))
-    assert vocabulary.prompt(gekappt) == (
-        "In dieser Sitzung kommen vor: Aelin Sturmwind, Brok Eisenfaust."
+def test_die_wortvorgabe_nennt_die_namen_der_sitzung():
+    assert vocabulary.capped(("Aelin Sturmwind", "Brok Eisenfaust")) == (
+        "Aelin Sturmwind",
+        "Brok Eisenfaust",
     )
 
 
@@ -111,12 +134,12 @@ def test_das_vokabular_wird_bei_224_token_hart_gekappt():
     gekappt = vocabulary.capped(viele)
 
     assert 0 < len(gekappt) < len(viele)
-    assert vocabulary.tokens(vocabulary.prompt(gekappt)) <= vocabulary.MAX_TOKEN
+    assert vocabulary.tokens(vocabulary.TRENNER.join(gekappt)) <= vocabulary.MAX_TOKEN
 
 
 def test_die_rangfolge_entscheidet_was_noch_hineinpasst():
-    # Budget für die Einleitung und genau zwei kurze Namen.
-    budget = vocabulary.tokens(vocabulary.EINLEITUNG) + 6
+    # Budget für genau zwei kurze Namen.
+    budget = 6
     assert vocabulary.capped(("Erster", "Zweiter", "Dritter"), max_tokens=budget) == (
         "Erster",
         "Zweiter",
@@ -130,9 +153,8 @@ def test_doppelte_und_leere_namen_kosten_kein_budget():
     )
 
 
-def test_ohne_namen_gibt_es_keinen_vorspann():
+def test_ohne_namen_gibt_es_keine_wortvorgabe():
     assert vocabulary.capped(()) == ()
-    assert vocabulary.prompt(()) == ""
 
 
 def test_die_namen_der_sitzung_stehen_vor_dem_zwischenspeicher(scope, welt):
@@ -304,7 +326,7 @@ class NieGefragt:
 
     name = "nie-gefragt"
 
-    def transcribe(self, audio_path, *, vocabulary=""):
+    def transcribe(self, audio_path, *, hotwords=()):
         raise AssertionError("eine Spur ohne Äußerung darf das Modell nicht erreichen")
 
 
@@ -388,162 +410,147 @@ def test_ein_relativer_name_liegt_im_aufnahmeverzeichnis(config):
     assert anderswo.as_posix() == "/anderswo/mira.ogg"
 
 
-def test_modellgroesse_und_ablageort_kommen_aus_der_umgebung():
+def test_erkenneradresse_und_ablageort_kommen_aus_der_umgebung():
     gesetzt = Config.from_env(
-        {"CHRONICLE_WHISPER_MODEL": "medium", "CHRONICLE_RECORDINGS_DIR": "/spuren"}
+        {"CHRONICLE_WHISPER_URL": "http://box:9999", "CHRONICLE_RECORDINGS_DIR": "/spuren"}
     )
-    assert (gesetzt.whisper_model, str(gesetzt.recordings_dir)) == ("medium", "/spuren")
-    # Leer heißt automatisch: über das Gerät entschieden, nicht hier festgelegt (#84).
-    assert Config.from_env({}).whisper_model is None
+    assert (gesetzt.whisper_url, str(gesetzt.recordings_dir)) == ("http://box:9999", "/spuren")
+    # Leer heißt: der Nachbardienst dieser Box im Host-Netz.
+    assert Config.from_env({}).whisper_url is None
 
 
-def test_das_geraet_kommt_aus_der_umgebung_und_ist_sonst_offen():
-    assert Config.from_env({"CHRONICLE_WHISPER_DEVICE": "cpu"}).whisper_device == "cpu"
-    assert Config.from_env({}).whisper_device is None
+# --- Der dünne Client gegen solaris-whisper-batch (#216) ----------------------------
 
 
-# --- Der echte Erkenner, ohne echtes Modell -----------------------------------------
+def dienst(config, gegenstelle):
+    return WhisperBatch(config, http=lambda: gegenstelle)
 
 
-def test_der_erkenner_laeuft_auf_der_cpu_in_int8():
-    geladen = {}
+def test_die_spur_geht_als_pfad_und_nicht_als_bytes(config, spur):
+    gegenstelle = Gegenstelle()
 
-    def loader(model_size, *, device, compute_type):
-        geladen.update(size=model_size, device=device, compute_type=compute_type)
-        return Spur()
+    list(dienst(config, gegenstelle).transcribe(spur))
 
-    erkenner = FasterWhisper("small", loader=loader, cuda=False)
-
-    assert geladen == {"size": "small", "device": DEVICE, "compute_type": COMPUTE_TYPE}
-    assert erkenner.name == "small"
+    assert gegenstelle.aufruf["url"] == DEFAULT_WHISPER_URL + client.TRANSCRIBE_PATH
+    # Relativ zum Aufnahmeverzeichnis: der Dienst hängt dasselbe Verzeichnis unter
+    # seinem eigenen Pfad ein, gemeinsam ist allein der Name darin.
+    assert gegenstelle.aufruf["json"]["path"] == "mira.ogg"
 
 
-# --- Karte nutzen, ohne sie zur Pflicht zu machen (#84) ------------------------------
+def test_die_namen_gehen_als_hotwords_mit(config, spur):
+    gegenstelle = Gegenstelle()
+
+    list(dienst(config, gegenstelle).transcribe(spur, hotwords=("Aelin", "Brok")))
+
+    assert gegenstelle.aufruf["json"]["hotwords"] == ["Aelin", "Brok"]
 
 
-def test_ohne_karte_bleibt_alles_wie_bisher():
-    assert client.geraet_und_rechenart(None, cuda=False) == (DEVICE, COMPUTE_TYPE)
-    assert client.vorgabemodell(DEVICE) == client.CPU_MODEL
+def test_das_modell_waehlt_der_dienst_und_wir_behaupten_keins(config, spur):
+    """Der Endpunkt nimmt ``path``, ``language`` und ``hotwords`` — kein Modellfeld.
 
-
-def test_mit_karte_laeuft_das_grosse_modell_in_float16():
-    assert client.geraet_und_rechenart(None, cuda=True) == (
-        client.CUDA_DEVICE,
-        client.CUDA_COMPUTE_TYPE,
-    )
-    assert client.vorgabemodell(client.CUDA_DEVICE) == client.CUDA_MODEL
-
-
-def test_der_wunsch_schlaegt_den_fund_in_beide_richtungen():
-    # Karte da, aber für Ollama frei gehalten.
-    assert client.geraet_und_rechenart("cpu", cuda=True) == (DEVICE, COMPUTE_TYPE)
-    # Karte nicht gefunden, trotzdem verlangt — der Fehlschlag fällt später auf CPU.
-    assert client.geraet_und_rechenart("cuda", cuda=False) == (
-        client.CUDA_DEVICE,
-        client.CUDA_COMPUTE_TYPE,
-    )
-
-
-def test_ein_gesetztes_modell_schlaegt_die_vorgabe_des_geraets():
-    geladen = {}
-
-    def loader(model_size, *, device, compute_type):
-        geladen.update(size=model_size, device=device)
-        return Spur()
-
-    FasterWhisper("medium", loader=loader, cuda=True)
-
-    assert geladen == {"size": "medium", "device": client.CUDA_DEVICE}
-
-
-def test_ohne_gesetztes_modell_entscheidet_das_geraet():
-    geladen = {}
-
-    def loader(model_size, *, device, compute_type):
-        geladen.update(size=model_size, device=device, compute_type=compute_type)
-        return Spur()
-
-    erkenner = FasterWhisper(loader=loader, cuda=True)
-
-    assert geladen == {
-        "size": client.CUDA_MODEL,
-        "device": client.CUDA_DEVICE,
-        "compute_type": client.CUDA_COMPUTE_TYPE,
-    }
-    assert (erkenner.name, erkenner.device) == (client.CUDA_MODEL, client.CUDA_DEVICE)
-
-
-def test_eine_belegte_karte_bricht_die_nacht_nicht_ab():
-    versuche = []
-
-    def loader(model_size, *, device, compute_type):
-        versuche.append((model_size, device))
-        if device == client.CUDA_DEVICE:
-            raise RuntimeError("CUDA out of memory")
-        return Spur()
-
-    erkenner = FasterWhisper(loader=loader, cuda=True)
-
-    # Erst die Karte, dann die CPU — mit dem Modell, das zur CPU passt.
-    assert versuche == [
-        (client.CUDA_MODEL, client.CUDA_DEVICE),
-        (client.CPU_MODEL, DEVICE),
-    ]
-    assert (erkenner.device, erkenner.compute_type) == (DEVICE, COMPUTE_TYPE)
-
-
-def test_ein_fehlschlag_auf_der_cpu_wird_nicht_verschluckt():
-    def loader(model_size, *, device, compute_type):
-        raise RuntimeError("kaputt")
-
-    with pytest.raises(RuntimeError, match="kaputt"):
-        FasterWhisper(loader=loader, cuda=False)
-
-
-def test_ohne_ctranslate2_meldet_die_erkennung_keine_karte(monkeypatch):
-    monkeypatch.setitem(sys.modules, "ctranslate2", None)
-    assert client.cuda_verfuegbar() is False
-
-
-def test_der_erkenner_bekommt_die_ganze_spur_und_den_vorspann(tmp_path):
-    modell = Spur()
-    erkenner = FasterWhisper("small", loader=lambda *a, **k: modell)
-
-    teile = list(erkenner.transcribe(tmp_path / "mira.ogg", vocabulary="Namen: Aelin."))
-
-    assert modell.aufruf == {
-        "pfad": str(tmp_path / "mira.ogg"),
-        "initial_prompt": "Namen: Aelin.",
-        "vad_filter": True,
-    }
-    assert teile == [Segment(start=1.0, end=2.0, text="Aus dem Modell.")]
-
-
-def test_die_stille_erreicht_das_modell_nicht(tmp_path):
-    """Die Spuren des Bots bestehen ueberwiegend aus Stille — und darauf erfindet Whisper.
-
-    Gemessen an einer Spur aus reiner Stille: ohne Stille-Erkennung fuenf Minuten Nichts,
-    acht erfundene Segmente; mit ihr keins (#209).
+    Welches Modell rechnet, steht in der Unit des Dienstes (``large-v3-turbo``,
+    ``mdopp/solarisbay#1161``). Eine Bezeichnung, die wir nicht erfragen können, wäre
+    geraten; gemeldet wird deshalb der Dienst.
     """
-    modell = Spur()
-    erkenner = FasterWhisper("small", loader=lambda *a, **k: modell)
+    gegenstelle = Gegenstelle()
+    dieser = dienst(config, gegenstelle)
 
-    list(erkenner.transcribe(tmp_path / "mira.wav"))
+    list(dieser.transcribe(spur))
 
-    assert modell.aufruf["vad_filter"] is True
-
-
-def test_ohne_vorspann_wird_keiner_gesetzt(tmp_path):
-    modell = Spur()
-    list(FasterWhisper("small", loader=lambda *a, **k: modell).transcribe(tmp_path / "x.ogg"))
-    assert modell.aufruf["initial_prompt"] is None
+    assert set(gegenstelle.aufruf["json"]) == {"path", "language", "hotwords"}
+    assert dieser.name == client.NAME
 
 
-def test_ein_fehlendes_faster_whisper_wird_verstaendlich_gemeldet(monkeypatch):
-    monkeypatch.setitem(sys.modules, "faster_whisper", None)
-    with pytest.raises(TranscriberNotInstalled) as fehler:
-        _whisper_model("small", device=DEVICE, compute_type=COMPUTE_TYPE)
-    assert "faster-whisper" in str(fehler.value)
+def test_die_segmente_kommen_aus_der_antwort(config, spur):
+    teile = list(dienst(config, Gegenstelle()).transcribe(spur))
+    assert teile == [Segment(start=1.0, end=2.0, text=" Aus dem Dienst.")]
+
+
+def test_eine_spur_ausserhalb_des_aufnahmeverzeichnisses_wird_abgewiesen(config, tmp_path):
+    fremd = tmp_path / "woanders" / "mira.ogg"
+    fremd.parent.mkdir(parents=True)
+    fremd.write_bytes(b"x")
+
+    with pytest.raises(TranscriberError) as fehler:
+        list(dienst(config, Gegenstelle()).transcribe(fremd))
+
+    # Der Pfad trägt den Sprechernamen (#194, #199) und steht deshalb nicht in der Meldung.
+    assert "mira" not in str(fehler.value)
+
+
+def test_ein_abgeschalteter_dienst_ist_kein_fehler_dieser_spur(config, spur):
+    """Kein Rückfall mehr (#216) — also muss die Nichterreichbarkeit unterscheidbar sein.
+
+    ``TranscriberUnreachable`` heißt »später nochmal«; daran hängt, dass die Spur wartend
+    bleibt statt als gescheitert vermerkt zu werden.
+    """
+    gegenstelle = Gegenstelle(fehler=requests.ConnectionError("connection refused"))
+
+    with pytest.raises(TranscriberUnreachable) as fehler:
+        list(dienst(config, gegenstelle).transcribe(spur))
+
+    assert "bleibt liegen" in str(fehler.value)
+
+
+def test_ein_noch_ladendes_modell_heisst_warten_und_nicht_scheitern(config, spur):
+    gegenstelle = Gegenstelle(antwort=Antwort(status_code=503))
+
+    with pytest.raises(TranscriberUnreachable):
+        list(dienst(config, gegenstelle).transcribe(spur))
+
+
+def test_eine_abgewiesene_spur_ist_ein_fehler_dieser_spur(config, spur):
+    gegenstelle = Gegenstelle(antwort=Antwort(status_code=403))
+
+    with pytest.raises(TranscriberError) as fehler:
+        list(dienst(config, gegenstelle).transcribe(spur))
+
+    assert not isinstance(fehler.value, TranscriberUnreachable)
+
+
+def test_eine_antwort_ohne_segmente_wird_nicht_als_leere_spur_verbucht(config, spur):
+    gegenstelle = Gegenstelle(antwort=Antwort(rumpf={"fehler": "nichts"}))
+
+    with pytest.raises(TranscriberError):
+        list(dienst(config, gegenstelle).transcribe(spur))
+
+
+def test_eine_antwort_ohne_json_heisst_der_dienst_ist_nicht_der_gemeinte(config, spur):
+    gegenstelle = Gegenstelle(antwort=Antwort(kaputt=True))
+
+    with pytest.raises(TranscriberUnreachable):
+        list(dienst(config, gegenstelle).transcribe(spur))
+
+
+def test_gekappte_namen_stehen_nur_als_zahl_im_log(config, spur, caplog):
+    gegenstelle = Gegenstelle(
+        antwort=Antwort(
+            rumpf={
+                "segments": [],
+                "hotwords_dropped_count": 2,
+                "hotwords_dropped": ["Aelin Sturmwind", "Brok Eisenfaust"],
+            }
+        )
+    )
+
+    with caplog.at_level("INFO"):
+        list(dienst(config, gegenstelle).transcribe(spur))
+
+    assert "2 Namen" in caplog.text
+    assert "Aelin" not in caplog.text
+
+
+def test_die_adresse_kommt_aus_der_konfiguration(config, spur):
+    eigene = Config(
+        data_dir=config.data_dir,
+        recordings_dir=config.recordings_dir,
+        whisper_url="http://box:9999/",
+    )
+    gegenstelle = Gegenstelle()
+
+    list(WhisperBatch(eigene, http=lambda: gegenstelle).transcribe(spur))
+
+    assert gegenstelle.aufruf["url"] == "http://box:9999" + client.TRANSCRIBE_PATH
 
 
 # --- Der Stapelaufruf ---------------------------------------------------------------
@@ -608,12 +615,13 @@ def test_der_stapelaufruf_meldet_eine_unbekannte_sitzung(config, spur, monkeypat
     assert "Sitzung 999 gibt es nicht" in capsys.readouterr().out
 
 
-def test_der_stapelaufruf_meldet_ein_fehlendes_faster_whisper(
+def test_der_stapelaufruf_meldet_einen_abgeschalteten_erkenner(
     config, scope, spur, monkeypatch, capsys
 ):
     sitzung_id = sitzung(scope)
     monkeypatch.setattr(entry.Config, "from_env", classmethod(lambda cls: config))
-    monkeypatch.setitem(sys.modules, "faster_whisper", None)
+    gegenstelle = Gegenstelle(fehler=requests.ConnectionError("connection refused"))
+    monkeypatch.setattr(service, "model_from_config", lambda _c: dienst(config, gegenstelle))
 
     assert entry.main([str(sitzung_id), "mira.ogg"]) == 2
-    assert "faster-whisper" in capsys.readouterr().out
+    assert "nicht erreichbar" in capsys.readouterr().out

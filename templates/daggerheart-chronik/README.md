@@ -138,11 +138,16 @@ Der bekannte Fix wäre ein einzelnes `.container`-Quadlet mit `AddDevice=` und
 an der Karte. Für einen Pod aus zwei Containern, die sich `/data` teilen, gibt es diese
 Form nicht.
 
-**Der beschlossene Weg führt deshalb nicht über eine eigene Karte**, sondern über den
-vorhandenen `solaris-whisper` der Box (#141), sobald der Wortvorgaben annimmt
-(`mdopp/solarisbay#1142`). Bis dahin verschriftet der nächtliche Lauf auf der CPU — das
-ist der Rückfall aus #84, absichtlich und nicht aus Versehen. `CHRONICLE_WHISPER_DEVICE`
-bleibt ungesetzt; das Template erzwingt kein Gerät.
+**Seit #216 braucht dieser Pod auch keine.** Er hält kein Whisper-Modell mehr; die
+Verschriftung ist ein HTTP-Aufruf gegen `solaris-whisper-batch`, der auf der Karte der
+Box rechnet (`mdopp/solarisbay#1161`). Erreicht wird er über die Schleife wie Ollama und
+`solaris-tts` auch — Vorgabe `http://127.0.0.1:10301`, überschreibbar mit
+`CHRONICLE_WHISPER_URL`; das Template setzt nichts.
+
+**Einen Rückfall gibt es nicht mehr.** Der CPU-Weg aus #84 ist ersatzlos entfallen.
+Ist `solaris-whisper-batch` aus, bleibt die Tonspur wartend liegen und der nächtliche
+Lauf sagt es auf seiner Karte — er schreibt für diese Sitzung **keine** Chronik, denn
+eine ohne das gesprochene Wort sähe fertig aus. Die nächste Nacht holt sie nach.
 
 Wer die drei Zeilen wieder einbaut, gewinnt nichts außer einem Versprechen, das die Datei
 nicht hält.

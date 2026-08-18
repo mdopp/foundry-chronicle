@@ -60,8 +60,8 @@ flowchart TB
         ADAPTER["System-Adapter je Regelwerk<br/>dahinter neutral"]
     end
 
-    subgraph BATCH["Verarbeitung · nachts im Stapel, CPU reicht"]
-        TRANS["Transkription · #10<br/>faster-whisper, Spur für Spur<br/>Foundry-Namen als Vokabular"]
+    subgraph BATCH["Verarbeitung · nachts im Stapel, keine Latenzgrenze"]
+        TRANS["Transkription · #10 · #216<br/>dünner Client → solaris-whisper-batch<br/>Foundry-Namen als Wortvorgabe"]
         MERGE["Zusammenführung<br/>online: Zeitachse · #11<br/>vor Ort: Szenenfolge"]
         COMP["Komposition · #6<br/>ordnet, schmückt nicht aus"]
     end

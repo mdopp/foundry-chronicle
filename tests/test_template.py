@@ -160,13 +160,14 @@ def test_keine_wirkungslose_karten_durchreichung(manifest: dict) -> None:
     assert not [name for name in annotationen if name.startswith("io.podman.annotations.label")]
 
 
-def test_das_geraet_wird_nicht_erzwungen(manifest: dict) -> None:
-    # Der Rückfall auf die CPU ist der Rettungsweg, wenn die geteilten 16 GB gerade nicht
-    # reichen (#84). Er trägt nur, solange das Gerät nicht aus der Umgebung festgenagelt
-    # ist — ein erzwungenes ``cuda`` macht aus einem langsamen Lauf einen gescheiterten.
+def test_der_erkenner_wird_nicht_festgenagelt(manifest: dict) -> None:
+    # Seit #216 hält dieser Pod kein Modell mehr; verschriftet wird bei
+    # ``solaris-whisper-batch`` über die Schleife. Die Vorgabe steht im Code
+    # (``config.DEFAULT_WHISPER_URL``) — hier eine zweite Adresse zu setzen hieße, sie an
+    # zwei Stellen zu pflegen, und die Vorlage gewönne nichts dabei.
     for container in manifest["spec"]["containers"]:
         umgebung = {eintrag["name"] for eintrag in container["env"]}
-        assert "CHRONICLE_WHISPER_DEVICE" not in umgebung
+        assert not {name for name in umgebung if name.startswith("CHRONICLE_WHISPER")}
 
 
 def test_beide_container_teilen_dasselbe_aufnahmeverzeichnis(manifest: dict) -> None:

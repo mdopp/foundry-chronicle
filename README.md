@@ -106,8 +106,8 @@ unverändert. Die Ollama-Adresse hat eine dritte Stufe: ist weder
 etwas gespeichert noch etwas in der Umgebung gesetzt, gilt `http://127.0.0.1:11434` — das
 Ollama der Box. Offen bleibt dann allein die Modellwahl. Rein aus der Umgebung kommen weiterhin
 `CHRONICLE_DATA_DIR` (Vorgabe `./data`), `CHRONICLE_RECORDINGS_DIR` (Vorgabe
-`./recordings`), `CHRONICLE_WHISPER_MODEL` und `CHRONICLE_WHISPER_DEVICE` (beide
-leer = automatisch, siehe [Transkription](#transkription)) sowie `TTS_URL` — die Adresse
+`./recordings`), `CHRONICLE_WHISPER_URL` — die Adresse des Spracherkenners (Vorgabe
+`http://127.0.0.1:10301`, siehe [Transkription](#transkription)) — sowie `TTS_URL`, die Adresse
 des Sprachdienstes, der die Ansage spricht (Vorgabe `http://127.0.0.1:8881`, siehe
 [Aufnahme per Discord](#aufnahme-per-discord)). Fehlt die
 Foundry-Konfiguration, startet der Dienst trotzdem und sagt es dort, wo jemand danach
@@ -134,10 +134,10 @@ Prüfen wie die CI: `ruff check . && ruff format --check . && pytest -q`.
 
 ## Transkription
 
-Aus einer Audiospur wird Text mit Zeitstempeln — im Stapel nach der Sitzung, auf CPU:
+Aus einer Audiospur wird Text mit Zeitstempeln — im Stapel nach der Sitzung:
 
 ```bash
-pip install -e ".[dev,transcribe]"          # faster-whisper ist ein eigenes Extra
+pip install -e ".[dev]"                     # kein Whisper-Modell mehr, nur ein Client
 python -m chronicle.transcribe              # die Warteschlange — von Hand angestoßen
 python -m chronicle.transcribe 1 mira.ogg   # Sitzung 1, Spur aus ./recordings
 python -m chronicle.transcribe 1 mira.ogg --loeschen   # Aufnahme danach entfernen
@@ -159,27 +159,25 @@ Zeitpunkt seiner Nachricht in die Szene, in die es gehört. Eine Sprachmemo-App 
 Bildschirmsperre und Anruf, und die Quelle bleibt erhalten, bis das Transkript taugt.
 
 Der Dateiname wird die Quellenkennung der Spur; ein zweiter Lauf ersetzt sie, statt zu
-verdoppeln. **Eine Grafikkarte ist keine Voraussetzung — aber wenn eine da ist, wird sie
-genutzt:** mit CUDA läuft `large-v3-turbo` in `float16`, ohne Karte `small` auf CPU mit
-int8, grob das Zwei- bis Fünffache der Echtzeit. Das große Modell erkennt erfundene
-Eigennamen deutlich besser, und davon lebt ein Rollenspiel. `CHRONICLE_WHISPER_DEVICE`
-(`cpu`/`cuda`) und `CHRONICLE_WHISPER_MODEL` überschreiben die Erkennung — `cpu` hält die
-Karte für Ollama frei, das sich dieselben 16 GB teilt; ein Fehlschlag auf der Karte fällt
-auf die CPU zurück, statt den Nachtlauf abzubrechen. Ein Feld dafür gibt es nirgends. Als Vokabular werden die Eigennamen
-dieser Sitzung vorgespannt — erst, wer im Chat-Log gesprochen hat, dann der übrige
-Foundry-Zwischenspeicher, hart auf rund 224 Token gekappt.
+verdoppeln. **Erkannt wird nicht hier** (#216): dieser Dienst hält kein Whisper-Modell
+mehr, sondern schickt den Dateinamen an `solaris-whisper-batch` — den Stapel-Erkenner der
+Box, der auf ihrer Grafikkarte `large-v3-turbo` fährt. Welches Modell das ist, entscheidet
+seine Unit; wählbar je Auftrag ist es nicht, sein Endpunkt nimmt nur Pfad, Sprache und
+Wortvorgaben entgegen. `CHRONICLE_WHISPER_URL` überschreibt die Adresse (Vorgabe
+`http://127.0.0.1:10301`); ein Feld dafür gibt es nirgends. Als Wortvorgabe gehen die
+Eigennamen dieser Sitzung mit — erst, wer im Chat-Log gesprochen hat, dann der übrige
+Foundry-Zwischenspeicher, hart auf rund 224 Token gekappt. Die Stille-Erkennung (#209)
+und die Dekodierung der Telefon-Formate liegen mit dem Modell drüben.
 
-**Die Stille läuft nicht durchs Modell** (#209). Der Aufnahme-Bot füllt die Sprechpausen
-jeder Spur auf, damit alle Spuren auf einer Zeitachse liegen — eine Vier-Stunden-Sitzung
-ergibt je Sprecher vier Stunden Spur bei vielleicht einer Stunde Rede. Eine
-Stille-Erkennung sortiert die Pausen vor dem Modell aus: **auf langer Stille erfindet
-Whisper Sätze**, und die Rechenzeit ginge fast vollständig für sie drauf. Abschaltbar ist
-das nicht — ein Schutz mit Schalter ist einer, den man abgeschaltet vorfindet. Die
-Zeitstempel bleiben davon unberührt und zählen weiter ab dem Aufnahmebeginn.
+**Einen Rückfall gibt es nicht.** Der CPU-Weg aus #84 ist ersatzlos entfallen — das ist so
+entschieden, nicht vergessen. Ist der Erkenner aus, bleibt die Spur **wartend** liegen,
+der nächtliche Lauf sagt es auf seiner Karte und schreibt für diese Sitzung **keine**
+Chronik: eine ohne das gesprochene Wort sähe fertig aus, und dann fiele der Abend
+stillschweigend von der Fälligkeitsliste. Die nächste Nacht holt ihn nach.
 
-`faster-whisper` steckt im Extra `transcribe`: das Image bringt es mit, eine
-Dev-Installation muss es nicht laden. Die Tests setzen ein erfundenes Modell ein und
-laden nie ein echtes herunter.
+Im Repo bleibt damit nur ein HTTP-Aufruf: kein `faster-whisper`, kein PyAV, kein
+onnxruntime, kein Extra. Die Tests setzen ein erfundenes Modell und eine Attrappe des
+Dienstes ein und gehen nie ans Netz.
 
 **Mehrere Spuren werden zu einer Unterhaltung.** Schneidet der Aufnahme-Bot mit, liegt je
 Sprecher eine Spur; nacheinander gelesen wären das Monologe. Der Abschluss verschränkt sie

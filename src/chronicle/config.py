@@ -56,6 +56,11 @@ DEFAULT_OLLAMA_URL = "http://127.0.0.1:11434"
 # für einen Wert, dessen falsche Belegung nur die Stimme ändert, wäre eine Frage zu viel.
 DEFAULT_TTS_URL = "http://127.0.0.1:8881"
 
+# Und noch eine: ``solaris-whisper-batch`` verschriftet die Spuren, im Host-Netz auf
+# 10301 (#216, ``mdopp/solarisbay#1161``). Auch er gehört nicht auf die Betreiber-Seite —
+# es gibt nichts zu wählen: welches Modell rechnet, entscheidet seine eigene Unit.
+DEFAULT_WHISPER_URL = "http://127.0.0.1:10301"
+
 DEFAULT_DATA_DIR = "data"
 
 # Bewusst ein Geschwister von ``data`` und nicht darin: die SQLite geht ins Backup, die
@@ -63,11 +68,6 @@ DEFAULT_DATA_DIR = "data"
 DEFAULT_RECORDINGS_DIR = "recordings"
 
 DATABASE_NAME = "chronicle.sqlite3"
-
-# Modell und Gerät bleiben leer = **automatisch**: mit Karte das große Modell in
-# float16, ohne Karte ``small`` auf der CPU (``transcribe.client``). Gesetzt wird über
-# die Umgebung; ein Feld in der Oberfläche braucht es dafür nicht — einmal entschieden.
-# ``CHRONICLE_WHISPER_DEVICE=cpu`` hält die Karte für Ollama frei (#84).
 
 
 def masked(secret: str | None) -> str:
@@ -103,8 +103,7 @@ class Config:
     public_url: str | None = None
     data_dir: Path = Path(DEFAULT_DATA_DIR)
     recordings_dir: Path = Path(DEFAULT_RECORDINGS_DIR)
-    whisper_model: str | None = None
-    whisper_device: str | None = None
+    whisper_url: str | None = None
     require_remote_user: bool = False
     trusted_proxies: tuple[str, ...] = ()
     health_port: int | None = None
@@ -123,8 +122,7 @@ class Config:
             public_url=_value(env, "CHRONICLE_PUBLIC_URL"),
             data_dir=Path(_value(env, "CHRONICLE_DATA_DIR") or DEFAULT_DATA_DIR),
             recordings_dir=Path(_value(env, "CHRONICLE_RECORDINGS_DIR") or DEFAULT_RECORDINGS_DIR),
-            whisper_model=_value(env, "CHRONICLE_WHISPER_MODEL"),
-            whisper_device=_value(env, "CHRONICLE_WHISPER_DEVICE"),
+            whisper_url=_value(env, "CHRONICLE_WHISPER_URL"),
             require_remote_user=_flag(env, REMOTE_USER_VARIABLE),
             trusted_proxies=_liste(env, TRUSTED_PROXIES_VARIABLE),
             health_port=_port(env, HEALTH_PORT_VARIABLE),
@@ -175,8 +173,7 @@ class Config:
             f"public_url={self.public_url!r}, "
             f"data_dir={str(self.data_dir)!r}, "
             f"recordings_dir={str(self.recordings_dir)!r}, "
-            f"whisper_model={self.whisper_model!r}, "
-            f"whisper_device={self.whisper_device!r}, "
+            f"whisper_url={self.whisper_url!r}, "
             f"require_remote_user={self.require_remote_user!r}, "
             f"trusted_proxies={self.trusted_proxies!r}, "
             f"health_port={self.health_port!r})"

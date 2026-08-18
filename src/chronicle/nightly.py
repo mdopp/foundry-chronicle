@@ -40,7 +40,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from chronicle import db, jobs, settings, zugang
+from chronicle import db, jobs, recordings, settings, zugang
 from chronicle import runde as runden
 from chronicle.compose.service import KIND
 from chronicle.config import Config
@@ -82,6 +82,17 @@ NICHT_DURCHGEKOMMEN = "Nicht durchgekommen: {grund}"
 
 VORSPANN = "Sitzung vom {datum}: "
 NICHT_GESCHRIEBEN = "keine Chronik — {grund}"
+
+# Seit #216 gibt es keinen zweiten Weg zur Verschriftung: ist ``solaris-whisper-batch``
+# aus, bleibt die Spur liegen. Dann darf für diese Sitzung **nichts** entstehen — eine
+# Chronik ohne das gesprochene Wort sieht fertig aus, und niemand sieht ihr an, dass der
+# halbe Abend fehlt. Genau diese Gestalt war #221, nur von der anderen Seite.
+OHNE_SPRACHE = (
+    "keine Chronik — eine Aufnahme dieser Sitzung ist noch nicht verschriftet. "
+    "Geschrieben würde sonst ein Abend ohne das gesprochene Wort, und dem sieht später "
+    "niemand an, dass die Hälfte fehlt. Die Spur bleibt liegen; die nächste Nacht "
+    "schreibt die Chronik, sobald der Spracherkenner wieder antwortet."
+)
 
 
 @dataclass(frozen=True)
@@ -132,8 +143,18 @@ def _diktat(config: Config, runde: Runde) -> Schritt:
 
 
 def _transkript(config: Config, runde: Runde) -> Schritt:
+    """Die Warteschlange — und die Frage, ob danach wirklich nichts mehr wartet.
+
+    Was hinterher noch auf ``wartet`` steht, ist nicht gescheitert, sondern nicht
+    drangekommen: der Erkenner war aus (#216). Der Schritt ist dann nicht grün, damit die
+    Karte nicht Erfolg meldet, wo eine Stunde Ton unverschriftet liegt.
+    """
     meldungen = run_queue(config, runde)
-    return Schritt(TRANSKRIPT, " ".join(meldungen) if meldungen else WARTESCHLANGE_LEER)
+    return Schritt(
+        TRANSKRIPT,
+        " ".join(meldungen) if meldungen else WARTESCHLANGE_LEER,
+        gelungen=not recordings.pending(runde),
+    )
 
 
 def _abgleich(config: Config, runde: Runde) -> Schritt:
@@ -184,13 +205,23 @@ def _chronik(config: Config, runde: Runde) -> Schritt:
     Sie schreibt den Satz, den die Karte zeigt — bis #221 stand hier eine eigene
     Reihenfolge, der die Übernahme der Transkripte fehlte, und darüber ein »geschrieben«,
     das auch dann kam, wenn nichts entstanden war.
+
+    Übersprungen wird, wessen Spur noch wartet. Das löst sich von allein: entweder
+    antwortet der Erkenner in einer der nächsten Nächte, oder die zugesagte Frist holt
+    die Aufnahme nach sieben Tagen — dann ist sie nicht mehr wartend und die Sitzung
+    kommt mit dem an die Reihe, was von ihr übrig ist.
     """
     faellig = offen(runde)
     if not faellig:
         return Schritt(CHRONIK, NICHTS_ZU_SCHREIBEN)
+    wartend = {aufnahme.session_id for aufnahme in recordings.pending(runde)}
     meldungen = []
     gelungen = True
     for sitzung_id, datum in faellig:
+        if sitzung_id in wartend:
+            gelungen = False
+            meldungen.append(VORSPANN.format(datum=datum) + OHNE_SPRACHE)
+            continue
         try:
             satz = jobs.chronik(config, runde, sitzung_id)
         except jobs.JobError as fehler:

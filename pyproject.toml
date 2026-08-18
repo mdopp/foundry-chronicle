@@ -14,12 +14,11 @@ dependencies = [
 # waitress statt gunicorn: reines Python ohne C-Erweiterung — kein Build-Werkzeug im Image —
 # und ein Prozess mit Threads, also genau ein SQLite-Schreiber.
 server = ["waitress>=3.0"]
-# Eigenes Extra, weil faster-whisper mit ctranslate2 und onnxruntime dreistellige
-# Megabyte zieht: das Image bringt es mit, eine Dev-Installation und die CI bleiben
-# schlank. Die Tests setzen ein erfundenes Modell ein und laden nichts herunter.
-# >=1.1, weil erst dort ``large-v3-turbo`` aufgelöst wird — das Modell, das auf einer
-# vorhandenen Karte läuft (#84). Ohne Karte ändert die Fassung nichts.
-transcribe = ["faster-whisper>=1.1"]
+# **Kein ``transcribe``-Extra mehr** (#216, Betreiber-Entscheidung 2026-08-18). Wir
+# halten kein Whisper-Modell mehr vor: faster-whisper, ctranslate2, PyAV und onnxruntime
+# — dreistellige Megabyte — sind aus dem Image raus, die Verschriftung macht
+# ``solaris-whisper-batch`` auf seiner Karte. Übrig bleibt ein HTTP-Aufruf, und der
+# braucht nur ``requests``, das ohnehin dasteht.
 # Eigenes Extra für den Aufnahme-Bot: py-cord ist ein Gateway-Client mit Sprach-Anhang,
 # den weder der Webdienst noch der nächtliche Stapel braucht. Audio zu empfangen ist von
 # Discord nicht offiziell unterstützt — die Bruchstelle bleibt damit auf ein Extra und

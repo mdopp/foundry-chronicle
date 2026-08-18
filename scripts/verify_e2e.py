@@ -28,8 +28,9 @@ im Image liegt kein Mock, und ein Durchstich, der einen mitbrächte, prüfte das
 nicht mehr.
 
 Das Diktat kommt **nach** dem Abschluss: verschriftet wird beim Abschluss, und eine
-wartende Spur zöge auf der Box ein Whisper-Modell aus dem Netz. Geprüft wird deshalb,
-dass der Anhang als wartende Spur ankommt — nicht, was Whisper daraus macht.
+wartende Spur riefe dabei ``solaris-whisper-batch`` — der liest nur das echte
+Aufnahmeverzeichnis der Box, nicht das dieser Wegwerf-Instanz. Geprüft wird deshalb, dass
+der Anhang als wartende Spur ankommt, nicht was der Erkenner daraus macht.
 
 Nur die Standardbibliothek und ``chronicle``: das Skript läuft im Image, und dort liegt
 kein pytest und keine Testabhängigkeit.
@@ -254,7 +255,7 @@ def durchlauf(config: Config, lauf: Lauf) -> None:
     lauf.ok("Die Suche findet die Marke wieder")
 
     # Ein Anhang im Thread wird eine wartende Spur. Bewusst **nach** dem Abschluss: davor
-    # zöge das Verschriften auf der Box ein Whisper-Modell aus dem Netz.
+    # ginge das Verschriften an den Nachbardienst, und der kennt dieses Verzeichnis nicht.
     quelle = config.recordings_dir / "durchstich-quelle.m4a"
     quelle.parent.mkdir(parents=True, exist_ok=True)
     quelle.write_bytes(b"kein echtes Audio, aber Bytes")

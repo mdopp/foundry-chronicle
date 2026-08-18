@@ -118,9 +118,9 @@ VERSTUMMT = timedelta(seconds=90)
 _laufend: set[int] = set()
 _schloss = threading.RLock()
 
-# Was Sprachmemo-Apps ablegen. Normalisiert wird nichts davon vorab: faster-whisper
-# dekodiert über PyAV, dessen Wheel bringt die FFmpeg-Bibliotheken mit — m4a/AAC und
-# ogg/opus vom Telefon gehen ohne ein ffmpeg im Image.
+# Was Sprachmemo-Apps ablegen. Normalisiert wird nichts davon vorab und seit #216 auch
+# nichts mehr dekodiert: die Datei geht als Pfad an ``solaris-whisper-batch``, und dessen
+# faster-whisper bringt die FFmpeg-Bibliotheken mit. In diesem Image ist keine.
 SUFFIXES = (
     ".m4a",
     ".mp3",
