@@ -4,8 +4,9 @@ Anders als ``python -m chronicle.discord`` ist das kein Stapellauf: der Bot häl
 Gateway-Verbindung, weil Sprache nur mitgeschnitten werden kann, während sie gesprochen
 wird. Er läuft deshalb neben dem Webdienst, nicht in ihm.
 
-Ohne Token startet er nicht und sagt das in einem Satz — der Token wird unter
-``/einstellungen`` gepflegt und ein dort gesetzter Wert schlägt die Umgebung.
+Ohne Token startet er nicht und sagt das in einem Satz — der Token steht seit #230
+ausschließlich in der Umgebung (``DISCORD_BOT_TOKEN``), gesetzt von den
+Template-Variablen der Box.
 
 Seit #229 trägt er außerdem den nächtlichen Lauf — angestoßen wird er in
 ``gateway.run``, und zwar in einem Faden neben der Gateway-Verbindung.
@@ -32,7 +33,8 @@ from chronicle.config import Config
 
 KEIN_TOKEN = (
     "Kein Discord-Bot-Token — der Aufnahme-Bot startet nicht. "
-    "Token unter /einstellungen setzen, dann den Bot neu starten."
+    "DISCORD_BOT_TOKEN in den Template-Variablen dieses Dienstes setzen, "
+    "dann den Bot neu starten."
 )
 
 

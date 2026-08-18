@@ -16,7 +16,7 @@
   },
   "CHRONICLE_SUBDOMAIN": {
     "type": "subdomain",
-    "description": "Subdomain der Betreiber-Seite — gespielt wird in Discord, hier stehen nur Bot-Token, Ollama und die Verwaltungsgruppe. Sie benennt die Instanz, nicht eine Gruppe: eine Instanz trägt mehrere Runden, je Discord-Server eine. Authelia-Forward-Auth davor: unauthentifiziert antwortet die Subdomain mit 302 auf auth.<domain>, danach setzt NPM den Remote-User-Header. Ein eigenes Login hat der Dienst nicht.",
+    "description": "Subdomain der Betreiber-Seite — gespielt wird in Discord, und seit #230 steht hier nur noch die Verwaltungsgruppe: Bot-Token und Ollama kommen aus den Variablen darunter. Sie benennt die Instanz, nicht eine Gruppe: eine Instanz trägt mehrere Runden, je Discord-Server eine. Authelia-Forward-Auth davor: unauthentifiziert antwortet die Subdomain mit 302 auf auth.<domain>, danach setzt NPM den Remote-User-Header. Ein eigenes Login hat der Dienst nicht.",
     "default": "daggerheart",
     "exposure": "public",
     "proxyPort": "CHRONICLE_PORT",
@@ -25,5 +25,20 @@
       "ssl_forced": true,
       "advanced_config": "__authelia_forward_auth__"
     }
+  },
+  "DISCORD_BOT_TOKEN": {
+    "type": "text",
+    "description": "Der Token unseres Discord-Bots aus dem Developer Portal — er meldet den Bot an, und ohne ihn bleibt der Bot aus (Diktat, Aufnahme, Zustellung). Er ist unser Token und nicht der einer Gruppe: eine Instanz traegt mehrere Runden, alle sprechen mit demselben Bot. Bis #230 wurde er auf der Betreiber-Seite gepflegt und lag im Klartext in chronicle.sqlite3 — und damit im Backup; seit #230 steht er hier und nirgends sonst. Bewusst 'text' und nicht 'secret': der Assistent wuerfelt fuer ein Geheimnis einen Wert aus, und ein ausgewuerfelter Bot-Token meldet sich bei Discord an und wird abgelehnt (#33). Ein Wert, den nur die Gegenstelle kennt, hat keinen sinnvollen Zufallswert — leer heisst hier ehrlich 'nicht gesetzt'. Nachtragen mit install_template(variables={...}); der uebergebene Wert gewinnt (Assist recipe-rotate-a-service-secret).",
+    "default": ""
+  },
+  "OLLAMA_URL": {
+    "type": "text",
+    "description": "Adresse des Ollama, das die Chronik formuliert. Leer heisst: das Ollama dieser Box auf 127.0.0.1:11434 — der Pod laeuft im Host-Netz und erreicht es ueber die Schleife. Der Wert gehoert der Instanz und keiner Runde (#87): wohin gesprochenes Wort fliesst, entscheidet nicht eine einzelne Gruppe.",
+    "default": ""
+  },
+  "OLLAMA_MODEL": {
+    "type": "text",
+    "description": "Name des Textmodells, das die Chronik formuliert — es muss auf dem oben genannten Ollama bereits liegen ('ollama list' auf der Box). Leer heisst: die Chronik entsteht trotzdem, dann geordnet statt formuliert. Eine Auswahlliste der installierten Modelle gab es bis #230 auf der Betreiber-Seite; sie ist der eine bewusst in Kauf genommene Verlust dieses Umbaus.",
+    "default": ""
   }
 }

@@ -2,8 +2,12 @@
 
 Die Spielinhalte sind mit #157 nach Discord gezogen; was sie zusagten, steht seither in
 ``test_chronik``, ``test_erinnern``, ``test_notes``, ``test_register``, ``test_search``
-und ``test_kette``. Hier bleiben die Haustür (ADR 0001), der Bot-Token, das Sprachmodell
-und die Frage, wer verwalten darf.
+und ``test_kette``. Hier bleiben die Haustür (ADR 0001) und die Frage, wer verwalten darf.
+
+**Gepflegt werden Bot-Token, Ollama-Adresse und -Modell seit #230 nicht mehr.** Sie kommen
+aus der Umgebung; diese Seite hat für sie keinen Schreibweg mehr, und der Token wird ihrem
+Prozess gar nicht erst gereicht. Was hier steht, sind deshalb vor allem Zusicherungen
+darüber, dass es diesen Weg **nicht** gibt.
 """
 
 import importlib
@@ -11,15 +15,12 @@ import logging
 import re
 from pathlib import Path
 
-import pytest
 from conftest import GM_FIGUR, UNSER_KONTO, runde, systemsprache
 from flask import request
 
 import chronicle.__main__ as entry
 from chronicle import db, herkunft, instanz, settings, zugang
 from chronicle.app import create_app
-from chronicle.compose import client as sprachmodell
-from chronicle.compose.client import ModelUnreachable
 from chronicle.config import Config
 from chronicle.foundry import service
 from chronicle.foundry.client import FoundryUnreachable
@@ -36,19 +37,11 @@ IN_DISCORD_GEPFLEGT = {
     "foundry_url": "https://foundry.example",
     "foundry_user": "chronist",
     "discord_recap_channel": "chronik",
-    "ollama_url": "http://ollama.example:11434",
-    "ollama_model": "chronist-modell",
 }
 
-
-@pytest.fixture(autouse=True)
-def kein_ollama_im_netz(monkeypatch):
-    """Kein Test darf an einem echten Ollama hängen bleiben."""
-
-    def weg(adresse, **kwargs):
-        raise ModelUnreachable(f"{adresse}/api/tags nicht erreichbar: ConnectionError")
-
-    monkeypatch.setattr(sprachmodell, "installed_models", weg)
+# Die drei Werte der Instanz. Seit #230 kommen sie aus der Umgebung, und diese Seite hat
+# für keinen von ihnen noch ein Feld oder einen Schreibweg.
+AUS_DER_UMGEBUNG = ("discord_bot_token", "ollama_url", "ollama_model")
 
 
 def seite(config):
@@ -81,13 +74,12 @@ RUNDEN_FELDER = (
 )
 
 
-def test_die_betreiberseite_traegt_kein_runden_eigenes_feld_mehr(tmp_path):
-    """Sie bleibt für das, was der Instanz gehört — der Rest wird in Discord gepflegt."""
+def test_die_betreiberseite_traegt_nur_noch_ein_feld(tmp_path):
+    """Was der Runde gehört, steht in Discord — was der Instanz gehört, in der Umgebung."""
     html = gelesen(Config(data_dir=tmp_path), "/einstellungen")
-    for feld in RUNDEN_FELDER:
+    for feld in (*RUNDEN_FELDER, *AUS_DER_UMGEBUNG):
         assert f'name="{feld}"' not in html, feld
-    for feld in settings.INSTANZ_KEYS:
-        assert f'name="{feld}"' in html, feld
+    assert 'name="admin_group"' in html
 
 
 def test_die_betreiberseite_sagt_warum_es_sie_weiter_gibt(tmp_path):
@@ -106,7 +98,7 @@ def test_ein_speichern_nimmt_der_runde_ihre_werte_nicht_weg(tmp_path):
     settings.save_nightly_time(gruppe, "02:45")
     settings.save_foundry_quelle(gruppe, settings.TESTWELT)
 
-    assert client.post("/einstellungen", data={"ollama_model": "gemma4:12b"}).status_code == 302
+    assert client.post("/einstellungen", data={"admin_group": ""}).status_code == 302
 
     aktuell = settings.effective(config, gruppe)
     assert aktuell.foundry_url == "https://foundry.example"
@@ -114,12 +106,12 @@ def test_ein_speichern_nimmt_der_runde_ihre_werte_nicht_weg(tmp_path):
     assert aktuell.discord_recap_channel == "chronik"
     assert settings.nightly_time(gruppe) == "02:45"
     assert settings.foundry_quelle(gruppe) == settings.TESTWELT
-    assert aktuell.ollama_model == "gemma4:12b"
 
 
 def test_ohne_discord_ist_das_kein_fehler(tmp_path):
     html = seite(Config(data_dir=tmp_path)).get_data(as_text=True)
-    assert "Kein Bot-Token" in html
+    assert "Einrichten dieses Dienstes auf der Box" in html
+    assert "er läuft oder er läuft nicht" in html
 
 
 def test_konfiguriert_zeigt_die_instanz_werte_aber_kein_geheimnis(tmp_path):
@@ -153,7 +145,7 @@ def test_ohne_sprachmodell_sagt_der_status_was_die_chronik_dann_wird(tmp_path):
     html = seite(Config(data_dir=tmp_path)).get_data(as_text=True)
     assert "geordnet statt formuliert" in html
     assert "Ollama-Adresse" in html
-    assert f"<dd>{settings.STANDARD}</dd>" in html
+    assert settings.DEFAULT_OLLAMA_URL in html
 
 
 def test_mit_sprachmodell_zeigt_der_status_adresse_und_modell(tmp_path):
@@ -324,13 +316,14 @@ def test_die_einstellungen_nennen_oben_den_angemeldeten_menschen(tmp_path):
 # --- Was hier gepflegt wird ----------------------------------------------------------
 
 
-def test_die_einstellungsseite_zeigt_die_gepflegten_werte(tmp_path):
+def test_die_einstellungsseite_zeigt_die_umgebung_und_nimmt_sie_nicht_entgegen(tmp_path):
+    """Nachsehen ja, ändern nein — für die drei Instanz-Werte gibt es kein Feld mehr."""
     config = Config(ollama_url="http://ollama.example:11434", data_dir=tmp_path)
     html = gelesen(config, "/einstellungen")
     assert "http://ollama.example:11434" in html
-    assert 'name="discord_bot_token"' in html
-    assert 'name="ollama_url"' in html
-    assert 'name="ollama_model"' in html
+    assert "nie zum" in html
+    for feld in AUS_DER_UMGEBUNG:
+        assert f'name="{feld}"' not in html, feld
 
 
 def test_das_passwort_steht_in_keiner_antwort(tmp_path):
@@ -364,27 +357,30 @@ def test_das_formular_hat_kein_passwortfeld(tmp_path):
     assert "foundry_password" not in gelesen(Config(data_dir=tmp_path), "/einstellungen")
 
 
-def test_gespeichertes_schlaegt_die_umgebung(tmp_path):
+def test_die_umgebung_ist_das_letzte_wort(tmp_path):
+    """Umgekehrt als bis #230: ein abgesendetes Feld schreibt nichts mehr."""
     config = Config(ollama_url="http://umgebung.example:11434", data_dir=tmp_path)
     client = create_app(config).test_client()
-    client.post("/einstellungen", data={"ollama_url": "http://frontend.example:11434"})
-    assert settings.effective(config, runde(config)).ollama_url == "http://frontend.example:11434"
+    client.post("/einstellungen", data={"ollama_url": "http://untergeschoben.example:11434"})
+    assert settings.effective(config, runde(config)).ollama_url == "http://umgebung.example:11434"
+    assert settings.stored(runde(config)) == {}
     for pfad in ("/status", "/einstellungen"):
         html = client.get(pfad, follow_redirects=True).get_data(as_text=True)
-        assert "http://frontend.example:11434" in html
-        assert "http://umgebung.example:11434" not in html
+        assert "http://umgebung.example:11434" in html
+        assert "http://untergeschoben.example:11434" not in html
 
 
 def test_ein_passwort_im_speichern_formular_wird_nicht_uebernommen(tmp_path):
     """Selbst wer das Feld von Hand nachbaut, bekommt keinen gespeicherten Wert."""
     config = Config(data_dir=tmp_path)
     client = create_app(config).test_client()
-    client.post("/einstellungen", data={"ollama_model": "gemma4:12b", "foundry_password": PASSWORT})
-    assert settings.stored(runde(config)) == {"ollama_model": "gemma4:12b"}
+    client.post("/einstellungen", data={"admin_group": "", "foundry_password": PASSWORT})
+    assert settings.stored(runde(config)) == {}
     assert not zugang.ist_gemerkt(runde(config))
 
 
 def test_der_bot_token_steht_in_keiner_antwort(tmp_path):
+    """Er wird diesem Prozess gar nicht mehr gereicht — aber untergeschoben schon gar nicht."""
     config = Config(discord_bot_token=BOT_TOKEN, data_dir=tmp_path)
     client = create_app(config).test_client()
     for pfad in ("/einstellungen", "/status"):
@@ -397,108 +393,76 @@ def test_der_bot_token_steht_in_keiner_antwort(tmp_path):
     assert BOT_TOKEN not in zustand(client).get_data(as_text=True)
 
 
-def test_die_seite_sagt_nur_ob_ein_bot_token_gesetzt_ist(tmp_path):
-    ohne = gelesen(Config(data_dir=tmp_path / "ohne"), "/einstellungen")
-    assert "Noch kein Bot-Token gesetzt" in ohne
-    mit = gelesen(Config(discord_bot_token=BOT_TOKEN, data_dir=tmp_path / "mit"), "/einstellungen")
-    assert "Der Token ist" in mit
+def test_die_seite_sagt_nicht_einmal_mehr_ob_der_token_steht(tmp_path):
+    """Sie bekommt ihn nicht, also behauptet sie auch nichts über ihn — #230."""
+    for wo, config in (
+        ("ohne", Config(data_dir=tmp_path / "ohne")),
+        ("mit", Config(discord_bot_token=BOT_TOKEN, data_dir=tmp_path / "mit")),
+    ):
+        html = gelesen(config, "/einstellungen")
+        assert "er läuft oder er läuft nicht" in html, wo
+        assert "Der Token ist" not in html, wo
+        assert "Bot-Token gesetzt" not in html, wo
 
 
-def test_ein_leeres_bot_token_feld_behaelt_den_token(tmp_path):
+def test_kein_weg_schreibt_die_instanz_werte_in_die_datei(tmp_path):
+    """Weder POST noch URL — den Schreibweg gibt es seit #230 nicht mehr."""
     config = Config(data_dir=tmp_path)
     client = create_app(config).test_client()
-    client.post("/einstellungen", data={"discord_bot_token": BOT_TOKEN})
-    client.post("/einstellungen", data={"ollama_model": "gemma4:12b", "discord_bot_token": ""})
-    aktuell = settings.effective(config, runde(config))
-    assert aktuell.discord_bot_token == BOT_TOKEN
-    assert aktuell.ollama_model == "gemma4:12b"
-
-
-def test_der_token_kommt_nur_per_post_herein(tmp_path):
-    """In einer URL landete er im Zugriffslog des Proxys — dort gehört er nie hin."""
-    config = Config(data_dir=tmp_path)
-    client = create_app(config).test_client()
+    client.post(
+        "/einstellungen",
+        data={"discord_bot_token": BOT_TOKEN, "ollama_model": "gemma4:12b"},
+    )
     antwort = client.get(f"/einstellungen?discord_bot_token={BOT_TOKEN}")
     assert antwort.status_code == 200
     assert BOT_TOKEN not in antwort.get_data(as_text=True)
-    assert settings.effective(config, runde(config)).discord_bot_token is None
+
+    aktuell = settings.effective(config, runde(config))
+    assert aktuell.discord_bot_token is None
+    assert aktuell.ollama_model is None
+    assert settings.stored(runde(config)) == {}
+    roh = b""
+    for datei in (config.database_path, config.database_path.with_suffix(".sqlite3-wal")):
+        if datei.exists():
+            roh += datei.read_bytes()
+    assert BOT_TOKEN not in roh.decode("utf-8", errors="ignore")
 
 
-def test_ein_gespeicherter_bot_token_richtet_discord_ohne_umgebung_ein(tmp_path):
-    config = Config(data_dir=tmp_path)
-    client = create_app(config).test_client()
-    assert "Kein Bot-Token" in zustand(client).get_data(as_text=True)
-
-    client.post("/einstellungen", data={"discord_bot_token": BOT_TOKEN})
-
+def test_der_token_kommt_allein_aus_der_umgebung(tmp_path):
+    config = Config(discord_bot_token=BOT_TOKEN, data_dir=tmp_path)
     assert settings.effective(config, runde(config)).discord_configured
-    html = zustand(client).get_data(as_text=True)
-    assert "Bot-Token gesetzt" in html
-    assert f"<dd>{settings.FRONTEND}</dd>" in html
 
 
-def test_die_technikdetails_nennen_je_instanz_wert_die_quelle(tmp_path):
+def test_die_technikdetails_sagen_dass_hier_nichts_gespeichert_ist(tmp_path):
     config = Config(ollama_url="http://umgebung.example:11434", data_dir=tmp_path)
-    client = create_app(config).test_client()
-    client.post("/einstellungen", data={"ollama_model": "gemma4:12b"})
-    html = zustand(client).get_data(as_text=True)
-    assert f"<dd>{settings.FRONTEND}</dd>" in html
-    assert f"<dd>{settings.UMGEBUNG}</dd>" in html
-    assert f"<dd>{settings.UNGESETZT}</dd>" in html
+    html = zustand(create_app(config).test_client()).get_data(as_text=True)
+    assert "gespeichert ist hier keiner von ihnen" in html
+    assert "nur beim Bot, hier nicht sichtbar" in html
+    # Und in Nutzersprache: kein Variablenname, obwohl es hier um die Einrichtung geht.
+    assert systemsprache(html) == []
 
 
 def test_die_einstellungen_stehen_hinter_demselben_tuersteher(tmp_path):
     client = bewacht(tmp_path)
     assert client.get("/einstellungen").status_code == 403
-    assert client.post("/einstellungen", data={"ollama_model": "gemma4:12b"}).status_code == 403
+    assert client.post("/einstellungen", data={"admin_group": "wer-auch-immer"}).status_code == 403
     assert client.post("/einstellungen", data={"discord_bot_token": BOT_TOKEN}).status_code == 403
     assert settings.stored(runde(Config(data_dir=tmp_path))) == {}
 
 
-def test_erreichbares_ollama_bietet_die_modelle_zur_auswahl(tmp_path, monkeypatch):
-    monkeypatch.setattr(sprachmodell, "installed_models", lambda adresse, **k: ("gemma4:12b",))
+def test_die_auswahlliste_der_modelle_ist_bewusst_entfallen(tmp_path):
+    """Der eine Verlust aus #230 — festgehalten, damit er nicht als Fehler zurückkommt."""
     html = gelesen(Config(data_dir=tmp_path), "/einstellungen")
-    assert '<select id="ollama_model"' in html
-    assert '<option value="gemma4:12b"' in html
+    assert "<select" not in html
+    assert "Eine Auswahlliste der vorhandenen Modelle gibt es hier nicht mehr" in html
 
 
-def test_ohne_ollama_bleibt_ein_textfeld_und_ein_ehrlicher_satz(tmp_path):
-    html = gelesen(Config(data_dir=tmp_path), "/einstellungen")
-    assert '<select id="ollama_model"' not in html
-    assert 'name="ollama_model"' in html
-    assert "Nicht erreichbar — dann wird nur geordnet, nicht formuliert" in html
-    assert "Modellnamen von Hand eintragen" in html
-    assert settings.DEFAULT_OLLAMA_URL in html
+def test_die_seite_fragt_ollama_gar_nicht_mehr(tmp_path, monkeypatch):
+    """Sie hat nichts mehr zu wählen — und hängt deshalb an keinem Netzaufruf."""
+    from chronicle.compose import client as sprachmodell
 
-
-def test_ein_erreichbares_modell_meldet_sich_als_bereit(tmp_path, monkeypatch):
-    monkeypatch.setattr(sprachmodell, "installed_models", lambda adresse, **k: ("gemma4:12b",))
-    config = Config(
-        ollama_url="http://ollama.example:11434", ollama_model="gemma4:12b", data_dir=tmp_path
-    )
-    html = gelesen(config, "/einstellungen")
-    assert "Bereit — <code>gemma4:12b</code>" in html
-    assert "Nicht erreichbar" not in html
-
-
-def test_ein_erreichbares_ollama_ohne_gewaehltes_modell_sagt_was_zu_tun_ist(tmp_path, monkeypatch):
-    monkeypatch.setattr(sprachmodell, "installed_models", lambda adresse, **k: ("gemma4:12b",))
-    html = gelesen(Config(data_dir=tmp_path), "/einstellungen")
-    assert "Kein Modell gewählt" in html
-    assert "Wähle unten eins und speichere" in html
-
-
-def test_ein_modell_ohne_eigene_adresse_ist_schon_bereit(tmp_path, monkeypatch):
-    """Ohne gespeicherte Adresse gilt das Ollama dieser Box — kein Zustand bleibt offen."""
-    monkeypatch.setattr(sprachmodell, "installed_models", lambda adresse, **k: ("gemma4:12b",))
-    html = gelesen(Config(ollama_model="gemma4:12b", data_dir=tmp_path), "/einstellungen")
-    assert "Bereit — <code>gemma4:12b</code>" in html
-    assert "Noch keine Ollama-Adresse gespeichert" not in html
-
-
-def test_ein_kaputtes_ollama_bricht_die_seite_nicht(tmp_path, monkeypatch):
     def platzt(adresse, **kwargs):
-        raise ModelUnreachable("kein JSON")
+        raise AssertionError("Die Betreiber-Seite darf Ollama nicht mehr fragen.")
 
     monkeypatch.setattr(sprachmodell, "installed_models", platzt)
     assert (
@@ -540,10 +504,12 @@ def test_ohne_bot_token_zeigen_die_einstellungen_die_einrichtung(tmp_path):
     assert "Message Content Intent" in html
 
 
-def test_mit_bot_token_verschwindet_die_einrichtungshilfe(tmp_path):
-    config = Config(discord_bot_token="token-aus-der-umgebung", data_dir=tmp_path)
+def test_die_einrichtungshilfe_steht_auch_mit_token_da(tmp_path):
+    """Die Seite weiß seit #230 nicht mehr, ob einer gesetzt ist — also blendet sie nichts aus."""
+    config = Config(discord_bot_token=BOT_TOKEN, data_dir=tmp_path)
     html = gelesen(config, "/einstellungen")
-    assert "Developer Portal" not in html
+    assert "Developer Portal" in html
+    assert BOT_TOKEN not in html
 
 
 def test_der_zustellkanal_wird_nicht_mehr_auf_der_betreiberseite_gepflegt(tmp_path):
@@ -557,18 +523,17 @@ def test_der_zustellkanal_wird_nicht_mehr_auf_der_betreiberseite_gepflegt(tmp_pa
     assert settings.effective(config, runde(config)).discord_recap_channel is None
 
 
-def test_das_ollama_dieser_box_steht_nicht_als_rohe_ip_da(tmp_path):
+def test_das_ollama_dieser_box_wird_beim_namen_genannt(tmp_path):
     html = gelesen(Config(data_dir=tmp_path), "/einstellungen")
     assert "Ollama dieser Box" in html
-    assert "Ollama läuft woanders" in html
     assert f'value="{settings.DEFAULT_OLLAMA_URL}"' not in html
 
 
-def test_eine_eigene_ollama_adresse_bekommt_das_feld(tmp_path):
+def test_eine_eigene_ollama_adresse_steht_da_ohne_feld(tmp_path):
     config = Config(ollama_url="http://ollama.example:11434", data_dir=tmp_path)
     html = gelesen(config, "/einstellungen")
-    assert "Ollama läuft woanders" not in html
-    assert 'value="http://ollama.example:11434"' in html
+    assert "http://ollama.example:11434" in html
+    assert 'value="http://ollama.example:11434"' not in html
 
 
 def test_der_alte_statuspfad_leitet_dauerhaft_auf_die_betreiberseite_um(tmp_path):
@@ -782,8 +747,8 @@ def test_wer_sich_selbst_aussperren_wuerde_wird_gewarnt(tmp_path):
     assert antwort.status_code == 200
     assert "stehst du selbst nicht" in antwort.get_data(as_text=True)
     assert instanz.admin_group(config.database_path) == ""
-    # Was daneben im Formular stand, ist trotzdem gespeichert.
-    assert settings.stored(runde(config))["ollama_model"] == "gemma4:12b"
+    # Und was daneben im Formular stand, wird seit #230 überhaupt nicht mehr gespeichert.
+    assert settings.stored(runde(config)) == {}
 
 
 def test_die_warnung_laesst_sich_bewusst_uebergehen(tmp_path):

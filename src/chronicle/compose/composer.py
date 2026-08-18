@@ -125,7 +125,7 @@ LEER = "_Weder Notizen noch Foundry-Fakten._"
 # und was als Nächstes zu tun ist, und nennen keinen Namen aus dem Maschinenraum.
 OHNE_MODELL = (
     "Noch kein Modell gewählt — die Chronik wurde geordnet, nicht erzählt. "
-    "Ein Modell wählst du in den Einstellungen."
+    "Ein Modell hinterlegt der Betreiber dieser Box."
 )
 NICHT_ERREICHBAR = (
     "Das Sprachmodell war nicht erreichbar — geordnet statt erzählt; beim nächsten Lauf "

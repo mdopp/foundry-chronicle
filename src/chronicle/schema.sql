@@ -366,8 +366,10 @@ CREATE INDEX IF NOT EXISTS transcript_segment_zeit
 -- Vorgabe beim ersten Start. Das Foundry-Passwort liegt damit im Klartext in dieser Datei
 -- und geht mit ins Backup — bewusste Abwägung, siehe CLAUDE.md.
 --
--- Was der **Instanz** gehört und keiner Runde — voran der Discord-Bot-Token, denn das ist
--- unser Token und nicht das einer Gruppe — steht in ``meta``, siehe ``chronicle.instanz``.
+-- Was der **Instanz** gehört und keiner Runde, steht in ``meta`` — siehe
+-- ``chronicle.instanz``. Übrig ist dort die Verwaltungsgruppe: Discord-Bot-Token,
+-- Ollama-Adresse und -Modell haben die Datei mit #230 verlassen und kommen aus der
+-- Umgebung. Damit liegt kein Geheimnis dieses Dienstes mehr im Backup.
 CREATE TABLE IF NOT EXISTS settings (
     runde_id INTEGER NOT NULL REFERENCES runde (id) ON DELETE CASCADE,
     key      TEXT NOT NULL,

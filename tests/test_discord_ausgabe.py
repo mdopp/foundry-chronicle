@@ -179,12 +179,12 @@ def test_ohne_zustellkanal_landet_die_chronik_trotzdem_im_thread(tmp_path):
     assert api.angehaengt[0][1] == f"chronik-{DATUM}.md"
 
 
-def test_ein_in_der_oberflaeche_gesetzter_token_genuegt(tmp_path):
-    ohne = Config(data_dir=tmp_path / "daten")
+def test_der_token_aus_der_umgebung_genuegt(tmp_path):
+    """Seit #230 der einzige Weg — ein gepflegter Wert daneben existiert nicht mehr."""
+    ohne = Config(discord_bot_token=TOKEN, data_dir=tmp_path / "daten")
     db.init(ohne.database_path)
     sitzung_id = sitzung(ohne)
     protokoll(ohne, sitzung_id)
-    settings.save(runde(ohne), {"discord_bot_token": TOKEN})
     api = FakeDiscord()
 
     assert haengen(ohne, sitzung_id, api) == ""

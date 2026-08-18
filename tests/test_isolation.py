@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import inspect
 import sqlite3
+from dataclasses import replace
 
 import pytest
 from conftest import UNSER_KONTO, WELT, warte_auf_laeufe
@@ -31,7 +32,6 @@ from chronicle import (
     consent,
     db,
     dokument,
-    instanz,
     jobs,
     kette,
     lebenszyklus,
@@ -1004,26 +1004,33 @@ TOKEN = "token-nur-in-diesem-test"
 
 
 def test_der_bot_token_gehoert_der_instanz_und_keiner_runde(zwei_runden):
-    """Unser Token: keine Gruppe liest ihn aus ihrer Runde, keine schreibt ihn dort um."""
-    config, a, b, _ids = zwei_runden
-    instanz.save(config.database_path, {"discord_bot_token": TOKEN})
+    """Unser Token: keine Gruppe liest ihn aus ihrer Runde, keine schreibt ihn dort um.
 
-    # Erst schreiben, dann nachsehen — vor dem Schreiben sagt die Prüfung nichts. ``/setup``
-    # und die Kanalwahl sind die Wege, die einer Gilde offenstehen; der Schreibversuch mit
-    # der Runde als Absender ist der, den ein Formular ihr eröffnen könnte.
+    Seit #230 steht er in der Umgebung und in keiner Zeile der Datei — das ist die
+    schärfere Fassung derselben Zusage: es gibt keinen Ort mehr, an den eine Gruppe ihn
+    schreiben könnte, und keinen, aus dem sie ihn läse.
+    """
+    config, a, b, _ids = zwei_runden
+
+    # ``/setup`` und die Kanalwahl sind die Wege, die einer Gilde offenstehen; der
+    # Schreibversuch mit der Runde als Absender ist der, den ein Formular ihr eröffnen
+    # könnte.
     eingerichtet = bot_einrichten.einrichten(
         config, "gilde-b", "Zweite", adresse="https://b.example", benutzer="chronist"
     )
     kanal = bot_einrichten.kanal_setzen(b, "4711")
     settings.save(b, {"discord_bot_token": TOKEN})
 
-    # Er steht in ``meta`` und in keiner runden-eigenen Zeile — sonst läge er im Zugriff
-    # einer Gruppe, sobald sie ihre eigenen Einstellungen liest.
     for gruppe in (a, b):
         assert "discord_bot_token" not in _gepflegte_zeilen(gruppe)
 
     assert TOKEN not in eingerichtet.meldung + kanal
-    assert instanz.stored(config.database_path)["discord_bot_token"] == TOKEN
+    connection = db.connect(config.database_path)
+    try:
+        merker = {zeile["key"] for zeile in connection.execute("SELECT key FROM meta")}
+    finally:
+        connection.close()
+    assert "discord_bot_token" not in merker
 
 
 def _gepflegte_zeilen(runde) -> set[str]:
@@ -1038,19 +1045,25 @@ def _gepflegte_zeilen(runde) -> set[str]:
 
 
 def test_ollama_gehoert_der_instanz_und_nicht_der_runde(zwei_runden):
-    """Wohin gesprochenes Wort fließt, entscheidet nicht eine fremde Gruppe (#87)."""
+    """Wohin gesprochenes Wort fließt, entscheidet nicht eine fremde Gruppe (#87).
+
+    Seit #230 entscheidet es die Umgebung: eine Runde kann die Adresse nicht mehr setzen,
+    weder für sich noch — wie es der Instanz-Schlüsselraum zuließ — für alle anderen mit.
+    """
     config, a, b, _ids = zwei_runden
     settings.save(a, {"ollama_model": "gemma4:e4b"})
     settings.save(b, {"ollama_model": "gemma4:12b", "ollama_url": "http://box.example:11434"})
-    assert settings.effective(config, a).ollama_model == "gemma4:12b"
-    assert settings.effective(config, a).ollama_url == "http://box.example:11434"
+    assert settings.effective(config, a).ollama_model is None
+    assert settings.effective(config, a).ollama_url == settings.DEFAULT_OLLAMA_URL
     connection = db.connect(config.database_path)
     try:
         gepflegt = {zeile["key"] for zeile in connection.execute("SELECT key FROM settings")}
+        merker = {zeile["key"] for zeile in connection.execute("SELECT key FROM meta")}
     finally:
         connection.close()
-    assert "ollama_model" not in gepflegt
-    assert "ollama_url" not in gepflegt
+    for schluessel in ("ollama_model", "ollama_url"):
+        assert schluessel not in gepflegt, schluessel
+        assert schluessel not in merker, schluessel
 
 
 def test_die_quelle_der_spieldaten_gehoert_der_runde(zwei_runden):
@@ -1092,18 +1105,19 @@ def test_die_bedienstellen_in_discord_treffen_nur_ihre_eigene_runde(zwei_runden)
     assert jobs.latest(b, jobs.ABGLEICH) is not None
 
 
-def test_bot_token_gehoert_der_instanz_und_nicht_der_runde(zwei_runden):
-    """Unser Token, nicht der einer Gruppe: er liegt nicht in der Tabelle einer Runde."""
+def test_der_bot_token_steht_in_keiner_zeile_der_datei(zwei_runden):
+    """Unser Token, nicht der einer Gruppe — und seit #230 in gar keiner Tabelle."""
     config, a, b, _ids = zwei_runden
     settings.save(a, {"discord_bot_token": "platzhalter-token"})
-    assert settings.effective(config, b).discord_bot_token == "platzhalter-token"
-    assert instanz.stored(config.database_path)["discord_bot_token"] == "platzhalter-token"
+    assert settings.effective(config, b).discord_bot_token is None
     connection = db.connect(config.database_path)
     try:
         gepflegt = {zeile["key"] for zeile in connection.execute("SELECT key FROM settings")}
+        merker = {zeile["key"] for zeile in connection.execute("SELECT key FROM meta")}
     finally:
         connection.close()
     assert "discord_bot_token" not in gepflegt
+    assert "discord_bot_token" not in merker
 
 
 def test_das_gemerkte_passwort_gehoert_genau_einer_runde(zwei_runden):
@@ -1186,8 +1200,9 @@ def test_der_rueckblick_erreicht_keinen_kanal_einer_fremden_gilde(zwei_runden):
     ohnehin von Hand in die Einstellung schreiben. Beides muss an der Gilde der Runde
     enden, sonst läse eine fremde Gruppe die Sitzung dieser hier.
     """
+    # Der Token kommt seit #230 aus der Umgebung; gepflegt wird er nirgends mehr.
     config, _a, b, ids = zwei_runden
-    settings.save(b, {"discord_bot_token": "platzhalter-token"})
+    config = replace(config, discord_bot_token=TOKEN)
 
     class ZweiGilden:
         """Zwei Gilden, in beiden ein Kanal »chronik«."""
@@ -1232,7 +1247,7 @@ def test_der_briefkasten_wird_nicht_in_einer_fremden_gilde_geleert(zwei_runden):
     Briefkasten geliehen: geraten wäre hier genau derselbe Griff in eine fremde Gilde.
     """
     config, a, b, _ids = zwei_runden
-    settings.save(b, {"discord_bot_token": "platzhalter-token"})
+    config = replace(config, discord_bot_token=TOKEN)
     fremd = "Die Nachbarn sprachen über ihren eigenen Keller."
 
     class ZweiBriefkaesten:

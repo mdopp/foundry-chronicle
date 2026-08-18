@@ -107,7 +107,7 @@ def test_ohne_modell_steht_die_geordnete_fassung_da():
     assert ergebnis.reason == OHNE_MODELL
     assert ergebnis.thread_count == 0
     assert "geordnet statt erzählt" in ergebnis.text
-    assert "in den Einstellungen" in ergebnis.text
+    assert "der Betreiber dieser Box" in ergebnis.text
     assert HERGANG_TITEL not in ergebnis.text
     # Ohne Modell gibt es keine Deutung — also auch keinen Abschnitt, der eine vortäuscht.
     assert FAEDEN_TITEL not in ergebnis.text
