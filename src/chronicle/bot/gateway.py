@@ -1153,10 +1153,20 @@ def _runde_des_ereignisses(config: Config, payload):
 
 
 async def _thread_anlegen(ctx, name: str):
-    """Der Thread ist die Sitzung — ohne ihn wird auch keine angelegt."""
+    """Der Thread ist die Sitzung — ohne ihn wird auch keine angelegt.
+
+    Gefragt wird **vorher**, ob der Kanal überhaupt Threads trägt: der eingebettete Chat
+    eines Sprachkanals ist ein ``VoiceChannel``, und dort scheitert schon der
+    Attributzugriff — vor jedem ``HTTPException``-Fang und damit als roher
+    ``AttributeError`` (#241). Das ist keine fehlende Berechtigung, sondern eine andere
+    Art Kanal, also bekommt die Gruppe auch einen anderen Satz.
+    """
+    anlegen = getattr(ctx.channel, "create_thread", None)
+    if not callable(anlegen):
+        raise chronik.ChronikFehler(chronik.KANAL_OHNE_THREAD)
     discord = _discord()
     try:
-        return await ctx.channel.create_thread(name=name)
+        return await anlegen(name=name)
     except discord.HTTPException as fehler:
         raise chronik.ChronikFehler(chronik.KEIN_THREAD) from fehler
 
