@@ -2309,6 +2309,25 @@ def test_ein_zweiter_start_schneidet_nicht_doppelt(konfiguration, sitzung_id, oh
     assert len(runde.kanal.verbindung.gespielt) == 1
 
 
+def test_chronik_start_im_sprachkanal_sagt_wo_es_stattdessen_geht(konfiguration, runde):
+    """Der wahrscheinlichste Weg: der Befehl kommt aus dem Chat des Sprachkanals.
+
+    Dort steht die Gruppe beim Spielen ohnehin, und ein ``VoiceChannel`` trägt keine
+    Threads — bis #241 flog das als roher ``AttributeError`` an der Behandlung vorbei und
+    die Gruppe las »unerwarteter Fehler im Bot«.
+    """
+    unsere_runde(konfiguration)
+    bot = gateway.baue(konfiguration)
+    ctx = FakeCtx(runde.mira, kanal=runde.kanal)
+
+    asyncio.run(bot.gruppen[gateway.GRUPPE_CHRONIK].befehle["start"](ctx, "Der erste Abend"))
+
+    (antwort,) = ctx.antworten
+    assert chronik.KANAL_OHNE_THREAD in antwort
+    assert "AttributeError" not in antwort
+    assert notes.latest_session(unsere_runde(konfiguration)) is None
+
+
 # -- Zwei Gilden am selben Abend --------------------------------------------------------
 #
 # Der zweite Akteur, der hier bis #226 fehlte: eine Instanz trägt mehrere Runden (#62/#63),

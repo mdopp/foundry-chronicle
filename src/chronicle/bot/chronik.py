@@ -89,6 +89,14 @@ KEIN_THREAD = (
     "an. Gib mir das Recht dazu oder ruf mich in einem Kanal, in dem ich es habe."
 )
 
+# Nicht dasselbe wie ``KEIN_THREAD``: hier fehlt kein Recht, das jemand geben könnte —
+# der eingebettete Chat eines Sprachkanals ist der Kanal selbst und trägt gar keine
+# Threads. Ein Rat, mir das Recht zu geben, schickte die Gruppe in die Irre (#241).
+KANAL_OHNE_THREAD = (
+    "Hier kann ich keinen Thread öffnen: ein Sprachkanal ist schon sein eigener Chat und "
+    "trägt keine. Ruf `/chronik start` in einem Textkanal auf, dann steht die Sitzung dort."
+)
+
 ANGELEGT = (
     "Die Sitzung läuft. Ab jetzt hier schreiben: **jede Nachricht wird eine Notiz**, eine "
     "Sprachnachricht oder eine Audiodatei wird ein Diktat. `/szene <Name>` beginnt die "
