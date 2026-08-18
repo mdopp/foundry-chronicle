@@ -10,8 +10,10 @@ metadata:
     servicebay.ports: "{{CHRONICLE_PORT}}/tcp"
     # nginx liefert den Proxy-Host, auth die Authelia-Forward-Auth davor. Beide müssen
     # stehen, bevor dieser Dienst installiert wird — sonst zeigt die Subdomain ins Leere.
-    # Die Schrumpfung mit #157 nimmt ``auth`` nicht heraus: die verbliebene Betreiber-Seite
-    # trägt den Discord-Bot-Token, ADR 0001 gilt für sie also unverändert.
+    # Die Schrumpfung mit #157 nimmt ``auth`` nicht heraus, und #230 auch nicht: der
+    # Bot-Token liegt zwar nicht mehr hinter dieser Seite, aber sie steht weiter auf einer
+    # Subdomain und entscheidet, wer sie selbst öffnen darf. ADR 0001 gilt für sie also
+    # unverändert.
     servicebay.dependencies: "nginx,auth"
     # Install-Gate der Box: /healthz antwortet 200, sobald der Prozess steht. Seit #228
     # bedient es der **Bot** und nicht mehr die Betreiber-Seite — er ist der Prozess, der
@@ -37,7 +39,8 @@ spec:
   # 0.0.0.0 im ganzen LAN stand, und ein erfundener Remote-User genügte, um an den
   # Bot-Token zu kommen (#190). Bezahlt wird er von chronicle.herkunft — geglaubt werden
   # die Anmelde-Kopfzeilen nur von einer Adresse dieser Maschine (siehe unten bei
-  # CHRONICLE_REQUIRE_REMOTE_USER).
+  # CHRONICLE_REQUIRE_REMOTE_USER). Seit #230 liegt hinter der Seite ohnehin kein
+  # Geheimnis mehr; das ist der zweite Riegel und nicht der Ersatz für den ersten.
   # Die Abweichung fällt, sobald die Nachbarn auch aus einem eigenen Netz-Namensraum
   # erreichbar sind. Das liegt in deren Vorlagen, nicht hier — und eine Netzänderung an
   # diesem Dienst wird ohne Box-Verify nicht gemacht: falsch gemacht legt sie eine echte
@@ -58,9 +61,10 @@ spec:
   restartPolicy: OnFailure
   containers:
   # Hinter dem Proxy-Host liegt seit #157 keine Anwendung mehr, sondern **eine Seite**:
-  # /einstellungen für Bot-Token, Ollama und die Verwaltungsgruppe, /status als Altweg
-  # dorthin, / als Weiterleitung und /healthz als Install-Gate. Alles Spielbare ist ein
-  # Discord-Befehl, und der nächtliche Lauf hängt seit #229 am Bot daneben.
+  # /einstellungen für die Verwaltungsgruppe — den einen Wert, der hier seit #230 noch
+  # gepflegt wird —, /status als Altweg dorthin, / als Weiterleitung und /healthz als
+  # Install-Gate. Alles Spielbare ist ein Discord-Befehl, und der nächtliche Lauf hängt
+  # seit #229 am Bot daneben.
   - name: chronik
     image: ghcr.io/mdopp/foundry-chronicle:{{CHRONICLE_IMAGE_TAG}}
     # Container-uid 0 ist unter rootless Podman der unprivilegierte Host-Benutzer, dem
@@ -93,12 +97,18 @@ spec:
       # footgun-subdomain-needs-public-domain.
       - name: CHRONICLE_PUBLIC_URL
         value: "https://{{CHRONICLE_SUBDOMAIN}}.{{PUBLIC_DOMAIN}}"
-      # Foundry-Zugang, Discord-Bot-Token und Ollama stehen hier bewusst NICHT: Bot-Token
-      # und Ollama werden unter /einstellungen gepflegt, der Foundry-Zugang in Discord
-      # unter /setup, und beides liegt in der SQLite; die Umgebung wäre nur die Vorgabe
-      # beim ersten Start. Als Template-Variablen haben sie geschadet —
-      # der Assistent erzeugt für 'type: secret' einen Zufallswert, und der meldete sich
-      # als Bot-Token bei Discord an (401 in der Neustart-Schleife, siehe #33).
+      # Ollama gehört der Instanz und kommt seit #230 aus der Umgebung — hier, weil auch
+      # ein Stapellauf aus diesem Container (``python -m chronicle.compose``) formulieren
+      # können muss. Leer heißt: das Ollama dieser Box, ``chronicle.config`` setzt es ein.
+      - name: OLLAMA_URL
+        value: "{{OLLAMA_URL}}"
+      - name: OLLAMA_MODEL
+        value: "{{OLLAMA_MODEL}}"
+      # **DISCORD_BOT_TOKEN steht hier absichtlich nicht.** Ihn braucht der Bot daneben,
+      # und nur er; diese Seite zeigt seit #230 nicht einmal mehr an, ob er gesetzt ist.
+      # Was ein Prozess nicht bekommt, kann er auch nicht in eine Logzeile schreiben.
+      # Der Foundry-Zugang steht ebenfalls nicht hier: den pflegt die Gruppe selbst in
+      # Discord unter /setup, er gehört ihrer Runde und nicht der Instanz.
     ports:
       - containerPort: {{CHRONICLE_PORT}}
     # **Hier steht absichtlich keine Karten-Durchreichung.** ``podman kube play`` (5.8.2)
@@ -122,9 +132,10 @@ spec:
         name: chronik-aufnahmen
   # Der Aufnahme-Bot ist ein eigener, dauerhafter Prozess: er hält eine
   # Gateway-Verbindung, weil Sprache nur mitgeschnitten werden kann, während sie
-  # gesprochen wird. Gleiches Image, anderer Befehl. Den Token holt er sich aus derselben
-  # SQLite wie die Betreiber-Seite — deshalb teilen sie /data. Ohne Token beendet er sich
-  # mit einem Satz, statt in einer Schleife abzustürzen.
+  # gesprochen wird. Gleiches Image, anderer Befehl. Den Token bekommt er seit #230 aus
+  # seiner eigenen Umgebung und nicht mehr aus der SQLite; /data teilen beide trotzdem,
+  # denn dort liegt die Chronik. Ohne Token beendet er sich mit einem Satz, statt in einer
+  # Schleife abzustürzen.
   # Seit #229 trägt derselbe Prozess außerdem den nächtlichen Lauf: er sieht in einem
   # Faden neben der Gateway-Verbindung auf die Uhr, und der Lauf selbst bekommt noch
   # einen daneben — auf der Ereignisschleife läge sonst der Herzschlag zu Discord still.
@@ -145,6 +156,19 @@ spec:
       # Deshalb kein containerPort und kein Eintrag in servicebay.ports.
       - name: CHRONICLE_HEALTH_PORT
         value: "{{CHRONICLE_HEALTH_PORT}}"
+      # Seit #230 kommt der Token aus der Umgebung und nicht mehr aus der SQLite. Er steht
+      # nur bei diesem Container: der Bot meldet sich damit an, sonst braucht ihn niemand.
+      # Bewusst 'type: text' und kein 'secret' — der Assistent würfelte für ein Geheimnis
+      # einen Wert aus, und ein ausgewürfelter Bot-Token meldete sich bei Discord an und
+      # wurde abgelehnt (#33). Leer heißt hier ehrlich »nicht gesetzt«: der Bot sagt einen
+      # Satz und bleibt liegen, statt es mit einem falschen Wert zu versuchen.
+      - name: DISCORD_BOT_TOKEN
+        value: "{{DISCORD_BOT_TOKEN}}"
+      # Der nächtliche Lauf hängt seit #229 an diesem Prozess, und er formuliert.
+      - name: OLLAMA_URL
+        value: "{{OLLAMA_URL}}"
+      - name: OLLAMA_MODEL
+        value: "{{OLLAMA_MODEL}}"
     volumeMounts:
       - mountPath: /data
         name: chronik-daten

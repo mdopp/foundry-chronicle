@@ -5,6 +5,24 @@ import pytest
 from chronicle import db, instanz, notes, protocol, register, settings
 from chronicle import runde as runden
 
+# Die Werte der Instanz kommen seit #230 aus der Umgebung. Die Wanderung räumt sie nur
+# fort, wenn ihr Ersatz wirklich dasteht — die Tests sagen deshalb ausdrücklich, was in
+# der Umgebung steht, statt sich auf die des Entwicklers zu verlassen.
+ERSATZ = {
+    "DISCORD_BOT_TOKEN": "token-nur-in-diesem-test",
+    "OLLAMA_URL": "http://neu.example:11434",
+    "OLLAMA_MODEL": "neues-modell",
+}
+
+
+def _meta(pfad):
+    connection = db.connect(pfad)
+    try:
+        return {z["key"]: z["value"] for z in connection.execute("SELECT key, value FROM meta")}
+    finally:
+        connection.close()
+
+
 # Das Schema vor dem Runden-Modell, auf das Nötigste gekürzt: Sitzung, Szene, Notiz,
 # Protokoll und die beiden Schlüsselräume, die getauscht wurden. Es steht hier als
 # Zeichenkette und nicht als zweite Datei — es ist eine Momentaufnahme der Vergangenheit
@@ -149,14 +167,17 @@ def test_wanderung_bringt_die_bestaende_in_die_erste_runde(alte_datenbank):
 
 
 def test_wanderung_sortiert_die_schluesselraeume(alte_datenbank):
-    db.init(alte_datenbank)
+    db.init(alte_datenbank, umgebung={})
     runde = runden.erste(alte_datenbank)
-    # Der Runde gehört die Foundry-Adresse, der Instanz Bot-Token, Ollama und die Rolle.
+    # Der Runde gehört die Foundry-Adresse, der Instanz die Rolle — und die drei Werte,
+    # die seit #230 aus der Umgebung kommen, liegen hier noch, weil kein Ersatz dasteht.
     assert settings.stored(runde)["foundry_url"] == "https://foundry.example"
-    assert instanz.stored(alte_datenbank) == {
+    assert _meta(alte_datenbank) | {} == {
+        "schema_version": str(db.SCHEMA_VERSION),
         "discord_bot_token": "platzhalter",
         "ollama_url": "http://alt.example:11434",
         "ollama_model": "gemma4:12b",
+        "admin_group": "chronisten",
     }
     assert instanz.admin_group(alte_datenbank) == "chronisten"
     connection = db.connect(alte_datenbank)
@@ -174,9 +195,9 @@ def test_wanderung_sortiert_die_schluesselraeume(alte_datenbank):
 
 
 def test_wanderung_ist_idempotent(alte_datenbank):
-    db.init(alte_datenbank)
-    db.init(alte_datenbank)
-    db.init(alte_datenbank)
+    db.init(alte_datenbank, umgebung=ERSATZ)
+    db.init(alte_datenbank, umgebung=ERSATZ)
+    db.init(alte_datenbank, umgebung=ERSATZ)
     runde = runden.erste(alte_datenbank)
     assert len(runden.alle(alte_datenbank)) == 1
     assert len(notes.sessions(runde)) == 1
@@ -423,3 +444,86 @@ def test_scope_laesst_eine_abfrage_mit_runde_durch(tmp_path):
             scope.executemany("INSERT INTO settings (key, value) VALUES (?, ?)", ())
     finally:
         scope.close()
+
+
+# --- #230: die Instanz-Werte verlassen die Datei -------------------------------------
+#
+# Der gefährlichste Handgriff dieses Umbaus. Der Bot-Token in ``meta`` ist auf einer
+# laufenden Instanz die **einzige** Kopie: er steht nicht im Repo, nicht in der Vorlage
+# und nirgends sonst. Gelöscht, ohne dass der Ersatz steht, ist er unwiederbringlich —
+# der Betreiber müsste im Discord-Portal einen neuen erzeugen, und bis dahin schweigt der
+# Bot in einer echten Gilde. Deshalb: erst der Ersatz, dann das Löschen.
+
+
+def _mit_werten(tmp_path, **werte):
+    pfad = tmp_path / "chronicle.sqlite3"
+    db.init(pfad, umgebung={})
+    connection = db.connect(pfad)
+    try:
+        with connection:
+            for schluessel, wert in werte.items():
+                connection.execute(
+                    "INSERT INTO meta (key, value) VALUES (?, ?) "
+                    "ON CONFLICT (key) DO UPDATE SET value = excluded.value",
+                    (schluessel, wert),
+                )
+    finally:
+        connection.close()
+    return pfad
+
+
+def test_ohne_ersatz_bleibt_der_token_liegen(tmp_path):
+    """Die Reihenfolge, an der alles hängt: kein Ersatz, kein Löschen."""
+    pfad = _mit_werten(tmp_path, discord_bot_token="token-nur-in-diesem-test")
+    db.init(pfad, umgebung={})
+    assert _meta(pfad)["discord_bot_token"] == "token-nur-in-diesem-test"
+
+
+def test_der_ersatz_raeumt_den_wert_aus_der_datei(tmp_path):
+    pfad = _mit_werten(
+        tmp_path,
+        discord_bot_token="token-nur-in-diesem-test",
+        ollama_url="http://alt.example:11434",
+        ollama_model="altes-modell",
+    )
+    db.init(pfad, umgebung=ERSATZ)
+    liegt = _meta(pfad)
+    for schluessel, _ in db.ABGELOESTE_SCHLUESSEL:
+        assert schluessel not in liegt, schluessel
+    roh = b""
+    for datei in (pfad, pfad.with_suffix(".sqlite3-wal")):
+        if datei.exists():
+            roh += datei.read_bytes()
+    assert "token-nur-in-diesem-test" not in roh.decode("utf-8", errors="ignore")
+
+
+def test_geraeumt_wird_je_wert_und_nicht_im_ganzen(tmp_path):
+    """Ein gesetztes OLLAMA_MODEL nimmt nicht den Token mit, für den nichts dasteht."""
+    pfad = _mit_werten(
+        tmp_path, discord_bot_token="token-nur-in-diesem-test", ollama_model="altes-modell"
+    )
+    db.init(pfad, umgebung={"OLLAMA_MODEL": "neues-modell"})
+    liegt = _meta(pfad)
+    assert "ollama_model" not in liegt
+    assert liegt["discord_bot_token"] == "token-nur-in-diesem-test"
+
+
+def test_die_warnung_sagt_was_zu_tun_ist_und_nennt_den_wert_nicht(tmp_path, caplog):
+    """Eine Logzeile ist der wahrscheinlichste Weg, auf dem ein Token nach draußen kommt."""
+    geheim = "token-nur-in-diesem-test"
+    pfad = _mit_werten(tmp_path, discord_bot_token=geheim)
+    with caplog.at_level("WARNING", logger="chronicle.db"):
+        db.init(pfad, umgebung={})
+    gesagt = "\n".join(eintrag.getMessage() for eintrag in caplog.records)
+    assert "DISCORD_BOT_TOKEN" in gesagt
+    assert geheim not in gesagt
+    assert geheim not in caplog.text
+
+
+def test_ohne_bestand_sagt_die_wanderung_nichts(tmp_path, caplog):
+    """Der Normalfall nach dem Umbau — eine Warnung bei jedem Start wäre Lärm."""
+    pfad = tmp_path / "chronicle.sqlite3"
+    with caplog.at_level("WARNING", logger="chronicle.db"):
+        db.init(pfad, umgebung={})
+        db.init(pfad, umgebung=ERSATZ)
+    assert caplog.records == []

@@ -31,7 +31,7 @@ TAGS_TIMEOUT = 2.0
 
 EMBEDDING_MARKER = "embed"
 
-KEIN_MODELL = "Noch kein Modell gewählt — ein Modell wählst du in den Einstellungen."
+KEIN_MODELL = "Noch kein Modell gewählt — ein Modell hinterlegt der Betreiber dieser Box."
 
 
 class ModelError(RuntimeError):

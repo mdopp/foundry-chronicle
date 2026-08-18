@@ -19,7 +19,7 @@ import requests
 from conftest import runde
 
 import chronicle.discord.__main__ as entry
-from chronicle import db, lebenszyklus, notes, recordings, settings
+from chronicle import db, lebenszyklus, notes, recordings
 from chronicle import runde as runden
 from chronicle.config import Config
 from chronicle.discord import service
@@ -286,11 +286,15 @@ def test_ohne_token_laeuft_der_stapel_trotzdem_und_sagt_es(tmp_path):
     assert run(config, runde(config)) == (service.NICHT_EINGERICHTET,)
 
 
-def test_ein_in_der_oberflaeche_gesetzter_token_reicht(tmp_path, monkeypatch):
-    config = Config(data_dir=tmp_path / "daten", recordings_dir=tmp_path / "aufnahmen")
+def test_der_token_aus_der_umgebung_reicht(tmp_path, monkeypatch):
+    """Seit #230 der einzige Weg: gepflegt wird er nirgends mehr (``test_settings``)."""
+    config = Config(
+        discord_bot_token=TOKEN,
+        data_dir=tmp_path / "daten",
+        recordings_dir=tmp_path / "aufnahmen",
+    )
     db.init(config.database_path)
     lebenszyklus.verwaiste_uebernehmen(config, (lebenszyklus.Gilde(GILDE, "Die Runde"),))
-    settings.save(runde(config), {"discord_bot_token": TOKEN})
     notes.create_session(runde(config), played_on="2026-08-06")
     api = FakeDiscord(nachricht("100", text="Die Wirtin hat gelogen."))
     gebaut = []

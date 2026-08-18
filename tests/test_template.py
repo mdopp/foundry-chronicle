@@ -203,8 +203,8 @@ def test_die_hostverzeichnisse_werden_bei_der_erstinstallation_angelegt(manifest
 
 
 def test_der_bot_bekommt_die_datenbank(manifest: dict) -> None:
-    # Der Token kommt aus der SQLite, nicht aus der Umgebung — also muss der Bot
-    # dieselbe Datenbank sehen wie die Oberfläche, in der er gepflegt wird.
+    # Der Token kommt seit #230 aus der Umgebung; die Chronik liegt weiter in der SQLite,
+    # also sieht der Bot dieselbe Datenbank wie die Seite.
     bot = next(e for e in manifest["spec"]["containers"] if e["name"] == "bot")
     umgebung = {wert["name"]: wert["value"] for wert in bot["env"]}
     assert umgebung["CHRONICLE_DATA_DIR"] == "/data"
@@ -260,21 +260,36 @@ def test_kein_zufallswert_fuer_fremde_zugangsdaten(variablen: dict) -> None:
         assert meta["type"] not in ("secret", "password", "rsa-private", "bcrypt")
 
 
-def test_zugangsdaten_kommen_nicht_aus_der_umgebung(variablen: dict, manifest: dict) -> None:
-    # Seit #25 ist die Oberfläche die Quelle dieser sechs Werte. Deklariert das Template
-    # sie trotzdem, rendert es sie bestenfalls leer und schlimmstenfalls falsch.
-    gepflegt = {
-        "FOUNDRY_URL",
-        "FOUNDRY_USER",
-        "FOUNDRY_PASSWORD",
-        "DISCORD_BOT_TOKEN",
-        "OLLAMA_URL",
-        "OLLAMA_MODEL",
-    }
-    assert set(variablen) & gepflegt == set()
+def test_der_foundry_zugang_kommt_nicht_aus_der_umgebung(variablen: dict, manifest: dict) -> None:
+    # Der Foundry-Zugang gehört der **Runde** und wird in Discord unter /setup gepflegt;
+    # das Passwort gibt es seit #64 überhaupt nirgends mehr. Deklariert das Template sie
+    # trotzdem, rendert es sie bestenfalls leer und schlimmstenfalls falsch.
+    # (Bis #230 stand hier auch der Bot-Token — der gehört der **Instanz** und kommt
+    # jetzt genau umgekehrt: ausschließlich aus der Umgebung, siehe unten.)
+    der_runde = {"FOUNDRY_URL", "FOUNDRY_USER", "FOUNDRY_PASSWORD"}
+    assert set(variablen) & der_runde == set()
     for container in manifest["spec"]["containers"]:
         umgebung = {eintrag["name"] for eintrag in container["env"]}
-        assert umgebung & gepflegt == set()
+        assert umgebung & der_runde == set()
+
+
+def test_die_instanz_werte_kommen_aus_template_variablen(variablen: dict, manifest: dict) -> None:
+    # #230: die drei Werte der Instanz kommen ausschließlich aus der Umgebung. Fehlte
+    # einer hier, gäbe es für ihn gar keinen Ort mehr — den SQLite-Weg gibt es nicht.
+    for name in ("DISCORD_BOT_TOKEN", "OLLAMA_URL", "OLLAMA_MODEL"):
+        assert variablen[name]["default"] == ""
+    container = {eintrag["name"]: eintrag for eintrag in manifest["spec"]["containers"]}
+    bot = {eintrag["name"] for eintrag in container["bot"]["env"]}
+    assert {"DISCORD_BOT_TOKEN", "OLLAMA_URL", "OLLAMA_MODEL"} <= bot
+
+
+def test_den_bot_token_bekommt_nur_der_bot(manifest: dict) -> None:
+    # Was ein Prozess nicht bekommt, kann er auch nicht in eine Logzeile schreiben. Die
+    # Seite meldet den Bot seit #230 nicht mehr an und zeigt nicht einmal, ob er steht —
+    # sie hat für den Token keine Verwendung.
+    container = {eintrag["name"]: eintrag for eintrag in manifest["spec"]["containers"]}
+    seite = {eintrag["name"] for eintrag in container["chronik"]["env"]}
+    assert "DISCORD_BOT_TOKEN" not in seite
 
 
 def test_keine_echte_adresse_im_manifest(rohtext: str) -> None:

@@ -8,59 +8,56 @@
 <p class="hinweis">Niemand ist angemeldet — wer diese Adresse erreicht, sieht alles.</p>
 {% endif %}
 
-<p class="gedaempft">Hier steht, was <strong>dieser Instanz</strong> gehört und deshalb in
-  keiner Discord-Gilde gepflegt werden kann: der Bot-Token, das Sprachmodell und wer
-  verwalten darf. Alles, was einer <strong>Runde</strong> gehört — Foundry-Zugang,
-  Zustellkanal, Uhrzeit des nächtlichen Laufs —, richtet die Gruppe selbst mit
-  <code>/setup</code> in Discord ein.</p>
+<p class="gedaempft">Gepflegt wird hier <strong>ein</strong> Wert: wer verwalten darf.
+  Bot-Token, Sprachmodell und dessen Adresse gehören <strong>dieser Instanz</strong> und
+  werden beim <strong>Einrichten des Dienstes auf dieser Box</strong> hinterlegt — sie
+  stehen unten nur zum Nachsehen, nie zum Ändern. Alles, was einer <strong>Runde</strong>
+  gehört — Foundry-Zugang, Zustellkanal, Uhrzeit des nächtlichen Laufs —, richtet die
+  Gruppe selbst mit <code>/setup</code> in Discord ein.</p>
+
+<section class="karte">
+  <h2>Wie kommt Gesprochenes herein?</h2>
+  <p class="gedaempft">Über Discord: im Sitzungs-Thread wird eine Textnachricht zur
+    Notiz, eine Sprachnachricht zum Diktat. Der Token gehört <strong>dieser Instanz</strong>:
+    es ist unser Bot, der in fremde Gilden eingeladen wird — keine Gruppe pflegt ihn,
+    und keine kann ihn den übrigen wegnehmen.</p>
+
+  <p>Hinterlegt wird der Token beim <strong>Einrichten dieses Dienstes auf der Box</strong>,
+    und gereicht wird er <strong>nur dem Bot</strong>. Diese Seite bekommt ihn nicht und
+    kann deshalb auch nicht sagen, ob er stimmt.
+    <strong>Ob er steht, zeigt der Bot selbst: er läuft oder er läuft nicht.</strong>
+    Ohne ihn bleiben Diktat-Kanal, Aufnahme und Zustellung aus; alles andere läuft weiter.</p>
+
+  {% include "_discord_einrichtung.html" %}
+</section>
+
+<section class="karte">
+  <h2>Wer formuliert die Chronik?</h2>
+  <p class="gedaempft">Ein Sprachmodell ordnet die Notizen und schreibt sie aus. Ohne
+    Sprachmodell entsteht die Chronik trotzdem, dann geordnet statt formuliert.
+    Adresse und Modell gehören <strong>dieser Instanz</strong> und gelten für alle
+    Runden — an welchen Rechner gesprochenes Wort geht, entscheidet nicht die einzelne
+    Gruppe.</p>
+
+  {% if config.ollama_model %}
+    <p class="steht">Bereit — <code>{{ config.ollama_model }}</code> formuliert die
+      nächste Chronik.</p>
+  {% else %}
+    <p class="hinweis">Kein Modell gewählt — dann wird nur geordnet, nicht formuliert.
+      Beim Einrichten dieses Dienstes den Namen eines Modells hinterlegen, das auf dieser
+      Box schon liegt.</p>
+  {% endif %}
+
+  <p class="gedaempft">Gefragt wird <code>{{ ollama_url }}</code>{% if ollama_url == ollama_standard %} — das <strong>Ollama dieser Box</strong>{% endif %}.
+    Eine Auswahlliste der vorhandenen Modelle gibt es hier nicht mehr: der Name wird beim
+    Einrichten eingetragen, nicht auf dieser Seite gewählt.</p>
+</section>
 
 <form method="post" action="{{ url_for('einstellungen_speichern') }}">
-
-  <section class="karte">
-    <h2>Wie kommt Gesprochenes herein?</h2>
-    <p class="gedaempft">Über Discord: im Sitzungs-Thread wird eine Textnachricht zur
-      Notiz, eine Sprachnachricht zum Diktat. Der Token gehört <strong>dieser Instanz</strong>:
-      es ist unser Bot, der in fremde Gilden eingeladen wird — keine Gruppe pflegt ihn,
-      und keine kann ihn den übrigen wegnehmen.</p>
-
-    {% if config.discord_configured %}
-      <p class="steht">Bot-Token gesetzt — der Bot liest <code>#diktat</code> mit. Was dort
-        ankommt, findest du bei der zuletzt angelegten Sitzung. Der Token wird nie angezeigt.</p>
-    {% else %}
-      <p>Kein Bot-Token — dann bleibt der Bot aus, und mit ihm Diktat-Kanal, Aufnahme und
-        Zustellung. Alles andere läuft weiter.</p>
-    {% endif %}
-
-    {% include "_bot_token_feld.html" %}
-  </section>
-
-  <section class="karte">
-    <h2>Wer formuliert die Chronik?</h2>
-    <p class="gedaempft">Ein Sprachmodell ordnet die Notizen und schreibt sie aus. Ohne
-      Sprachmodell entsteht die Chronik trotzdem, dann geordnet statt formuliert.
-      Adresse und Modell gehören <strong>dieser Instanz</strong> und gelten für alle
-      Runden — an welchen Rechner gesprochenes Wort geht, entscheidet nicht die einzelne
-      Gruppe.</p>
-
-    {% if not modell_erreichbar %}
-      <p class="fehlt">Nicht erreichbar — dann wird nur geordnet, nicht formuliert: Notizen
-        nach Szenen, die Zahlen aus Foundry wörtlich, keine Prosa. Adresse unten prüfen und
-        speichern.</p>
-    {% elif config.ollama_configured %}
-      <p class="steht">Bereit — <code>{{ config.ollama_model }}</code> formuliert die
-        nächste Chronik.</p>
-    {% else %}
-      <p class="hinweis">Kein Modell gewählt — dann wird nur geordnet, nicht formuliert.
-        Wähle unten eins und speichere.</p>
-    {% endif %}
-
-    {% include "_modell_felder.html" %}
-  </section>
-
   <section class="karte" id="verwaltung">
     <h2>Wer darf verwalten?</h2>
-    <p class="gedaempft">Diese Seite gehört dem Betrieb dieser Box, nicht dem Spiel: hier
-      liegt der Bot-Token. Wer sie öffnen darf, steht in der hier genannten Gruppe.</p>
+    <p class="gedaempft">Diese Seite gehört dem Betrieb dieser Box, nicht dem Spiel. Wer
+      sie öffnen darf, steht in der hier genannten Gruppe.</p>
 
     <div class="feld">
       <label for="admin_group">Gruppe für die Verwaltung</label>
@@ -73,8 +70,7 @@
     {% if sperr_gruppe %}
     <p class="fehlt">In <strong>{{ sperr_gruppe }}</strong> stehst du selbst nicht. Speicherst
       du das so, kommst du auf diese Seite nicht mehr herein und musst dich erst wieder
-      eintragen lassen. An der Gruppe wurde deshalb noch nichts geändert — die übrigen
-      Felder sind gespeichert.</p>
+      eintragen lassen. An der Gruppe wurde deshalb noch nichts geändert.</p>
     <div class="absenden">
       <button type="submit" class="leise" name="gruppe_bestaetigt" value="ja">Gruppe
         trotzdem übernehmen</button>
@@ -86,9 +82,6 @@
       verwalten darf.</p>
   </section>
 
-  <p class="gedaempft">Ein leer abgesendetes Feld — außer dem Bot-Token — nimmt den Wert
-    zurück.</p>
-
   <div class="absenden"><button type="submit">Speichern</button></div>
 </form>
 
@@ -98,12 +91,14 @@
     <dt>Datenbank</dt><dd><code>{{ config.database_path }}</code></dd>
     <dt>Schema-Stand</dt><dd>{{ schema_version }}</dd>
   </dl>
-  <p class="gedaempft">Woher jeder Wert gerade stammt — was hier gespeichert ist, schlägt
-    die Umgebung:</p>
+  <p class="gedaempft">Die drei Werte dieser Instanz kommen aus der Einrichtung des
+    Dienstes; gespeichert ist hier keiner von ihnen:</p>
   <dl>
-    <dt>Discord-Bot-Token</dt><dd>{{ quellen.discord_bot_token }}</dd>
-    <dt>Ollama-Adresse</dt><dd>{{ quellen.ollama_url }}</dd>
-    <dt>Modell</dt><dd>{{ quellen.ollama_model }}</dd>
+    <dt>Discord-Bot-Token</dt><dd>nur beim Bot, hier nicht sichtbar</dd>
+    <dt>Ollama-Adresse</dt>
+    <dd>{{ 'hinterlegt' if config.ollama_url else 'nicht hinterlegt, es gilt das Ollama dieser Box' }}</dd>
+    <dt>Modell</dt>
+    <dd>{{ 'hinterlegt' if config.ollama_model else 'nicht hinterlegt' }}</dd>
   </dl>
 </details>
 
