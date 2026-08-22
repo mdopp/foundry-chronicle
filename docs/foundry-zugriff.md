@@ -292,11 +292,12 @@ untauglich.
 
 Ein Abzug ist ein Bild. Ein **Mitschnitt** ist die Folge: jeder Blick nach Foundry —
 Strom wie Abgleich — hängt ein Bild an eine Datei mit einer Zeile je Bild
-(`dumps/mitschnitt-<Tag>.jsonl`, `0600` in einem Ordner mit `0700`).
+(`dumps/mitschnitt-runde-<Runde>-<Tag>.jsonl`, `0600` in einem Ordner mit `0700`). Der
+Tag hält zwei Abende auseinander, die Runde zwei Gruppen: eine Instanz trägt mehrere.
 
 ```
 CHRONICLE_FOUNDRY_MITSCHNITT=1          # aus, bis es jemand einschaltet
-python -m chronicle.foundry --nachspielen dumps/mitschnitt-2026-08-22.jsonl
+python -m chronicle.foundry --nachspielen dumps/mitschnitt-runde-1-2026-08-22.jsonl
 ```
 
 Aufgehoben wird die **rohe** Antwort und nicht das, was der Adapter daraus destilliert.
@@ -310,7 +311,7 @@ gegen den ein Abgleich, der Nachtrag und der Strom ohne Netz durchlaufen.
 > der Box, und eingecheckt wird davon nur, was durch den Anonymisierer gelaufen ist:
 >
 > ```
-> python scripts/anonymisiere_welt.py dumps/mitschnitt-2026-08-22.jsonl abend.jsonl
+> python scripts/anonymisiere_welt.py dumps/mitschnitt-runde-1-2026-08-22.jsonl abend.jsonl
 > ```
 >
 > Dieselben zwei Regeln wie beim Abzug, plus zwei Eigenheiten: **eine** Pseudonymtabelle
