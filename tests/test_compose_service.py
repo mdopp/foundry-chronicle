@@ -5,6 +5,7 @@ from conftest import UNSER_KONTO, runde
 
 import chronicle.compose.__main__ as entry
 from chronicle import db, settings
+from chronicle import runde as runden
 from chronicle.compose.composer import VERBINDUNG_TITEL
 from chronicle.compose.service import KIND, RUECKBLICK, compose_session, recap_session
 from chronicle.discord import rueckblick
@@ -300,5 +301,81 @@ def test_der_stapelaufruf_weist_falsche_argumente_ab(config, monkeypatch, capsys
     monkeypatch.setenv("CHRONICLE_DATA_DIR", str(config.data_dir))
     assert entry.main([]) == 2
     assert entry.main(["keine-zahl"]) == 2
+    assert entry.main(["1", "keine-zahl"]) == 2
+    assert entry.main(["1", "2", "3"]) == 2
     assert entry.main(["999"]) == 2
+    assert entry.main(["999", "4711"]) == 2
+    ausgabe = capsys.readouterr().out
+    assert "gibt es nicht" in ausgabe
+    assert "Runde 4711" in ausgabe
+
+
+def _zweite_runde(config, welt):
+    """Eine zweite Runde mit eigener Sitzung — dieselbe Instanz, andere Kampagne."""
+    zweite = runden.anlegen(config.database_path, "Zanarkand", guild_id="g-zweite")
+    fremd = db.scoped(zweite)
+    try:
+        return zweite, eine_runde(fremd, welt)
+    finally:
+        fremd.close()
+
+
+def _fremde_protokolle(runde_der_anderen, sitzung_id):
+    fremd = db.scoped(runde_der_anderen)
+    try:
+        return protokolle(fremd, sitzung_id)
+    finally:
+        fremd.close()
+
+
+def _stapel_umgebung(config, monkeypatch):
+    monkeypatch.setenv("CHRONICLE_DATA_DIR", str(config.data_dir))
+    monkeypatch.delenv("OLLAMA_URL", raising=False)
+    monkeypatch.delenv("OLLAMA_MODEL", raising=False)
+
+
+def test_der_stapelaufruf_erreicht_die_sitzung_der_zweiten_runde(
+    config, scope, welt, monkeypatch, capsys
+):
+    """#245: genannt wird die Runde, und dann ist auch die zweite erreichbar."""
+    zweite, sitzung_id = _zweite_runde(config, welt)
+    _stapel_umgebung(config, monkeypatch)
+
+    assert entry.main([str(sitzung_id), str(zweite.id)]) == 1
+
+    assert "Chronik aus" in capsys.readouterr().out
+    assert {z["kind"] for z in _fremde_protokolle(zweite, sitzung_id)} == {KIND, RUECKBLICK}
+
+
+def test_der_stapelaufruf_verlangt_bei_mehreren_runden_eine_wahl(
+    config, scope, welt, monkeypatch, capsys
+):
+    """Ohne genannte Runde wird nicht geraten — auch nicht über die eindeutige Sitzungs-Id.
+
+    Die stillschweigende erste Runde war der Fehler aus #245; sie durch ein Suchen über
+    alle Runden zu ersetzen wäre der teurere: ein Aufruf käme dann an eine Kampagne, die
+    niemand benannt hat.
+    """
+    zweite, sitzung_id = _zweite_runde(config, welt)
+    _stapel_umgebung(config, monkeypatch)
+
+    assert entry.main([str(sitzung_id)]) == 2
+
+    ausgabe = capsys.readouterr().out
+    assert "Zanarkand" in ausgabe
+    assert str(zweite.id) in ausgabe
+    assert _fremde_protokolle(zweite, sitzung_id) == []
+
+
+def test_der_stapelaufruf_greift_nicht_in_die_nicht_genannte_runde(
+    config, scope, welt, monkeypatch, capsys
+):
+    """Genannt wird Runde eins, gemeint ist eine Sitzung von nebenan — und nichts geschieht."""
+    zweite, sitzung_id = _zweite_runde(config, welt)
+    _stapel_umgebung(config, monkeypatch)
+
+    assert entry.main([str(sitzung_id), str(runde(config).id)]) == 2
+
     assert "gibt es nicht" in capsys.readouterr().out
+    assert protokolle(scope, sitzung_id) == []
+    assert _fremde_protokolle(zweite, sitzung_id) == []

@@ -396,8 +396,14 @@ der Runde konnte es merken.
 Zugestellt wird am Ende der Komposition:
 
 ```bash
-python -m chronicle.compose 7    # Chronik, Rückblick, Zustellung
+python -m chronicle.compose 7      # Chronik, Rückblick, Zustellung
+python -m chronicle.compose 7 2    # dieselbe Sitzung, genannte Runde
 ```
+
+**Die Runde nennt der Aufrufer** (#245). Trägt die Instanz mehr als eine, fragt der
+Befehl nach und zählt sie auf, statt sich stillschweigend die erste zu nehmen; die
+Sitzungs-Id wird nicht über die Runden hinweg aufgelöst. Wo es nur eine Runde gibt,
+bleibt der Aufruf, wie er war.
 
 **Eine Sitzung, eine Zustellung.** Der Zeitpunkt steht in `protocol.delivered_at`, ein
 zweiter Lauf sieht ihn und schweigt. Auch eine *neu komponierte* Fassung wird nicht noch
