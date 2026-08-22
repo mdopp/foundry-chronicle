@@ -152,6 +152,13 @@ def test_der_port_des_install_gates_kommt_aus_der_umgebung():
     assert Config.from_env({"CHRONICLE_HEALTH_PORT": " 8701 "}).health_port == 8701
 
 
+def test_der_mitschnitt_ist_aus_bis_ihn_jemand_einschaltet():
+    # Ein Mitschnitt ist der Weltabzug in Serie — Klarnamen, Geflüster, GM-Inhalte (#242).
+    # Was so etwas anlegt, fängt nicht von selbst damit an.
+    assert Config.from_env({}).foundry_mitschnitt is False
+    assert Config.from_env({"CHRONICLE_FOUNDRY_MITSCHNITT": "1"}).foundry_mitschnitt is True
+
+
 def test_repr_maskiert_den_token():
     text = repr(Config.from_env(VOLLSTAENDIG))
     assert "bot-token-aus-der-umgebung" not in text

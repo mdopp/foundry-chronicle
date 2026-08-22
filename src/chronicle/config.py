@@ -38,6 +38,12 @@ REMOTE_USER_VARIABLE = "CHRONICLE_REQUIRE_REMOTE_USER"
 # steht. Siehe ``chronicle.herkunft``.
 TRUSTED_PROXIES_VARIABLE = "CHRONICLE_TRUSTED_PROXIES"
 
+# Ob jeder Blick nach Foundry sein Rohmaterial mitschreibt (#242). Aus, und das ist keine
+# Bequemlichkeit: ein Mitschnitt ist der Weltabzug in Serie — Klarnamen, Geflüster,
+# GM-Inhalte — und was er anlegt, legt er dauerhaft an. Eingeschaltet wird er, wenn ein
+# Fehler gegen einen echten Server untersucht wird; danach wieder aus.
+MITSCHNITT_VARIABLE = "CHRONICLE_FOUNDRY_MITSCHNITT"
+
 # Der Port, auf dem der Bot-Prozess das Install-Gate der Box bedient (#228). Ohne ihn
 # bindet er nichts — gesetzt wird er von der Vorlage, wie ``CHRONICLE_REQUIRE_REMOTE_USER``
 # auch. Eine Adresse gibt es dazu nicht: gebunden wird die Schleife und sonst nichts
@@ -107,6 +113,7 @@ class Config:
     require_remote_user: bool = False
     trusted_proxies: tuple[str, ...] = ()
     health_port: int | None = None
+    foundry_mitschnitt: bool = False
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> Config:
@@ -126,6 +133,7 @@ class Config:
             require_remote_user=_flag(env, REMOTE_USER_VARIABLE),
             trusted_proxies=_liste(env, TRUSTED_PROXIES_VARIABLE),
             health_port=_port(env, HEALTH_PORT_VARIABLE),
+            foundry_mitschnitt=_flag(env, MITSCHNITT_VARIABLE),
         )
 
     @property
@@ -176,5 +184,6 @@ class Config:
             f"whisper_url={self.whisper_url!r}, "
             f"require_remote_user={self.require_remote_user!r}, "
             f"trusted_proxies={self.trusted_proxies!r}, "
-            f"health_port={self.health_port!r})"
+            f"health_port={self.health_port!r}, "
+            f"foundry_mitschnitt={self.foundry_mitschnitt!r})"
         )

@@ -30,6 +30,15 @@ Rollen, die Kopfblöcke ``world`` und ``system`` und die Zahlen eines Wurfs. Umg
 werden Namen und Aliase — konsistent, dieselbe Person bekommt überall dasselbe Pseudonym.
 
     python scripts/anonymisiere_welt.py welt-dump.json src/chronicle/foundry/testwelt.json
+
+**Ein Mitschnitt geht denselben Weg** (``.jsonl``, ein Bild je Zeile — siehe
+``chronicle.foundry.mitschnitt``). Er ist derselbe Abzug mehrmals, deshalb dieselben zwei
+Regeln, aber mit **einer** Pseudonymtabelle über alle Bilder: bekäme jedes Bild seine
+eigene, spräche in Bild zwei jemand anderes als in Bild eins, und der Abend ließe sich
+nicht mehr nachspielen. Der Zeitstempel des Bildes fällt weg — er sagt, wann diese Gruppe
+gespielt hat, und für die Wiedergabe zählt allein die Reihenfolge in der Datei.
+
+    python scripts/anonymisiere_welt.py dumps/mitschnitt-2026-08-22.jsonl abend.jsonl
 """
 
 from __future__ import annotations
@@ -488,7 +497,80 @@ def pruefe(ausgabe: Mapping, gefahren: Iterable[str]) -> list[str]:
     return funde
 
 
+# Ein Mitschnitt ist eine Zeile je Bild. Erkannt wird er an der Endung: der Inhalt einer
+# Zeile sieht einem Weltabzug ähnlich genug, dass Raten hier der schlechtere Weg wäre.
+MITSCHNITT_ENDUNG = ".jsonl"
+BILD_WELT = "welt"
+BILD_KONTO = "userId"
+
+# Über welche Listen die Pseudonymtabelle gebildet wird. Ein Bild allein reicht nicht:
+# wer erst spät dazukommt, stünde sonst in den früheren Bildern unter seinem Klarnamen.
+GETEILTE_LISTEN = ("users", "actors", "messages", "scenes")
+
+
+def _bilder(eingabe: Path) -> list[Mapping]:
+    gelesen = []
+    for nummer, zeile in enumerate(eingabe.read_text(encoding="utf-8").splitlines(), start=1):
+        if not zeile.strip():
+            continue
+        try:
+            roh = json.loads(zeile)
+        except ValueError:
+            raise Anonymisierung(f"{eingabe}, Zeile {nummer}: kein JSON.") from None
+        if not isinstance(roh, Mapping) or not isinstance(roh.get(BILD_WELT), Mapping):
+            raise Anonymisierung(f"{eingabe}, Zeile {nummer}: kein Bild eines Mitschnitts.")
+        gelesen.append(roh)
+    if not gelesen:
+        raise Anonymisierung(f"{eingabe} enthält kein Bild.")
+    return gelesen
+
+
+def _vereint(welten: Iterable[Mapping]) -> dict:
+    """Alle Bilder als eine Welt gelesen — nur damit die Pseudonyme über sie hinweg halten."""
+    zusammen: dict[str, list] = {schluessel: [] for schluessel in GETEILTE_LISTEN}
+    for welt in welten:
+        for schluessel, liste in zusammen.items():
+            liste.extend(_dokumente(welt, schluessel))
+    return zusammen
+
+
+def anonymisiere_mitschnitt(bilder: Iterable[Mapping], ersatz: Ersatz) -> list[dict]:
+    return [
+        {
+            BILD_KONTO: _felder(bild, (BILD_KONTO,), ersatz).get(BILD_KONTO),
+            BILD_WELT: anonymisiere(bild[BILD_WELT], ersatz),
+        }
+        for bild in bilder
+    ]
+
+
+def lauf_mitschnitt(eingabe: Path, ausgabe: Path) -> str:
+    bilder = _bilder(eingabe)
+    ersatz = Ersatz(_vereint(bild[BILD_WELT] for bild in bilder))
+    gesaeubert = anonymisiere_mitschnitt(bilder, ersatz)
+    funde = pruefe({"bilder": gesaeubert}, ersatz.gefahren)
+    if funde:
+        raise Anonymisierung(
+            f"{len(funde)} Personendatum/-daten haben überlebt — nichts geschrieben:\n  "
+            + "\n  ".join(funde[:20])
+        )
+    ausgabe.parent.mkdir(parents=True, exist_ok=True)
+    ausgabe.write_text(
+        "".join(json.dumps(bild, ensure_ascii=False) + "\n" for bild in gesaeubert),
+        encoding="utf-8",
+    )
+    nachrichten = sum(len(bild[BILD_WELT]["messages"]) for bild in gesaeubert)
+    return (
+        f"{ausgabe} geschrieben: {len(gesaeubert)} Bilder, {nachrichten} Nachrichten. "
+        f"{len(ersatz.zuordnung)} Namen ersetzt, {len(ersatz.gefahren)} geprüft, "
+        f"{len(PERSONENSPUREN)} Formen von Personendaten ausgeschlossen. "
+        "Der Zeitstempel der Bilder ist weggefallen; die Reihenfolge trägt den Abend."
+    )
+
+
 def lauf(eingabe: Path, ausgabe: Path) -> str:
+    if eingabe.suffix == MITSCHNITT_ENDUNG:
+        return lauf_mitschnitt(eingabe, ausgabe)
     raw = json.loads(eingabe.read_text(encoding="utf-8"))
     if not isinstance(raw, Mapping):
         raise Anonymisierung(f"{eingabe} enthält keinen Weltabzug.")
@@ -517,7 +599,11 @@ def lauf(eingabe: Path, ausgabe: Path) -> str:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("eingabe", type=Path, help="roher Weltabzug (personenbezogen)")
+    parser.add_argument(
+        "eingabe",
+        type=Path,
+        help=f"roher Weltabzug oder Mitschnitt ({MITSCHNITT_ENDUNG}) — personenbezogen",
+    )
     parser.add_argument("ausgabe", type=Path, help="Ziel der eincheckbaren Fixture")
     args = parser.parse_args(argv)
     try:

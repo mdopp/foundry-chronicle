@@ -20,7 +20,7 @@ from pathlib import Path
 
 from chronicle import db, lebenszyklus, notes, settings, zugang
 from chronicle.config import Config
-from chronicle.foundry import store, systems, testwelt
+from chronicle.foundry import mitschnitt, store, systems, testwelt
 from chronicle.foundry.client import FoundryClient, FoundryError
 from chronicle.foundry.model import (
     NICHT_MEHR_VORHANDEN,
@@ -193,6 +193,25 @@ def geschuetzt(ziel: Path) -> Path:
     return ziel
 
 
+def _mitschreiben(config: Config, runde: Runde, user_id: str, raw: Mapping) -> None:
+    """Das Bild dieses Blicks aufheben — wenn der Betrieb es eingeschaltet hat (#242).
+
+    Aufgehoben wird die **rohe** Antwort und nicht das, was der Adapter daraus destilliert.
+    Genau daran scheiterte #242: die Fixtures trugen, was der Adapter erwartete, und der
+    echte Server etwas anderes. Aus einem Mitschnitt lässt sich der Abend ohne Foundry
+    nachspielen — ``mitschnitt.Wiedergabe`` ist der Server dazu.
+
+    Standardmäßig aus, weil hier nichts von selbst anfangen soll, Personenbezogenes
+    dauerhaft wegzuschreiben. Die Zeile im Log nennt die Zahl der Bilder und die Datei,
+    nie einen Inhalt.
+    """
+    if not config.foundry_mitschnitt:
+        return
+    datei = geschuetzt(mitschnitt.ziel(ABZUG_ORDNER, runde.id))
+    mitschnitt.schreibe(datei, user_id, raw)
+    logger.info("Mitschnitt: ein Bild nach %s", datei)
+
+
 def abzug(
     config: Config,
     runde: Runde,
@@ -266,6 +285,7 @@ def beobachten(
     except FoundryError as fehler:
         logger.warning("Ereignisstrom: Foundry nicht erreichbar: %s", fehler)
         return Ereignisse(grund=NICHT_ERREICHBAR.format(grund=fehler))
+    _mitschreiben(config, runde, user_id, raw)
     scope = _open(config, runde)
     try:
         gefunden = identity(raw)
@@ -382,6 +402,7 @@ def sync(
                 logger.warning("Foundry-Abgleich fehlgeschlagen: %s", fehler)
                 store.record_failure(scope, grund, zeitpunkt)
                 return _state(store.load(scope), grund, zeitpunkt)
+            _mitschreiben(config, runde, user_id, raw)
             gefunden = identity(raw)
             gebunden = store.world(scope)
             if not umhaengen and _falsche_welt(gebunden, gefunden):
