@@ -10,6 +10,10 @@ verdrahtet (``dumps/welt-dump.json``, gitignoriert) und nicht wählbar: ein frei
 angegebener Pfad legte den Abzug bei einem Tippfehler neben den Quelltext, wo ihn keine
 Ignore-Regel mehr fängt.
 
+``--nachspielen`` geht den anderen Weg: derselbe Abgleich, aber die Welt kommt aus einem
+Mitschnitt statt von einem Server (#242). Kein Netz, kein Passwort — und damit die einzige
+Art, einen Abend hinterher genau so noch einmal durchlaufen zu lassen, wie er stattfand.
+
 Die Runde wird genannt, nicht geraten: eine Instanz trägt mehrere, und die erste still zu
 nehmen hieße, den ungefilterten Abzug einer fremden Gruppe zu ziehen, ohne dass es jemand
 sieht. Bei genau einer Runde bleibt es beim Aufruf ohne ``--runde``.
@@ -21,10 +25,12 @@ import argparse
 import logging
 import sys
 from getpass import getpass
+from pathlib import Path
 
 from chronicle import db, settings
 from chronicle import runde as runden
 from chronicle.config import Config
+from chronicle.foundry import mitschnitt
 from chronicle.foundry.client import FoundryError
 from chronicle.foundry.service import ABZUG_ZIEL, abzug, sync
 
@@ -64,6 +70,12 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     parser.add_argument(
+        "--nachspielen",
+        type=Path,
+        metavar="MITSCHNITT",
+        help="statt eines Servers einen Mitschnitt abspielen — ohne Netz, ohne Passwort",
+    )
+    parser.add_argument(
         "--runde",
         type=int,
         metavar="KENNUNG",
@@ -84,6 +96,16 @@ def main(argv: list[str] | None = None) -> int:
             print(f"Kein Abzug: {fehler}", file=sys.stderr)
             return 1
         return 0
+    if args.nachspielen is not None:
+        try:
+            gespielt = mitschnitt.Wiedergabe.aus_datei(args.nachspielen)
+        except (OSError, mitschnitt.Leer) as fehler:
+            print(f"Kein Mitschnitt: {fehler}", file=sys.stderr)
+            return 1
+        print(f"Mitschnitt mit {len(gespielt)} Bildern — es wird kein Server gefragt.")
+        zustand = sync(config, runde, client=gespielt)
+        print(zustand.message)
+        return 1 if zustand.stale else 0
     # Die Testwelt liegt im Paket — nach einem Passwort zu fragen, das niemand braucht,
     # wäre nur eine Hürde vor einer Datei.
     testwelt = settings.foundry_quelle(runde) == settings.TESTWELT

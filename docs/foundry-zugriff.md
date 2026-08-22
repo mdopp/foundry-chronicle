@@ -86,6 +86,23 @@ Die Zahlen stehen stattdessen fertig aufbereitet in `message.system.roll`:
 Wer stattdessen `rolls[]` auswertet, bekommt dieselben Zahlen roh in `terms[]`, verpackt
 in Würfel-Darstellungsdaten. Der `system`-Block ist der bessere Einstieg.
 
+> **Nachtrag 2026-08-22, an einem echten Server gemessen (#242): er ist nicht der
+> einzige, und gegen manche Welten ist er leer.** Auf der Box, über zwei Runden und zwei
+> Abende, trug **keine** von 76 archivierten Nachrichten einen `system.roll` — die
+> Chronik blieb ohne eine einzige Zahl, obwohl der Abgleich das ganze Chat-Log holte. Der
+> Widerspruch weiter unten ist damit aufgelöst, und zwar zugunsten des Systemquelltextes:
+> in Daggerheart ist `roll` ein Getter über `rolls[]`, und Getter werden nicht
+> serialisiert. Die frühere Auszählung »sieben von acht« stammt aus einer Welt mit einem
+> anderen Systemstand; beides kann gleichzeitig wahr sein, ein Adapter mit nur einem
+> Einstieg nicht. `systems.read_roll` liest deshalb beide Ablagen: `message.system.roll`
+> zuerst, sonst `rolls[]` — dort `options.roll`, und was der offenlässt, aus den
+> Kernfeldern `total`/`formula`/`class` daneben. Die **benannten** Würfel bleiben leer,
+> wo nur die Kernfelder da sind: welcher d12 die Hoffnung war, sagt allein der
+> aufbereitete Block, und geraten wird er nicht.
+>
+> Dass das so lange unbemerkt blieb, lag an den Fixtures: sie trugen `system.roll`, weil
+> jemand sie von Hand geschrieben hatte. Dagegen steht seither der Mitschnitt (unten).
+
 > **Zurückgezogen — der Nachtrag vom 2026-08-07 galt nie.** Er hielt fest,
 > `message.system.roll` sei in einer beobachteten Welt »kein einziges Mal« vorgekommen,
 > und nannte `read_roll` deshalb eine offene Lücke. Beides stimmte nicht: die Welt, an
@@ -271,6 +288,42 @@ hat ihn überführt: hieß eine Figur wie ein Bestandteil eines Pseudonyms, brac
 Pseudonym sie zurück. Ein Pseudonymraum, der Bruchstücke der Eingabe enthalten *kann*, ist
 untauglich.
 
+### 3b. Einen ganzen Abend mitschreiben — und ohne Foundry noch einmal laufen lassen
+
+Ein Abzug ist ein Bild. Ein **Mitschnitt** ist die Folge: jeder Blick nach Foundry —
+Strom wie Abgleich — hängt ein Bild an eine Datei mit einer Zeile je Bild
+(`dumps/mitschnitt-<Tag>.jsonl`, `0600` in einem Ordner mit `0700`).
+
+```
+CHRONICLE_FOUNDRY_MITSCHNITT=1          # aus, bis es jemand einschaltet
+python -m chronicle.foundry --nachspielen dumps/mitschnitt-2026-08-22.jsonl
+```
+
+Aufgehoben wird die **rohe** Antwort und nicht das, was der Adapter daraus destilliert.
+Genau daran ist #242 monatelang vorbeigelaufen: die Fixtures trugen, was der Adapter
+erwartete, und der echte Server etwas anderes — der Test bestätigte die Annahme, statt
+sie zu prüfen. `chronicle.foundry.mitschnitt.Wiedergabe` gibt die Bilder der Reihe nach
+zurück und hat dieselbe Oberfläche wie `FoundryClient`; sie ist damit der Mock-Server,
+gegen den ein Abgleich, der Nachtrag und der Strom ohne Netz durchlaufen.
+
+> **Ein Mitschnitt ist personenbezogen** — derselbe Abzug, nur mehrmals. Er bleibt auf
+> der Box, und eingecheckt wird davon nur, was durch den Anonymisierer gelaufen ist:
+>
+> ```
+> python scripts/anonymisiere_welt.py dumps/mitschnitt-2026-08-22.jsonl abend.jsonl
+> ```
+>
+> Dieselben zwei Regeln wie beim Abzug, plus zwei Eigenheiten: **eine** Pseudonymtabelle
+> über alle Bilder — sonst spräche im zweiten Bild jemand anderes als im ersten und der
+> Abend ließe sich nicht mehr nachspielen —, und der Zeitstempel des Bildes fällt weg. Er
+> sagt, wann diese Gruppe gespielt hat; für die Wiedergabe zählt die Reihenfolge.
+
+**Was damit noch nicht belegt ist:** wie eine echte Daggerheart-Nachricht in `rolls[]`
+wirklich aussieht. Solange kein anonymisierter Mitschnitt von der Box vorliegt, prüfen
+die Tests den zweiten Einstieg an der erzeugten Testwelt (deren `rolls[]`-Form an einem
+echten Abzug ausgezählt wurde) und an der recherchierten Kernform aus #146. Der erste
+echte Mitschnitt tritt an ihre Stelle, ohne dass sich eine Zeile Code ändert.
+
 ### 4. Abspielen
 
 Die Quelle der Spieldaten ist eine Einstellung **je Runde**: „Echter Server" oder
@@ -356,6 +409,10 @@ machen, sonst greift er ins Leere. Ein serialisierter Wurf trägt `class`, `form
 > Systemfassung sich geändert hat; unsere Beobachtung stammt von Daggerheart 1.9.5.
 > Aufgelöst wird das an einer echten Nachricht, nicht hier. Bis dahin bleibt der
 > `system`-Block der dokumentierte Einstieg und `rolls[]` der belegte zweite.
+>
+> **Aufgelöst am 2026-08-22 (#242), zugunsten des Quelltextes.** Gegen den echten Server
+> trug keine von 76 Nachrichten einen `system.roll`. Der Adapter liest seither beide
+> Ablagen; die Einzelheiten stehen oben beim Nachtrag zu »Bei Würfen ist `content` leer«.
 
 ### Was sonst noch von selbst kommt
 
@@ -402,9 +459,10 @@ nicht. In die Datenbank geht nichts — sie wird nicht einmal geöffnet.
 
 - **Wie heißen die Ereignisse wirklich?** Der Abschnitt oben ist recherchiert, nicht
   gemessen. Offen bleiben insbesondere: ob ein Nicht-GM-Konto fremdes Geflüster wirklich
-  mitbekommt, ob der Daggerheart-Wurf auf der Leitung einen `system.roll` trägt oder nur
-  `rolls[]`, und ob während einer Sitzung Ereignisse auftreten, die in keiner Quelle
-  stehen. Ein Lauf von `scripts/lausche_foundry.py` beantwortet das.
+  mitbekommt und ob während einer Sitzung Ereignisse auftreten, die in keiner Quelle
+  stehen. Ein Lauf von `scripts/lausche_foundry.py` beantwortet das. **Die Wurf-Frage ist
+  beantwortet** (#242): auf diesem Server steht der Wurf nur in `rolls[]`. Wie er dort im
+  Einzelnen aussieht, sagt der erste anonymisierte Mitschnitt.
 - **Wie viel steht wirklich im Chat-Log?** Die beobachtete Welt hatte acht Nachrichten,
   davon sieben Würfe aus einem halbstündigen Fenster — kein Schaden, keine Beute. Ob
   eine volle Sitzung wesentlich mehr liefert, ist ungeprüft. Falls nicht, trägt die

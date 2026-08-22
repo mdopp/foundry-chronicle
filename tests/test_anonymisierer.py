@@ -407,3 +407,105 @@ def test_personendaten_ohne_namen_brechen_den_lauf_ab(probe, tmp_path, monkeypat
     assert anonym.main([str(eingabe), str(ziel)]) == 2
     assert not ziel.exists()
     assert ".world.id: Rechnername" in capsys.readouterr().err
+
+
+# -- Ein Mitschnitt: derselbe Abzug mehrmals, eine Pseudonymtabelle (#242) ---------------
+#
+# Ein Mitschnitt ist der Rohstoff, aus dem ein Abend ohne Foundry noch einmal läuft. Er
+# ist damit genauso personenbezogen wie ein einzelner Abzug — und stellt eine Bedingung
+# mehr: die Pseudonyme müssen über alle Bilder halten, sonst spricht im zweiten Bild
+# jemand anderes als im ersten.
+
+NACHZUEGLER = "Ferun Talbrecht"
+
+
+@pytest.fixture
+def mitschnitt(roh, tmp_path) -> Path:
+    """Zwei Bilder eines Abends — im zweiten kommt jemand dazu, den das erste nicht kennt."""
+    spaeter = json.loads(json.dumps(roh))
+    spaeter["users"].append({"_id": "u-spaet", "name": NACHZUEGLER, "role": 1})
+    spaeter["messages"].append(
+        {
+            "_id": "m-spaet",
+            "timestamp": 3000,
+            "author": "u-spaet",
+            "content": f"{NACHZUEGLER} setzt sich dazu.",
+            "speaker": {"alias": NACHZUEGLER},
+            "whisper": [],
+            "blind": False,
+        }
+    )
+    datei = tmp_path / "mitschnitt-2026-08-22.jsonl"
+    datei.write_text(
+        "".join(
+            json.dumps(
+                {"zeit": "2026-08-22T20:00:00+00:00", "userId": roh["userId"], "welt": welt},
+                ensure_ascii=False,
+            )
+            + "\n"
+            for welt in (roh, spaeter)
+        ),
+        encoding="utf-8",
+    )
+    return datei
+
+
+def bilder(datei: Path) -> list[dict]:
+    return [json.loads(zeile) for zeile in datei.read_text(encoding="utf-8").splitlines()]
+
+
+def test_ein_mitschnitt_wird_bildweise_anonymisiert(mitschnitt, tmp_path):
+    ziel = tmp_path / "abend.jsonl"
+    meldung = anonym.lauf(mitschnitt, ziel)
+    gelesen = bilder(ziel)
+    assert len(gelesen) == 2
+    assert "2 Bilder" in meldung
+    assert all(set(bild["welt"]) >= {"users", "actors", "messages", "scenes"} for bild in gelesen)
+    assert LEITUNG_NAME not in ziel.read_text(encoding="utf-8")
+    assert NACHZUEGLER not in ziel.read_text(encoding="utf-8")
+
+
+def test_dieselbe_person_traegt_in_jedem_bild_dasselbe_pseudonym(mitschnitt, tmp_path):
+    """Sonst ließe sich der Abend nicht mehr nachspielen — es spräche jedes Mal jemand anderes."""
+    ziel = tmp_path / "abend.jsonl"
+    anonym.lauf(mitschnitt, ziel)
+    erstes, zweites = (bild["welt"] for bild in bilder(ziel))
+    assert [k["name"] for k in erstes["users"]] == [k["name"] for k in zweites["users"][:-1]]
+    assert erstes["messages"][0]["speaker"]["alias"] == zweites["messages"][0]["speaker"]["alias"]
+
+
+def test_der_zeitstempel_des_bildes_faellt_weg(mitschnitt, tmp_path):
+    """Wann diese Gruppe gespielt hat, gehört ihr. Die Reihenfolge trägt den Abend."""
+    ziel = tmp_path / "abend.jsonl"
+    anonym.lauf(mitschnitt, ziel)
+    assert all("zeit" not in bild for bild in bilder(ziel))
+
+
+def test_ein_anonymisierter_mitschnitt_bleibt_abspielbar(mitschnitt, tmp_path):
+    """Die Probe aufs Ganze: nach dem Anonymisieren ist er noch ein Server mit Zahlen."""
+    from chronicle.foundry import systems
+    from chronicle.foundry.mitschnitt import Wiedergabe
+
+    ziel = tmp_path / "abend.jsonl"
+    anonym.lauf(mitschnitt, ziel)
+    gespielt = Wiedergabe.aus_datei(ziel)
+    assert len(gespielt) == 2
+    _konto, welt = gespielt.fetch_world()
+    wurf = systems.read_roll(systems.DAGGERHEART, welt["messages"][0])
+    assert (wurf.total, wurf.formula) == (14, "1d12 + 1d12 + 2")
+
+
+def test_eine_zeile_ohne_bild_bricht_den_lauf_ab(tmp_path, capsys):
+    eingabe = tmp_path / "kaputt.jsonl"
+    eingabe.write_text('{"welt": {}}\n[1, 2]\n', encoding="utf-8")
+    ziel = tmp_path / "abend.jsonl"
+    assert anonym.main([str(eingabe), str(ziel)]) == 2
+    assert not ziel.exists()
+    assert "Zeile 2" in capsys.readouterr().err
+
+
+def test_ein_mitschnitt_ohne_bild_bricht_den_lauf_ab(tmp_path, capsys):
+    eingabe = tmp_path / "leer.jsonl"
+    eingabe.write_text("\n\n", encoding="utf-8")
+    assert anonym.main([str(eingabe), str(tmp_path / "abend.jsonl")]) == 2
+    assert "kein Bild" in capsys.readouterr().err
