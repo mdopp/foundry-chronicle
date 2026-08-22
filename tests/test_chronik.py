@@ -2219,7 +2219,12 @@ def test_ein_dokument_im_thread_faellt_nicht_mehr_still_durch(stelle, bot):
 def _verschriftetes_diktat(unsere, sitzung):
     """Eine Spur, die schon Text ist — ohne sie käme ``merge`` gar nicht bis zum Verwerfen."""
     spur = recordings.enqueue(
-        unsere, sitzung, "memo.m4a", discord_user_id="4001", message_at="2026-04-09T20:00:00+00:00"
+        unsere,
+        sitzung,
+        "memo.m4a",
+        discord_user_id="4001",
+        discord_name="Mira",
+        message_at="2026-04-09T20:00:00+00:00",
     )
     recordings.mark(unsere, spur.id, recordings.FERTIG)
     scope = db.scoped(unsere)
@@ -2257,7 +2262,7 @@ def test_ein_zweiter_abschluss_loescht_das_eingelesene_nicht(stelle, bot):
     assert DRITTER_ABEND in texte
     # Und die Gegenprobe: das Abgeleitete war wirklich im Spiel und steht genau einmal da.
     assert [text for text in texte if "Diktiert am Heimweg." in text] == [
-        "memo: Diktiert am Heimweg."
+        "Mira: Diktiert am Heimweg."
     ]
 
 

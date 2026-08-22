@@ -22,7 +22,7 @@ import contextlib
 import functools
 import logging
 import wave
-from collections.abc import Callable
+from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -34,6 +34,7 @@ from chronicle.bot import (
     chronik,
     einrichten,
     erinnern,
+    namen,
     recorder,
 )
 from chronicle.bot.recorder import Aufnahme, Kanal
@@ -190,7 +191,9 @@ GETRENNT_GESCHEITERT = (
     "Grund steht im Log des Bots."
 )
 
-UNBEKANNT = "unbekannt"
+# Dasselbe Wort wie in ``consent`` und in der Chronik: was hier als Platzhalter an eine
+# Spur kommt, muss beim Einreihen wieder als Platzhalter erkannt werden (#250).
+UNBEKANNT = consent.UNBEKANNT
 
 # Ein Befehl, der nicht antwortet, lässt Discord ewig »denkt nach …« anzeigen. Das ist
 # der schlechteste Ausgang: niemand weiß, ob aufgenommen wird. Deshalb antwortet jeder
@@ -391,6 +394,14 @@ class Sprachverbindung:
             for wer in self._kanal.members
             if not wer.bot
         )
+
+    async def namen(self, kennungen: Sequence[str]) -> Mapping[str, str]:
+        """Zu den genannten Kennungen die Anzeigenamen — gezielt, nicht als Liste.
+
+        Der Weg an ``members`` vorbei: ein Aufruf je Sprecher statt der ganzen
+        Mitgliederliste jeder Gilde im Prozess (#250, siehe ``chronicle.bot.namen``).
+        """
+        return await namen.aufloesen(self._vc.client, kennungen)
 
     def anwesende(self) -> tuple:
         """Dieselben, aber als Discord-Mitglieder — nur an sie ist eine Frage zustellbar.
@@ -1126,6 +1137,7 @@ def _nachricht(nachricht) -> chronik.Nachricht:
             for anhang in nachricht.attachments
         ),
         autor_id=str(nachricht.author.id),
+        autor_name=getattr(nachricht.author, "display_name", None),
     )
 
 
@@ -2242,6 +2254,11 @@ def baue(config: Config):
     # Nachrichten noch ihren Inhalt, und jede Notiz käme leer an.
     absichten.messages = True
     absichten.message_content = True
+    # ``members`` bleibt aus, und das ist eine Entscheidung, kein Versehen (#250). Der
+    # Intent ist privilegiert und spiegelte die vollständige Mitgliederliste **jeder**
+    # Gilde dauerhaft in diesen Prozess — für die eine Auskunft, die hier fehlt: wie der
+    # Sprecher einer Spur heißt. Die holt ``chronicle.bot.namen`` mit einem ``fetch_user``
+    # je Sprecher. Weniger Daten, dieselbe Antwort.
     bot = discord.Bot(intents=absichten)
     laeufe = _Laeufe()
     gruppe = bot.create_group(GRUPPE, "Die Sitzung mitschneiden")

@@ -333,6 +333,7 @@ ABFRAGEN = {
     "recordings.pending": lambda c, r, i: recordings.pending(r),
     "recordings.unverschriftet": lambda c, r, i: recordings.unverschriftet(r),
     "recordings.expired": lambda c, r, i: recordings.expired(r, tage=0),
+    "recordings.namenlose_sprecher": lambda c, r, i: recordings.namenlose_sprecher(r),
     "recordings.target_path": lambda c, r, i: recordings.target_path(c.recordings_dir, 1, "a.wav"),
     "search.find": lambda c, r, i: search.find(r, "Keller"),
     "search.expression": lambda c, r, i: search.expression("Keller"),
@@ -455,6 +456,10 @@ SCHREIBER = frozenset(
         # ``in_arbeit`` schreibt in dieselbe Zeile.
         "recordings.zurueckstellen",
         "recordings.in_arbeit",
+        # Der nachgetragene Sprechername (#250): er sucht die Zeilen über die
+        # Discord-Kennung, und die ist instanzweit dieselbe Person in jeder Gilde — ohne
+        # die Runde schriebe er den Namen aus einer Runde in die Spuren einer fremden.
+        "recordings.namen_eintragen",
         "register.suggest",
         "register.decide",
         "people.confirm",

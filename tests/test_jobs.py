@@ -268,6 +268,7 @@ def test_der_lauf_traegt_das_transkript_selbst_in_die_szenen(stelle):
         sitzung_id,
         "mira.wav",
         discord_user_id="4001",
+        discord_name="Mira",
         started_at="2026-08-05T20:00:00+00:00",
     )
     # Die Spur ist schon durch die Verschriftung — hier geht es um den Schritt danach.
@@ -281,8 +282,9 @@ def test_der_lauf_traegt_das_transkript_selbst_in_die_szenen(stelle):
     jobs.chronik(stelle, gastgeber, sitzung_id)
 
     szene = notes.session(gastgeber, sitzung_id).scenes[0]
-    # Ohne Einwilligungseintrag steht der Spurname da und kein geratener Name.
-    assert [notiz.text for notiz in szene.notes] == ["mira: Da unten steht eine Tür."]
+    # Ohne Einwilligungseintrag steht der an der Spur nachgetragene Name da (#250) — kein
+    # geratener, und erst recht kein Dateiname.
+    assert [notiz.text for notiz in szene.notes] == ["Mira: Da unten steht eine Tür."]
     assert "Da unten steht eine Tür." in protocol.stored(gastgeber, sitzung_id).text
 
 

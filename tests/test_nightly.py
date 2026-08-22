@@ -76,7 +76,12 @@ def mit_spur(config, sitzung_id, text=GESPROCHEN):
             (scope.runde_id, sitzung_id),
         ).fetchone()["created_at"]
         aufnahme = recordings.enqueue(
-            gastgeber, sitzung_id, "mira.wav", discord_user_id="4001", started_at=beginn
+            gastgeber,
+            sitzung_id,
+            "mira.wav",
+            discord_user_id="4001",
+            discord_name="Mira",
+            started_at=beginn,
         )
         # Verschriftet ist sie schon — sonst lüde der Nachtlauf ein echtes Modell.
         recordings.mark(gastgeber, aufnahme.id, recordings.FERTIG)
@@ -253,8 +258,9 @@ def test_der_nachtlauf_traegt_das_gesprochene_wort_in_die_chronik(stelle):
     nightly.lauf(stelle, gastgeber)
 
     szene = notes.session(gastgeber, sitzung_id).scenes[0]
-    # Ohne Einwilligungseintrag steht der Spurname da und kein geratener Name.
-    assert f"mira: {GESPROCHEN}" in [notiz.text for notiz in szene.notes]
+    # Ohne Einwilligungseintrag steht der an der Spur nachgetragene Name da (#250) — kein
+    # geratener, und erst recht kein Dateiname.
+    assert f"Mira: {GESPROCHEN}" in [notiz.text for notiz in szene.notes]
     assert GESPROCHEN in protocol.stored(gastgeber, sitzung_id).text
     # Und danach ist die Sitzung von der Fälligkeitsliste — mit dem gesprochenen Wort
     # darin, nicht ohne.
