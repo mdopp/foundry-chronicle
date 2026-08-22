@@ -331,6 +331,7 @@ ABFRAGEN = {
     "recordings.for_session": lambda c, r, i: recordings.for_session(r, i["sitzung"]),
     "recordings.get": lambda c, r, i: recordings.get(r, i["aufnahme"]),
     "recordings.pending": lambda c, r, i: recordings.pending(r),
+    "recordings.unverschriftet": lambda c, r, i: recordings.unverschriftet(r),
     "recordings.expired": lambda c, r, i: recordings.expired(r, tage=0),
     "recordings.target_path": lambda c, r, i: recordings.target_path(c.recordings_dir, 1, "a.wav"),
     "search.find": lambda c, r, i: search.find(r, "Keller"),
