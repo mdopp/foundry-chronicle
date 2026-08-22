@@ -455,6 +455,9 @@ class Nachricht:
     zeitpunkt: str = ""
     anhaenge: tuple[Anhang, ...] = ()
     autor_id: str | None = None
+    # Der Anzeigename des Absenders. Er kommt mit der Nachricht und muss nicht
+    # nachgeschlagen werden — ohne ihn stünde über einem Diktat der Dateiname (#250).
+    autor_name: str | None = None
 
 
 @dataclass
@@ -714,6 +717,7 @@ async def _diktat(
         session_id,
         ziel.name,
         discord_user_id=nachricht.autor_id,
+        discord_name=nachricht.autor_name,
         message_at=nachricht.zeitpunkt.strip() or None,
     )
     logger.info("Diktat aus dem Thread: %s → Sitzung %s", ziel.name, session_id)

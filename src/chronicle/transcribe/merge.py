@@ -31,7 +31,8 @@ Diktat deswegen nicht, und die Sitzungsuhr bleibt unberührt.
 Beschriftet wird aus der festgeschriebenen Zuordnung: von Hand bestätigt oder 1:1 derselbe
 Name (#76, Betreiber-Entscheidung vom 2026-08-12 — Gleichheit ist ein Beleg, keine
 Vermutung). Sonst steht der Discord-Name da — nie ein Vorschlag, nie ein geratener Name,
-und nie eine Ähnlichkeit.
+und nie eine Ähnlichkeit. Und wenn auch der fehlt, steht dort das Wort »unbekannt« und
+**nie der Dateiname** (#250): eine Spur heißt nach ihrer Quellenkennung, ein Mensch nicht.
 
 **``marke_ms``, ``span``, ``note_text`` und ``LEERE_SPANNE`` haben seit #157 keinen
 Aufrufer in ``src/``** — sie trugen den Handschnitt der Weboberfläche, mit dem ein
@@ -60,7 +61,7 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 
-from chronicle import db, lebenszyklus, notes, people
+from chronicle import consent, db, lebenszyklus, notes, people
 from chronicle.runde import Runde
 from chronicle.transcribe.service import zeitmarke
 
@@ -75,7 +76,7 @@ TRANSKRIPT = "transkript"
 # Sortiert wird nach Zeit, nicht nach Spur: genau das ist die Verschränkung. Die Spur
 # entscheidet nur bei gleicher Millisekunde, damit die Reihenfolge wiederholbar bleibt.
 SPUREN = (
-    "SELECT r.discord_user_id AS discord_user_id, r.source AS source, "
+    "SELECT r.discord_user_id AS discord_user_id, r.discord_name AS discord_name, "
     "s.start_ms AS start_ms, s.end_ms AS end_ms, s.text AS text "
     "FROM transcript t "
     "JOIN recording r ON r.runde_id = t.runde_id AND r.session_id = t.session_id "
@@ -94,8 +95,8 @@ ORDNUNG = "ORDER BY s.start_ms, r.source, s.id"
 # Nachricht. Sortiert wird innerhalb einer Spur, denn ein Diktat wird als **ein** Stück
 # übernommen — es gibt keine zweite Stimme, mit der es zu verschränken wäre.
 DIKTATE = (
-    "SELECT r.id AS recording_id, r.discord_user_id AS discord_user_id, r.source AS source, "
-    "r.message_at AS message_at, s.text AS text "
+    "SELECT r.id AS recording_id, r.discord_user_id AS discord_user_id, "
+    "r.discord_name AS discord_name, r.message_at AS message_at, s.text AS text "
     "FROM transcript t "
     "JOIN recording r ON r.runde_id = t.runde_id AND r.session_id = t.session_id "
     "AND r.source = t.source "
@@ -147,9 +148,20 @@ class Diktat:
 
 
 def _beschriftung(sprecher: dict[str, people.Person], zeile: sqlite3.Row) -> tuple[str, bool]:
+    """Wie diese Spur zu beschriften ist — und nie nach ihrer Datei.
+
+    Die Reihenfolge ist eine Rangfolge von Belegen: die festgeschriebene Zuordnung, sonst
+    der protokollierte Discord-Name, sonst der an der Spur nachgetragene, sonst das Wort
+    »unbekannt«. Bis #250 stand am Ende die Quellenkennung — also der Dateiname —, und in
+    der Chronik eines echten Abends las sich das als
+    ``sitzung4-20260818T201032-unbekannt: Geh doch selber raus``. Ein technischer
+    Bezeichner gehört in keinen Text, den Menschen Wochen später als Gedächtnisstütze
+    lesen; wo niemand bekannt ist, wird das gesagt und nicht ersatzweise etwas anderes
+    hingeschrieben.
+    """
     person = sprecher.get(zeile["discord_user_id"])
     if person is None:
-        return zeile["source"], False
+        return zeile["discord_name"] or consent.UNBEKANNT, False
     if person.confirmed is None:
         return person.discord_name, False
     return person.confirmed.name, True

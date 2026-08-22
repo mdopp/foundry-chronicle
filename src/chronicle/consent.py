@@ -25,6 +25,12 @@ from chronicle.runde import Runde
 ANSAGE = "ansage"
 NACHZUEGLER = "nachzuegler"
 
+# Der Platzhalter für ein Mitglied, zu dem Discord uns keinen Namen gegeben hat. Ein
+# **Wort**, kein Bezeichner: es steht am Ende in einem Text, den Menschen lesen. Es lebt
+# hier, weil ``Member`` es trägt und beide Seiten — wer es setzt und wer es später wieder
+# erkennt — dieselbe Zeichenkette meinen müssen.
+UNBEKANNT = "unbekannt"
+
 
 @dataclass(frozen=True)
 class Member:

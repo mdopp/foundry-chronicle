@@ -51,7 +51,7 @@ import asyncio
 import logging
 import sqlite3
 import threading
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -182,6 +182,7 @@ class Recording:
     text: str = ""
     deleted_at: str | None = None
     discord_user_id: str | None = None
+    discord_name: str | None = None
     started_at: str | None = None
     message_at: str | None = None
     offset_ms: int = 0
@@ -210,6 +211,7 @@ def _eintrag(row: sqlite3.Row, text: str = "") -> Recording:
         text=text,
         deleted_at=row["deleted_at"],
         discord_user_id=row["discord_user_id"],
+        discord_name=row["discord_name"] if "discord_name" in row.keys() else None,
         started_at=row["started_at"] if "started_at" in row.keys() else None,
         message_at=row["message_at"] if "message_at" in row.keys() else None,
         offset_ms=row["offset_ms"] if "offset_ms" in row.keys() else 0,
@@ -240,6 +242,7 @@ def enqueue(
     filename: str,
     *,
     discord_user_id: str | None = None,
+    discord_name: str | None = None,
     started_at: str | None = None,
     message_at: str | None = None,
     offset_ms: int = 0,
@@ -250,6 +253,11 @@ def enqueue(
     die Audiodaten je Client, wer gesprochen hat ist also bekannt und muss nicht später
     aus dem Dateinamen geraten werden — geraten stünde irgendwann der falsche Name über
     einem Absatz.
+
+    ``discord_name`` ist der Anzeigename zu dieser Kennung, sofern er beim Einreihen
+    schon feststand. Er darf fehlen — ohne den privilegierten ``members``-Intent kennt
+    der Bot nur, wer ihm einmal begegnet ist —, und dann trägt ihn ``bot.namen`` gezielt
+    nach. Was auch danach leer bleibt, heißt in der Chronik »unbekannt« (#250).
 
     ``started_at`` ebenso, und es ist der Nullpunkt der Sitzungsuhr: der Moment, in dem
     der Mitschnitt begann. Ohne ihn hat die Spur keine Zeitachse, die sich auf die Szenen
@@ -276,8 +284,9 @@ def enqueue(
         with scope:
             cursor = scope.execute(
                 "INSERT INTO recording (runde_id, session_id, filename, source, uploaded_at, "
-                "status, updated_at, discord_user_id, started_at, message_at, offset_ms) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "status, updated_at, discord_user_id, discord_name, started_at, message_at, "
+                "offset_ms) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     scope.runde_id,
                     session_id,
@@ -287,6 +296,7 @@ def enqueue(
                     WARTET,
                     zeitpunkt,
                     discord_user_id,
+                    discord_name,
                     started_at,
                     message_at,
                     offset_ms,
@@ -306,10 +316,58 @@ def enqueue(
         uploaded_at=zeitpunkt,
         status=WARTET,
         discord_user_id=discord_user_id,
+        discord_name=discord_name,
         started_at=started_at,
         message_at=message_at,
         offset_ms=offset_ms,
     )
+
+
+def namenlose_sprecher(runde: Runde, session_id: int | None = None) -> tuple[str, ...]:
+    """Die Discord-Kennungen, zu denen noch kein Anzeigename dasteht — je Kennung einmal.
+
+    Das ist die Arbeitsliste des Nachtragens (#250) und zugleich seine Sparsamkeit: gefragt
+    wird Discord nur nach den Sprechern, deren Ton wirklich in der Warteschlange liegt, und
+    nach jedem nur einmal, auch wenn seine Spur in zehn Häppchen zerfällt.
+    """
+    scope = db.scoped(runde)
+    try:
+        bedingung = "" if session_id is None else "AND session_id = ? "
+        werte = (scope.runde_id,) if session_id is None else (scope.runde_id, session_id)
+        zeilen = scope.execute(
+            "SELECT DISTINCT discord_user_id FROM recording WHERE runde_id = ? "
+            + bedingung
+            + "AND discord_user_id IS NOT NULL AND discord_name IS NULL "
+            "ORDER BY discord_user_id",
+            werte,
+        ).fetchall()
+    finally:
+        scope.close()
+    return tuple(zeile["discord_user_id"] for zeile in zeilen)
+
+
+def namen_eintragen(runde: Runde, namen: Mapping[str, str]) -> int:
+    """Trägt Anzeigenamen zu Kennungen nach und sagt, wie viele Zeilen das traf.
+
+    Nur wo noch keiner steht: ein einmal festgehaltener Name wird nicht von einer späteren
+    Umbenennung überschrieben — die Spur gehört dem Abend, an dem sie entstand.
+    """
+    if not namen:
+        return 0
+    scope = db.scoped(runde)
+    try:
+        with scope:
+            getroffen = 0
+            for user_id, name in namen.items():
+                zeiger = scope.execute(
+                    "UPDATE recording SET discord_name = ? WHERE runde_id = ? "
+                    "AND discord_user_id = ? AND discord_name IS NULL",
+                    (name, scope.runde_id, user_id),
+                )
+                getroffen += zeiger.rowcount
+    finally:
+        scope.close()
+    return getroffen
 
 
 def _text(scope: db.Scope, transcript_id: int) -> str:
@@ -331,7 +389,8 @@ def _mit_transkript(scope: db.Scope, row: sqlite3.Row) -> Recording:
 # Lauf ersetzt die Transkript-Zeile im Ganzen, ihre Id wäre also nicht haltbar.
 AUSWAHL = (
     "SELECT r.id, r.session_id, r.filename, r.source, r.uploaded_at, r.status, r.detail, "
-    "r.deleted_at, r.discord_user_id, r.started_at, r.message_at, r.offset_ms, r.versuche, "
+    "r.deleted_at, r.discord_user_id, r.discord_name, r.started_at, r.message_at, "
+    "r.offset_ms, r.versuche, "
     "t.id AS transcript_id FROM recording r "
     "LEFT JOIN transcript t ON t.runde_id = r.runde_id AND t.session_id = r.session_id "
     "AND t.source = r.source WHERE r.runde_id = ? "

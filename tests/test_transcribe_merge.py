@@ -48,12 +48,25 @@ def angesagt(config, *mitglieder):
     )
 
 
-def spur(config, sitzung_id, wer, *segmente, discord_user_id="egal", started_at=None):
+def spur(
+    config,
+    sitzung_id,
+    wer,
+    *segmente,
+    discord_user_id="egal",
+    started_at=None,
+    discord_name=None,
+):
     """Eine aufgenommene Spur samt Transkript — ``segmente`` sind (ms, ms, Text)."""
     kennung = None if discord_user_id is None else (wer.id if wer else discord_user_id)
     name = (wer.name if wer else discord_user_id).lower()
     recordings.enqueue(
-        runde(config), sitzung_id, f"{name}.wav", discord_user_id=kennung, started_at=started_at
+        runde(config),
+        sitzung_id,
+        f"{name}.wav",
+        discord_user_id=kennung,
+        discord_name=discord_name,
+        started_at=started_at,
     )
     scope = db.scoped(runde(config))
     try:
@@ -170,12 +183,40 @@ def test_ohne_bestaetigung_steht_der_discord_name_da_und_kein_vorschlag(config, 
     assert unterhaltung[0].zugeordnet is False
 
 
-def test_eine_spur_ohne_einwilligungseintrag_behaelt_ihren_spurnamen(config, sitzung_id):
+def test_eine_spur_ohne_einwilligungseintrag_nimmt_den_nachgetragenen_namen(config, sitzung_id):
+    """Wer in keinem Einwilligungsprotokoll steht, wird trotzdem beim Namen genannt.
+
+    Ohne den ``members``-Intent kennt der Bot nur, wer ihm einmal begegnet ist; der Name
+    kommt dann aus dem gezielten Nachschlagen an der Spur (#250).
+    """
+    spur(
+        config,
+        sitzung_id,
+        None,
+        (0, 2000, "Wer war das?"),
+        discord_user_id="4009",
+        discord_name="Samuel",
+    )
+
+    unterhaltung = merge.conversation(runde(config), sitzung_id)
+
+    assert unterhaltung[0].speaker == "Samuel"
+    assert unterhaltung[0].zugeordnet is False
+
+
+def test_eine_spur_ohne_jeden_namen_heisst_unbekannt_und_nie_nach_ihrer_datei(config, sitzung_id):
+    """Der Dateiname ist kein Sprecher.
+
+    Bis #250 stand in der fertigen Chronik ``sitzung4-20260818T201032-unbekannt`` als
+    Sprecherangabe — ein technischer Bezeichner in einem Text, den die Gruppe Wochen
+    später als Gedächtnisstütze liest. Schlägt das Nachtragen fehl, bleibt es beim
+    **Wort**.
+    """
     spur(config, sitzung_id, None, (0, 2000, "Wer war das?"), discord_user_id="4009")
 
     unterhaltung = merge.conversation(runde(config), sitzung_id)
 
-    assert unterhaltung[0].speaker == "4009"
+    assert unterhaltung[0].speaker == consent.UNBEKANNT
     assert unterhaltung[0].zugeordnet is False
 
 
