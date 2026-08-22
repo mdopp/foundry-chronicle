@@ -21,7 +21,7 @@ from conftest import GRENZE, runde
 from chronicle import db, notes, recordings
 from chronicle.config import Config
 from chronicle.transcribe import service
-from chronicle.transcribe.client import Segment, TranscriberUnreachable
+from chronicle.transcribe.client import Segment, TranscriberError, TranscriberUnreachable
 
 DIKTAT = b"kein echtes Audio, aber Bytes"
 
@@ -326,6 +326,66 @@ def test_ein_abgeschalteter_erkenner_laesst_die_spur_wartend(config, sitzung_id)
     assert "nicht erreichbar" in " ".join(meldungen)
     # Die zweite Spur wird gar nicht erst versucht — sie liefe in denselben Fehler.
     assert wartend[1].detail is None
+
+
+# --- Der zweite Anlauf --------------------------------------------------------------
+
+
+def test_eine_gescheiterte_spur_kommt_beim_naechsten_lauf_wieder_dran(config, sitzung_id):
+    """#247: ein HTTP 500 hieß »für immer verloren«, und die Frist holte den Ton trotzdem.
+
+    Der Grund war jedes Mal vorübergehend — der Nachbardienst rechnete gerade an einer
+    anderen Spur. Am 22.08. standen drei Aufnahmen so da, obwohl der Erkenner längst wieder
+    antwortete; gerettet hat sie nur ein Griff von Hand.
+    """
+    hochladen(config, sitzung_id)
+    beschaeftigt = Erkenner(fehler=TranscriberError("abgewiesen: HTTP 500"))
+
+    service.run_queue(config, runde(config), model=beschaeftigt)
+
+    (gescheitert,) = recordings.for_session(runde(config), sitzung_id)
+    assert gescheitert.status == recordings.GESCHEITERT
+    assert gescheitert.versuche == 1
+    assert [spur.id for spur in recordings.pending(runde(config))] == [gescheitert.id]
+
+    service.run_queue(config, runde(config), model=Erkenner())
+
+    (nachher,) = recordings.for_session(runde(config), sitzung_id)
+    assert nachher.status == recordings.FERTIG
+    assert "die Wirtin hat gelogen" in nachher.text
+    assert recordings.pending(runde(config)) == ()
+
+
+def test_nach_drei_fehlschlaegen_bleibt_die_spur_liegen(config, sitzung_id):
+    """Wiederholt wird begrenzt: sonst bliebe die Chronik des Abends bis zur Frist ungeschrieben.
+
+    Liegenbleiben heißt nicht weg — der Ton liegt bis zur Frist da, und wer die Spur doch
+    noch will, setzt sie von Hand auf ``wartet``.
+    """
+    hochladen(config, sitzung_id)
+    kaputt = Erkenner(fehler=TranscriberError("abgewiesen: HTTP 500"))
+
+    for _ in range(recordings.MAX_VERSUCHE):
+        service.run_queue(config, runde(config), model=kaputt)
+
+    (aufgegeben,) = recordings.for_session(runde(config), sitzung_id)
+    assert aufgegeben.versuche == recordings.MAX_VERSUCHE
+    assert recordings.pending(runde(config)) == ()
+    assert [spur.id for spur in recordings.unverschriftet(runde(config))] == [aufgegeben.id]
+    assert len(list(config.recordings_dir.iterdir())) == 1
+
+    recordings.mark(runde(config), aufgegeben.id, recordings.WARTET)
+
+    assert [spur.id for spur in recordings.pending(runde(config))] == [aufgegeben.id]
+
+
+def test_eine_verschriftete_spur_steht_in_keiner_der_beiden_listen(config, sitzung_id):
+    hochladen(config, sitzung_id)
+
+    service.run_queue(config, runde(config), model=Erkenner())
+
+    assert recordings.pending(runde(config)) == ()
+    assert recordings.unverschriftet(runde(config)) == ()
 
 
 # --- Die zugesagte Frist ------------------------------------------------------------

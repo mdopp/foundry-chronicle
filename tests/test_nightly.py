@@ -291,6 +291,81 @@ def test_ohne_erkenner_bleibt_die_spur_liegen_und_die_chronik_ungeschrieben(stel
     assert nightly.offen(gastgeber) != ()
 
 
+class Antwort:
+    """So weit der Client in eine ``requests``-Antwort hineinsieht."""
+
+    def __init__(self, status_code, rumpf):
+        self.status_code = status_code
+        self._rumpf = rumpf
+
+    def json(self):
+        return self._rumpf
+
+
+class Beschaeftigt:
+    """``solaris-whisper-batch``, während es schon an einer Spur rechnet.
+
+    Die erste Anfrage kommt durch, jede weitere bekommt HTTP 500 — so am 22.08. gemessen,
+    vier Spuren in sechzehn Sekunden, eine mit 200 und drei mit 500. Es liegt nicht an der
+    Größe: dieselbe Spur allein aufgerufen antwortet in Sekunden.
+    """
+
+    def __init__(self):
+        self.aufrufe = 0
+
+    def post(self, _url, *, json, timeout):
+        self.aufrufe += 1
+        if self.aufrufe == 1:
+            return Antwort(200, {"segments": [{"start": 0.0, "end": 2.0, "text": GESPROCHEN}]})
+        return Antwort(500, {"error": "another transcription is running"})
+
+
+def test_ein_teilweise_gescheiterter_lauf_meldet_keinen_erfolg(stelle, monkeypatch):
+    """#247: die Karte sagte »gelungen«, während ihr eigener Text dreimal HTTP 500 aufzählte.
+
+    Eine **gescheiterte** Spur wartet nicht mehr; ``not pending`` war damit wahr, sobald
+    alles entweder fertig oder gescheitert war. Zusammen mit dem zweiten Fehler — eine
+    gescheiterte Spur kam nie wieder dran — hätte das drei Aufnahmen gekostet, ohne dass
+    irgendwo etwas dazu stand.
+    """
+    gastgeber = runde(stelle)
+    sitzung_id = mit_notiz(stelle)
+    mit_wartender_spur(stelle, sitzung_id, name="mira.m4a")
+    mit_wartender_spur(stelle, sitzung_id, name="brok.m4a")
+    monkeypatch.setattr(
+        transcribe,
+        "model_from_config",
+        lambda _config: erkenner.WhisperBatch(stelle, http=Beschaeftigt),
+    )
+
+    schritte = {s["name"]: s for s in json.loads(nightly.lauf(stelle, gastgeber))}
+
+    assert "HTTP 500" in schritte[nightly.TRANSKRIPT]["text"]
+    assert not schritte[nightly.TRANSKRIPT]["gelungen"]
+    staende = {spur.source: spur.status for spur in recordings.for_session(gastgeber, sitzung_id)}
+    assert staende == {"mira": recordings.FERTIG, "brok": recordings.GESCHEITERT}
+    # Und sie ist nicht verloren: die nächste Nacht versucht es wieder.
+    assert [spur.source for spur in recordings.pending(gastgeber)] == ["brok"]
+
+
+def test_eine_aufgegebene_spur_haelt_die_karte_rot(stelle):
+    """Auch nach dem letzten Anlauf: Ton ohne Text ist kein gelungener Lauf.
+
+    Sonst wäre der Fehler bloß verschoben — die Karte würde grün, sobald die Spur ihre
+    Anläufe verbraucht hat, und niemand sähe in den Tagen bis zur Frist hin.
+    """
+    gastgeber = runde(stelle)
+    sitzung_id = mit_notiz(stelle)
+    spur = mit_wartender_spur(stelle, sitzung_id)
+    for _ in range(recordings.MAX_VERSUCHE):
+        recordings.mark(gastgeber, spur.id, recordings.GESCHEITERT, "abgewiesen: HTTP 500")
+
+    schritte = {s["name"]: s for s in json.loads(nightly.lauf(stelle, gastgeber))}
+
+    assert recordings.pending(gastgeber) == ()
+    assert not schritte[nightly.TRANSKRIPT]["gelungen"]
+
+
 def test_ohne_sitzung_meldet_die_nacht_keine_chronik(stelle, monkeypatch):
     """Eine Zusage ohne Deckung war der Fehler: »geschrieben« stand auch dann da, wenn
     nichts entstand (#221, dieselbe Gestalt wie #182)."""

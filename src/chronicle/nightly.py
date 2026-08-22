@@ -143,17 +143,22 @@ def _diktat(config: Config, runde: Runde) -> Schritt:
 
 
 def _transkript(config: Config, runde: Runde) -> Schritt:
-    """Die Warteschlange — und die Frage, ob danach wirklich nichts mehr wartet.
+    """Die Warteschlange — und die Frage, ob danach wirklich kein Ton ohne Text mehr daliegt.
 
     Was hinterher noch auf ``wartet`` steht, ist nicht gescheitert, sondern nicht
     drangekommen: der Erkenner war aus (#216). Der Schritt ist dann nicht grün, damit die
     Karte nicht Erfolg meldet, wo eine Stunde Ton unverschriftet liegt.
+
+    Gefragt wird nach ``unverschriftet`` und nicht nach ``pending``, denn genau daran ist
+    der Satz vorbeigegangen: eine **gescheiterte** Spur wartet nicht, der Ausdruck war
+    also wahr, sobald alles entweder fertig oder gescheitert war. Am 22.08. stand
+    ``gelungen: true`` über einem Text, der dreimal HTTP 500 aufzählte (#247).
     """
     meldungen = run_queue(config, runde)
     return Schritt(
         TRANSKRIPT,
         " ".join(meldungen) if meldungen else WARTESCHLANGE_LEER,
-        gelungen=not recordings.pending(runde),
+        gelungen=not recordings.unverschriftet(runde),
     )
 
 
@@ -206,10 +211,11 @@ def _chronik(config: Config, runde: Runde) -> Schritt:
     Reihenfolge, der die Übernahme der Transkripte fehlte, und darüber ein »geschrieben«,
     das auch dann kam, wenn nichts entstanden war.
 
-    Übersprungen wird, wessen Spur noch wartet. Das löst sich von allein: entweder
-    antwortet der Erkenner in einer der nächsten Nächte, oder die zugesagte Frist holt
-    die Aufnahme nach sieben Tagen — dann ist sie nicht mehr wartend und die Sitzung
-    kommt mit dem an die Reihe, was von ihr übrig ist.
+    Übersprungen wird, wessen Spur noch einen Anlauf bekommt. Das löst sich von allein:
+    entweder antwortet der Erkenner in einer der nächsten Nächte, oder die Spur hat ihre
+    Anläufe verbraucht (``recordings.MAX_VERSUCHE``), oder die zugesagte Frist holt die
+    Aufnahme nach sieben Tagen — in jedem dieser Fälle steht sie nicht mehr in ``pending``
+    und die Sitzung kommt mit dem an die Reihe, was von ihr übrig ist.
     """
     faellig = offen(runde)
     if not faellig:

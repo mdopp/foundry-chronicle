@@ -288,6 +288,14 @@ CREATE TABLE IF NOT EXISTS transcript (
 -- still. Addiert wird er **vor** dem Speichern: ``transcript_segment.start_ms`` bleibt
 -- damit sitzungsabsolut, so wie ``chronicle.transcribe.merge`` es voraussetzt. ``0`` steht
 -- beim ersten Häppchen, bei Diktaten und bei allem aus der Zeit vor dieser Spalte.
+--
+-- ``versuche`` zählt, wie oft das Verschriften dieser Spur gescheitert ist. Ohne die Zahl
+-- gäbe es nur zwei Möglichkeiten, und beide sind falsch: ein einziger Fehlschlag heißt für
+-- immer gescheitert — der Erkenner war eine Stunde beschäftigt und die Frist löschte den
+-- Ton sieben Tage später ungefragt (#247) —, oder es wird bis zur Frist weiterversucht,
+-- und dann bleibt die Chronik der Sitzung sieben Tage lang ungeschrieben. Hochgezählt wird
+-- allein beim Scheitern (``recordings.mark``); ``0`` steht bei allem aus der Zeit vor
+-- dieser Spalte, das damit einen weiteren Anlauf bekommt.
 CREATE TABLE IF NOT EXISTS recording (
     id          INTEGER PRIMARY KEY,
     runde_id    INTEGER NOT NULL REFERENCES runde (id) ON DELETE CASCADE,
@@ -306,6 +314,7 @@ CREATE TABLE IF NOT EXISTS recording (
     besitzer    TEXT,
     herzschlag  TEXT,
     offset_ms   INTEGER NOT NULL DEFAULT 0,
+    versuche    INTEGER NOT NULL DEFAULT 0,
     FOREIGN KEY (session_id, runde_id) REFERENCES session (id, runde_id) ON DELETE CASCADE
 );
 

@@ -59,14 +59,18 @@ def _stand(runde: Runde, vorher: tuple[recordings.Recording, ...]) -> tuple[int,
 
     Gezählt wird **nach** dem Lauf und Spur für Spur. Die Zahl davor sagt nur, wie viele
     anstanden; genau aus ihr wurde »4 Aufnahmen verschriftet«, während alle vier nach einem
-    nicht erreichbaren Erkenner unverändert auf ``wartet`` standen (#244). Und eine
-    gescheiterte Spur zählt hier zu keinem von beidem: sie ist weder verschriftet noch
-    liegt sie für den nächsten Lauf bereit.
+    nicht erreichbaren Erkenner unverändert auf ``wartet`` standen (#244).
+
+    Die zweite Zahl ist die, zu der der Satz »kommt beim nächsten Lauf wieder dran« passt —
+    also ``recordings.kommt_wieder_dran`` und nicht ``wartet``. Eine einmal gescheiterte
+    Spur steht seit #247 wieder in der Warteschlange und gehört damit hierher; eine, die
+    ihre Anläufe verbraucht hat, zählt zu keinem von beidem, denn versprochen wäre sonst
+    ein Lauf, den es nicht mehr gibt.
     """
     danach = [recordings.get(runde, aufnahme.id) for aufnahme in vorher]
     fertig = sum(1 for a in danach if a is not None and a.status == recordings.FERTIG)
-    wartet = sum(1 for a in danach if a is not None and a.status == recordings.WARTET)
-    return fertig, wartet
+    offen = sum(1 for a in danach if a is not None and recordings.kommt_wieder_dran(a))
+    return fertig, offen
 
 
 def schreiben(config: Config, runde: Runde, session_id: int) -> Lauf | None:

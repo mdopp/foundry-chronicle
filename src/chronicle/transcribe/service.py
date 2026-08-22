@@ -328,6 +328,11 @@ def run_queue(
     Das Modell wird erst geladen, wenn wirklich etwas wartet: ein leerer Lauf soll
     nichts kosten, damit er stündlich stehen darf.
 
+    In der Warteschlange steht seit #247 auch, was schon einmal gescheitert ist — bis zu
+    ``recordings.MAX_VERSUCHE`` Anläufe. Wiederholt wird von vorn, und das kostet nichts:
+    das Transkript einer Quelle wird ohnehin im Ganzen ersetzt. Innerhalb **eines** Laufs
+    wiederholt wird nichts: die Liste steht vor der Schleife fest.
+
     Am Ende wird die zugesagte Aufbewahrungsfrist durchgesetzt — auch nach einem leeren
     Lauf, denn zugesagt ist sie unabhängig davon, ob heute etwas zu tun war.
     """

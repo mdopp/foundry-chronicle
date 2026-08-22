@@ -35,6 +35,14 @@ früher für immer auf ``laeuft`` stehen — ``pending`` sah sie nie wieder an, 
 Tagen holte die Frist die Audiodatei, ohne dass je ein Transkript entstand (#181). Jetzt
 kommt eine verwaiste Zeile in die Warteschlange zurück, und was die Frist ohne Transkript
 holt, wird laut gemeldet statt still abgeräumt.
+
+**Und eine gescheiterte Spur bekommt drei Anläufe** (#247). Derselbe Ausgang wie bei #181,
+nur eine Tür weiter: ``gescheitert`` hieß für immer, obwohl der Grund jedes Mal
+vorübergehend war — der Nachbardienst rechnete gerade an einer anderen Spur und wies die
+nächste mit HTTP 500 ab. Die Frist holte den Ton trotzdem. ``pending`` fragt deshalb nicht
+mehr nach dem Stand allein, sondern über ``kommt_wieder_dran``; ``unverschriftet`` steht
+daneben und zählt auch die aufgegebenen, damit kein Lauf Erfolg meldet, während Ton ohne
+Text daliegt.
 """
 
 from __future__ import annotations
@@ -66,6 +74,16 @@ GESCHEITERT = "gescheitert"
 # Die Frist aus der Ansage. Kein Betriebsknopf: wer sie ändert, ändert eine Zusage an
 # Menschen, deren Stimme aufgenommen wurde — das ist kein Umgebungsvariablen-Thema.
 RETENTION_TAGE = 7
+
+# Wie oft eine Spur scheitern darf, bevor sie liegen bleibt. Drei, weil die gemessenen
+# Gründe alle vorübergehend waren — ein beschäftigter Nachbardienst, ein Neustart, ein
+# Deploy — und beim nächsten Lauf nicht mehr da sind. Weniger wäre kein Wiederversuch
+# (#247: ein einziges HTTP 500 hätte drei Aufnahmen gekostet); mehr hieße, bis zur Frist
+# weiterzuprobieren, und dann bliebe die Chronik dieser Sitzung sieben Tage ungeschrieben,
+# weil ``nightly._chronik`` einen Abend überspringt, dessen Ton noch kommen kann. Drei
+# Anläufe decken drei Nächte ab und lassen vier Tage, in denen die Chronik ohne diese Spur
+# entstehen kann — und der Ton liegt bis zur Frist trotzdem noch da.
+MAX_VERSUCHE = 3
 
 # Der Bot läuft ohnehin; einmal am Tag nachzusehen kostet nichts und hält die Zusage auch
 # in Wochen ohne Stapellauf.
@@ -167,6 +185,7 @@ class Recording:
     started_at: str | None = None
     message_at: str | None = None
     offset_ms: int = 0
+    versuche: int = 0
 
 
 def _now() -> str:
@@ -194,6 +213,7 @@ def _eintrag(row: sqlite3.Row, text: str = "") -> Recording:
         started_at=row["started_at"] if "started_at" in row.keys() else None,
         message_at=row["message_at"] if "message_at" in row.keys() else None,
         offset_ms=row["offset_ms"] if "offset_ms" in row.keys() else 0,
+        versuche=row["versuche"] if "versuche" in row.keys() else 0,
     )
 
 
@@ -311,7 +331,7 @@ def _mit_transkript(scope: db.Scope, row: sqlite3.Row) -> Recording:
 # Lauf ersetzt die Transkript-Zeile im Ganzen, ihre Id wäre also nicht haltbar.
 AUSWAHL = (
     "SELECT r.id, r.session_id, r.filename, r.source, r.uploaded_at, r.status, r.detail, "
-    "r.deleted_at, r.discord_user_id, r.started_at, r.message_at, r.offset_ms, "
+    "r.deleted_at, r.discord_user_id, r.started_at, r.message_at, r.offset_ms, r.versuche, "
     "t.id AS transcript_id FROM recording r "
     "LEFT JOIN transcript t ON t.runde_id = r.runde_id AND t.session_id = r.session_id "
     "AND t.source = r.source WHERE r.runde_id = ? "
@@ -338,17 +358,43 @@ def get(runde: Runde, recording_id: int) -> Recording | None:
         scope.close()
 
 
-def pending(runde: Runde) -> tuple[Recording, ...]:
-    """Was noch wartet — ohne die Spuren, deren Audio die Frist schon geholt hat."""
+def unverschriftet(runde: Runde) -> tuple[Recording, ...]:
+    """Ton ohne Text: die wartenden **und** die gescheiterten Spuren.
+
+    Der Unterschied zu ``pending``: dort steht, was noch einen Anlauf bekommt, hier, was
+    noch keinen Text hat. Eine aufgegebene Spur fällt aus der Warteschlange, aber nicht aus
+    der Rechnung — sonst meldete der Lauf Erfolg, während drei Stunden Ton unverschriftet
+    der Frist entgegenliegen (#247).
+    """
     scope = db.scoped(runde)
     try:
         rows = scope.execute(
-            AUSWAHL + "AND r.status = ? AND r.deleted_at IS NULL ORDER BY r.id",
-            (scope.runde_id, WARTET),
+            AUSWAHL + "AND r.status IN (?, ?) AND r.deleted_at IS NULL ORDER BY r.id",
+            (scope.runde_id, WARTET, GESCHEITERT),
         ).fetchall()
     finally:
         scope.close()
     return tuple(_eintrag(row) for row in rows)
+
+
+def kommt_wieder_dran(aufnahme: Recording) -> bool:
+    """Bekommt diese Spur noch einen Anlauf?
+
+    Die eine Stelle, an der die Regel steht — ``pending`` filtert damit, und ``kette``
+    zählt damit, was es beim nächsten Lauf wieder versucht. Eine gescheiterte Spur ist
+    nicht verloren: der Grund war bisher jedes Mal vorübergehend, und der Ton liegt bis zur
+    Frist noch da. Endlos wiederholt wird trotzdem nicht — ``MAX_VERSUCHE`` sagt, warum.
+    """
+    if aufnahme.deleted_at is not None:
+        return False
+    if aufnahme.status == WARTET:
+        return True
+    return aufnahme.status == GESCHEITERT and aufnahme.versuche < MAX_VERSUCHE
+
+
+def pending(runde: Runde) -> tuple[Recording, ...]:
+    """Was noch einen Anlauf bekommt — ohne die Spuren, deren Audio die Frist schon holte."""
+    return tuple(aufnahme for aufnahme in unverschriftet(runde) if kommt_wieder_dran(aufnahme))
 
 
 def mark(runde: Runde, recording_id: int, status: str, detail: str | None = None) -> None:
@@ -357,6 +403,12 @@ def mark(runde: Runde, recording_id: int, status: str, detail: str | None = None
     Der Besitzvermerk hängt am Stand und wird nirgends von Hand gepflegt: ``laeuft`` gehört
     diesem Prozess, jeder andere Stand gehört niemandem mehr. So kann keine fertige Zeile
     einen Besitzer behalten, dessen Herzschlag nie wieder kommt.
+
+    Ebenso der Zähler: ``gescheitert`` zählt einen Versuch hoch, jeder andere Stand lässt
+    ihn stehen. Er wird nirgends zurückgesetzt — nach ``MAX_VERSUCHE`` bleibt die Spur
+    liegen. Wer sie doch noch einmal will, setzt sie von Hand auf ``wartet``; das steht
+    außerhalb des Zählers und ist genau der Griff, der am 22.08. drei Aufnahmen gerettet
+    hat (#247).
     """
     laeuft = status == LAEUFT
     scope = db.scoped(runde)
@@ -364,13 +416,14 @@ def mark(runde: Runde, recording_id: int, status: str, detail: str | None = None
         with scope:
             scope.execute(
                 "UPDATE recording SET status = ?, detail = ?, updated_at = ?, besitzer = ?, "
-                "herzschlag = ? WHERE runde_id = ? AND id = ?",
+                "herzschlag = ?, versuche = versuche + ? WHERE runde_id = ? AND id = ?",
                 (
                     status,
                     detail,
                     _now(),
                     _ICH if laeuft else None,
                     _lebenszeichen() if laeuft else None,
+                    1 if status == GESCHEITERT else 0,
                     scope.runde_id,
                     recording_id,
                 ),
