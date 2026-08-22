@@ -41,6 +41,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import wave
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -49,7 +50,7 @@ from typing import Protocol
 from werkzeug.utils import secure_filename
 
 from chronicle import consent, lebenszyklus, notes, recordings
-from chronicle.bot import BotFehler, ansage
+from chronicle.bot import BotFehler, ansage, namen
 from chronicle.config import Config
 from chronicle.runde import Runde
 
@@ -240,6 +241,8 @@ class Stimme(Protocol):
 
     def mitglieder(self) -> tuple[consent.Member, ...]: ...
 
+    async def namen(self, kennungen: Sequence[str]) -> Mapping[str, str]: ...
+
     def im_kanal(self) -> bool: ...
 
     async def ansagen(self, datei: Path) -> None: ...
@@ -392,6 +395,11 @@ class Aufnahme:
         Sitzungsuhr. Wo die einzelne Datei auf ihr liegt, sagt ``offset_ms`` und sonst
         nichts — ein zweiter Nullpunkt je Häppchen wäre genau die geratene Zeitrechnung,
         gegen die die Zusammenführung gebaut ist.
+
+        Der Anzeigename kommt mit, sofern er beim Mitschnitt schon feststand. Der
+        Platzhalter kommt **nicht** mit: er ist kein Name, sondern die Auskunft, dass
+        keiner vorlag — und genau daran erkennt ``bot.namen`` später, wen es nachzuschlagen
+        gilt (#250).
         """
         if spur.eingereiht:
             return
@@ -401,6 +409,7 @@ class Aufnahme:
                 self.session_id,
                 spur.pfad.name,
                 discord_user_id=user_id,
+                discord_name=None if spur.sprecher == consent.UNBEKANNT else spur.sprecher,
                 started_at=self.begonnen_at,
                 offset_ms=spur.offset_ms,
             )
@@ -646,7 +655,32 @@ async def nachzuegler(
 async def stoppen(stimme: Stimme, aufnahme: Aufnahme) -> tuple[str, ...]:
     stimme.mitschnitt_beenden()
     await stimme.trennen()
-    return aufnahme.beenden()
+    meldungen = aufnahme.beenden()
+    # Nach dem Einreihen, nicht davor: ``beenden`` legt die Zeilen an, an denen die Namen
+    # hängen. Und außerhalb des Abschlusses, damit ein stummes Discord keine Spur aufhält.
+    await _namen_nachtragen(stimme, aufnahme)
+    return meldungen
+
+
+async def _namen_nachtragen(stimme: Stimme, aufnahme: Aufnahme) -> None:
+    """Nach dem Einreihen die fehlenden Sprechernamen holen — der späteste Zeitpunkt, der trägt.
+
+    Hier und nicht früher: erst jetzt steht fest, wessen Stimme überhaupt zu Ton geworden
+    ist. Und hier und nicht später: der Stapel, der die Chronik schreibt, läuft nachts und
+    ohne Gewähr auf eine Verbindung. Warum es kein ``members``-Intent ist, steht in
+    ``chronicle.bot.namen``.
+
+    Ein Fehlschlag hält den Abschluss nicht auf. Die Spuren liegen eingereiht, die Kennungen
+    stehen an ihnen, und ``python -m chronicle.bot.namen`` holt es nach; bis dahin heißt der
+    Sprecher »unbekannt«, was er ohne diesen Aufruf ohnehin täte.
+    """
+    gemeint = lebenszyklus.dieselbe(aufnahme.runde)
+    if gemeint is None:
+        return
+    try:
+        await namen.nachtragen(stimme.namen, gemeint, aufnahme.session_id)
+    except Exception:  # noqa: BLE001
+        logger.exception("Die Sprechernamen ließen sich nicht nachtragen")
 
 
 async def pruefen(config: Config, stimme: Stimme, runde: Runde) -> Probe:

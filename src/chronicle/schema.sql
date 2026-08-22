@@ -311,6 +311,11 @@ CREATE TABLE IF NOT EXISTS recording (
     updated_at  TEXT NOT NULL,
     deleted_at  TEXT,
     discord_user_id TEXT,
+    -- Der Anzeigename zu dieser Kennung, sofern er sich holen ließ. Er steht hier und
+    -- nicht im Einwilligungsprotokoll: dort belegt eine Zeile, dass jemand die Ansage
+    -- gehört hat, und das lässt sich aus einer Tonspur nicht schließen. Bleibt er leer,
+    -- heißt der Sprecher in der Chronik »unbekannt« — nie nach seiner Datei (#250).
+    discord_name TEXT,
     besitzer    TEXT,
     herzschlag  TEXT,
     offset_ms   INTEGER NOT NULL DEFAULT 0,

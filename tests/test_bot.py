@@ -225,9 +225,16 @@ class FakeStimme:
         # Wie py-cord: der Bot sitzt da, wo er hingehört, bis ihn jemand zieht.
         self.verschoben = False
         self.schneidet = False
+        # Wen Discord auf Nachfrage hergibt — leer heißt: keiner ist nachzuschlagen.
+        self.nachschlag: dict[str, str] = {}
+        self.gefragt: list[tuple[str, ...]] = []
 
     def mitglieder(self):
         return tuple(self._anwesend)
+
+    async def namen(self, kennungen):
+        self.gefragt.append(tuple(kennungen))
+        return {k: self.nachschlag[k] for k in kennungen if k in self.nachschlag}
 
     def im_kanal(self):
         return not self.verschoben
@@ -708,6 +715,72 @@ def test_stoppen_beendet_den_mitschnitt_trennt_und_reiht_ein(
     assert not aufnahme.laeuft
     assert len(recordings.pending(unsere_runde(konfiguration))) == 1
     assert "wartet auf den Stapel" in meldungen[0]
+
+
+# Wer im Sprachkanal saß, ohne dem Bot je begegnet zu sein: py-cord reicht dann ein
+# blankes ``Object`` durch, ``_mitglied`` setzt den Platzhalter, und die Kennung steht
+# trotzdem an der Spur. Genau dieser Fall ist #250.
+NAMENLOS = consent.Member(id="4004", name=consent.UNBEKANNT)
+
+
+def test_der_namenlose_sprecher_wird_beim_einreihen_nachgeschlagen(
+    konfiguration, sitzung_id, ohne_espeak, caplog
+):
+    """Ein Aufruf je Sprecher statt der Mitgliederliste jeder Gilde — und erst hier.
+
+    Beim Verbinden stünde für jeden im Kanal ein Name da, auch für die, von denen nie eine
+    Sekunde Ton entsteht. Beim Einreihen *ist* die Stimme zu Ton geworden.
+    """
+    stimme = FakeStimme()
+    stimme.nachschlag = {"4004": "Samuel"}
+    aufnahme = asyncio.run(recorder.starten(konfiguration, stimme, unsere_runde(konfiguration)))
+    aufnahme.schreiben(NAMENLOS, stille(480))
+
+    with caplog.at_level(logging.INFO):
+        asyncio.run(recorder.stoppen(stimme, aufnahme))
+
+    spuren = recordings.pending(unsere_runde(konfiguration))
+    assert [(spur.discord_user_id, spur.discord_name) for spur in spuren] == [("4004", "Samuel")]
+    assert stimme.gefragt == [("4004",)]
+    # Und kein Name im Log — die Zeile sagt, dass nachgetragen wurde, nicht wen.
+    assert "Samuel" not in caplog.text
+
+
+def test_wer_schon_einen_namen_hatte_wird_nicht_noch_einmal_gefragt(
+    konfiguration, sitzung_id, ohne_espeak
+):
+    stimme = FakeStimme()
+    aufnahme = asyncio.run(recorder.starten(konfiguration, stimme, unsere_runde(konfiguration)))
+    aufnahme.schreiben(MIRA, stille(480))
+
+    asyncio.run(recorder.stoppen(stimme, aufnahme))
+
+    spuren = recordings.pending(unsere_runde(konfiguration))
+    assert [spur.discord_name for spur in spuren] == ["Mira"]
+    assert stimme.gefragt == []
+
+
+def test_ein_gescheitertes_nachschlagen_haelt_den_abschluss_nicht_auf(
+    konfiguration, sitzung_id, ohne_espeak
+):
+    """Discord schweigt, das Konto ist gelöscht — die Spur liegt trotzdem eingereiht da.
+
+    Und sie heißt danach nicht nach ihrer Datei: die Zeile bleibt leer, und die Chronik
+    schreibt das Wort »unbekannt«.
+    """
+
+    class Schweigt(FakeStimme):
+        async def namen(self, kennungen):
+            raise RuntimeError("Discord antwortet nicht")
+
+    stimme = Schweigt()
+    aufnahme = asyncio.run(recorder.starten(konfiguration, stimme, unsere_runde(konfiguration)))
+    aufnahme.schreiben(NAMENLOS, stille(480))
+
+    meldungen = asyncio.run(recorder.stoppen(stimme, aufnahme))
+
+    assert "wartet auf den Stapel" in meldungen[0]
+    assert [spur.discord_name for spur in recordings.pending(unsere_runde(konfiguration))] == [None]
 
 
 def sprecher(spur) -> str:
@@ -1532,6 +1605,7 @@ class FakeIntents:
         self.voice_states = False
         self.messages = False
         self.message_content = False
+        self.members = False
 
 
 class FakePermissions:
@@ -1959,6 +2033,21 @@ def runde(pycord):
 
 def befehl(bot, name):
     return bot.gruppen[gateway.GRUPPE].befehle[name]
+
+
+def test_der_bot_verlangt_die_mitglieder_absicht_nicht(konfiguration, pycord):
+    """Die Sparsamkeit von #250, festgehalten: kein ``members``-Intent.
+
+    Er ist privilegiert und brächte die ganze Mitgliederliste jeder Gilde dauerhaft in
+    diesen Prozess. Gebraucht wird davon ein einziger Anzeigename je Sprecher, und den
+    holt ``chronicle.bot.namen`` gezielt. Wer den Intent hier setzt, tauscht die
+    sparsamere Lösung gegen die ungenauere.
+    """
+    gateway.baue(konfiguration)
+
+    absichten = FakeBot.erzeugt[0].intents
+    assert absichten.members is False
+    assert absichten.voice_states is True
 
 
 def test_ohne_sprach_abhaengigkeiten_startet_der_bot_gar_nicht(konfiguration, pycord):

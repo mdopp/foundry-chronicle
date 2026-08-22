@@ -102,6 +102,7 @@ VERWORFENE_SCHLUESSEL = ("foundry_password",)
 NACHGETRAGEN = (
     ("recording", "deleted_at", "TEXT"),
     ("recording", "discord_user_id", "TEXT"),
+    ("recording", "discord_name", "TEXT"),
     ("recording", "started_at", "TEXT"),
     ("recording", "message_at", "TEXT"),
     ("note", "origin", "TEXT"),
