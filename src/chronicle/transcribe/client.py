@@ -73,6 +73,16 @@ NICHT_ERREICHBAR = (
 
 ABGEWIESEN = "Der Spracherkenner {url} hat die Spur abgewiesen: HTTP {code}."
 
+# Mit Grund, wenn die Antwort einen nennt. Ohne diesen Halbsatz kostete #248 Stunden:
+# der Dienst schrieb »ValueError: The maximum decoding length must be > 0« in den Rumpf,
+# und die Meldung warf ihn weg. Der Text geht in den Stand der Aufnahme und in die
+# Meldung an die Runde; ins Log des Betreibers kommt weiterhin nur die Fehlerart.
+ABGEWIESEN_MIT_GRUND = "Der Spracherkenner {url} hat die Spur abgewiesen: HTTP {code} — {grund}"
+
+# Fremder Text, also gekürzt und einzeilig: eine HTML-Fehlerseite soll die Statuszeile
+# der Runde nicht fluten.
+GRUND_MAX = 200
+
 KEINE_SEGMENTE = "Der Spracherkenner {url} hat keine Segmente geliefert."
 
 # Der Pfad einer Spur trägt den Anzeigenamen des Sprechers (#194, #199) — er steht
@@ -110,6 +120,20 @@ class SpeechModel(Protocol):
 
 def _http_session() -> requests.Session:
     return requests.Session()
+
+
+def _grund(antwort) -> str:
+    """Was die Gegenstelle zu ihrem Fehler sagt — als eine gekürzte Zeile."""
+    try:
+        rumpf = antwort.json()
+    except ValueError:
+        rumpf = None
+    gesagt = ""
+    if isinstance(rumpf, Mapping):
+        gesagt = str(rumpf.get("error") or rumpf.get("detail") or "")
+    if not gesagt:
+        gesagt = str(getattr(antwort, "text", "") or "")
+    return " ".join(gesagt.split())[:GRUND_MAX]
 
 
 class WhisperBatch:
@@ -159,7 +183,12 @@ class WhisperBatch:
                 NICHT_ERREICHBAR.format(url=self._ziel, grund=f"HTTP {NICHT_BEREIT}")
             )
         if antwort.status_code >= 400:
-            raise TranscriberError(ABGEWIESEN.format(url=self._ziel, code=antwort.status_code))
+            grund = _grund(antwort)
+            raise TranscriberError(
+                ABGEWIESEN_MIT_GRUND.format(url=self._ziel, code=antwort.status_code, grund=grund)
+                if grund
+                else ABGEWIESEN.format(url=self._ziel, code=antwort.status_code)
+            )
         return iter(self._segmente(antwort))
 
     @property

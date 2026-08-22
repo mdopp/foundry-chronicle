@@ -129,12 +129,24 @@ def test_die_wortvorgabe_nennt_die_namen_der_sitzung():
     )
 
 
-def test_das_vokabular_wird_bei_224_token_hart_gekappt():
+def test_ein_volles_register_laesst_dem_erkenner_noch_dekodierlaenge():
+    """Der Deckel schöpft das Prompt-Fenster nie aus (#248).
+
+    224 war Whispers halbe Fensterlänge — alles, was faster-whisper einer Wortvorgabe
+    zugesteht. Zusammen mit vollem vorherigem Text blieb null zum Schreiben, und der
+    Dienst antwortete »ValueError: The maximum decoding length must be > 0«.
+    """
     viele = [f"Namenlose Gestalt Nummer {nummer}" for nummer in range(200)]
     gekappt = vocabulary.capped(viele)
 
     assert 0 < len(gekappt) < len(viele)
-    assert vocabulary.tokens(vocabulary.TRENNER.join(gekappt)) <= vocabulary.MAX_TOKEN
+    verbraucht = vocabulary.tokens(vocabulary.TRENNER.join(gekappt))
+    assert verbraucht <= vocabulary.MAX_TOKEN
+    # Der schlechteste Fall: voriger Text randvoll, Marken dazu.
+    uebrig = vocabulary.FENSTER - vocabulary.VORIGER_TEXT - vocabulary.MARKER - verbraucht
+    assert uebrig >= vocabulary.DEKODIERLAENGE
+    # Und der alte Wert hätte genau das gerissen.
+    assert vocabulary.MAX_TOKEN < vocabulary.FENSTER // 2
 
 
 def test_die_rangfolge_entscheidet_was_noch_hineinpasst():
@@ -506,6 +518,33 @@ def test_eine_abgewiesene_spur_ist_ein_fehler_dieser_spur(config, spur):
         list(dienst(config, gegenstelle).transcribe(spur))
 
     assert not isinstance(fehler.value, TranscriberUnreachable)
+
+
+def test_der_grund_aus_dem_antwortrumpf_steht_in_der_meldung(config, spur):
+    """Der Rumpf sagte den Fehler wörtlich — und wurde weggeworfen (#248)."""
+    gegenstelle = Gegenstelle(
+        antwort=Antwort(
+            status_code=500,
+            rumpf={"error": "ValueError: The maximum decoding length must be > 0"},
+        )
+    )
+
+    with pytest.raises(TranscriberError) as fehler:
+        list(dienst(config, gegenstelle).transcribe(spur))
+
+    assert "HTTP 500" in str(fehler.value)
+    assert "maximum decoding length must be > 0" in str(fehler.value)
+
+
+def test_ein_langer_fehlerrumpf_kommt_gekuerzt_und_einzeilig(config, spur):
+    gegenstelle = Gegenstelle(antwort=Antwort(status_code=500, rumpf={"error": "x\ny " * 400}))
+
+    with pytest.raises(TranscriberError) as fehler:
+        list(dienst(config, gegenstelle).transcribe(spur))
+
+    meldung = str(fehler.value)
+    assert "\n" not in meldung
+    assert len(meldung) < 400
 
 
 def test_eine_antwort_ohne_segmente_wird_nicht_als_leere_spur_verbucht(config, spur):
