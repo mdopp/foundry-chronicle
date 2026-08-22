@@ -302,7 +302,14 @@ def v_built(c: Cache, a) -> None:
     b = d.get("batch")
     if b and str(a.unit) not in [str(x) for x in b["unit_ids"]]:
         b["unit_ids"].append(str(a.unit))
-        b["count"] = len(b["unit_ids"])
+        # SKILL.md's batch economy ("up to 8 closed issues") counts issues, not
+        # units -- a cluster unit carries several. Recompute from each built
+        # unit's issue list rather than incrementing by 1, so the count is
+        # self-healing if it was ever stale.
+        b["count"] = sum(
+            len(d["units"].get(str(uid), {}).get("issues", []))
+            for uid in b["unit_ids"]
+        )
     c.save(d)
     print(f"built {a.unit}; batch count {d['batch']['count'] if d.get('batch') else 0}")
 
@@ -585,6 +592,23 @@ def v_selftest(c: Cache, a) -> None:
             )
             self._run(v_batch, action="new", branch="batch/x")
             self._run(v_claim, unit="s1")
+
+        def test_built_counts_issues_not_units_for_a_cluster(self):
+            self._run(
+                v_plan,
+                unit='{"id":"c1","kind":"cluster","issues":[11,12,13],"gate":"normal"}',
+            )
+            self._run(
+                v_plan,
+                unit='{"id":"c2","kind":"issue","issues":[14],"gate":"normal"}',
+            )
+            self._run(v_batch, action="new", branch="batch/x")
+            self._run(v_claim, unit="c1")
+            self._run(v_built, unit="c1", pr=None)
+            self.assertEqual(self.c.load()["batch"]["count"], 3)
+            self._run(v_claim, unit="c2")
+            self._run(v_built, unit="c2", pr=None)
+            self.assertEqual(self.c.load()["batch"]["count"], 4)
 
         def test_built_refuses_a_security_unit(self):
             self._plan_security_unit()
