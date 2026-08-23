@@ -1,6 +1,6 @@
 [project]
 name = "foundry-chronicle"
-version = "0.1.0"
+version = "0.2.0"
 description = "Sitzungsprotokolle für Tisch-Rollenspiel — eine Instanz pro Gruppe"
 requires-python = ">=3.12"
 dependencies = [
