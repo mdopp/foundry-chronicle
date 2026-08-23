@@ -18,22 +18,29 @@ Diese Regeln gelten für jede Sitzung, Mensch oder Agent.
 - **Discord ist die Oberfläche** (#62, seit 2026-08-06). Gespielt wird dort, also wird
   dort auch bedient: Erfassen, Auslösen, Einrichten und Bestätigen laufen über Befehle,
   Modals und Knöpfe; Ausgaben kommen als Embed (kurz) oder als Markdown-Datei (lang).
-  Die Weboberfläche wird abgeschaltet — **bis auf eine kleine Betreiber-Seite**
-  (Operator-Entscheidung 2026-08-10, #69). Was die spielende Gruppe betrifft, gehört
-  nach Discord; was der **Betreiber** einstellt, kann dort nicht hin, weil es keiner
-  Gilde gehört: Bot-Token, Ollama-Adresse und -Modell (#87) und **wer die Seite selbst
-  verwalten darf**. Letzteres ist keine Rolle im Spiel — es ist die Frage, wer an den
-  Bot-Token darf, und die gehört dem Betrieb dieser Box (#90 regelt etwas anderes: über
-  einer *Runde* steht niemand). Die Fassung vom 2026-08-11 zählte es hier heraus; mit
-  #157 steht es wieder da, weil es sonst nirgends stünde.
-  **Für die ersten drei gilt das seit #230 anders:** »keiner Gilde« begründet einen Ort
-  außerhalb von Discord, aber keine *Seite*. Bot-Token, Ollama-Adresse und -Modell kommen
-  jetzt aus den **Template-Variablen der Box** und werden nirgends mehr gepflegt; auf der
-  Seite steht nur noch, wer sie öffnen darf. Was die Seite dabei verliert — die
-  Auswahlliste der installierten Modelle — ist bewusst in Kauf genommen (#227).
-  Alles andere fällt. Wer eine neue Fähigkeit baut, baut sie **in Discord**,
-  nicht in einer Seite — die Betreiber-Seite ist kein Ort für Spielinhalte. Seit #157
-  trägt die Seite keine Spielinhalte mehr; einen zweiten Weg gibt es nicht.
+  **Die Weboberfläche ist abgeschaltet — vollständig** (#231, Abschluss der Kette aus
+  #227). Es gibt **keine** Seite mehr, auch keine Betreiber-Seite: ein Prozess, ein
+  Container, und der ist der Bot. Über HTTP antwortet allein `/healthz` auf der Schleife,
+  das Install-Gate der Box (#228). Wer eine neue Fähigkeit baut, baut sie **in Discord** —
+  eine Seite, in der sie sonst landen könnte, gibt es nicht mehr.
+
+  Die Entscheidungen, die dahin geführt haben, bleiben lesbar, weil sie erklären, warum es
+  am Ende keine Seite braucht:
+  - **2026-08-10, #69:** die Oberfläche fällt bis auf eine kleine Betreiber-Seite. Was die
+    spielende Gruppe betrifft, gehört nach Discord; was der **Betreiber** einstellt, kann
+    dort nicht hin, weil es keiner Gilde gehört: Bot-Token, Ollama-Adresse und -Modell
+    (#87) und wer die Seite selbst verwalten darf.
+  - **#157:** die Seite trägt keine Spielinhalte mehr; übrig bleiben die Instanz-Werte.
+  - **#230:** »keiner Gilde« begründet einen Ort *außerhalb von Discord*, aber keine
+    *Seite*. Bot-Token, Ollama-Adresse und -Modell kommen aus den **Template-Variablen der
+    Box**. Was die Seite dabei verlor — die Auswahlliste der installierten Ollama-Modelle
+    — ist bewusst in Kauf genommen.
+  - **#231:** damit stand auf der Seite nur noch die Verwaltungsgruppe, und die war die
+    Antwort auf die Frage, wer an *diese Seite* darf. Eine Seite, deren einziger Inhalt
+    die Erlaubnis ist, sie zu betreten, ist keine Seite, sondern ein Türsteher vor einem
+    leeren Raum. Wer an den Bot-Token darf, entscheidet jetzt, wer die Template-Variablen
+    dieses Dienstes bearbeiten darf — also ServiceBay, wo die Frage ohnehin hingehört
+    (#90 bleibt davon unberührt: über einer *Runde* steht weiterhin niemand).
 - **Eine Instanz trägt mehrere Runden** (#62/#63). Eine Runde ist eine Discord-Gilde
   mit eigenem Foundry-Zugang. Das löst »eine Instanz pro Gruppe« aus Epic #1 ab.
 
@@ -125,9 +132,9 @@ SQLite geht ohne eines ins Backup.
 
 Damit sind die drei Bedingungen der abgelösten Entscheidung **gegenstandslos, nicht
 gelockert**: sie schützten einen Wert, den es dort nicht mehr gibt. Geblieben ist die
-Zusage, die auch ohne sie trägt — **kein Token in einer Logzeile**, und der Prozess, der
-ihn nicht braucht, bekommt ihn auch nicht: die Betreiber-Seite läuft ohne ihn und zeigt
-nicht einmal mehr an, *ob* er gesetzt ist. Das sagt der Bot, indem er läuft oder nicht.
+Zusage, die auch ohne sie trägt — **kein Token in einer Logzeile**. Seit #231 gibt es
+daneben keinen zweiten Prozess mehr, der ihn nicht bekommen dürfte: es läuft nur noch der
+Bot, und ob der Token steht, sagt er, indem er läuft oder nicht.
 
 **Die Wanderung löscht ihn nur gegen Ersatz.** Auf einer laufenden Instanz ist die Zeile
 in `meta` die einzige Kopie des echten Tokens; gelöscht, während die Variable leer ist,
@@ -213,12 +220,16 @@ SQLite-Datei ist klein und enthält alles Unersetzliche.
   **Innerhalb** einer Instanz trennte die Weboberfläche zwei Rollen, Mitspielen und
   Verwalten (#51, `chronicle.roles`) — für das *Spielen* abgelöst mit #62: wer was darf,
   entscheidet Discord über seine eigenen Kanal- und Rollenrechte. Kein eigenes
-  Rollenmodell mehr für Spielinhalte. **`chronicle.roles` bleibt trotzdem** (Nachtrag
-  #157; die frühere Fassung sagte, es verschwinde mit #69): `ist_verwalter` und der
-  `Remote-Groups`-Header tragen die Antwort auf #90 — wer an die Betreiber-Seite darf.
-  Das ist eine Frage des Betriebs, keine des Spiels, und hat in keiner Gilde einen Ort.
-  Bis #230 hieß dieselbe Frage »wer an den Bot-Token darf«; der liegt nicht mehr hinter
-  dieser Seite, gepflegt wird dort aber weiter, wer sie selbst öffnen darf.
+  Rollenmodell mehr für Spielinhalte. **`chronicle.roles` ist mit #231 gefallen** (und
+  damit doch, was die Fassung vor #157 schon für #69 erwartet hatte). Der Nachtrag #157
+  hatte es behalten, weil `ist_verwalter` und der `Remote-Groups`-Header die Antwort auf
+  »wer an die Betreiber-Seite darf« trugen — eine Frage des Betriebs, keine des Spiels,
+  und in keiner Gilde beheimatet. Die Seite gibt es nicht mehr, also gibt es die Frage
+  nicht mehr: an den Bot-Token kommt, wer die Template-Variablen dieses Dienstes
+  bearbeiten darf, und darüber wacht ServiceBay. Mit `roles` sind `chronicle.instanz`,
+  die gespeicherte `admin_group` und `chronicle.herkunft` gefallen; die Datei räumt den
+  alten Wert beim nächsten Start fort (`db.VERWORFENE_SCHLUESSEL`). **Kein eigenes
+  Rollenmodell mehr, Punkt.**
 - **Über der Runde steht niemand — der Betreiber löscht keine fremde Runde**
   (Operator-Entscheidung 2026-08-11, #90). Eine Runde verschwindet auf genau zwei Wegen:
   die **Gruppe selbst** löscht sie (`/chronik loeschen`, Administrator-Recht in ihrer
@@ -253,62 +264,79 @@ lokalen Claude-Konfiguration; Adresse und Token gehören nicht ins Repo). **Vor 
 Architekturentscheidung:** `get_service_standards` abrufen und die dort verlinkten
 Assists (`get_assist`) lesen. Dieser Abschnitt ist der Extrakt, nicht der Ersatz.
 
-- **ADR 0001 — SSO:** user-facing läuft auf einer Subdomain hinter
-  Authelia-Forward-Auth. Die App baut **kein eigenes Login**; sobald echte Inhalte
-  angezeigt werden (#5/#7), erzwingt sie den `Remote-User`-Header — **und glaubt ihn
-  nur, wenn der Aufruf von dieser Maschine kommt** (#190). Die Kopfzeile allein ist kein
-  Beleg: sie schreibt sich jeder selbst, der den offenen Port erreicht. »Kein
-  LAN-Bypass« hieß bis dahin nur »ohne Kopfzeile kein Zugang«, und der Test dazu prüfte
-  auch nur das; geprüft wird seither der **erfundene** Fall. „Keine Zugriffskontrolle"
-  weiter unten meint Mandantentrennung zwischen Gruppen — nicht die Haustür vor der
-  Betreiber-Seite. Was hinter ihr liegt, sind Instanz-Werte und keine Rechte über fremde
-  Runden (#90).
+- **ADR 0001 — SSO: bindet diesen Dienst seit #231 nicht mehr.** Der ADR gilt für
+  *user-facing* Dienste, und dieser ist keiner: keine Seite, keine Subdomain, kein
+  veröffentlichter Port. Was über HTTP antwortet, ist `/healthz` auf `127.0.0.1` — ein
+  Poller-Endpunkt ohne Inhalt und ohne Kopfzeilenprüfung. Ein Login zu bauen, wo niemand
+  hinkommt, wäre Zeremonie.
+  Die Fassung davor gilt weiter für die **Geschichte**, und sie erklärt, warum das kein
+  Nachlassen ist: solange es die Betreiber-Seite gab, stand sie hinter
+  Authelia-Forward-Auth und erzwang `Remote-User` — **und glaubte ihn nur, wenn der Aufruf
+  von dieser Maschine kam** (#190). Die Kopfzeile allein war kein Beleg: sie schreibt sich
+  jeder selbst, der den offenen Port erreicht. »Kein LAN-Bypass« hieß bis dahin nur »ohne
+  Kopfzeile kein Zugang«, und der Test dazu prüfte auch nur das. Der Weg von damals ist
+  jetzt geschlossen, weil es das Ziel nicht mehr gibt, nicht weil der Türsteher besser
+  wurde. **Wer je wieder etwas user-facing baut, baut ADR 0001 mit — dann gilt er
+  sofort.** „Keine Zugriffskontrolle" weiter unten meint Mandantentrennung zwischen
+  Gruppen; die liefert Discord (#62) und `db.scoped` (#63), und über einer Runde steht
+  weiterhin niemand (#90).
 - **`/healthz` → 200** ist Test-Seam und Install-Gate der Box.
 - **SQLite läuft im WAL-Modus** — Plattform-Lektion gegen „database is locked".
 - **CI gatet den Image-Publish auf grüne Tests** (`needs: test`); eine CI, die nur
   baut, ist non-compliant. Kommt mit #12, ebenso pinned Tags statt `:latest`.
-- **UI folgt dem ServiceBay-Design-Standard** (`get_assist service-ui-design-standard`).
-  Mit #62/#69 bleibt davon nur die **Betreiber-Seite** — für die gilt er weiter.
-  **ADR 0001 (Authelia-SSO) bleibt damit in Kraft**: die Seite steht user-facing auf
-  einer Subdomain und entscheidet, wer sie selbst öffnen darf. Bis #230 stand hier »auf
-  dieser Seite liegt der Bot-Token« — der ist fort, die Haustür bleibt. Für die *spielenden* Rechte
-  gilt die Ablösung trotzdem — die liefert Discord über seine Kanal- und Rollenrechte.
-  (Die frühere Fassung sagte, ADR 0001 werde gegenstandslos; das galt für eine
-  Instanz ganz ohne Seite und ist mit der Entscheidung vom 2026-08-10 überholt.)
+- **UI folgt dem ServiceBay-Design-Standard** (`get_assist service-ui-design-standard`) —
+  **gegenstandslos seit #231:** es gibt keine gerenderte Seite mehr. Was davon trotzdem
+  trägt, ist `get_assist service-ui-user-language`, und zwar für **Discord**: ein Satz an
+  eine Gruppe nennt keinen Umgebungsvariablen- oder Header-Namen und sagt, was als
+  Nächstes zu tun ist — »trag das mit `/setup` ein« statt »FOUNDRY_URL fehlt«.
+  (Zwischenstand #62/#69: übrig blieb die Betreiber-Seite, und für die galt der
+  Design-Standard weiter. Die Fassung davor sagte, ADR 0001 werde gegenstandslos; das
+  galt für eine Instanz ganz ohne Seite — mit #231 ist genau das eingetreten.)
 - **Läufe über ~10 s sind server-eigene, beobachtbare Jobs** — abbrechbar, neustartfest,
   Wiederanbindung über Job-Id (`get_assist long-running-process`).
-- **Erklärte Abweichung, ausgelaufen und trotzdem stehengeblieben:** Flask + Jinja statt
-  des empfohlenen FastAPI. Grund war SSR für eine Handvoll Ansichten; die Handvoll ist
-  mit #157 auf **eine** Seite geschrumpft. Damit ist die alte Begründung erledigt — der
-  Rahmen bleibt trotzdem, weil ein Wechsel jetzt erst recht nichts einbrächte: übrig
-  sind ein Formular, zwei Weiterleitungen, `/healthz` und der Bot. Ein Umbau auf FastAPI
-  wäre Arbeit ohne Gegenwert und ein Risiko am Install-Gate der Box. **Wer hier etwas
-  Neues baut, baut es in Discord** — eine zweite Seite entstünde ohnehin nicht.
-  (Die frühere Fassung nannte die Abweichung »auslaufend« und erwartete, dass mit #69
-  fast der ganze Webteil verschwindet. Das ist eingetreten; geblieben ist die
-  Betreiber-Seite, und mit ihr Flask.)
-- **Erklärte Abweichung, bezahlt und bis auf Weiteres bleibend:** der Pod läuft mit
+- **Erledigte Abweichung: Flask + Jinja statt des empfohlenen FastAPI — beendet mit
+  #231.** Es gibt kein Webrahmenwerk mehr im Abhängigkeitsbaum des Dienstes: kein Flask,
+  kein Jinja2, kein waitress. Der Weg dahin war nicht der erwartete — die Abweichung
+  wurde nicht *aufgelöst*, ihr **Gegenstand** ist verschwunden. Übrig ist `/healthz`, und
+  das sind zehn Zeilen `http.server` aus der Standardbibliothek
+  (`chronicle.bot.healthz`, #228). Die Frage FastAPI-oder-Flask stellt sich nicht mehr,
+  weil dieser Dienst nichts mehr ausliefert.
+  `markupsafe` bleibt als **direkte** Abhängigkeit — `chronicle.search` hebt damit
+  Treffer hervor; es steht dort für sich und nicht als Anhängsel von Jinja. Flask steht
+  weiterhin im `dev`-Extra: `tests/mocks` stellt Foundry und Ollama als **echte**
+  WSGI-Server auf einen Wegwerf-Port, weil ein Funktions-Fake nur beweist, dass der Code
+  sich selbst aufruft. Das sind Attrappen fremder Gegenstellen, nicht unsere Oberfläche,
+  und ins Image kommen sie nicht.
+  (Die Fassungen davor nannten die Abweichung erst »auslaufend«, dann »ausgelaufen und
+  trotzdem stehengeblieben«, weil ein Umbau auf FastAPI für ein Formular und zwei
+  Weiterleitungen Arbeit ohne Gegenwert gewesen wäre. Das stimmte — und war zugleich das
+  Anzeichen, dass die Seite selbst der überflüssige Teil war.)
+- **Erklärte Abweichung, bleibend — und seit #231 fast kostenlos:** der Pod läuft mit
   `hostNetwork: true` statt im eigenen Netz-Namensraum, den **ADR 0007** verlangt (#165).
   Der Grund steht im Template: der Dienst spricht die Nachbarn dieser Box über die
   Schleife an — Ollama auf `127.0.0.1:11434` schreibt die Chronik, `solaris-tts` auf
-  `127.0.0.1:8881` spricht die Ansage —, und der Proxy findet ihn so ohne veröffentlichten
-  `hostPort`. **Was sie kostet, ist seit #190 belegt und nicht mehr vermutet:** Host-Netz
-  ist der Grund, warum der Port auf `0.0.0.0` im ganzen LAN erreichbar war, und das war
-  ausnutzbar — ein selbst erfundener `Remote-User` genügte, um auf die Betreiber-Seite und
-  damit an den Bot-Token zu kommen (der liegt seit #230 nicht mehr dort; der Vorfall
-  bleibt trotzdem der Beleg). Ohne Host-Netz wäre der Port nie im LAN gewesen. Die
-  Rechnung dafür ist bezahlt, nicht gestundet: `chronicle.herkunft` glaubt `Remote-User`
-  und `Remote-Groups` nur von einer Adresse **dieser Maschine**, `CHRONICLE_TRUSTED_PROXIES`
-  ist der Ausweg für einen umgezogenen Proxy, und eine Selbstprobe beim Start sagt es, wenn
-  die Prüfung im Kern nicht trägt. **Sie fiele, sobald die Nachbarn auch aus einem eigenen
-  Netz-Namensraum erreichbar sind** — heute binden Ollama und `solaris-tts` nur an
-  Loopback, ein isolierter Namensraum erreicht sie damit nicht. Das liegt in fremden
-  Vorlagen und ist deshalb eine Bedingung, kein Versprechen. Gefragt wurde: ADR 0007 sieht
-  benannte Ausnahmen vor, `mdopp/servicebay#2518` hat sie verneint — die Liste bleibt
-  geschlossen. **Und angefasst wird hier nichts ohne Box-Verify:** eine Netzänderung legt
-  diesen Dienst still, wenn sie falsch ist, und er hängt an einer echten Discord-Gilde.
-  `tests/test_template.py` hält `hostNetwork: true` samt dieser Begründung fest, damit es
-  niemand versehentlich entfernt.
+  `127.0.0.1:8881` spricht die Ansage, `solaris-whisper-batch` auf `127.0.0.1:10301`
+  verschriftet die Spuren. Alle drei binden **nur** Loopback; aus einer isolierten netns
+  wären sie unerreichbar, auch über `host.containers.internal` — das führt an das Gateway
+  der Box, nicht an ihre Schleife.
+  **Was sie kostete, ist mit #231 nicht mehr gedeckt, sondern weg.** Host-Netz war der
+  Grund, warum der Port der Betreiber-Seite auf `0.0.0.0` im ganzen LAN stand, und das
+  war ausnutzbar: ein selbst erfundener `Remote-User` genügte, um an den Bot-Token zu
+  kommen (#190). Bezahlt wurde das seither von `chronicle.herkunft` — geglaubt wurde die
+  Kopfzeile nur von einer Adresse dieser Maschine. Jetzt gibt es die Seite nicht mehr und
+  damit keinen Port im LAN: der einzige Horcher dieses Pods ist `/healthz` auf
+  `127.0.0.1`. Es bleibt nichts, was das Host-Netz freilegen könnte. **Genau deshalb ist
+  `chronicle.herkunft` mit #231 gefallen** — eine Prüfung ohne Prüfling ist keine
+  Vorsicht, sondern eine falsche Zusage; `CHRONICLE_TRUSTED_PROXIES` und
+  `CHRONICLE_REQUIRE_REMOTE_USER` sind mit ihr fort.
+  **Die Abweichung fiele, sobald die drei Nachbarn auch aus einem eigenen Netz-Namensraum
+  erreichbar sind.** Das liegt in fremden Vorlagen und ist deshalb eine Bedingung, kein
+  Versprechen. Gefragt wurde: ADR 0007 sieht benannte Ausnahmen vor,
+  `mdopp/servicebay#2518` hat sie verneint — die Liste bleibt geschlossen. **Und angefasst
+  wird hier nichts ohne Box-Verify:** eine Netzänderung legt diesen Dienst still, wenn sie
+  falsch ist, und er hängt an einer echten Discord-Gilde. `tests/test_template.py` hält
+  `hostNetwork: true` samt dieser Begründung fest, damit es niemand versehentlich
+  entfernt.
 - **Standards-Lücken werden zurückgemeldet:** `standards-gap`-Issue in
   `mdopp/servicebay` (`get_assist report-standards-gaps`).
 

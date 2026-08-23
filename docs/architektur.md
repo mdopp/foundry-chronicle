@@ -3,8 +3,8 @@
 Eine Instanz trägt mehrere **Runden** (#62/#63). Eine Runde ist der Mandant: Schlüssel nach
 außen ist die Discord-Gilde, Schlüssel nach innen die eigene Id. Jede runden-eigene Tabelle
 trägt `runde_id`; gelesen und geschrieben wird ausschließlich über `db.scoped(runde)`, das
-eine Abfrage ohne Runde zurückweist. Die Betreiber-Seite kennt keine Runden: sie zeigt nur
-noch, was der **Instanz** gehört (#157).
+eine Abfrage ohne Runde zurückweist. Eine Oberfläche daneben gibt es nicht: die
+Betreiber-Seite ist mit #231 gefallen, der Dienst ist ein einzelner Bot-Prozess.
 
 Der Lebenszyklus einer Runde hängt an der Gilde (#68, `chronicle.lebenszyklus`): Beim
 Betreten sagt der Bot einmal, was er tut und **dass der Betreiber der Box alles lesen
@@ -209,23 +209,26 @@ passiert ist** — und Teile davon nacherzählen können.
 ## Was die Kanten nicht zeigen
 
 - Was einmal Web-Kästen waren — Notiz-Eingabe, Upload, Ansicht, Suche, Register — sind
-  seit #157 Discord-Befehle. Übrig bleibt **eine** serverseitig gerenderte Seite: die
-  Betreiber-Seite mit der Verwaltungsgruppe. Bot-Token und Ollama standen bis #230
-  daneben; sie kommen jetzt aus der Umgebung und werden nirgends mehr gepflegt.
-- **Die Haustür stellt die Plattform:** Subdomain hinter Authelia-Forward-Auth
-  (ServiceBay-ADR 0001). Die Seite selbst kennt kein Login und keine Konten — sie
-  erzwingt den `Remote-User`-Header und glaubt ihn nur, wenn der Aufruf von **dieser
-  Maschine** kommt, wo der Proxy läuft (#190). Ohne das zweite Stück war die Haustür
-  keine: der Port liegt im Host-Netz offen, und die Kopfzeile schreibt sich jeder selbst.
-  Sie bleibt in Kraft, weil dort ein Geheimnis liegt.
-- **Dass der Port im Host-Netz liegt, ist eine erklärte Abweichung** von ServiceBays
+  seit #157 Discord-Befehle. Was danach noch als Seite dastand — Bot-Token und Ollama bis
+  #230, die Verwaltungsgruppe bis #231 — ist fort. **Über HTTP antwortet allein
+  `/healthz`**, das Install-Gate der Box, aus dem Bot-Prozess und nur auf `127.0.0.1`
+  (#228). Kein Rahmenwerk mehr: zehn Zeilen `http.server`.
+- **Eine Haustür gibt es nicht mehr, weil es kein Haus mehr gibt.** Bis #231 stand die
+  Seite auf einer Subdomain hinter Authelia-Forward-Auth (ServiceBay-ADR 0001), erzwang
+  den `Remote-User`-Header und glaubte ihn nur, wenn der Aufruf von **dieser Maschine**
+  kam, wo der Proxy läuft (#190) — ohne dieses zweite Stück war die Haustür keine, denn
+  der Port lag im Host-Netz offen und die Kopfzeile schreibt sich jeder selbst. Jetzt gibt
+  es weder Seite noch Port noch Kopfzeile; `chronicle.herkunft` und `chronicle.roles` sind
+  mit ihr gefallen. ADR 0001 bindet den Dienst nicht mehr — er ist nicht user-facing.
+- **Dass der Pod im Host-Netz liegt, ist eine erklärte Abweichung** von ServiceBays
   ADR 0007 (#165) und keine Nachlässigkeit: der Dienst spricht die Nachbarn der Box über
   die Schleife an — Ollama (`127.0.0.1:11434`) schreibt die Chronik, `solaris-tts`
-  (`127.0.0.1:8881`) spricht die Ansage —, und beide binden nur an Loopback. Eine
-  benannte Ausnahme wurde in `mdopp/servicebay#2518` erfragt und verneint. Sie bleibt
-  damit, aber bezahlt: der Türsteher oben ist die Gegenmaßnahme, und die Abweichung fällt,
-  sobald die Nachbarn auch aus einem eigenen Netz-Namensraum erreichbar sind. Das Warum in
-  ganzer Länge steht in `CLAUDE.md` und im Template.
+  (`127.0.0.1:8881`) spricht die Ansage, `solaris-whisper-batch` (`127.0.0.1:10301`)
+  verschriftet —, und alle drei binden nur an Loopback. Eine benannte Ausnahme wurde in
+  `mdopp/servicebay#2518` erfragt und verneint. **Was sie kostete, ist mit #231 weg statt
+  gedeckt:** der offene Port war der Port der Seite, und die gibt es nicht mehr. Die
+  Abweichung fällt, sobald die Nachbarn auch aus einem eigenen Netz-Namensraum erreichbar
+  sind. Das Warum in ganzer Länge steht in `CLAUDE.md` und im Template.
 - Die **Personen-Zuordnung** Discord ↔ Foundry entsteht einmalig, und zwar **beim
   Betreten des Sprachkanals** (#76), damit jede Äußerung von Anfang an einer Figur
   gehört. Ohne Rückfrage gesetzt wird sie nur bei **1:1 gleichem Namen** — der Discord-Name
@@ -290,11 +293,13 @@ passiert ist** — und Teile davon nacherzählen können.
   Fakten werden deshalb zwischengespeichert, nicht bei jedem Aufruf geholt.
 - Der Stapel zeigt **ehrlichen Status statt Fortschritt**: „läuft im nächsten Stapel,
   Ergebnis morgen früh" — kein Balken, der Echtzeit vortäuscht, die es nicht gibt.
-- **Den Stapel stößt der Prozess an, der die Betreiber-Seite trägt**, in einem Faden, zu
-  einer Uhrzeit aus den Einstellungen. Nicht der Aufnahme-Bot, den es ohne Bot-Token gar nicht gibt, und kein
-  dritter Prozess: ein Lauf ist eine Zeile in der `job`-Tabelle, und deren
-  Absturzerkennung trägt nur, solange genau einer solche Zeilen anlegt. Ein verpasstes
-  Fenster wird nicht nachgeholt — die nächste Nacht genügt.
+- **Den Stapel stößt der Bot-Prozess an** (#229), in einem Faden neben der
+  Gateway-Verbindung, zu einer Uhrzeit aus `/setup`. Kein zweiter Prozess: ein Lauf ist
+  eine Zeile in der `job`-Tabelle, und deren Absturzerkennung trägt nur, solange genau
+  einer solche Zeilen anlegt. Ohne Bot-Token verbindet er sich zwar nicht, bleibt aber
+  liegen und antwortet weiter am Gate — dann gibt es allerdings auch keinen Eingang, für
+  den es nachts etwas zu tun gäbe. Ein verpasstes Fenster wird nicht nachgeholt — die
+  nächste Nacht genügt.
 - **Die Uhrzeit gehört einer Zeitzone, und die gehört der Runde.** Der Container läuft in
   UTC und bleibt dabei: eine Instanz trägt mehrere Runden, ein festes `TZ` im Pod könnte
   immer nur einer davon recht geben. Neben der Uhrzeit steht deshalb eine Zone je Runde

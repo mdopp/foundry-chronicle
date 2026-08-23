@@ -3,17 +3,18 @@ name = "foundry-chronicle"
 version = "0.2.0"
 description = "Sitzungsprotokolle für Tisch-Rollenspiel — eine Instanz pro Gruppe"
 requires-python = ">=3.12"
+# **Kein Flask, kein Jinja2, kein waitress mehr** (#231). Die Betreiber-Seite ist fort, und
+# mit ihr der einzige Grund, ein Webrahmenwerk vorzuhalten: der Dienst ist ein Bot-Prozess.
+# ``/healthz``, das Install-Gate der Box, bedient seit #228 ``chronicle.bot.healthz`` mit
+# der Standardbibliothek. ``markupsafe`` bleibt — es steht hier für ``chronicle.search``,
+# das Treffer hervorhebt, und nicht als Anhängsel von Jinja.
 dependencies = [
-    "flask>=3.0",
     "markupsafe>=2.1",
     "requests>=2.31",
     "python-socketio[client]>=5.11",
 ]
 
 [project.optional-dependencies]
-# waitress statt gunicorn: reines Python ohne C-Erweiterung — kein Build-Werkzeug im Image —
-# und ein Prozess mit Threads, also genau ein SQLite-Schreiber.
-server = ["waitress>=3.0"]
 # **Kein ``transcribe``-Extra mehr** (#216, Betreiber-Entscheidung 2026-08-18). Wir
 # halten kein Whisper-Modell mehr vor: faster-whisper, ctranslate2, PyAV und onnxruntime
 # — dreistellige Megabyte — sind aus dem Image raus, die Verschriftung macht
@@ -67,12 +68,21 @@ discord = [
 # Räder; die CI wird davon nicht schwer. Derselbe Fork und derselbe festgenagelte Commit
 # wie oben — eine CI, die gegen eine andere Fassung prüft als das Image installiert, prüft
 # die falsche.
+#
+# **Flask steht hier und nicht mehr oben** (#231). Es ist keine Abhängigkeit des Dienstes
+# mehr — die Betreiber-Seite ist fort —, wohl aber der beiden **Attrappen fremder Server**:
+# ``tests/mocks`` stellt ein Foundry und ein Ollama als echten WSGI-Server auf einen
+# Wegwerf-Port, weil ein Funktions-Fake nur beweist, dass der Code sich selbst aufruft
+# (siehe ``tests/mocks/__init__.py``). Was sie nachbilden, ist die Gegenstelle und nicht
+# unsere eigene Oberfläche; ins Image kommt es nicht, denn das installiert
+# ``.[discord]``.
 dev = [
     "pytest>=8.0",
     "pytest-cov>=5.0",
     "ruff>=0.6",
     "pre-commit>=3.7",
     "pyyaml>=6.0",
+    "flask>=3.0",
     "py-cord[voice] @ git+https://github.com/mdopp/pycord@326b72acc8d1d952ac002fe07ca65581cf5952bc",
 ]
 
@@ -84,9 +94,9 @@ build-backend = "setuptools.build_meta"
 where = ["src"]
 
 [tool.setuptools.package-data]
-chronicle = ["schema.sql", "suchindex.sql", "templates/*.html"]
+chronicle = ["schema.sql", "suchindex.sql"]
 # Die eingebaute Testwelt gehört ins Image: ohne sie fiele die Quelle »Testwelt« auf der
-# Box auf eine fehlende Datei zurück, obwohl die Oberfläche sie anbietet.
+# Box auf eine fehlende Datei zurück, obwohl ``/setup`` sie anbietet.
 "chronicle.foundry" = ["testwelt.json"]
 
 [tool.ruff]

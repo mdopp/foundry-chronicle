@@ -51,10 +51,15 @@ def test_globale_variablen_nicht_neu_deklariert(variablen: dict) -> None:
     assert set(variablen) & GLOBALE_VARIABLEN == set()
 
 
-def test_public_domain_wird_referenziert(rohtext: str) -> None:
-    # Ohne diese Referenz injiziert der Assembler PUBLIC_DOMAIN nicht und der Proxy-Host
-    # wird still übersprungen.
-    assert "{{PUBLIC_DOMAIN}}" in rohtext
+def test_keine_subdomain_und_kein_proxy_host(rohtext: str, variablen: dict) -> None:
+    # Umkehrung des alten ``test_public_domain_wird_referenziert``: solange die
+    # Betreiber-Seite auf einer Subdomain stand, musste {{PUBLIC_DOMAIN}} irgendwo im
+    # Manifest vorkommen, sonst übersprang der Assembler den Proxy-Host still (Assist
+    # footgun-subdomain-needs-public-domain). Mit #231 gibt es keine Seite und keinen
+    # Proxy-Host mehr — eine stehengebliebene Referenz ließe die Plattform eine Subdomain
+    # auf einen Dienst zeigen, der nichts veröffentlicht.
+    assert "{{PUBLIC_DOMAIN}}" not in rohtext
+    assert not [name for name, meta in variablen.items() if meta["type"] == "subdomain"]
 
 
 def test_manifest_ist_ein_pod(manifest: dict) -> None:
@@ -66,32 +71,37 @@ def test_pflichtannotationen(manifest: dict) -> None:
     annotationen = manifest["metadata"]["annotations"]
     assert annotationen["servicebay.label"]
     assert annotationen["servicebay.schema-version"] == "1"
-    assert annotationen["servicebay.ports"]
-    assert annotationen["servicebay.dependencies"] == "nginx,auth"
+
+
+def test_dieser_dienst_veroeffentlicht_nichts_mehr(manifest: dict) -> None:
+    # #231: die Betreiber-Seite ist fort, bedient wird in Discord. Damit hat der Pod
+    # keinen veröffentlichten Port und braucht weder nginx noch Authelia davor. Ein
+    # ``servicebay.ports`` wäre eine Behauptung ohne Deckung, eine Abhängigkeit von
+    # nginx/auth hielte die Installation an etwas fest, das dieser Dienst nicht benutzt.
+    annotationen = manifest["metadata"]["annotations"]
+    assert "servicebay.ports" not in annotationen
+    assert "servicebay.dependencies" not in annotationen
+    for container in manifest["spec"]["containers"]:
+        assert "ports" not in container
 
 
 def test_healthcheck_zeigt_auf_das_gate_des_bots(manifest: dict, variablen: dict) -> None:
     # Seit #228 bedient der Bot-Prozess das Install-Gate, nicht mehr die Betreiber-Seite:
-    # er ist der Prozess, der bleibt, wenn die Seite mit #227 fällt. Der Port ist ein
-    # anderer als der der Seite — beide Container teilen den Netz-Namensraum.
+    # er ist der Prozess, der bleibt, und mit #231 der einzige. Der Poller läuft auf
+    # dieser Box, deshalb ``localhost`` — das Gate hört nirgendwo sonst.
     probe = yaml.safe_load(manifest["metadata"]["annotations"]["servicebay.healthcheck"])
     port = variablen["CHRONICLE_HEALTH_PORT"]["default"]
     assert probe["url"] == f"http://localhost:{port}/healthz"
-    assert port != variablen["CHRONICLE_PORT"]["default"]
 
 
-def test_das_gate_bekommt_der_bot_und_wird_nicht_veroeffentlicht(
-    manifest: dict, variablen: dict
-) -> None:
-    # Es hört auf 127.0.0.1 (``chronicle.bot.healthz``) und ist damit weder aus dem LAN
-    # erreichbar noch etwas, das der Proxy anfassen dürfte. Ein Eintrag in
-    # servicebay.ports oder ein containerPort behauptete das Gegenteil.
+def test_das_gate_hoert_nur_auf_der_schleife(manifest: dict, variablen: dict) -> None:
+    # Es hört auf 127.0.0.1 (``chronicle.bot.healthz``) und ist damit nicht aus dem LAN
+    # erreichbar. Ein containerPort behauptete das Gegenteil — die Zusicherung dazu steht
+    # in ``test_dieser_dienst_veroeffentlicht_nichts_mehr``.
     port = variablen["CHRONICLE_HEALTH_PORT"]["default"]
-    container = {eintrag["name"]: eintrag for eintrag in manifest["spec"]["containers"]}
-    bot = {eintrag["name"]: eintrag["value"] for eintrag in container["bot"]["env"]}
-    assert bot["CHRONICLE_HEALTH_PORT"] == port
-    assert "CHRONICLE_HEALTH_PORT" not in {e["name"] for e in container["chronik"]["env"]}
-    assert port not in manifest["metadata"]["annotations"]["servicebay.ports"]
+    container = manifest["spec"]["containers"][0]
+    umgebung = {eintrag["name"]: eintrag["value"] for eintrag in container["env"]}
+    assert umgebung["CHRONICLE_HEALTH_PORT"] == port
 
 
 def test_das_hostnetz_bleibt_samt_seiner_begruendung(manifest: dict, rohtext: str) -> None:
@@ -117,34 +127,22 @@ def test_erreichbar_ohne_stillen_fehlschlag(manifest: dict) -> None:
             assert "hostPort" in port
 
 
-def test_ports_sind_konsistent(manifest: dict, variablen: dict) -> None:
-    port = int(variablen["CHRONICLE_PORT"]["default"])
-    annotiert = manifest["metadata"]["annotations"]["servicebay.ports"]
-    assert annotiert == f"{port}/tcp"
-    container = manifest["spec"]["containers"][0]
-    assert [eintrag["containerPort"] for eintrag in container["ports"]] == [port]
-    umgebung = {eintrag["name"]: eintrag["value"] for eintrag in container["env"]}
-    assert umgebung["CHRONICLE_PORT"] == str(port)
-
-
-def test_der_aufnahme_bot_laeuft_als_zweiter_container(manifest: dict) -> None:
-    # Ein eigener, dauerhafter Prozess neben dem Webdienst: Sprache lässt sich nur
-    # mitschneiden, während sie gesprochen wird.
-    container = {eintrag["name"]: eintrag for eintrag in manifest["spec"]["containers"]}
-    assert set(container) == {"chronik", "bot"}
-    assert container["bot"]["image"] == container["chronik"]["image"]
-    assert container["bot"]["command"] == ["python", "-m", "chronicle.bot"]
-    assert "ports" not in container["bot"]
+def test_der_pod_traegt_genau_einen_container(manifest: dict) -> None:
+    # #231: der zweite Container trug die Betreiber-Seite; sie ist fort. Übrig ist der
+    # Bot — Gateway-Verbindung, nächtlicher Lauf (#229), Install-Gate (#228). Sein Befehl
+    # steht im Abbild und wird hier nicht überschrieben: es gibt keinen zweiten.
+    container = manifest["spec"]["containers"]
+    assert [eintrag["name"] for eintrag in container] == ["chronik"]
+    assert "command" not in container[0]
 
 
 def test_das_image_wird_nicht_fest_verdrahtet(rohtext: str) -> None:
     # Der Tag gehört an die Variable, damit ein Rollout einen festen Stand ansteuern kann
     # (#173). Ein hart eingetragenes ':latest' im Manifest nähme genau das wieder weg —
     # und mit ihm den Weg zurück, denn 'latest' benennt keinen früheren Stand.
-    assert (
-        re.findall(r"^\s*image: \S+:(\S+)$", rohtext, re.MULTILINE)
-        == ["{{CHRONICLE_IMAGE_TAG}}"] * 2
-    )
+    assert re.findall(r"^\s*image: \S+:(\S+)$", rohtext, re.MULTILINE) == [
+        "{{CHRONICLE_IMAGE_TAG}}"
+    ]
 
 
 def test_keine_wirkungslose_karten_durchreichung(manifest: dict) -> None:
@@ -170,7 +168,7 @@ def test_der_erkenner_wird_nicht_festgenagelt(manifest: dict) -> None:
         assert not {name for name in umgebung if name.startswith("CHRONICLE_WHISPER")}
 
 
-def test_beide_container_teilen_dasselbe_aufnahmeverzeichnis(manifest: dict) -> None:
+def test_der_container_findet_beide_verzeichnisse(manifest: dict) -> None:
     for eintrag in manifest["spec"]["containers"]:
         umgebung = {wert["name"]: wert["value"] for wert in eintrag["env"]}
         assert umgebung["CHRONICLE_RECORDINGS_DIR"] == "/aufnahmen"
@@ -203,9 +201,8 @@ def test_die_hostverzeichnisse_werden_bei_der_erstinstallation_angelegt(manifest
 
 
 def test_der_bot_bekommt_die_datenbank(manifest: dict) -> None:
-    # Der Token kommt seit #230 aus der Umgebung; die Chronik liegt weiter in der SQLite,
-    # also sieht der Bot dieselbe Datenbank wie die Seite.
-    bot = next(e for e in manifest["spec"]["containers"] if e["name"] == "bot")
+    # Der Token kommt seit #230 aus der Umgebung; die Chronik liegt weiter in der SQLite.
+    bot = manifest["spec"]["containers"][0]
     umgebung = {wert["name"]: wert["value"] for wert in bot["env"]}
     assert umgebung["CHRONICLE_DATA_DIR"] == "/data"
 
@@ -228,27 +225,17 @@ def test_beide_hostpfade_liegen_unter_data_dir(rohtext: str) -> None:
     ]
 
 
-def test_remote_user_wird_erzwungen(manifest: dict) -> None:
-    container = manifest["spec"]["containers"][0]
-    umgebung = {eintrag["name"]: eintrag["value"] for eintrag in container["env"]}
-    assert umgebung["CHRONICLE_REQUIRE_REMOTE_USER"] == "1"
-    assert umgebung["CHRONICLE_HOST"] == "0.0.0.0"
-
-
-def test_subdomain_hinter_authelia(variablen: dict) -> None:
-    subdomain = variablen["CHRONICLE_SUBDOMAIN"]
-    assert subdomain["type"] == "subdomain"
-    assert subdomain["default"] == "daggerheart"
-    assert subdomain["exposure"] == "public"
-    assert subdomain["proxyPort"] == "CHRONICLE_PORT"
-    assert subdomain["proxyConfig"]["advanced_config"] == "__authelia_forward_auth__"
-
-
-def test_proxy_port_verweist_auf_eine_variable(variablen: dict) -> None:
-    for meta in variablen.values():
-        ziel = meta.get("proxyPort")
-        if ziel is not None and not str(ziel).isdigit():
-            assert ziel in variablen
+def test_kein_tuersteher_mehr_im_manifest(manifest: dict, rohtext: str) -> None:
+    # Bis #231 erzwang die Betreiber-Seite ``Remote-User`` und glaubte ihn nur von einer
+    # Adresse dieser Maschine (#190, ``chronicle.herkunft``). Beides ist mit ihr gefallen:
+    # es gibt keine Kopfzeile mehr zu prüfen und keinen Port im LAN, an dem sich jemand
+    # eine erfinden könnte. Eine stehengebliebene Variable versprächen einen Schutz, den
+    # kein Code mehr leistet.
+    assert "REMOTE_USER" not in rohtext
+    assert "TRUSTED_PROXIES" not in rohtext
+    for container in manifest["spec"]["containers"]:
+        umgebung = {eintrag["name"] for eintrag in container["env"]}
+        assert not {name for name in umgebung if name.startswith("CHRONICLE_HOST")}
 
 
 def test_kein_zufallswert_fuer_fremde_zugangsdaten(variablen: dict) -> None:
@@ -278,18 +265,8 @@ def test_die_instanz_werte_kommen_aus_template_variablen(variablen: dict, manife
     # einer hier, gäbe es für ihn gar keinen Ort mehr — den SQLite-Weg gibt es nicht.
     for name in ("DISCORD_BOT_TOKEN", "OLLAMA_URL", "OLLAMA_MODEL"):
         assert variablen[name]["default"] == ""
-    container = {eintrag["name"]: eintrag for eintrag in manifest["spec"]["containers"]}
-    bot = {eintrag["name"] for eintrag in container["bot"]["env"]}
+    bot = {eintrag["name"] for eintrag in manifest["spec"]["containers"][0]["env"]}
     assert {"DISCORD_BOT_TOKEN", "OLLAMA_URL", "OLLAMA_MODEL"} <= bot
-
-
-def test_den_bot_token_bekommt_nur_der_bot(manifest: dict) -> None:
-    # Was ein Prozess nicht bekommt, kann er auch nicht in eine Logzeile schreiben. Die
-    # Seite meldet den Bot seit #230 nicht mehr an und zeigt nicht einmal, ob er steht —
-    # sie hat für den Token keine Verwendung.
-    container = {eintrag["name"]: eintrag for eintrag in manifest["spec"]["containers"]}
-    seite = {eintrag["name"] for eintrag in container["chronik"]["env"]}
-    assert "DISCORD_BOT_TOKEN" not in seite
 
 
 def test_keine_echte_adresse_im_manifest(rohtext: str) -> None:

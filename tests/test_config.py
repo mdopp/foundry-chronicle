@@ -22,18 +22,10 @@ def test_liest_alles_aus_der_umgebung():
     assert config.discord_configured
 
 
-def test_zustellkanal_und_oeffentliche_adresse_kommen_aus_der_umgebung():
-    config = Config.from_env(
-        dict(
-            VOLLSTAENDIG,
-            DISCORD_RECAP_CHANNEL="chronik",
-            CHRONICLE_PUBLIC_URL="https://chronik.example",
-        )
-    )
+def test_der_zustellkanal_kommt_aus_der_umgebung():
+    config = Config.from_env(dict(VOLLSTAENDIG, DISCORD_RECAP_CHANNEL="chronik"))
     assert config.discord_recap_channel == "chronik"
-    assert config.public_url == "https://chronik.example"
     assert Config.from_env({}).discord_recap_channel is None
-    assert Config.from_env({}).public_url is None
 
 
 def test_ohne_umgebung_ist_foundry_unkonfiguriert():
@@ -124,25 +116,23 @@ def test_from_env_nutzt_ohne_argument_die_prozessumgebung(monkeypatch):
     assert Config.from_env().foundry_url == "https://foundry.example"
 
 
-def test_remote_user_wird_standardmaessig_nicht_erzwungen():
-    assert not Config.from_env({}).require_remote_user
+def test_die_haustuer_hinterlaesst_keinen_schalter():
+    """Was der Betreiber-Seite gehörte, liest hier niemand mehr (#231).
 
-
-def test_remote_user_erzwingen_laesst_sich_schalten():
-    for wert in ("1", "true", "TRUE", "yes", "on"):
-        assert Config.from_env({"CHRONICLE_REQUIRE_REMOTE_USER": wert}).require_remote_user
-    for wert in ("0", "false", "nein", "", "  "):
-        assert not Config.from_env({"CHRONICLE_REQUIRE_REMOTE_USER": wert}).require_remote_user
-
-
-def test_ohne_eintrag_zaehlt_die_maschine_selbst():
-    """Leer heißt errechnet — eine abgeschriebene Adresse wäre nach der DHCP-Lease falsch."""
-    assert Config.from_env({}).trusted_proxies == ()
-
-
-def test_der_proxy_laesst_sich_nachtragen():
-    config = Config.from_env({"CHRONICLE_TRUSTED_PROXIES": " 192.168.178.100, 10.0.0.0/8 ,"})
-    assert config.trusted_proxies == ("192.168.178.100", "10.0.0.0/8")
+    ``CHRONICLE_REQUIRE_REMOTE_USER`` und ``CHRONICLE_TRUSTED_PROXIES`` gehörten zum
+    Türsteher (#190), ``CHRONICLE_PUBLIC_URL`` zur Subdomain davor. Ein Feld, das die
+    Variable weiter einliest, ohne dass sie etwas bewirkt, ist eine falsche Zusage — und
+    genau die Sorte, die drei Monate später jemand für einen Schutz hält.
+    """
+    gesetzt = {
+        "CHRONICLE_REQUIRE_REMOTE_USER": "1",
+        "CHRONICLE_TRUSTED_PROXIES": "192.168.178.100",
+        "CHRONICLE_PUBLIC_URL": "https://chronik.example",
+    }
+    config = Config.from_env(gesetzt)
+    for feld in ("require_remote_user", "trusted_proxies", "public_url"):
+        assert not hasattr(config, feld), feld
+    assert "192.168.178.100" not in repr(config)
 
 
 def test_der_port_des_install_gates_kommt_aus_der_umgebung():

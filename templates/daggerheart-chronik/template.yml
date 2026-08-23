@@ -7,21 +7,20 @@ metadata:
   annotations:
     servicebay.label: "Daggerheart-Chronik"
     servicebay.schema-version: "1"
-    servicebay.ports: "{{CHRONICLE_PORT}}/tcp"
-    # nginx liefert den Proxy-Host, auth die Authelia-Forward-Auth davor. Beide müssen
-    # stehen, bevor dieser Dienst installiert wird — sonst zeigt die Subdomain ins Leere.
-    # Die Schrumpfung mit #157 nimmt ``auth`` nicht heraus, und #230 auch nicht: der
-    # Bot-Token liegt zwar nicht mehr hinter dieser Seite, aber sie steht weiter auf einer
-    # Subdomain und entscheidet, wer sie selbst öffnen darf. ADR 0001 gilt für sie also
-    # unverändert.
-    servicebay.dependencies: "nginx,auth"
+    # **Kein ``servicebay.ports`` und kein ``servicebay.dependencies``** (#231). Beides
+    # hing an der Betreiber-Seite: sie stand auf einer Subdomain, brauchte deshalb nginx
+    # und Authelia davor und veröffentlichte einen Port. Die Seite ist fort — bedient
+    # wird in Discord, und die Instanz-Werte kommen seit #230 aus den Variablen unten.
+    # Damit veröffentlicht dieser Dienst **nichts** mehr: sein einziger Horcher ist das
+    # Install-Gate auf der Schleife. Ein Port hier wäre eine Behauptung ohne Deckung, und
+    # eine Abhängigkeit von nginx/auth hielte die Installation an etwas fest, das dieser
+    # Dienst nicht mehr benutzt. Dass ein Template ohne Ports auskommt, macht
+    # ``mosquitto`` vor — dort ohne ``dependencies``, hier ohne beides.
+    #
     # Install-Gate der Box: /healthz antwortet 200, sobald der Prozess steht. Seit #228
     # bedient es der **Bot** und nicht mehr die Betreiber-Seite — er ist der Prozess, der
-    # bleibt, wenn die Seite mit #227 fällt. Sein Port ist ein anderer als der der Seite,
-    # weil beide im selben Netz-Namensraum liegen, und er hört **nur auf der Schleife**:
-    # der Poller läuft auf dieser Box, im LAN hat das Gate nichts zu suchen (#190).
-    # Deshalb steht CHRONICLE_HEALTH_PORT auch nicht in servicebay.ports — dort stehen
-    # die veröffentlichten Ports, und dieser ist keiner.
+    # bleibt, und seit #231 der einzige. Er hört **nur auf der Schleife**: der Poller
+    # läuft auf dieser Box, im LAN hat das Gate nichts zu suchen (#190).
     servicebay.healthcheck: |
       url: http://localhost:{{CHRONICLE_HEALTH_PORT}}/healthz
       interval: 30s
@@ -31,16 +30,22 @@ spec:
   # **Erklärte Abweichung von ServiceBay-ADR 0007** (#165), die App-Container in einen
   # eigenen Netz-Namensraum stellen will. Grund: der Dienst spricht die Nachbarn dieser
   # Box über die Schleife an — Ollama auf 127.0.0.1:11434 schreibt die Chronik,
-  # solaris-tts auf 127.0.0.1:8881 spricht die Ansage —, und der Proxy findet ihn so ohne
-  # veröffentlichten hostPort. Beide binden heute nur an Loopback, aus einer isolierten
-  # netns wären sie unerreichbar. ADR 0007 sieht benannte Ausnahmen vor;
-  # mdopp/servicebay#2518 hat verneint, die Liste bleibt geschlossen.
-  # Der Preis ist belegt, nicht vermutet: hostNetwork ist der Grund, warum dieser Port auf
-  # 0.0.0.0 im ganzen LAN stand, und ein erfundener Remote-User genügte, um an den
-  # Bot-Token zu kommen (#190). Bezahlt wird er von chronicle.herkunft — geglaubt werden
-  # die Anmelde-Kopfzeilen nur von einer Adresse dieser Maschine (siehe unten bei
-  # CHRONICLE_REQUIRE_REMOTE_USER). Seit #230 liegt hinter der Seite ohnehin kein
-  # Geheimnis mehr; das ist der zweite Riegel und nicht der Ersatz für den ersten.
+  # solaris-tts auf 127.0.0.1:8881 spricht die Ansage, solaris-whisper-batch auf
+  # 127.0.0.1:10301 verschriftet die Spuren. Alle drei binden **nur** Loopback; aus einer
+  # isolierten netns wären sie unerreichbar, auch über ``host.containers.internal``, denn
+  # das führt an das Gateway der Box und nicht an ihre Schleife. ADR 0007 sieht benannte
+  # Ausnahmen vor; mdopp/servicebay#2518 hat verneint, die Liste bleibt geschlossen.
+  #
+  # **Was sie kostete, ist mit #231 bezahlt und nicht mehr nur gedeckt.** Host-Netz war
+  # der Grund, warum der Port der Betreiber-Seite auf 0.0.0.0 im ganzen LAN stand und ein
+  # selbst erfundener ``Remote-User`` bis an den Bot-Token führte (#190). Gedeckt wurde
+  # das von ``chronicle.herkunft``: geglaubt wurde die Kopfzeile nur von einer Adresse
+  # dieser Maschine. Jetzt gibt es die Seite nicht mehr, und damit auch keinen Port im
+  # LAN: der einzige Horcher dieses Pods ist ``/healthz`` auf 127.0.0.1. Der Preis des
+  # Host-Netzes ist damit nicht abgesichert, sondern **weg** — es gibt nichts mehr, was
+  # es freilegen könnte. Deshalb ist auch ``chronicle.herkunft`` mit #231 gefallen: eine
+  # Prüfung ohne Prüfling.
+  #
   # Die Abweichung fällt, sobald die Nachbarn auch aus einem eigenen Netz-Namensraum
   # erreichbar sind. Das liegt in deren Vorlagen, nicht hier — und eine Netzänderung an
   # diesem Dienst wird ohne Box-Verify nicht gemacht: falsch gemacht legt sie eine echte
@@ -60,88 +65,16 @@ spec:
   # Absturz — gilt OnFailure unverändert.
   restartPolicy: OnFailure
   containers:
-  # Hinter dem Proxy-Host liegt seit #157 keine Anwendung mehr, sondern **eine Seite**:
-  # /einstellungen für die Verwaltungsgruppe — den einen Wert, der hier seit #230 noch
-  # gepflegt wird —, /status als Altweg dorthin, / als Weiterleitung und /healthz als
-  # Install-Gate. Alles Spielbare ist ein Discord-Befehl, und der nächtliche Lauf hängt
-  # seit #229 am Bot daneben.
+  # **Ein Container, und das ist der ganze Dienst** (#231). Er hält die
+  # Gateway-Verbindung, weil Sprache nur mitgeschnitten werden kann, während sie
+  # gesprochen wird; er trägt seit #229 den nächtlichen Lauf und seit #228 das
+  # Install-Gate. Der zweite Container daneben trug die Betreiber-Seite — die ist fort,
+  # bedient wird in Discord. Der Befehl steht im Abbild (``python -m chronicle.bot``) und
+  # wird hier nicht mehr überschrieben: es gibt keinen zweiten, den man wählen könnte.
   - name: chronik
     image: ghcr.io/mdopp/foundry-chronicle:{{CHRONICLE_IMAGE_TAG}}
     # Container-uid 0 ist unter rootless Podman der unprivilegierte Host-Benutzer, dem
     # {{DATA_DIR}} gehört; ohne das scheitert das Anlegen der SQLite-Datei mit EPERM.
-    securityContext:
-      runAsUser: 0
-      runAsGroup: 0
-    env:
-      - name: CHRONICLE_HOST
-        value: "0.0.0.0"
-      - name: CHRONICLE_PORT
-        value: "{{CHRONICLE_PORT}}"
-      - name: CHRONICLE_DATA_DIR
-        value: "/data"
-      - name: CHRONICLE_RECORDINGS_DIR
-        value: "/aufnahmen"
-      # Die Haustür steht am Proxy (ADR 0001). Ohne Remote-User antwortet der Dienst 403.
-      # Seit #190 reicht die Kopfzeile allein nicht: der Port liegt im Host-Netz offen,
-      # und wer ihn erreicht, schreibt sie sich selbst hin. Geglaubt wird sie — und
-      # Remote-Groups mit ihr — nur von einem Absender, der eine Adresse **dieser
-      # Maschine** trägt; genau das tut der Proxy, der hier daneben läuft. Steht er
-      # einmal woanders, trägt CHRONICLE_TRUSTED_PROXIES seine Adresse nach (siehe
-      # README »Wenn die Seite 403 sagt, obwohl die Anmeldung geklappt hat«).
-      - name: CHRONICLE_REQUIRE_REMOTE_USER
-        value: "1"
-      # Den *Wert* liest seit #157 niemand mehr — die Protokollseite, auf die er zeigte,
-      # ist fort. Die Zeile bleibt trotzdem stehen, denn irgendwo im Manifest muss
-      # {{PUBLIC_DOMAIN}} vorkommen: sonst injiziert der Assembler die Variable nicht und
-      # der Proxy-Host wird still übersprungen — Assist
-      # footgun-subdomain-needs-public-domain.
-      - name: CHRONICLE_PUBLIC_URL
-        value: "https://{{CHRONICLE_SUBDOMAIN}}.{{PUBLIC_DOMAIN}}"
-      # Ollama gehört der Instanz und kommt seit #230 aus der Umgebung — hier, weil auch
-      # ein Stapellauf aus diesem Container (``python -m chronicle.compose``) formulieren
-      # können muss. Leer heißt: das Ollama dieser Box, ``chronicle.config`` setzt es ein.
-      - name: OLLAMA_URL
-        value: "{{OLLAMA_URL}}"
-      - name: OLLAMA_MODEL
-        value: "{{OLLAMA_MODEL}}"
-      # **DISCORD_BOT_TOKEN steht hier absichtlich nicht.** Ihn braucht der Bot daneben,
-      # und nur er; diese Seite zeigt seit #230 nicht einmal mehr an, ob er gesetzt ist.
-      # Was ein Prozess nicht bekommt, kann er auch nicht in eine Logzeile schreiben.
-      # Der Foundry-Zugang steht ebenfalls nicht hier: den pflegt die Gruppe selbst in
-      # Discord unter /setup, er gehört ihrer Runde und nicht der Instanz.
-    ports:
-      - containerPort: {{CHRONICLE_PORT}}
-    # **Hier steht absichtlich keine Karten-Durchreichung.** ``podman kube play`` (5.8.2)
-    # verwirft ``resources.limits`` für eine Pod-Spezifikation still — kein Fehler, kein
-    # Hinweis, der Pod startet ohne Karte. Gemessen am 2026-08-12 im Container:
-    # ``cuda_verfuegbar() -> False`` und kein ``nvidia-*``-Knoten unter ``/dev``, während
-    # der Nachbar ollama seine hat (ServiceBay #1026/#2174, unser Fall als
-    # mdopp/servicebay#2517). Der bekannte Fix ist ein einzelnes ``.container``-Quadlet
-    # mit ``AddDevice=`` plus ``SecurityLabelDisable=true``; den gibt es für einen Pod aus
-    # zwei Containern, die sich ``/data`` teilen, nicht. **Seit #216 braucht dieser Pod
-    # auch keine:** er hält kein Whisper-Modell mehr. Verschriftet wird bei
-    # ``solaris-whisper-batch`` auf der Karte der Box (mdopp/solarisbay#1161), erreicht
-    # über die Schleife wie Ollama und solaris-tts auch — Vorgabe ``127.0.0.1:10301``,
-    # überschreibbar mit ``CHRONICLE_WHISPER_URL``. Einen CPU-Rückfall gibt es dafür
-    # **nicht** mehr: ist der Dienst aus, bleibt die Spur liegen und der Nachtlauf sagt
-    # es, statt eine Chronik ohne das gesprochene Wort zu schreiben.
-    volumeMounts:
-      - mountPath: /data
-        name: chronik-daten
-      - mountPath: /aufnahmen
-        name: chronik-aufnahmen
-  # Der Aufnahme-Bot ist ein eigener, dauerhafter Prozess: er hält eine
-  # Gateway-Verbindung, weil Sprache nur mitgeschnitten werden kann, während sie
-  # gesprochen wird. Gleiches Image, anderer Befehl. Den Token bekommt er seit #230 aus
-  # seiner eigenen Umgebung und nicht mehr aus der SQLite; /data teilen beide trotzdem,
-  # denn dort liegt die Chronik. Ohne Token beendet er sich mit einem Satz, statt in einer
-  # Schleife abzustürzen.
-  # Seit #229 trägt derselbe Prozess außerdem den nächtlichen Lauf: er sieht in einem
-  # Faden neben der Gateway-Verbindung auf die Uhr, und der Lauf selbst bekommt noch
-  # einen daneben — auf der Ereignisschleife läge sonst der Herzschlag zu Discord still.
-  - name: bot
-    image: ghcr.io/mdopp/foundry-chronicle:{{CHRONICLE_IMAGE_TAG}}
-    command: ["python", "-m", "chronicle.bot"]
     securityContext:
       runAsUser: 0
       runAsGroup: 0
@@ -156,19 +89,34 @@ spec:
       # Deshalb kein containerPort und kein Eintrag in servicebay.ports.
       - name: CHRONICLE_HEALTH_PORT
         value: "{{CHRONICLE_HEALTH_PORT}}"
-      # Seit #230 kommt der Token aus der Umgebung und nicht mehr aus der SQLite. Er steht
-      # nur bei diesem Container: der Bot meldet sich damit an, sonst braucht ihn niemand.
+      # Seit #230 kommt der Token aus der Umgebung und nicht mehr aus der SQLite.
       # Bewusst 'type: text' und kein 'secret' — der Assistent würfelte für ein Geheimnis
       # einen Wert aus, und ein ausgewürfelter Bot-Token meldete sich bei Discord an und
       # wurde abgelehnt (#33). Leer heißt hier ehrlich »nicht gesetzt«: der Bot sagt einen
       # Satz und bleibt liegen, statt es mit einem falschen Wert zu versuchen.
       - name: DISCORD_BOT_TOKEN
         value: "{{DISCORD_BOT_TOKEN}}"
-      # Der nächtliche Lauf hängt seit #229 an diesem Prozess, und er formuliert.
+      # Ollama gehört der Instanz und kommt seit #230 aus der Umgebung. Leer heißt: das
+      # Ollama dieser Box, ``chronicle.config`` setzt es ein.
       - name: OLLAMA_URL
         value: "{{OLLAMA_URL}}"
       - name: OLLAMA_MODEL
         value: "{{OLLAMA_MODEL}}"
+      # Der Foundry-Zugang steht bewusst nicht hier: den pflegt die Gruppe selbst in
+      # Discord unter /setup, er gehört ihrer Runde und nicht der Instanz. Das Passwort
+      # gibt es seit #64 überhaupt nirgends.
+    # **Hier steht absichtlich keine Karten-Durchreichung.** ``podman kube play`` (5.8.2)
+    # verwirft ``resources.limits`` für eine Pod-Spezifikation still — kein Fehler, kein
+    # Hinweis, der Pod startet ohne Karte. Gemessen am 2026-08-12 im Container:
+    # ``cuda_verfuegbar() -> False`` und kein ``nvidia-*``-Knoten unter ``/dev``, während
+    # der Nachbar ollama seine hat (ServiceBay #1026/#2174, unser Fall als
+    # mdopp/servicebay#2517). **Seit #216 braucht dieser Pod auch keine:** er hält kein
+    # Whisper-Modell mehr. Verschriftet wird bei ``solaris-whisper-batch`` auf der Karte
+    # der Box (mdopp/solarisbay#1161), erreicht über die Schleife wie Ollama und
+    # solaris-tts auch — Vorgabe ``127.0.0.1:10301``, überschreibbar mit
+    # ``CHRONICLE_WHISPER_URL``. Einen CPU-Rückfall gibt es dafür **nicht** mehr: ist der
+    # Dienst aus, bleibt die Spur liegen und der Nachtlauf sagt es, statt eine Chronik
+    # ohne das gesprochene Wort zu schreiben.
     volumeMounts:
       - mountPath: /data
         name: chronik-daten
