@@ -4,7 +4,7 @@
 Der rohe Abzug aus ``python -m chronicle.foundry --dump`` ist personenbezogen: er trägt
 die Klarnamen aller Konten der Welt, dazu Journale, Makros und Charakterbiografien voller
 Freitext. Er gehört nie ins Repo. Dieses Skript macht daraus eine Welt, die eingecheckt
-werden darf — und zwar nach zwei Regeln, die beide nötig sind:
+werden darf — und zwar nach drei Regeln, die alle nötig sind:
 
 1. **Behalten wird nur, was hier ausdrücklich aufgezählt ist — bis ganz nach unten.** Ein
    Feld, das dieses Skript nicht kennt, könnte einen Namen tragen; eine Biografie, eine
@@ -15,7 +15,18 @@ werden darf — und zwar nach zwei Regeln, die beide nötig sind:
    ``messages[].system.roll.*``, ``rolls[].terms[].options.*``, ``rolls[].options.roll.*``).
    Jetzt beschreibt je ein Bauplan jede erhaltene Ebene, auch die im eingebetteten
    JSON von ``rolls[]``.
-2. **Was bleibt, wird nachgeprüft — auf Personendaten, nicht nur auf Namen.** Nach dem
+2. **Ein Zeitstempel überlebt nur als Abstand.** Er sagt sonst, *wann* eine bestimmte
+   Gruppe gespielt hat — ein Personendatum wie ein Name, nur dass es niemandem auffällt,
+   weil es eine Zahl ist. Ersatzlos streichen geht trotzdem nicht: die Szenenzuordnung
+   (``notes.scene_of_moment``) rechnet mit den Abständen, und eine Fixture ohne sie
+   prüfte sie nicht mehr, sondern bestätigte sich selbst. Also wird der Ursprung
+   entfernt statt der Zeit: der früheste Augenblick des Materials wird zur Null, jeder
+   andere zu seinem Abstand davon, in Millisekunden. Die Abstände überleben vollständig,
+   das Datum nicht. Das ist **eine** Antwort für beide Wege — bis #255 behielt der
+   Weltabzug die absoluten Zeitstempel seiner Nachrichten, während der Mitschnitt den
+   Zeitpunkt seiner Bilder wegwarf; zwei Wege durch dasselbe Skript, zwei Antworten auf
+   dieselbe Frage.
+3. **Was bleibt, wird nachgeprüft — auf Personendaten, nicht nur auf Namen.** Nach dem
    Umschreiben läuft die Ausgabe noch einmal Zeichenkette für Zeichenkette durch, Werte
    **und** die Schlüssel, die aus der Eingabe stammen — die Schlüssel lange nicht, und
    ``ownership`` mit einer E-Mail-Adresse darin kam so mit Exit 0 und Erfolgsmeldung
@@ -27,6 +38,8 @@ werden darf — und zwar nach zwei Regeln, die beide nötig sind:
    „keine Personendaten verlassen dieses Haus" verspricht, muss geschlossen scheitern —
    vorher lief alles Nichtnamentliche mit Exit 0 und Erfolgsmeldung durch.
 
+Regel 1 und 3 waren von Anfang an da, Regel 2 kam mit #255 dazu; alle drei sind nötig.
+
 Erhalten bleiben dabei die Strukturen, an denen unsere Strecke hängt: Ids, ``ownership``,
 Rollen, die Kopfblöcke ``world`` und ``system`` und die Zahlen eines Wurfs. Umgeschrieben
 werden Namen und Aliase — konsistent, dieselbe Person bekommt überall dasselbe Pseudonym.
@@ -34,11 +47,15 @@ werden Namen und Aliase — konsistent, dieselbe Person bekommt überall dasselb
     python scripts/anonymisiere_welt.py welt-dump.json src/chronicle/foundry/testwelt.json
 
 **Ein Mitschnitt geht denselben Weg** (``.jsonl``, ein Bild je Zeile — siehe
-``chronicle.foundry.mitschnitt``). Er ist derselbe Abzug mehrmals, deshalb dieselben zwei
+``chronicle.foundry.mitschnitt``). Er ist derselbe Abzug mehrmals, deshalb dieselben drei
 Regeln, aber mit **einer** Pseudonymtabelle über alle Bilder: bekäme jedes Bild seine
 eigene, spräche in Bild zwei jemand anderes als in Bild eins, und der Abend ließe sich
-nicht mehr nachspielen. Der Zeitstempel des Bildes fällt weg — er sagt, wann diese Gruppe
-gespielt hat, und für die Wiedergabe zählt allein die Reihenfolge in der Datei.
+nicht mehr nachspielen. Aus demselben Grund gibt es **einen** Ursprung über alle Bilder:
+sonst zählte jedes Bild ab seinem eigenen Beginn, und die Abstände zwischen ihnen wären
+weg. Der Zeitpunkt eines Bildes bleibt damit stehen, aber wie jeder andere Zeitstempel
+nur als Abstand — die ISO-Uhrzeit, die der Mitschnitt schreibt, wird zur Millisekundenzahl
+ab der Null. Bis #255 fiel er ganz weg; das war dieselbe Sorge, aber eine andere Antwort
+als beim Weltabzug nebenan.
 
     python scripts/anonymisiere_welt.py dumps/mitschnitt-2026-08-22.jsonl abend.jsonl
 """
@@ -50,6 +67,7 @@ import json
 import re
 import sys
 from collections.abc import Callable, Iterable, Iterator, Mapping
+from datetime import UTC, datetime
 from pathlib import Path
 
 # Was an einer Nachricht stand, ist nie eincheckbar: dort steht, was echte Menschen an
@@ -195,6 +213,7 @@ EIGENE_SCHLUESSEL = frozenset(
         "world",
         "system",
         "bilder",
+        "zeit",
         "name",
         "navName",
         "alias",
@@ -444,10 +463,62 @@ def _szene(szene: Mapping, ersatz: Ersatz) -> dict:
     return behalten
 
 
-def anonymisiere(raw: Mapping, ersatz: Ersatz | None = None) -> dict:
-    """Der Rohabzug, auf das Eincheckbare reduziert und umbenannt."""
+ZEITSTEMPEL = "timestamp"
+
+
+def _millisekunden(wert: object) -> int | None:
+    """Ein Zeitstempel in Millisekunden, oder None — dann trägt ihn die Ausgabe nicht.
+
+    Foundry zählt Millisekunden seit der Epoche, der Mitschnitt schreibt eine ISO-Uhrzeit.
+    Was sich in keins von beidem lesen lässt, fällt weg, statt unverschoben stehenzubleiben:
+    nur einen Zeitstempel, den dieses Skript versteht, kann es auch um seinen Ursprung
+    erleichtern — und ein unverschobener wäre genau das absolute Datum, das hier nicht
+    hinaussoll.
+    """
+    if isinstance(wert, bool):
+        return None
+    if isinstance(wert, int | float):
+        return int(wert)
+    try:
+        gelesen = datetime.fromisoformat(str(wert))
+    except ValueError:
+        return None
+    return int((gelesen if gelesen.tzinfo else gelesen.replace(tzinfo=UTC)).timestamp() * 1000)
+
+
+def _zeitstempel(welt: Mapping) -> Iterator[int]:
+    for nachricht in _dokumente(welt, "messages"):
+        millisekunden = _millisekunden(nachricht.get(ZEITSTEMPEL))
+        if millisekunden is not None:
+            yield millisekunden
+
+
+def ursprung(welten: Iterable[Mapping], bildzeiten: Iterable[object] = ()) -> int:
+    """Der früheste Augenblick des Materials — die Null, auf die alles bezogen wird."""
+    augenblicke = [millisekunden for welt in welten for millisekunden in _zeitstempel(welt)]
+    augenblicke += [zeit for zeit in map(_millisekunden, bildzeiten) if zeit is not None]
+    return min(augenblicke, default=0)
+
+
+def _verschoben(welt: dict, null: int) -> dict:
+    for nachricht in welt["messages"]:
+        millisekunden = _millisekunden(nachricht.get(ZEITSTEMPEL))
+        if millisekunden is None:
+            nachricht.pop(ZEITSTEMPEL, None)
+        else:
+            nachricht[ZEITSTEMPEL] = millisekunden - null
+    return welt
+
+
+def anonymisiere(raw: Mapping, ersatz: Ersatz | None = None, null: int | None = None) -> dict:
+    """Der Rohabzug, auf das Eincheckbare reduziert, umbenannt und aus der Zeit gelöst.
+
+    ``null`` gibt den gemeinsamen Ursprung vor. Ein Mitschnitt braucht ihn, weil seine
+    Bilder sonst jedes für sich bei null anfingen und die Abstände zwischen ihnen verloren
+    gingen; ein einzelner Abzug findet ihn selbst.
+    """
     ersatz = Ersatz(raw) if ersatz is None else ersatz
-    return {
+    gebaut = {
         "userId": _felder(raw, ("userId",), ersatz).get("userId"),
         "world": _kopf(raw, "world", WELT_FELDER, ersatz),
         "system": _kopf(raw, "system", SYSTEM_FELDER, ersatz),
@@ -462,6 +533,7 @@ def anonymisiere(raw: Mapping, ersatz: Ersatz | None = None) -> dict:
         "messages": [_nachricht(nachricht, ersatz) for nachricht in _dokumente(raw, "messages")],
         "scenes": [_szene(szene, ersatz) for szene in _dokumente(raw, "scenes")],
     }
+    return _verschoben(gebaut, ursprung([raw]) if null is None else null)
 
 
 def _als_json(text: str) -> object | None:
@@ -561,6 +633,7 @@ def pruefe(ausgabe: Mapping, gefahren: Iterable[str]) -> list[str]:
 MITSCHNITT_ENDUNG = ".jsonl"
 BILD_WELT = "welt"
 BILD_KONTO = "userId"
+BILD_ZEIT = "zeit"
 
 # Über welche Listen die Pseudonymtabelle gebildet wird. Ein Bild allein reicht nicht:
 # wer erst spät dazukommt, stünde sonst in den früheren Bildern unter seinem Klarnamen.
@@ -594,13 +667,16 @@ def _vereint(welten: Iterable[Mapping]) -> dict:
 
 
 def anonymisiere_mitschnitt(bilder: Iterable[Mapping], ersatz: Ersatz) -> list[dict]:
-    return [
-        {
-            BILD_KONTO: _felder(bild, (BILD_KONTO,), ersatz).get(BILD_KONTO),
-            BILD_WELT: anonymisiere(bild[BILD_WELT], ersatz),
-        }
-        for bild in bilder
-    ]
+    bilder = list(bilder)
+    null = ursprung([bild[BILD_WELT] for bild in bilder], [bild.get(BILD_ZEIT) for bild in bilder])
+    gesaeubert = []
+    for bild in bilder:
+        zeit = _millisekunden(bild.get(BILD_ZEIT))
+        eintrag: dict = {} if zeit is None else {BILD_ZEIT: zeit - null}
+        eintrag[BILD_KONTO] = _felder(bild, (BILD_KONTO,), ersatz).get(BILD_KONTO)
+        eintrag[BILD_WELT] = anonymisiere(bild[BILD_WELT], ersatz, null)
+        gesaeubert.append(eintrag)
+    return gesaeubert
 
 
 def lauf_mitschnitt(eingabe: Path, ausgabe: Path) -> str:
@@ -623,7 +699,7 @@ def lauf_mitschnitt(eingabe: Path, ausgabe: Path) -> str:
         f"{ausgabe} geschrieben: {len(gesaeubert)} Bilder, {nachrichten} Nachrichten. "
         f"{len(ersatz.zuordnung)} Namen ersetzt, {len(ersatz.gefahren)} geprüft, "
         f"{len(PERSONENSPUREN)} Formen von Personendaten ausgeschlossen. "
-        "Der Zeitstempel der Bilder ist weggefallen; die Reihenfolge trägt den Abend."
+        "Die Zeitstempel zählen ab dem ersten Augenblick aller Bilder, nicht ab dem Kalender."
     )
 
 
@@ -652,7 +728,8 @@ def lauf(eingabe: Path, ausgabe: Path) -> str:
         f"{len(gesaeubert['scenes'])} Szenen. "
         f"{len(ersatz.zuordnung)} Namen ersetzt, {len(ersatz.gefahren)} geprüft, "
         f"{len(PERSONENSPUREN)} Formen von Personendaten ausgeschlossen. "
-        "Journale, Ordner, Makros, Gegenstände, Einstellungen und Module sind weggefallen."
+        "Journale, Ordner, Makros, Gegenstände, Einstellungen und Module sind weggefallen. "
+        "Die Zeitstempel zählen ab der ersten Nachricht, nicht ab dem Kalender."
     )
 
 

@@ -11,6 +11,12 @@ wenn ein Name, eine Adresse, ein Rechnername, eine IP, eine Telefonnummer oder e
 Heimatpfad überlebt hat. Der Lauf meldete: 17 Konten, 154 Figuren, 59 Nachrichten,
 45 Szenen, 210 Namen ersetzt, 329 Spuren geprüft, keine Beanstandung.
 
+Seit #255 nimmt derselbe Lauf auch den Zeitstempeln ihren Ursprung: sie zählen ab dem
+ersten Augenblick des Abzugs, nicht ab dem Kalender. Dass die Abstände dabei vollständig
+erhalten bleiben, ist keine Nebensache — die Szenenzuordnung ganz unten hängt daran, und
+``test_ohne_abstaende_faellt_der_ganze_abend_in_die_erste_szene`` zeigt, was ohne sie von
+ihr übrig wäre.
+
 **Warum es diese Datei gibt.** #242 wurde ohne sie behoben: dass die Zahlen in
 ``rolls[]`` und nicht in ``message.system.roll`` stehen, war recherchiert (#146) und an
 einer *erzeugten* Fixture geprüft. Der Commit sagte selbst, die echte Form bleibe
@@ -48,9 +54,14 @@ MIT_TITEL = 32
 SZENEN_GESAMT = 45
 SZENEN_SICHTBAR = 3
 
-# Der Abend lief am 2026-08-05 von 18:16 bis 20:26 UTC.
-VOR_DEM_ABEND = "2026-08-05T17:00:00+00:00"
-MITTEN_IM_ABEND = "2026-08-05T19:00:00+00:00"
+# Die Zeitstempel zählen ab dem ersten Augenblick des Abzugs und nicht ab dem Kalender
+# (#255) — wann diese Gruppe gespielt hat, steht damit nirgends mehr in der Datei. Die
+# Abstände sind unberührt, und auf sie kommt es hier an: die Trennlinien unten liegen an
+# denselben Stellen des Abends wie vorher, nur ohne Datum. Der ganze Abzug spannt knapp
+# drei Stunden.
+BEGINN = "1970-01-01T00:00:00+00:00"
+MITTEN_IM_ABEND = "1970-01-01T01:27:13+00:00"
+SPANNE_MS = 10394813
 WUERFE_ERSTE_SZENE = 29
 WUERFE_ZWEITE_SZENE = 8
 
@@ -207,6 +218,44 @@ def test_die_szenen_kommen_gefiltert_und_aus_der_kartenleiste_benannt(echtwelt, 
         assert szene.name == roh[szene.id]["name"]
 
 
+def test_die_zeitstempel_tragen_die_abstaende_und_kein_datum(echtwelt):
+    """#255: der Ursprung ist weg, die Abstände sind vollständig da.
+
+    Beides gehört zusammen. Ohne die erste Hälfte stünde in einer öffentlichen Datei, wann
+    eine bestimmte Gruppe gespielt hat; ohne die zweite prüfte der Test darunter nichts
+    mehr.
+    """
+    stempel = [nachricht["timestamp"] for nachricht in echtwelt["messages"]]
+    assert len(stempel) == NACHRICHTEN
+    assert min(stempel) == 0
+    assert max(stempel) == SPANNE_MS
+    assert len(set(stempel)) == NACHRICHTEN
+    assert stempel == sorted(stempel)
+    # Die Trennlinie unten liegt wirklich mitten drin — sonst wäre die Aufteilung 37/0.
+    assert BEGINN < MITTEN_IM_ABEND < service._augenblick(max(stempel))
+
+
+def test_ohne_abstaende_faellt_der_ganze_abend_in_die_erste_szene(config, echtwelt):
+    """Die Gegenprobe zur Szenenzuordnung: was passierte, wären die Zeitstempel gefallen.
+
+    Sie ist der Grund, warum #255 verschiebt statt zu streichen. Mit gleichgemachten
+    Zeitstempeln hängt der Nachtrag alles an die erste Trennlinie und bleibt trotzdem
+    grün — ein Test, der noch läuft, weil er nichts mehr prüft, wäre schlimmer als das
+    Datum, das er kostet.
+    """
+    flach = json.loads(json.dumps(echtwelt))
+    for nachricht in flach["messages"]:
+        nachricht["timestamp"] = 0
+
+    eine = runde(config)
+    sitzung = _sitzung(eine, [("Aufbruch", BEGINN), ("Keller", MITTEN_IM_ABEND)])
+    schnapp = world.project(flach, str(flach["userId"]), fetched_at="1970-01-01T03:00:00+00:00")
+
+    assert service._nachtragen(eine, sitzung, flach, schnapp) == LESBARE_WUERFE
+    szenen = [szene.id for szene in notes.session(eine, sitzung).scenes]
+    assert [len(_verknuepft(eine, szene)) for szene in szenen] == [LESBARE_WUERFE, 0]
+
+
 def test_der_abend_haengt_seine_wuerfe_an_die_szenen_der_sitzung(config, echtwelt):
     """Der Weg bis in die Chronik, an echtem Material: ohne ``read_roll`` bleibt er leer.
 
@@ -215,7 +264,7 @@ def test_der_abend_haengt_seine_wuerfe_an_die_szenen_der_sitzung(config, echtwel
     Zahl. Hier landen sie an den zwei Trennlinien dieses Abends.
     """
     eine = runde(config)
-    sitzung = _sitzung(eine, [("Aufbruch", VOR_DEM_ABEND), ("Keller", MITTEN_IM_ABEND)])
+    sitzung = _sitzung(eine, [("Aufbruch", BEGINN), ("Keller", MITTEN_IM_ABEND)])
     schnapp = world.project(
         echtwelt, str(echtwelt["userId"]), fetched_at="2026-08-06T00:00:00+00:00"
     )

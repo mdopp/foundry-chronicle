@@ -176,6 +176,28 @@ def test_die_struktur_bleibt_stehen(roh):
     assert zweite["system"] == {"roll": {"title": "Verborgen", "total": 20}}
 
 
+def test_die_zeitstempel_verlieren_ihren_ursprung_und_behalten_ihre_abstaende(roh):
+    """#255: der Weltabzug behielt das Datum, der Mitschnitt warf den Zeitpunkt weg.
+
+    Jetzt tun beide dasselbe. Ersatzlos streichen wäre die dritte Antwort gewesen und die
+    schlechteste: die Szenenzuordnung rechnet mit den Abständen, und ohne sie prüfte
+    ``tests/test_foundry_echtwelt.py`` seine eigene Vorlage statt der Zuordnung.
+    """
+    stempel = [nachricht["timestamp"] for nachricht in sauber(roh)["messages"]]
+    assert stempel == [0, 1000]
+    roher_abstand = roh["messages"][1]["timestamp"] - roh["messages"][0]["timestamp"]
+    assert stempel[1] - stempel[0] == roher_abstand
+
+
+def test_ein_unlesbarer_zeitstempel_faellt_weg_statt_unverschoben_dazubleiben(roh):
+    """Was das Skript nicht verschieben kann, darf es auch nicht veröffentlichen."""
+    roh["messages"][0]["timestamp"] = "irgendwann am Dienstag"
+    ergebnis = sauber(roh)
+    assert "timestamp" not in ergebnis["messages"][0]
+    # Der Ursprung kommt dann von der Nachricht, die noch einen lesbaren trägt.
+    assert ergebnis["messages"][1]["timestamp"] == 0
+
+
 def test_die_zahlen_eines_wurfs_bleiben_unangetastet(roh):
     wurf = json.loads(sauber(roh)["messages"][0]["rolls"][0])
     assert wurf["total"] == 14
@@ -450,6 +472,11 @@ def test_personendaten_ohne_namen_brechen_den_lauf_ab(probe, tmp_path, monkeypat
 
 NACHZUEGLER = "Ferun Talbrecht"
 
+# Zwei Blicke im Abstand von fünf Minuten. Der Abstand ist der Prüfwert: er muss die
+# Anonymisierung überleben, das Datum darf es nicht.
+BILDZEITEN = ("2026-08-22T20:00:00+00:00", "2026-08-22T20:05:00+00:00")
+BILDABSTAND_MS = 300_000
+
 
 @pytest.fixture
 def mitschnitt(roh, tmp_path) -> Path:
@@ -471,11 +498,11 @@ def mitschnitt(roh, tmp_path) -> Path:
     datei.write_text(
         "".join(
             json.dumps(
-                {"zeit": "2026-08-22T20:00:00+00:00", "userId": roh["userId"], "welt": welt},
+                {"zeit": zeit, "userId": roh["userId"], "welt": welt},
                 ensure_ascii=False,
             )
             + "\n"
-            for welt in (roh, spaeter)
+            for zeit, welt in zip(BILDZEITEN, (roh, spaeter), strict=True)
         ),
         encoding="utf-8",
     )
@@ -506,11 +533,21 @@ def test_dieselbe_person_traegt_in_jedem_bild_dasselbe_pseudonym(mitschnitt, tmp
     assert erstes["messages"][0]["speaker"]["alias"] == zweites["messages"][0]["speaker"]["alias"]
 
 
-def test_der_zeitstempel_des_bildes_faellt_weg(mitschnitt, tmp_path):
-    """Wann diese Gruppe gespielt hat, gehört ihr. Die Reihenfolge trägt den Abend."""
+def test_ein_mitschnitt_zaehlt_ab_einem_ursprung_ueber_alle_bilder(mitschnitt, tmp_path):
+    """Wann diese Gruppe gespielt hat, gehört ihr — wie weit die Bilder auseinanderliegen,
+    gehört zum Material (#255).
+
+    Der Ursprung ist einer über alle Bilder. Rechnete jedes für sich, stünde in beiden
+    dieselbe Null und der Fünf-Minuten-Abstand wäre weg.
+    """
     ziel = tmp_path / "abend.jsonl"
     anonym.lauf(mitschnitt, ziel)
-    assert all("zeit" not in bild for bild in bilder(ziel))
+    erstes, zweites = bilder(ziel)
+
+    assert zweites["zeit"] - erstes["zeit"] == BILDABSTAND_MS
+    assert erstes["welt"]["messages"][0]["timestamp"] == 0
+    assert zweites["welt"]["messages"][-1]["timestamp"] == 2000
+    assert "2026-08" not in ziel.read_text(encoding="utf-8")
 
 
 def test_ein_anonymisierter_mitschnitt_bleibt_abspielbar(mitschnitt, tmp_path):
