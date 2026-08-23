@@ -16,13 +16,20 @@ useDefault = true
 # soll weiter durchsucht werden. Der Rest der Regeln greift hier unverändert; ein echter
 # Schlüssel, der irgendwo hereinrutscht, fällt weiter auf.
 #
-# Die Datei selbst ist erzeugt und nicht abgegriffen (siehe scripts/erzeuge_testwelt.py):
-# die Kennungen stammen aus einem festen Saatgut und stehen für nichts.
+# Die erzeugte Testwelt ist nicht abgegriffen (siehe scripts/erzeuge_testwelt.py): die
+# Kennungen stammen aus einem festen Saatgut und stehen für nichts. Die zweite Datei,
+# ``tests/echtwelt-2026-08-06.json``, ist ein **echter** Weltabzug — aber durch
+# ``scripts/anonymisiere_welt.py`` gelaufen, und der wirft alles weg, was nicht in seiner
+# Erlaubnisliste steht. Übrig sind Foundry-Kennungen, Zahlen und Pseudonyme; ein
+# Zugangsdatum kann dort nicht stehen, weil kein Feld es hindurchließe. Auch sie ist
+# nachgemessen, gitleaks 8.28.0: 40 Treffer, alle `generic-api-key`, alle auf
+# ``speaker.token``.
 [[rules]]
 id = "generic-api-key"
 
   [[rules.allowlists]]
-  description = "Foundry-Dokumentkennungen in der erzeugten Testwelt sind keine Geheimnisse"
+  description = "Foundry-Dokumentkennungen in den Weltfixtures sind keine Geheimnisse"
   paths = [
     '''^src/chronicle/foundry/testwelt\.json$''',
+    '''^tests/echtwelt-2026-08-06\.json$''',
   ]

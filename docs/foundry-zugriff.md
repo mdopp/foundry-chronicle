@@ -95,13 +95,36 @@ in Würfel-Darstellungsdaten. Der `system`-Block ist der bessere Einstieg.
 > serialisiert. Die frühere Auszählung »sieben von acht« stammt aus einer Welt mit einem
 > anderen Systemstand; beides kann gleichzeitig wahr sein, ein Adapter mit nur einem
 > Einstieg nicht. `systems.read_roll` liest deshalb beide Ablagen: `message.system.roll`
-> zuerst, sonst `rolls[]` — dort `options.roll`, und was der offenlässt, aus den
-> Kernfeldern `total`/`formula`/`class` daneben. Die **benannten** Würfel bleiben leer,
-> wo nur die Kernfelder da sind: welcher d12 die Hoffnung war, sagt allein der
-> aufbereitete Block, und geraten wird er nicht.
+> zuerst, sonst `rolls[]`.
 >
 > Dass das so lange unbemerkt blieb, lag an den Fixtures: sie trugen `system.roll`, weil
 > jemand sie von Hand geschrieben hatte. Dagegen steht seither der Mitschnitt (unten).
+
+> **Nachtrag 2026-08-23, am Weltabzug ausgezählt — die Form in `rolls[]` ist belegt.**
+> Der Abzug vom 2026-08-06 (13,9 MB) liegt anonymisiert als
+> `tests/echtwelt-2026-08-06.json` im Repo. Gemessen daran:
+>
+> * **59 Nachrichten, 40 mit `rolls[]`, 0 mit `system.roll`.** Einen `system`-Block tragen
+>   alle 59 — er führt Titel, Kosten, Ziele und Wirkung der Aktion, aber keinen `roll`.
+>   Der Nachtrag darüber ist damit nicht nur an einer Zählung von Archivzeilen belegt,
+>   sondern an der rohen Antwort selbst.
+> * `rolls[i]` ist ein JSON-**String**; jede der 40 Nachrichten trägt genau einen.
+>   Wurfklassen: `DualityRoll` (20), `D20Roll` (12), `BaseRoll` (5), `DamageRoll` (2),
+>   `DHRoll` (1).
+> * 32 der 40 tragen ein `options.roll`. **Keines davon hat einen `title`** — der steht
+>   eine Ebene höher in `options.title`.
+> * **Der ausgewertete Wurf führt, nicht der aufbereitete Block.** Bei 2 der 32 beschrieb
+>   `options.roll` einen *anderen* Wurf als den gesendeten: 14 aus `1d12 + 1d12 + 3 + 3`,
+>   während `total`/`terms[]` 25 aus `1d12 + 1d12 + 2` sagten. `terms[]` rechnet in allen
+>   37 auswertbaren Fällen genau die gesendete Summe. `read_roll` nimmt Zahl, Formel und
+>   Würfel deshalb aus dem Kern und den Block nur, wenn dessen `formula` dieselbe ist;
+>   von ihm kommen dann Wurfart, kritischer Erfolg und Modifikatorsumme.
+> * **Die benannten Würfel stehen im Kern.** `terms[].class` heißt `HopeDie` bzw.
+>   `FearDie` — Foundry benennt sie selbst, geraten wird nichts. Wo Block und Kern
+>   denselben Wurf beschreiben, sagen sie dasselbe (30 von 30). Der frühere Satz, die
+>   benannten Würfel blieben ohne aufbereiteten Block leer, ist damit überholt.
+> * 3 der 40 Würfe sind unausgewertet (`total` leer, `formula` leer) und tragen keine
+>   Zahl; `read_roll` liefert für sie `None`, statt eine zu erfinden.
 
 > **Zurückgezogen — der Nachtrag vom 2026-08-07 galt nie.** Er hielt fest,
 > `message.system.roll` sei in einer beobachteten Welt »kein einziges Mal« vorgekommen,
@@ -319,11 +342,12 @@ gegen den ein Abgleich, der Nachtrag und der Strom ohne Netz durchlaufen.
 > Abend ließe sich nicht mehr nachspielen —, und der Zeitstempel des Bildes fällt weg. Er
 > sagt, wann diese Gruppe gespielt hat; für die Wiedergabe zählt die Reihenfolge.
 
-**Was damit noch nicht belegt ist:** wie eine echte Daggerheart-Nachricht in `rolls[]`
-wirklich aussieht. Solange kein anonymisierter Mitschnitt von der Box vorliegt, prüfen
-die Tests den zweiten Einstieg an der erzeugten Testwelt (deren `rolls[]`-Form an einem
-echten Abzug ausgezählt wurde) und an der recherchierten Kernform aus #146. Der erste
-echte Mitschnitt tritt an ihre Stelle, ohne dass sich eine Zeile Code ändert.
+**Belegt ist es seit dem 2026-08-23.** Der Weltabzug vom 2026-08-06 ist durch denselben
+Anonymisierer gelaufen und liegt als `tests/echtwelt-2026-08-06.json` im Repo; die
+Auszählung steht im Nachtrag oben, geprüft wird sie in `tests/test_foundry_echtwelt.py`.
+Der Satz, der hier stand — »wie eine echte Daggerheart-Nachricht in `rolls[]` wirklich
+aussieht, ist noch nicht belegt« —, ist damit erledigt. Die erzeugte Testwelt bleibt
+daneben stehen: sie prüft den Umfang einer Welt, die echte Fixture die Form eines Wurfs.
 
 ### 4. Abspielen
 
@@ -414,6 +438,8 @@ machen, sonst greift er ins Leere. Ein serialisierter Wurf trägt `class`, `form
 > **Aufgelöst am 2026-08-22 (#242), zugunsten des Quelltextes.** Gegen den echten Server
 > trug keine von 76 Nachrichten einen `system.roll`. Der Adapter liest seither beide
 > Ablagen; die Einzelheiten stehen oben beim Nachtrag zu »Bei Würfen ist `content` leer«.
+> Am 2026-08-23 am Weltabzug selbst nachgezählt: **59 Nachrichten, 40 mit `rolls[]`,
+> 0 mit `system.roll`** — Systemstand Daggerheart 2.6.4, Foundry 14.365.
 
 ### Was sonst noch von selbst kommt
 
@@ -462,12 +488,13 @@ nicht. In die Datenbank geht nichts — sie wird nicht einmal geöffnet.
   gemessen. Offen bleiben insbesondere: ob ein Nicht-GM-Konto fremdes Geflüster wirklich
   mitbekommt und ob während einer Sitzung Ereignisse auftreten, die in keiner Quelle
   stehen. Ein Lauf von `scripts/lausche_foundry.py` beantwortet das. **Die Wurf-Frage ist
-  beantwortet** (#242): auf diesem Server steht der Wurf nur in `rolls[]`. Wie er dort im
-  Einzelnen aussieht, sagt der erste anonymisierte Mitschnitt.
-- **Wie viel steht wirklich im Chat-Log?** Die beobachtete Welt hatte acht Nachrichten,
-  davon sieben Würfe aus einem halbstündigen Fenster — kein Schaden, keine Beute. Ob
-  eine volle Sitzung wesentlich mehr liefert, ist ungeprüft. Falls nicht, trägt die
-  Chronik überwiegend auf Notizen und Transkript.
+  beantwortet** (#242): auf diesem Server steht der Wurf nur in `rolls[]`, und wie er dort
+  aussieht, steht seit dem 2026-08-23 in `tests/echtwelt-2026-08-06.json`.
+- **Wie viel steht wirklich im Chat-Log?** Am Abzug vom 2026-08-06 gezählt: 59 Nachrichten
+  über knapp drei Stunden, davon 40 mit einem Wurf und 37 mit einer lesbaren Zahl — kein
+  Beutewurf. Die frühere Schätzung »acht Nachrichten, davon sieben Würfe« stammte aus
+  einem halbstündigen Fenster. Ein voller Abend liefert also mehr, aber keine andere Art
+  von Zeile; die Chronik trägt weiterhin überwiegend auf Notizen und Transkript.
 - **Wie lange hält der Handschlag?** Er ist aus dem Client nachgebaut. Ein
   Foundry-Hauptversionssprung kann ihn brechen; das ist eingeplantes Risiko, kein
   Versehen.
