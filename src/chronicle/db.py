@@ -81,10 +81,9 @@ GESCOPTE_TABELLEN = frozenset(
 # Diese Werte lagen vor dem Runden-Modell in ``settings`` und gehören der Instanz, nicht
 # einer Gruppe — voran der Bot-Token: das ist **unser** Token. Sie wandern nach ``meta``.
 # Gelesen wird dabei die *erste* Runde, und genau dort liegen die Bestände: die
-# Weboberfläche konnte nie eine andere bearbeiten.
+# Weboberfläche von damals konnte nie eine andere bearbeiten.
 INSTANZ_SCHLUESSEL = (
     "discord_bot_token",
-    "admin_group",
     "onboarding_done",
     "ollama_url",
     "ollama_model",
@@ -117,7 +116,12 @@ NICHT_ABGELOEST = (
 # im Klartext in der Datei und damit im Backup; ein Wert, den niemand mehr liest, soll
 # dort nicht liegen bleiben. Der Löschlauf ist idempotent und ohne Ersatz: das Passwort
 # wird ab jetzt beim Abgleich erfragt.
-VERWORFENE_SCHLUESSEL = ("foundry_password",)
+# ``admin_group`` steht seit #231 daneben: die Verwaltungsgruppe war die Antwort auf die
+# Frage, wer an die Betreiber-Seite darf (#90). Die Seite ist fort, die Frage stellt
+# niemand mehr, und der Name einer Gruppe aus der Benutzerverwaltung der Box hat in
+# unserer Datei nichts mehr verloren. Anders als beim Bot-Token ist das Löschen hier
+# folgenlos: der Wert steht auch in der Benutzerverwaltung, und niemand liest ihn.
+VERWORFENE_SCHLUESSEL = ("foundry_password", "admin_group")
 
 # ``CREATE TABLE IF NOT EXISTS`` erreicht eine bestehende Tabelle nicht mehr; eine neue
 # Spalte muss deshalb einmal nachgetragen werden. Nur additiv — mehr kann und soll dieser

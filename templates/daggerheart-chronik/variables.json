@@ -1,30 +1,13 @@
 {
-  "CHRONICLE_PORT": {
-    "type": "text",
-    "description": "HTTP-Port auf der Box. Der Dienst bindet 0.0.0.0, damit NPM ihn erreicht — der Port ist damit auch aus dem LAN offen. Dass ein Remote-User-Header da ist, belegt deshalb nichts: den schreibt sich jeder selbst, der den Port erreicht. Geglaubt wird die Anmeldung nur, wenn der Aufruf von dieser Box kommt, wo der Proxy läuft (#190); jeder andere Absender bekommt 403, mit Kopfzeile wie ohne. Steht der Proxy woanders, gehört seine Adresse in CHRONICLE_TRUSTED_PROXIES.",
-    "default": "8700"
-  },
   "CHRONICLE_HEALTH_PORT": {
     "type": "text",
-    "description": "Port des Install-Gates /healthz, bedient vom Bot-Prozess (#228). Er hört ausschließlich auf 127.0.0.1 und ist deshalb weder veröffentlicht noch aus dem LAN erreichbar — der Poller der Box läuft daneben. Zu ändern nur, wenn der Port auf dieser Box schon vergeben ist; er muss sich von CHRONICLE_PORT unterscheiden, weil beide Container denselben Netz-Namensraum teilen.",
+    "description": "Port des Install-Gates /healthz, bedient vom Bot-Prozess (#228). Er hoert ausschliesslich auf 127.0.0.1 und ist deshalb weder veroeffentlicht noch aus dem LAN erreichbar — der Poller der Box laeuft daneben. Seit #231 ist es der einzige Horcher dieses Dienstes: die Betreiber-Seite samt Subdomain und CHRONICLE_PORT ist fort, bedient wird in Discord. Zu aendern nur, wenn der Port auf dieser Box schon vergeben ist.",
     "default": "8701"
   },
   "CHRONICLE_IMAGE_TAG": {
     "type": "text",
     "description": "Image-Tag von ghcr.io/mdopp/foundry-chronicle. Für den Rollout auf einen festen Tag setzen, nicht auf 'latest': 'python scripts/bestimme_image_tag.py' nennt den aktuellen, '--zurueck 1' den Stand davor — das ist der Weg zurück, wenn ein Deployment misslingt. Nach dem Neustart den laufenden Digest gegen den erwarteten prüfen. 'latest' ist nur die Erstinstallation, solange die Box noch kein Repo zur Hand hat.",
     "default": "latest"
-  },
-  "CHRONICLE_SUBDOMAIN": {
-    "type": "subdomain",
-    "description": "Subdomain der Betreiber-Seite — gespielt wird in Discord, und seit #230 steht hier nur noch die Verwaltungsgruppe: Bot-Token und Ollama kommen aus den Variablen darunter. Sie benennt die Instanz, nicht eine Gruppe: eine Instanz trägt mehrere Runden, je Discord-Server eine. Authelia-Forward-Auth davor: unauthentifiziert antwortet die Subdomain mit 302 auf auth.<domain>, danach setzt NPM den Remote-User-Header. Ein eigenes Login hat der Dienst nicht.",
-    "default": "daggerheart",
-    "exposure": "public",
-    "proxyPort": "CHRONICLE_PORT",
-    "proxyConfig": {
-      "block_exploits": true,
-      "ssl_forced": true,
-      "advanced_config": "__authelia_forward_auth__"
-    }
   },
   "DISCORD_BOT_TOKEN": {
     "type": "text",

@@ -23,7 +23,6 @@ from chronicle import (
     zugang,
 )
 from chronicle import runde as runden
-from chronicle.app import create_app
 from chronicle.config import Config
 from chronicle.discord import rueckblick
 from chronicle.discord import service as diktat
@@ -668,21 +667,6 @@ def test_was_keine_zone_ist_laesst_die_bisherige_stehen(stelle, unsinn):
     assert settings.nightly_zone(runde(stelle)) == "Pacific/Auckland"
 
 
-def test_uhrzeit_und_zone_stehen_nicht_auf_der_betreiberseite(stelle):
-    """Sie gehören der Runde und werden in Discord gepflegt — ``/setup`` setzt die Uhrzeit."""
-    settings.save_nightly_time(runde(stelle), "22:15")
-    settings.save_nightly_zone(runde(stelle), "Pacific/Auckland")
-    client = create_app(stelle).test_client()
-
-    html = client.get("/einstellungen").get_data(as_text=True)
-    assert 'name="nightly_zone"' not in html
-    assert 'name="nightly_time"' not in html
-
-    client.post("/einstellungen", data={"nightly_time": "03:00", "nightly_zone": "Europe/Berlin"})
-    assert settings.nightly_time(runde(stelle)) == "22:15"
-    assert settings.nightly_zone(runde(stelle)) == "Pacific/Auckland"
-
-
 def test_eine_uhrzeit_wird_gespeichert(stelle):
     assert settings.save_nightly_time(runde(stelle), "22:15")
     assert settings.nightly_time(runde(stelle)) == "22:15"
@@ -750,20 +734,6 @@ def test_ein_laufender_lauf_zeigt_sich_als_unterwegs(stelle):
 
 
 # --- Wo der Zeitplan hängt -----------------------------------------------------------
-
-
-def test_die_betreiberseite_stellt_keinen_zeitplan_mehr_an(stelle, monkeypatch):
-    """Der Zeitplan hängt seit #229 am Bot-Prozess.
-
-    Bliebe er hier stehen, sähen zwei Prozesse auf dieselbe Uhr und stießen dieselbe Nacht
-    an — die Seite arbeitet nicht mehr, sie antwortet nur noch.
-    """
-    gestartet = []
-    monkeypatch.setattr(nightly, "starten", lambda config: gestartet.append(config))
-
-    create_app(stelle)
-
-    assert gestartet == []
 
 
 def test_der_faden_laeuft_neben_dem_bot(stelle, monkeypatch):

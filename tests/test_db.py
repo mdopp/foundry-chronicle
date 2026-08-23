@@ -2,7 +2,7 @@ import sqlite3
 
 import pytest
 
-from chronicle import db, instanz, notes, protocol, register, settings
+from chronicle import db, notes, protocol, register, settings
 from chronicle import runde as runden
 
 # Die Werte der Instanz kommen seit #230 aus der Umgebung. Die Wanderung räumt sie nur
@@ -177,9 +177,7 @@ def test_wanderung_sortiert_die_schluesselraeume(alte_datenbank):
         "discord_bot_token": "platzhalter",
         "ollama_url": "http://alt.example:11434",
         "ollama_model": "gemma4:12b",
-        "admin_group": "chronisten",
     }
-    assert instanz.admin_group(alte_datenbank) == "chronisten"
     connection = db.connect(alte_datenbank)
     try:
         gepflegt = {z["key"] for z in connection.execute("SELECT key FROM settings")}

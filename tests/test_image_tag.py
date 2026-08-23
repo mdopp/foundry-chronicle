@@ -244,7 +244,7 @@ def test_die_registry_adresse_stimmt_mit_dem_template_ueberein() -> None:
     manifest = (WURZEL / "templates" / "daggerheart-chronik" / "template.yml").read_text(
         encoding="utf-8"
     )
-    assert re.findall(r"^\s*image: (\S+):", manifest, re.MULTILINE) == [tagskript.IMAGE] * 2
+    assert re.findall(r"^\s*image: (\S+):", manifest, re.MULTILINE) == [tagskript.IMAGE]
 
 
 def test_die_variable_verweist_auf_das_skript() -> None:

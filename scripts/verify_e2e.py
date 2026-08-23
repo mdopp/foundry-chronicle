@@ -2,14 +2,16 @@
 """Der synthetische Durchstich: eine Wegwerf-Instanz, ein Durchlauf, ein Exit-Code.
 
 Gefragt wird das, was Healthcheck und Statuscode nicht beantworten: kommt eine Notiz
-durch den ganzen Weg bis in Chronik, Rückblick und Suche — und steht die Haustür zu?
-Die Schritte stehen deshalb hier als Skript und nicht als Prosa in einem Playbook, das
-bei jedem Lauf neu ausgelegt wird (CLAUDE.md » Skripte statt Prosa).
+durch den ganzen Weg bis in Chronik, Rückblick und Suche — und antwortet der Prozess
+dabei nur dort, wo er soll? Die Schritte stehen deshalb hier als Skript und nicht als
+Prosa in einem Playbook, das bei jedem Lauf neu ausgelegt wird (CLAUDE.md » Skripte
+statt Prosa).
 
-**Gefahren wird über die Bot-Befehle, nicht über HTTP-Routen** (#158). Mit #157 trägt die
-Weboberfläche keine Spielinhalte mehr; sie ist die Betreiber-Seite, und die wird hier nur
-noch daraufhin geprüft, dass sie steht und zu ist. Die Sitzung selbst — anlegen, Szene
-ziehen, mitschreiben, diktieren, abschließen, wiederfinden — läuft über
+**Gefahren wird über die Bot-Befehle, nicht über HTTP-Routen** (#158). Mit #157 trug die
+Weboberfläche keine Spielinhalte mehr, und mit #231 gibt es sie gar nicht: gestartet wird
+``python -m chronicle.bot``, und über HTTP antwortet allein ``/healthz``. Genau das wird
+hier geprüft — das Gate steht, und daneben steht nichts. Die Sitzung selbst — anlegen,
+Szene ziehen, mitschreiben, diktieren, abschließen, wiederfinden — läuft über
 ``chronicle.bot.chronik`` und ``chronicle.bot.erinnern``, also über genau die Schicht,
 die in Discord unter den Befehlen liegt. Der **Discord-Mock** ist der Rumpf hier unten:
 ein Thread ist eine Zeichenkette, eine Nachricht ist ``chronik.Nachricht``, ein Anhang
@@ -50,7 +52,6 @@ import sys
 import tempfile
 import time
 import urllib.error
-import urllib.parse
 import urllib.request
 import uuid
 import zoneinfo
@@ -90,10 +91,10 @@ SZENE = "Der Keller"
 
 DIKTAT = "sprachnachricht.m4a"
 
-# Woran die Betreiber-Seite zu erkennen ist: das Feld für die Verwaltungsgruppe. Bis #230
-# war es das Feld für den Bot-Token; der kommt jetzt aus der Umgebung, und übrig ist der
-# eine Wert, der noch gepflegt wird — wer an diese Seite darf.
-BETREIBERSEITE = 'name="admin_group"'
+# Die Pfade, die es bis #231 gab. Sie stehen hier, damit ihr Verschwinden ein geprüfter
+# Zustand ist und kein zufälliger: ein Abbild, das sie wieder beantwortet, hat die
+# Betreiber-Seite zurück, und mit ihr einen Port im LAN (#190).
+FORTGEFALLEN = ("/", "/einstellungen", "/status")
 
 
 class Fehlschlag(AssertionError):
@@ -126,9 +127,7 @@ def umgebung(daten: Path, aufnahmen: Path, port: int) -> dict[str, str]:
         PYTHONUNBUFFERED="1",
         CHRONICLE_DATA_DIR=str(daten),
         CHRONICLE_RECORDINGS_DIR=str(aufnahmen),
-        CHRONICLE_HOST="127.0.0.1",
-        CHRONICLE_PORT=str(port),
-        CHRONICLE_REQUIRE_REMOTE_USER="1",
+        CHRONICLE_HEALTH_PORT=str(port),
     )
     return gebaut
 
@@ -136,6 +135,8 @@ def umgebung(daten: Path, aufnahmen: Path, port: int) -> dict[str, str]:
 def abruf(url: str, *, benutzer: str | None = BENUTZER):
     anfrage = urllib.request.Request(url)
     if benutzer is not None:
+        # Die Kopfzeile ist hier kein Zugang mehr, sondern der Gegenbeweis: sie soll
+        # nichts aufschließen, weil es nichts mehr aufzuschließen gibt (#231).
         anfrage.add_header("Remote-User", benutzer)
     try:
         with urllib.request.urlopen(anfrage, timeout=ABRUFFRIST) as antwort:
@@ -158,26 +159,22 @@ def warten(basis: str, prozess: subprocess.Popen) -> None:
     raise Fehlschlag(f"{basis}/healthz antwortet nicht binnen {STARTFRIST:.0f} s.")
 
 
-def betreiberseite(basis: str, lauf: Lauf) -> None:
-    """Was von der Weboberfläche bleibt: eine Seite, ein Feld, eine geschlossene Tür."""
-    status, seite, ziel = abruf(basis + "/")
-    pruefe(status == 200, f"Betreiber-Seite: HTTP {status}")
-    pfad = urllib.parse.urlsplit(ziel)
-    pruefe(pfad.path == "/einstellungen", f"Betreiber-Seite: / landete auf {ziel}")
-    pruefe(BETREIBERSEITE in seite, "Betreiber-Seite: das Feld für die Verwaltungsgruppe fehlt")
-    lauf.ok("Die Wurzel führt auf die Betreiber-Seite mit der Verwaltungsgruppe")
+def nur_das_gate(basis: str, lauf: Lauf) -> None:
+    """Neben dem Install-Gate antwortet nichts — und eine Kopfzeile ändert daran nichts."""
+    for pfad in FORTGEFALLEN:
+        status, _, _ = abruf(basis + pfad)
+        pruefe(status == 404, f"»{pfad}« antwortet mit HTTP {status} statt 404")
+    lauf.ok(f"Fortgefallen und still: {', '.join(FORTGEFALLEN)}")
 
-    status, _, ziel = abruf(basis + "/status")
-    pruefe(status == 200, f"Alter Status-Pfad: HTTP {status}")
-    pruefe(
-        urllib.parse.urlsplit(ziel).path == "/einstellungen",
-        f"Alter Status-Pfad: /status landete auf {ziel}",
-    )
-    lauf.ok("/status leitet weiter auf die Betreiber-Seite")
-
+    # Der Gegenbeweis zu #190: dort genügte eine selbst geschriebene Kopfzeile, um an die
+    # Betreiber-Seite zu kommen. Jetzt gibt es keine Antwort, die sie aufschließen könnte
+    # — mit ihr wie ohne sie kommt 404, und das Gate antwortet beiden gleich.
     status, _, _ = abruf(basis + "/", benutzer=None)
-    pruefe(status == 403, f"Haustür: ohne Remote-User kam HTTP {status} statt 403")
-    lauf.ok("Ohne Remote-User: 403")
+    pruefe(status == 404, f"Wurzel ohne Remote-User: HTTP {status} statt 404")
+    status, rumpf, _ = abruf(basis + "/healthz", benutzer=None)
+    pruefe(status == 200, f"/healthz ohne Remote-User: HTTP {status}")
+    pruefe("ok" in rumpf, f"/healthz antwortet »{rumpf.strip()}«")
+    lauf.ok("Remote-User schließt nichts mehr auf, /healthz braucht ihn nicht")
 
 
 def anhang(quelle: Path, name: str = DIKTAT) -> chronik.Anhang:
@@ -316,13 +313,16 @@ def main(argv: list[str] | None = None) -> int:
 
     fehler: str | None = None
     datei = mitschrift.open("wb")
+    # Ohne DISCORD_BOT_TOKEN meldet sich der Bot nicht an, bleibt aber liegen und bedient
+    # das Gate weiter (#228) — genau der Zustand einer frischen Installation. Ein echter
+    # Token gehört hier nicht hin: der Durchstich fasst keine echte Gilde an.
     prozess = subprocess.Popen(
-        [sys.executable, "-m", "chronicle"], env=umgeb, stdout=datei, stderr=subprocess.STDOUT
+        [sys.executable, "-m", "chronicle.bot"], env=umgeb, stdout=datei, stderr=subprocess.STDOUT
     )
     try:
         warten(basis, prozess)
-        lauf.ok("Dienst läuft, /healthz antwortet ohne Remote-User")
-        betreiberseite(basis, lauf)
+        lauf.ok("Bot-Prozess läuft, /healthz antwortet")
+        nur_das_gate(basis, lauf)
         durchlauf(config, lauf)
     except (Fehlschlag, OSError, subprocess.SubprocessError) as ausnahme:
         fehler = f"{type(ausnahme).__name__}: {ausnahme}"

@@ -22,9 +22,10 @@ danach vergessen.
 - Aufbau: Epic [#1](../../issues/1) — die erste Ausbaustufe, abgeschlossen.
   Epic [#62](../../issues/62) löst sie ab: Discord wird die Oberfläche.
 
-> Status: Umbau. Erfassen, Ausgeben und das Runden-Modell laufen über Discord. Die
-> Weboberfläche trägt seit [#157](../../issues/157) keine Spielinhalte mehr — was bleibt,
-> ist die **Betreiber-Seite** (`/einstellungen`, `/status`, `/healthz`).
+> Status: Umbau abgeschlossen. Erfassen, Ausgeben und das Runden-Modell laufen über
+> Discord. Die Weboberfläche trug seit [#157](../../issues/157) keine Spielinhalte mehr
+> und ist mit [#231](../../issues/231) **ganz gefallen** — ein Prozess, ein Container,
+> und der ist der Bot. Über HTTP antwortet allein `/healthz` auf der Schleife.
 > „Eine Instanz pro Gruppe" war die Entscheidung des ersten Epics — sie ist mit
 > [#62](../../issues/62) abgelöst.
 
@@ -35,13 +36,14 @@ python3 -m venv .venv && . .venv/bin/activate
 pip install -e ".[dev]"
 pre-commit install
 python -m chronicle.bot      # der Bot — das ist der Dienst
-python -m chronicle          # die Betreiber-Seite und /healthz
 ```
 
-Die Weboberfläche kennt nur noch drei Adressen: `/einstellungen`, `/status` (301 dorthin)
-und `/healthz`; `/` leitet auf die Einstellungen. Alles Übrige — Sitzung, Szene, Notiz,
-Diktat, Chronik, Suche, Register, Zuordnung, Einrichtung — ist mit
-[#157](../../issues/157) nach Discord gezogen.
+**Es gibt keine Weboberfläche mehr.** Sitzung, Szene, Notiz, Diktat, Chronik, Suche,
+Register, Zuordnung, Einrichtung zogen mit [#157](../../issues/157) nach Discord; die
+Betreiber-Seite darüber hinaus ist mit [#231](../../issues/231) gefallen. Über HTTP
+antwortet nur noch `/healthz`, das Install-Gate der Box, aus dem Bot-Prozess und
+ausschließlich auf `127.0.0.1` — den Port setzt `CHRONICLE_HEALTH_PORT`, ohne ihn bindet
+der Bot gar nichts (lokal braucht das Gate niemand).
 
 **Angestoßen wird in Discord.** `/chronik fertig` startet einen **server-eigenen Lauf**
 nach dem ServiceBay-Standard für lange Prozesse: der Zustand steht in der Tabelle `job`,
@@ -51,19 +53,20 @@ Chronik-Lauf verschriftet erst die wartenden Aufnahmen und ruft dann dieselben F
 wie `python -m chronicle.compose`: ein Befehl ist der zweite Auslöser, nicht der zweite
 Weg. Die Stapel-Einstiege unten bleiben — sie sind der Weg für Cron und Betrieb.
 
-**`/einstellungen` ist die Betreiber-Seite und bleibt genau deshalb bestehen, während
-[#157](../../issues/157) die übrige Oberfläche abräumt** (Owner-Entscheidung 2026-08-11,
-[#89](../../issues/89)): dort steht die Verwaltungsgruppe — sie gehört der Instanz und
-keiner Gilde, hat also in Discord keinen Ort. **Discord-Bot-Token, Ollama-Adresse und
--Modell standen bis [#230](../../issues/230) daneben**; sie kommen jetzt aus den
-Template-Variablen der Box und werden nirgends mehr gepflegt — die Seite zeigt nur noch,
-was steht. Alles Runden-eigene
-— Foundry-Adresse und -Benutzer, Zustellkanal, Uhrzeit des nächtlichen Laufs samt ihrer
-Zeitzone und die Quelle der Spieldaten — ist von dieser Seite verschwunden und wird in
-Discord mit `/setup` gepflegt; auch den Foundry-Abgleich stößt niemand mehr hier an,
-sondern `/chronik abgleich` oder `/chronik fertig` in Discord oder der nächtliche Lauf.
-ADR 0001 (Authelia-SSO) bleibt für die Seite in Kraft: sie steht auf einer Subdomain und
-entscheidet, wer sie selbst öffnen darf.
+**Warum am Ende gar keine Seite blieb.** [#89](../../issues/89) hatte 2026-08-11
+entschieden, die Betreiber-Seite zu behalten, während [#157](../../issues/157) die übrige
+Oberfläche abräumt: dort standen Bot-Token, Ollama-Adresse und -Modell — Werte der
+Instanz, die in keiner Gilde einen Ort haben — und die Verwaltungsgruppe, also wer an
+diese Seite darf. [#230](../../issues/230) holte die ersten drei in die
+Template-Variablen der Box. Übrig blieb eine Seite, deren einziger Inhalt die Erlaubnis
+war, sie zu betreten; [#231](../../issues/231) hat sie deshalb ganz genommen. Wer an den
+Bot-Token darf, entscheidet jetzt, wer die Template-Variablen dieses Dienstes bearbeiten
+darf — das regelt ServiceBay. Alles Runden-eigene — Foundry-Adresse und -Benutzer,
+Zustellkanal, Uhrzeit des nächtlichen Laufs samt ihrer Zeitzone und die Quelle der
+Spieldaten — wird in Discord mit `/setup` gepflegt; den Foundry-Abgleich stößt
+`/chronik abgleich`, `/chronik fertig` oder der nächtliche Lauf an.
+**ADR 0001 (Authelia-SSO) bindet den Dienst damit nicht mehr** — er ist nicht
+user-facing: keine Seite, keine Subdomain, kein veröffentlichter Port.
 
 Die Werte der **Runde** liegen in der SQLite und werden in Discord gepflegt; ein
 gepflegter Wert gewinnt über `FOUNDRY_URL` und `FOUNDRY_USER` aus der Umgebung. Die drei
@@ -106,9 +109,9 @@ verbraucht es und vergisst es, auch der, der auf der Testwelt oder an einer ruhe
 abbricht; ein Rest im Arbeitsspeicher verfällt spätestens nach zwölf Stunden. Hashen
 ginge nicht: Foundry will es vorgezeigt, nicht geprüft. **Der Bot-Token wird seit
 [#230](../../issues/230) ebenfalls nirgends gespeichert:** er steht in
-`DISCORD_BOT_TOKEN` und wird nur dem Bot-Prozess gereicht — die Betreiber-Seite bekommt
-ihn nicht und sagt nicht einmal, *ob* er gesetzt ist; das sagt der Bot, indem er läuft
-oder nicht. Eine Wanderung räumt einen Bestand aus der Zeit davor aus der SQLite — aber
+`DISCORD_BOT_TOKEN` und wird dem Bot-Prozess gereicht — dem einzigen, den es seit
+[#231](../../issues/231) noch gibt. Ob er gesetzt ist, sagt der Bot, indem er läuft oder
+nicht. Eine Wanderung räumt einen Bestand aus der Zeit davor aus der SQLite — aber
 erst, wenn die Variable gesetzt ist: gelöscht ohne Ersatz wäre der Token
 unwiederbringlich. Die Ollama-Adresse hat eine zweite Stufe: ist `OLLAMA_URL` nicht
 gesetzt, gilt `http://127.0.0.1:11434` — das Ollama der Box. Offen bleibt dann allein
@@ -121,22 +124,22 @@ des Sprachdienstes, der die Ansage spricht (Vorgabe `http://127.0.0.1:8881`, sie
 Foundry-Konfiguration, startet der Dienst trotzdem und sagt es dort, wo jemand danach
 fragt: in `/setup` und in der Meldung des Abgleichs.
 
-Ein eigenes Login gibt es nicht: angemeldet wird am Proxy (ServiceBay-ADR 0001), der
-`Remote-User` setzt. Auf der Box gehört deshalb `CHRONICLE_REQUIRE_REMOTE_USER=1` in die
-Umgebung — dann wird jeder Request ohne diesen Header abgewiesen. Lokal bleibt die
-Variable aus, sonst kommt man ohne Proxy nicht hinein.
+**Es gibt keine Haustür mehr, weil es kein Haus mehr gibt.** Bis
+[#231](../../issues/231) stand die Betreiber-Seite hinter Authelia
+(ServiceBay-ADR 0001): `CHRONICLE_REQUIRE_REMOTE_USER=1` wies jeden Request ohne
+`Remote-User` ab, und weil die Kopfzeile allein kein Beleg ist — der Dienst hörte auf
+`0.0.0.0`, und wer den Port erreichte, schrieb sie sich selbst hin —, glaubte
+`chronicle.herkunft` sie seit [#190](../../issues/190) nur einem Absender mit einer
+Adresse **dieser Maschine**; `CHRONICLE_TRUSTED_PROXIES` war der Weg zurück für einen
+umgezogenen Proxy.
 
-Die Kopfzeile allein ist dabei kein Beleg: der Dienst hört auf `0.0.0.0`, und wer den
-Port direkt erreicht, schreibt sie sich selbst hin. Geglaubt wird sie — und
-`Remote-Groups` mit ihr — deshalb nur einem Absender, der eine Adresse **dieser
-Maschine** trägt (#190); der Proxy läuft auf derselben Box und tut genau das. Steht er
-einmal woanders, sagt die Seite 403, obwohl die Anmeldung geklappt hat. Der Weg zurück
-ist `CHRONICLE_TRUSTED_PROXIES`: eine kommagetrennte Liste aus Adressen oder Netzen
-(`192.0.2.10`, `10.0.0.0/8`, `::1`), die die errechnete Antwort **ersetzt** —
-gesetzt zählt nur noch, was dort steht. Welche Adresse gemeint ist, sagt die Logzeile
-jeder Abweisung; leer bleibt es bei der Maschine selbst, weil die Box an DHCP hängt und
-eine abgeschriebene Adresse nach der nächsten Lease aussperrte. `/healthz` steht vor
-alldem — es ist das Install-Gate der Box und wird am Proxy vorbei gefragt.
+Das ist alles fort: `chronicle.herkunft`, `chronicle.roles`, beide Variablen. Der einzige
+Horcher des Dienstes ist `/healthz` auf `127.0.0.1` — er liest keine Kopfzeile und
+beantwortet keine Frage nach Rechten. Eine Prüfung ohne Prüfling stehen zu lassen wäre
+keine Vorsicht, sondern eine falsche Zusage: drei Monate später hielte sie jemand für
+einen Schutz. Was den Zugriff auf **fremde Runden** angeht, hat sich dabei nichts
+geändert — den trennt `db.scoped` (#63), und über einer Runde steht weiterhin niemand
+(#90).
 
 Prüfen wie die CI: `ruff check . && ruff format --check . && pytest -q`.
 
@@ -424,8 +427,8 @@ nichts hineingereicht.
 Discord kappt bei **2000 Zeichen**. Ein längerer Rückblick ist ein Fehler des Rückblicks
 und kein Grund zum Aufteilen: gepostet wird der Anfang plus der Hinweis, dass die ganze
 Sitzung als Chronik-Datei im Thread liegt; die volle Länge steht in der Logzeile. (Bis
-#157 zeigte der Hinweis auf eine Protokollseite unter `CHRONICLE_PUBLIC_URL` — die Seite
-gibt es nicht mehr, und den Wert liest niemand mehr.)
+#157 zeigte der Hinweis auf eine Protokollseite unter `CHRONICLE_PUBLIC_URL`; die Seite
+war schon damals fort, und mit #231 auch die Variable.)
 
 ## Aufnahme per Discord
 
@@ -435,9 +438,10 @@ python -m chronicle.bot              # ein eigener, dauerhafter Prozess
 ```
 
 Der Aufnahme-Bot ist **kein Stapellauf**: er hält eine Gateway-Verbindung, weil Sprache
-nur mitgeschnitten werden kann, während sie gesprochen wird. Auf der Box läuft er deshalb
-als zweiter Container im selben Pod, mit demselben Image und `python -m chronicle.bot`.
-Ohne Bot-Token verbindet er sich nicht und sagt das in einem Satz.
+nur mitgeschnitten werden kann, während sie gesprochen wird. Auf der Box ist er seit
+[#231](../../issues/231) der **einzige** Container des Pods: `python -m chronicle.bot`
+ist die Vorgabe des Abbilds, das Template überschreibt sie nicht. Ohne Bot-Token
+verbindet er sich nicht und sagt das in einem Satz.
 
 Er trägt seit #228 auch **`/healthz`, das Install-Gate der Box** — zehn Zeilen HTTP, kein
 Flask, auf `CHRONICLE_HEALTH_PORT` und **nur auf `127.0.0.1`**: der Pod liegt im Host-Netz,
@@ -498,9 +502,9 @@ gar nicht kommt, verhindert die Aufnahme, und das wiegt schwerer als eine hässl
 Fehlt am Ende auch espeak-ng, wird **nicht** aufgenommen. Erzeugt wird beim ersten Bedarf
 aus dem Text in `chronicle/bot/ansage.py`, abgelegt unter dessen Fingerabdruck im
 Aufnahmeverzeichnis — damit können Ansage und Protokoll nicht auseinanderlaufen.
-`TTS_URL` steht bewusst **nicht** auf der Betreiber-Seite: dorthin fließt kein Wort der
-Runde, sondern allein unser eigener Ansagetext, und ein falscher Wert ändert nur die
-Stimme, nicht das Ergebnis.
+`TTS_URL` hat bewusst **keine** Template-Variable: dorthin fließt kein Wort der Runde,
+sondern allein unser eigener Ansagetext, und ein falscher Wert ändert nur die Stimme,
+nicht das Ergebnis.
 
 ### Die zugesagte Frist wird auch eingehalten
 
@@ -587,10 +591,12 @@ liegt das Pod-Template `daggerheart-chronik`. Auf der Box wird das Repo einmal i
 `config.registries[]` eingetragen (Git-URL dieses Repos), danach steht das Template im
 Installations-Assistenten neben den mitgelieferten.
 
-Der Assistent fragt nach Subdomain, Port, Image-Tag — und seit
-[#230](../../issues/230) nach `DISCORD_BOT_TOKEN`, `OLLAMA_URL` und `OLLAMA_MODEL`. Der
-**Foundry-Zugang** wird weiterhin in Discord unter `/setup` eingerichtet: er gehört der
-Runde, nicht der Instanz.
+Der Assistent fragt nach dem Port des Install-Gates, dem Image-Tag — und seit
+[#230](../../issues/230) nach `DISCORD_BOT_TOKEN`, `OLLAMA_URL` und `OLLAMA_MODEL`. Nach
+Subdomain und HTTP-Port fragt er seit [#231](../../issues/231) **nicht** mehr: der Dienst
+veröffentlicht nichts und braucht weder nginx noch Authelia davor. Der **Foundry-Zugang**
+wird weiterhin in Discord unter `/setup` eingerichtet: er gehört der Runde, nicht der
+Instanz.
 
 Die drei Instanz-Variablen sind bewusst vom Typ `text` und **nicht** `secret`: für ein
 `secret` würfelt der Assistent einen Zufallswert aus — richtig für ein internes
@@ -606,9 +612,13 @@ und veröffentlicht es nach GHCR — der Publish-Job hängt an `needs: test`, es
 nichts veröffentlicht, was nicht grün war. Für den Rollout wird ein fester Tag gepinnt
 (`sha-<kurz>` oder die Release-Version), nicht `:latest`.
 
-Im Container läuft `waitress`, nicht der Flask-Entwicklungsserver:
+Im Container läuft `python -m chronicle.bot` — **kein Webserver**: Flask, Jinja2 und
+waitress sind mit [#231](../../issues/231) aus dem Abhängigkeitsbaum verschwunden.
 
 ```bash
 podman build -t foundry-chronicle .
-podman run --rm -p 8000:8000 foundry-chronicle    # /healthz antwortet 200
+# Ohne Token bleibt der Bot liegen und bedient nur das Gate — genau der Zustand einer
+# frischen Installation.
+podman run --rm --network host -e CHRONICLE_HEALTH_PORT=8701 foundry-chronicle
+curl -sf http://127.0.0.1:8701/healthz    # {"status": "ok"}
 ```

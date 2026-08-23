@@ -1,7 +1,7 @@
 """Konfiguration aus der Umgebung — die Vorgabe, nicht das letzte Wort.
 
 Die Umgebung ist der Deploy-Weg und der Stand beim ersten Start; die Werte für Foundry
-und Ollama lassen sich in der Oberfläche überschreiben. Wer sie braucht, nimmt deshalb
+lassen sich in Discord unter ``/setup`` überschreiben. Wer sie braucht, nimmt deshalb
 ``chronicle.settings.effective`` und nicht dieses Objekt direkt.
 
 **Das Foundry-Passwort steht hier nicht.** Es gibt keine Umgebungsvariable dafür und kein
@@ -26,17 +26,18 @@ MASK = "***"
 
 FOUNDRY_VARIABLES = ("FOUNDRY_URL", "FOUNDRY_USER")
 
-# Dieselben Werte, wie sie in der Oberfläche heißen — mit Artikel, weil daraus ein Satz
+# Dieselben Werte, wie sie in ``/setup`` heißen — mit Artikel, weil daraus ein Satz
 # für jemanden gebaut wird, der nie eine Umgebungsvariable gesehen hat.
 FOUNDRY_FELDER = ("die Adresse", "der Benutzer")
 
-REMOTE_USER_VARIABLE = "CHRONICLE_REQUIRE_REMOTE_USER"
-
-# Wessen ``Remote-User``/``Remote-Groups`` geglaubt wird (#190). Leer heißt: diese
-# Maschine selbst, errechnet statt abgeschrieben — die Box hängt an DHCP. Gesetzt ersetzt
-# der Wert die errechnete Antwort; das ist der Weg zurück, wenn der Proxy einmal woanders
-# steht. Siehe ``chronicle.herkunft``.
-TRUSTED_PROXIES_VARIABLE = "CHRONICLE_TRUSTED_PROXIES"
+# **``CHRONICLE_REQUIRE_REMOTE_USER`` und ``CHRONICLE_TRUSTED_PROXIES`` standen hier bis
+# #231.** Sie gehörten zum Türsteher der Betreiber-Seite (#190, ``chronicle.herkunft``):
+# ``Remote-User`` und ``Remote-Groups`` waren nur zu glauben, wenn der Aufruf von dieser
+# Maschine kam, denn der Port lag im Host-Netz und jeder im LAN konnte sich die Kopfzeile
+# selbst schreiben. Die Seite ist fort, und mit ihr jede Kopfzeile, die zu prüfen wäre:
+# der einzige Horcher dieses Dienstes ist ``/healthz`` auf der Schleife, und es liest
+# keinen Header und beantwortet keine Frage nach Rechten. Ein Schalter, der nichts mehr
+# schützt, ist keine Vorsicht, sondern eine falsche Zusage.
 
 # Ob jeder Blick nach Foundry sein Rohmaterial mitschreibt (#242). Aus, und das ist keine
 # Bequemlichkeit: ein Mitschnitt ist der Weltabzug in Serie — Klarnamen, Geflüster,
@@ -45,26 +46,26 @@ TRUSTED_PROXIES_VARIABLE = "CHRONICLE_TRUSTED_PROXIES"
 MITSCHNITT_VARIABLE = "CHRONICLE_FOUNDRY_MITSCHNITT"
 
 # Der Port, auf dem der Bot-Prozess das Install-Gate der Box bedient (#228). Ohne ihn
-# bindet er nichts — gesetzt wird er von der Vorlage, wie ``CHRONICLE_REQUIRE_REMOTE_USER``
-# auch. Eine Adresse gibt es dazu nicht: gebunden wird die Schleife und sonst nichts
-# (``chronicle.bot.healthz``).
+# bindet er nichts — gesetzt wird er von der Vorlage. Eine Adresse gibt es dazu nicht:
+# gebunden wird die Schleife und sonst nichts (``chronicle.bot.healthz``). Seit #231 ist
+# das der **einzige** Horcher dieses Dienstes.
 HEALTH_PORT_VARIABLE = "CHRONICLE_HEALTH_PORT"
 
 # Der Box-Standard: unser Pod läuft im Host-Netz, Ollama hört daneben auf 11434. Er steht
-# hier und nirgends sonst — Oberfläche, Einrichtung und Komposition fragen denselben Wert,
-# sonst verspräche die Seite eine Adresse, gegen die der Lauf nicht redet.
+# hier und nirgends sonst — Einrichtung und Komposition fragen denselben Wert, sonst
+# verspräche der Bot eine Adresse, gegen die der Lauf nicht redet.
 DEFAULT_OLLAMA_URL = "http://127.0.0.1:11434"
 
 # Derselbe Fall eine Tür weiter: der Sprachdienst der Box spricht die Einwilligungs-Ansage,
-# im Host-Netz auf 8881. Anders als Ollama steht er **nicht** auf der Betreiber-Seite: dort
-# hin fließt kein Wort der Runde, sondern allein unser eigener, feststehender Ansagetext,
-# und wer die Vorgabe nicht erreicht, bekommt espeak-ng statt einer Fehlermeldung. Ein Feld
-# für einen Wert, dessen falsche Belegung nur die Stimme ändert, wäre eine Frage zu viel.
+# im Host-Netz auf 8881. Anders als Ollama hat er keine eigene Template-Variable: dorthin
+# fließt kein Wort der Runde, sondern allein unser eigener, feststehender Ansagetext, und
+# wer die Vorgabe nicht erreicht, bekommt espeak-ng statt einer Fehlermeldung. Eine Frage
+# nach einem Wert, dessen falsche Belegung nur die Stimme ändert, wäre eine zu viel.
 DEFAULT_TTS_URL = "http://127.0.0.1:8881"
 
 # Und noch eine: ``solaris-whisper-batch`` verschriftet die Spuren, im Host-Netz auf
-# 10301 (#216, ``mdopp/solarisbay#1161``). Auch er gehört nicht auf die Betreiber-Seite —
-# es gibt nichts zu wählen: welches Modell rechnet, entscheidet seine eigene Unit.
+# 10301 (#216, ``mdopp/solarisbay#1161``). Auch er bekommt keine eigene Variable — es gibt
+# nichts zu wählen: welches Modell rechnet, entscheidet seine eigene Unit.
 DEFAULT_WHISPER_URL = "http://127.0.0.1:10301"
 
 DEFAULT_DATA_DIR = "data"
@@ -82,10 +83,6 @@ def masked(secret: str | None) -> str:
 
 def _value(env: Mapping[str, str], name: str) -> str | None:
     return (env.get(name) or "").strip() or None
-
-
-def _liste(env: Mapping[str, str], name: str) -> tuple[str, ...]:
-    return tuple(teil.strip() for teil in (env.get(name) or "").split(",") if teil.strip())
 
 
 def _port(env: Mapping[str, str], name: str) -> int | None:
@@ -106,12 +103,9 @@ class Config:
     ollama_url: str | None = None
     ollama_model: str | None = None
     tts_url: str | None = None
-    public_url: str | None = None
     data_dir: Path = Path(DEFAULT_DATA_DIR)
     recordings_dir: Path = Path(DEFAULT_RECORDINGS_DIR)
     whisper_url: str | None = None
-    require_remote_user: bool = False
-    trusted_proxies: tuple[str, ...] = ()
     health_port: int | None = None
     foundry_mitschnitt: bool = False
 
@@ -126,12 +120,9 @@ class Config:
             ollama_url=_value(env, "OLLAMA_URL"),
             ollama_model=_value(env, "OLLAMA_MODEL"),
             tts_url=_value(env, "TTS_URL"),
-            public_url=_value(env, "CHRONICLE_PUBLIC_URL"),
             data_dir=Path(_value(env, "CHRONICLE_DATA_DIR") or DEFAULT_DATA_DIR),
             recordings_dir=Path(_value(env, "CHRONICLE_RECORDINGS_DIR") or DEFAULT_RECORDINGS_DIR),
             whisper_url=_value(env, "CHRONICLE_WHISPER_URL"),
-            require_remote_user=_flag(env, REMOTE_USER_VARIABLE),
-            trusted_proxies=_liste(env, TRUSTED_PROXIES_VARIABLE),
             health_port=_port(env, HEALTH_PORT_VARIABLE),
             foundry_mitschnitt=_flag(env, MITSCHNITT_VARIABLE),
         )
@@ -178,12 +169,9 @@ class Config:
             f"ollama_url={self.ollama_url!r}, "
             f"ollama_model={self.ollama_model!r}, "
             f"tts_url={self.tts_url!r}, "
-            f"public_url={self.public_url!r}, "
             f"data_dir={str(self.data_dir)!r}, "
             f"recordings_dir={str(self.recordings_dir)!r}, "
             f"whisper_url={self.whisper_url!r}, "
-            f"require_remote_user={self.require_remote_user!r}, "
-            f"trusted_proxies={self.trusted_proxies!r}, "
             f"health_port={self.health_port!r}, "
             f"foundry_mitschnitt={self.foundry_mitschnitt!r})"
         )

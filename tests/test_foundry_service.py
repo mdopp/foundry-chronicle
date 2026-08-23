@@ -154,7 +154,7 @@ def test_ohne_konfiguration_meldet_der_abgleich_das_verstaendlich(tmp_path):
     zustand = service.sync(leer, runde(leer), passwort=PASSWORT)
     assert zustand.stale
     assert "die Adresse und der Benutzer" in zustand.message
-    assert "in den Einstellungen" in zustand.message
+    assert "`/setup`" in zustand.message
     assert "FOUNDRY_" not in zustand.message
 
 

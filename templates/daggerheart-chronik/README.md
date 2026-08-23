@@ -5,66 +5,43 @@ Spiels entstehen, und dem Chat-Log aus Foundry VTT wird eine lesbare Chronik.
 
 **Bedient wird in Discord** (#62). Was die spielende Gruppe betrifft — Sitzung, Szene,
 Notiz, Diktat, Chronik, Suche, Register, Zuordnung, Einrichtung — ist seit #157 ein
-Befehl im eigenen Server. Über HTTP liefert dieser Dienst nur noch **eine Seite**: die
-Betreiber-Seite unter `/einstellungen`, dazu `/status` (301 dorthin) und `/`
-(Weiterleitung dorthin). Gepflegt wird dort seit #230 **ein** Wert: wer diese Seite
-verwalten darf. Discord-Bot-Token, Ollama-Adresse und -Modell standen bis dahin daneben;
-sie gehören ebenfalls keiner Gilde, kommen jetzt aber aus den Template-Variablen
-darunter und werden nirgends mehr gepflegt.
+Befehl im eigenen Server. **Seit #231 gibt es daneben gar nichts mehr:** die
+Betreiber-Seite ist gefallen, mit ihr Subdomain, Proxy-Route und der zweite Container.
+Der Dienst ist ein Prozess, und dieser Prozess ist der Bot.
 
-`/healthz` steht daneben und nicht darin: das Install-Gate der Box kommt seit #228 aus
-dem **Bot**-Prozess, auf einem eigenen Port und nur auf `127.0.0.1`. Der Bot ist der
-Prozess, der bleibt, wenn die Seite mit #227 fällt — und ein Gate, das im LAN hörte,
-wäre wieder der offene Port aus #190.
+Der letzte Grund für die Seite fiel mit #230: Bot-Token, Ollama-Adresse und -Modell
+gehören keiner Gilde und wurden deshalb dort gepflegt. Sie kommen jetzt aus den
+Template-Variablen weiter unten. Was danach noch dastand — die Verwaltungsgruppe — war
+nur die Antwort auf die Frage, wer an diese Seite darf; ohne Seite stellt sie niemand
+mehr, und `admin_group` wird beim nächsten Start aus der Datenbank geräumt.
 
-Die Seite ist serverseitig gerendertes HTML **ohne eigenes Login** — angemeldet wird an
-Authelia, der Proxy setzt `Remote-User`, und ein Request ohne diesen Header wird
-abgewiesen. **Die Kopfzeile allein ist dabei kein Beleg** (#190): der Port liegt im
-Host-Netz offen, und wer ihn direkt erreicht, schreibt sie sich selbst hin. Geglaubt
-wird sie — und `Remote-Groups` mit ihr — nur einem Absender, der eine Adresse *dieser
-Maschine* trägt; das ist genau der Proxy, der auf derselben Box läuft. Aus dem übrigen
-LAN kommt niemand an diese Seite, auch nicht mit erfundenen Kopfzeilen. Das ist kein
-Erbstück aus der Zeit der großen Oberfläche: die Seite steht user-facing auf einer
-Subdomain und entscheidet, wer sie selbst öffnen darf — ServiceBay-ADR 0001 gilt für sie
-also unverändert. Subdomain, Proxy-Route und die `auth`-Abhängigkeit bleiben deshalb.
-Der Bot-Token liegt seit #230 nicht mehr dahinter; das ist der zweite Riegel und nicht
-der Ersatz für den ersten.
+**Über HTTP antwortet nur noch `/healthz`**, das Install-Gate der Box, seit #228 aus dem
+Bot-Prozess und **ausschließlich auf `127.0.0.1`**. Der Poller der Box läuft daneben und
+braucht nichts weiter; ein Gate, das im LAN hörte, wäre wieder der offene Port aus #190.
+
+**ServiceBay-ADR 0001 (Authelia-SSO) bindet diesen Dienst nicht mehr.** Er ist nicht
+user-facing: es gibt keine Seite, keine Subdomain und keinen veröffentlichten Port. Wer
+was darf, entscheidet Discord über seine eigenen Kanal- und Rollenrechte — und wer an
+den Bot-Token darf, entscheidet, wer die Template-Variablen dieses Dienstes bearbeiten
+darf, also ServiceBay selbst.
 
 **Eine Instanz trägt mehrere Runden** (#62). Eine Runde ist eine Discord-Gilde mit eigenem
 Foundry-Zugang; für eine zweite Gruppe wird der Bot in ihren Server eingeladen, nicht der
-Dienst ein zweites Mal installiert. Die Subdomain benennt deshalb die Instanz und nicht
-eine Gruppe; Vorgabe ist `daggerheart`, die Domain kommt zur Installationszeit aus
-`PUBLIC_DOMAIN`.
+Dienst ein zweites Mal installiert.
 
 ## Variablen
 
 | Variable | Bedeutung | Vorgabe |
 |---|---|---|
-| `CHRONICLE_SUBDOMAIN` | Subdomain der Betreiber-Seite, hinter Authelia-Forward-Auth | `daggerheart` |
-| `CHRONICLE_PORT` | HTTP-Port auf der Box | `8700` |
+| `CHRONICLE_HEALTH_PORT` | Port des Install-Gates, nur auf `127.0.0.1` | `8701` |
 | `CHRONICLE_IMAGE_TAG` | Image-Tag für den Rollout | `latest` |
+| `DISCORD_BOT_TOKEN` | Token des Bots — ohne ihn bleibt der Bot aus | *(leer)* |
+| `OLLAMA_URL` | Ollama, das die Chronik formuliert; leer = `127.0.0.1:11434` | *(leer)* |
+| `OLLAMA_MODEL` | Textmodell dort; leer = geordnet statt formuliert | *(leer)* |
 
-`DATA_DIR` und `PUBLIC_DOMAIN` sind globale ServiceBay-Variablen und werden hier nicht
-noch einmal deklariert.
-
-### Wenn die Seite 403 sagt, obwohl die Anmeldung geklappt hat
-
-Dann kommt der Proxy nicht mehr von dieser Box — er ist umgezogen, oder er wählt über
-einen Zwischenweg an, der eine fremde Absenderadresse zeigt. Welche Adresse abgewiesen
-wurde, steht im Log des Containers (`Anmeldung von … verworfen`). Diese Adresse in die
-Umgebung des Containers `chronik` eintragen und den Dienst neu starten:
-
-```yaml
-      - name: CHRONICLE_TRUSTED_PROXIES
-        value: "192.0.2.10"
-```
-
-Kommagetrennt sind mehrere Einträge erlaubt, Adressen wie Netze (`10.0.0.0/8`, `::1`).
-**Gesetzt ersetzt der Wert die errechnete Antwort** — dann zählt nur noch, was dort
-steht, Loopback eingeschlossen; wer beides braucht, schreibt beides hin. Leer bleibt es
-bei der Maschine selbst, und genau so ist es hier gemeint: die Box hängt an DHCP, eine
-abgeschriebene Adresse wäre nach der nächsten Lease dieselbe Aussperrung. Ein neues
-Abbild braucht es dafür nicht, nur diese Zeile und einen Neustart.
+`DATA_DIR` ist eine globale ServiceBay-Variable und wird hier nicht noch einmal
+deklariert. `PUBLIC_DOMAIN` kommt hier **nicht** mehr vor — es gibt keinen Proxy-Host,
+für den der Assembler sie injizieren müsste.
 
 ## Was der Instanz gehört, steht im Assistenten — was der Runde gehört, in Discord
 
@@ -93,23 +70,23 @@ der übergebene Wert gewinnt über den gespeicherten (Assist
 
 ## Container
 
-Der Pod hat zwei Container aus demselben Image:
+Der Pod hat **einen** Container: `chronik`, Befehl `python -m chronicle.bot` (die Vorgabe
+des Abbilds, hier nicht überschrieben). Er hält die Gateway-Verbindung, weil Sprache nur
+mitgeschnitten werden kann, während sie gesprochen wird; er trägt seit #229 den
+nächtlichen Lauf und seit #228 das Install-Gate.
 
-| Container | Befehl | Wofür |
-|---|---|---|
-| `chronik` | `waitress-serve` (Vorgabe des Images) | die Betreiber-Seite hinter Authelia |
-| `bot` | `python -m chronicle.bot` | der Aufnahme-Bot am Discord-Gateway **und der nächtliche Lauf** |
+Der zweite Container daneben trug bis #231 die Betreiber-Seite. Sie ist fort, und mit ihr
+`waitress`, Flask und Jinja2 aus dem Abbild.
 
-Der Bot ist ein eigener, dauerhafter Prozess, weil Sprache nur mitgeschnitten werden kann,
-während sie gesprochen wird. Den Token bekommt er seit #230 aus **seiner eigenen
-Umgebung** — und nur er: die Seite braucht ihn nicht, und was ein Prozess nicht bekommt,
-kann er auch nicht in eine Logzeile schreiben. `/data` teilen beide Container trotzdem,
-denn dort liegt die Chronik. **Ohne Token beendet er sich mit einem Satz** und wird von
-der Neustart-Regel des Pods wieder gestartet — das ist erwartet und kein Fehler; nach dem
-Hinterlegen der Variablen findet ihn der nächste Start.
+**Ohne Token bleibt der Bot liegen und sagt einen Satz** — er beendet sich dabei
+ausdrücklich *nicht*, denn am Prozess hängt das Install-Gate, und ein fehlender Token ist
+bei der Erstinstallation der Normalfall. Nach dem Hinterlegen der Variablen findet ihn
+der nächste Start. Was ein Prozess nicht bekommt, kann er auch nicht in eine Logzeile
+schreiben; deshalb steht der Token in der Umgebung dieses einen Containers und nirgends
+sonst.
 
-**Einen dritten Container für den nächtlichen Lauf gibt es bewusst nicht.** Der Zeitplan
-hängt seit #229 in `bot`: ohne Bot gibt es keinen Eingang mehr — weder Notiz noch Aufnahme
+**Einen zweiten Container für den nächtlichen Lauf gibt es bewusst nicht.** Der Zeitplan
+hängt seit #229 hier: ohne Bot gibt es keinen Eingang mehr — weder Notiz noch Aufnahme
 noch Runde —, also gibt es auch nichts zu verschriften, wo der Bot nicht läuft. Er sieht in
 einem Faden **neben** der Gateway-Verbindung auf die Uhr, und der Lauf selbst bekommt noch
 einen daneben; auf der Ereignisschleife bliebe während einer Verschriftung der Herzschlag
@@ -122,18 +99,23 @@ zu Discord aus. Die Uhrzeit gehört der Runde und steht in Discord unter `/setup
 in einen eigenen Netz-Namensraum stellen will (#165). Der Grund sind die Nachbarn auf
 derselben Box, die dieser Dienst über die Schleife anspricht: **Ollama** auf
 `127.0.0.1:11434` schreibt die Chronik, **`solaris-tts`** auf `127.0.0.1:8881` spricht die
-Ansage im Sprachkanal. Beide binden nur an Loopback — aus einem eigenen Namensraum wären
-sie nicht erreichbar. Dazu kommt, dass der Proxy den Dienst so ohne veröffentlichten
-`hostPort` findet.
+Ansage im Sprachkanal, **`solaris-whisper-batch`** auf `127.0.0.1:10301` verschriftet die
+Spuren. Alle drei binden nur an Loopback — aus einem eigenen Namensraum wären sie nicht
+erreichbar, auch nicht über `host.containers.internal`: das führt an das Gateway der Box
+und nicht an ihre Schleife.
 
 ADR 0007 sieht benannte Ausnahmen vor; ob dieser Dienst eine ist, wurde in
-`mdopp/servicebay#2518` gefragt und **verneint** — die Liste bleibt geschlossen. Die
-Abweichung bleibt deshalb, aber nicht gratis: sie ist der Grund, warum der Port auf
-`0.0.0.0` im ganzen LAN stand und ein erfundener `Remote-User` bis an den Bot-Token
-führte (#190; der liegt seit #230 nicht mehr dort — der Vorfall bleibt der Beleg). Die Rechnung ist bezahlt — die Anmelde-Kopfzeilen gelten seither nur von
-einer Adresse dieser Maschine, siehe oben und `CHRONICLE_TRUSTED_PROXIES`.
+`mdopp/servicebay#2518` gefragt und **verneint** — die Liste bleibt geschlossen.
 
-**Sie fällt, sobald Ollama und `solaris-tts` auch aus einem eigenen Netz-Namensraum
+**Was die Abweichung kostete, ist mit #231 nicht mehr abgesichert, sondern weg.** Sie war
+der Grund, warum der Port der Betreiber-Seite auf `0.0.0.0` im ganzen LAN stand und ein
+erfundener `Remote-User` bis an den Bot-Token führte (#190). Gedeckt wurde das seither von
+`chronicle.herkunft`. Jetzt gibt es die Seite nicht mehr und damit keinen Port im LAN: der
+einzige Horcher dieses Pods ist `/healthz` auf `127.0.0.1`. Es bleibt nichts, was das
+Host-Netz freilegen könnte — deshalb ist `chronicle.herkunft` mit derselben Änderung
+gefallen, als Prüfung ohne Prüfling.
+
+**Sie fällt, sobald die drei Nachbarn auch aus einem eigenen Netz-Namensraum
 erreichbar sind** — das liegt in deren Vorlagen, nicht in dieser. Bis dahin gilt: an der
 Netzkonfiguration dieses Dienstes wird nichts ohne Verify auf der Box geändert. Falsch
 gemacht legt sie eine laufende Discord-Gilde still.
@@ -149,8 +131,7 @@ Das ist ServiceBays Lücke #1026/#2174, unser Fall als `mdopp/servicebay#2517`.
 
 Der bekannte Fix wäre ein einzelnes `.container`-Quadlet mit `AddDevice=` und
 `SecurityLabelDisable=true` — so hängen `ollama` und `solaris-whisper` auf derselben Box
-an der Karte. Für einen Pod aus zwei Containern, die sich `/data` teilen, gibt es diese
-Form nicht.
+an der Karte.
 
 **Seit #216 braucht dieser Pod auch keine.** Er hält kein Whisper-Modell mehr; die
 Verschriftung ist ein HTTP-Aufruf gegen `solaris-whisper-batch`, der auf der Karte der
@@ -241,19 +222,15 @@ ab, welcher Stand läuft.
 
 Nach dem Deploy gehört zur Abnahme:
 
-- `/healthz` liefert 200 — auf `CHRONICLE_HEALTH_PORT`, aus dem **Bot**-Prozess, am Proxy
-  vorbei: es ist das Install-Gate der Box (#228). Auf der Box gemessen, denn es hört nur
-  auf `127.0.0.1`; von einem anderen Rechner im LAN muss derselbe Port **abgewiesen**
-  werden, und der Bot muss dabei am Gateway hängen bleiben.
-- Die Subdomain antwortet unauthentifiziert mit 302 auf `auth.<domain>`, und ein Request
-  ohne `Remote-User` wird mit 403 abgelehnt.
-- **Und mit erfundenem `Remote-User` auch:** von einem anderen Rechner im LAN direkt auf
-  `http://<box>:<port>/` mit gesetzter Kopfzeile — die Antwort muss 403 sein, nicht 302.
-  Das ist der Fall, den #190 geschlossen hat; von der Box selbst aus ist er nicht
-  prüfbar, weil dort jeder Aufruf zu Recht als eigener zählt.
-- Angemeldet führt die Wurzel `/` auf `/einstellungen` — der Proxy zeigt auf die Wurzel,
-  und dort lag bis #157 die Sitzungsliste; ein 404 an der Haustür wäre eine schlechte
-  Auskunft. `/status` führt mit 301 an dieselbe Stelle.
-- Eine Adresse für Spielinhalte gibt es nicht mehr. Angemeldet liefern `/sitzungen`,
-  `/protokolle`, `/suche` und `/register` zu Recht 404 — das ist der Umzug nach Discord,
-  kein kaputtes Deployment. Unangemeldet kommt auch dort erst der Türsteher: 403.
+- Der Pod läuft mit **genau einem** Container, und `podman ps` zeigt ihn als
+  `daggerheart-chronik-chronik`.
+- `/healthz` liefert 200 — auf `CHRONICLE_HEALTH_PORT`, aus dem **Bot**-Prozess: es ist
+  das Install-Gate der Box (#228). Auf der Box gemessen, denn es hört nur auf
+  `127.0.0.1`; von einem anderen Rechner im LAN muss derselbe Port **abgewiesen** werden.
+- Der Bot hängt am Discord-Gateway und antwortet auf `/aufnahme hilfe`.
+- **Auf `CHRONICLE_PORT` hört nichts mehr** — die Variable gibt es nicht, und auf dem
+  alten Port (`8700`) darf nichts antworten. Die frühere Subdomain zeigt ins Leere; die
+  Proxy-Route gehört nach dem Deploy entfernt, sonst steht ein `auth`-geschützter Host
+  vor einem Dienst, den es nicht gibt.
+- Kein `flask`, kein `jinja2`, kein `waitress` im Abbild:
+  `podman exec … pip list | grep -Ei "flask|jinja|waitress"` bleibt leer.

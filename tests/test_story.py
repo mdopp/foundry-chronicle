@@ -26,7 +26,6 @@ from conftest import runde
 from mocks import foundry_mock, ollama_mock
 
 from chronicle import db, foundry, notes, protocol, search, settings
-from chronicle.app import create_app
 from chronicle.compose.composer import (
     BELEG_TITEL,
     NOTIZEN_TITEL,
@@ -37,9 +36,6 @@ from chronicle.compose.recap import FAEDEN_TITEL
 from chronicle.compose.service import RUECKBLICK, compose_session, recap_session
 from chronicle.config import Config
 from chronicle.foundry import testwelt
-
-# Authelia setzt den Header am Proxy; die App baut kein eigenes Login.
-KOPF = {"Remote-User": "erzaehlerin"}
 
 GESPIELT_AM = "2026-05-16"
 TITEL = "Der Halbe Mond"
@@ -84,14 +80,6 @@ def mock_ollama():
     server.stop()
 
 
-def hole(client, pfad: str, *, folgen: bool = False):
-    return client.get(pfad, headers=KOPF, follow_redirects=folgen)
-
-
-def sende(client, pfad: str, **felder: str):
-    return client.post(pfad, data=felder, headers=KOPF)
-
-
 def verknuepfe(config: Config, paare: list[tuple[int, str]]) -> None:
     """Nachricht an Szene hängen — dafür gibt es noch keine Ansicht, nur die Tabelle."""
     scope = db.scoped(runde(config))
@@ -107,33 +95,26 @@ def verknuepfe(config: Config, paare: list[tuple[int, str]]) -> None:
 
 
 def station_1_aufsetzen(tmp_path):
-    """Frische Instanz auf Wegwerf-Verzeichnissen: die Haustür steht zu, die Seite ist leer."""
-    config = Config(
-        data_dir=tmp_path / "daten",
-        recordings_dir=tmp_path / "spuren",
-        require_remote_user=True,
-    )
-    client = create_app(config).test_client()
+    """Frische Instanz auf Wegwerf-Verzeichnissen — und über HTTP gibt es nichts.
+
+    Bis #231 stand hier eine Betreiber-Seite mit geschlossener Haustür. Sie ist fort: der
+    Dienst ist ein Bot-Prozess, sein einziger Horcher ist ``/healthz`` auf der Schleife
+    (``chronicle.bot.healthz``, eigener Test). Was ein Aufsetzen anlegen muss, ist die
+    Datei — alles Weitere geschieht in Discord.
+    """
+    config = Config(data_dir=tmp_path / "daten", recordings_dir=tmp_path / "spuren")
+    db.init(config.database_path)
     assert config.database_path.is_file()
-
-    assert client.get("/").status_code == 403
-    assert client.get("/einstellungen").status_code == 403
-
-    # Der alte Status-Pfad steht in Lesezeichen; er landet auf der Betreiber-Seite.
-    assert hole(client, "/status").status_code == 301
-    seite = hole(client, "/status", folgen=True).get_data(as_text=True)
-    assert "er läuft oder er läuft nicht" in seite
-    assert "dann wird nur geordnet, nicht formuliert" in seite
-    return config, client
+    return config
 
 
-def station_2_konfigurieren(config, client, mock_foundry, mock_ollama):
+def station_2_konfigurieren(config, mock_foundry, mock_ollama):
     """Zwei Orte, zwei Zuständigkeiten: die Runde in Discord, die Instanz in der Umgebung.
 
     Was einer Gilde gehört — Foundry-Zugang, Zustellkanal, Nachtlauf — pflegt ``/setup``
     (``bot.einrichten``); was der Instanz gehört, kommt seit #230 aus der Umgebung und
-    wird beim Start gelesen. Der zweite ``create_app`` hier ist deshalb keine Umständlich-
-    keit, sondern genau der Handgriff des Betreibers: Wert hinterlegen, Dienst neu starten.
+    wird beim Start gelesen. Das ``replace`` hier ist deshalb keine Umständlichkeit,
+    sondern genau der Handgriff des Betreibers: Wert hinterlegen, Dienst neu starten.
     """
     gruppe = runde(config)
     settings.save(
@@ -142,22 +123,17 @@ def station_2_konfigurieren(config, client, mock_foundry, mock_ollama):
     )
 
     config = replace(config, ollama_url=mock_ollama.url, ollama_model=ollama_mock.MODELL)
-    client = create_app(config).test_client()
 
     aktuell = settings.effective(config, gruppe)
     assert aktuell.foundry_configured
     assert aktuell.ollama_model == ollama_mock.MODELL
-
-    seite = hole(client, "/einstellungen").get_data(as_text=True)
-    assert foundry_mock.PASSWORT not in seite
-    assert ollama_mock.MODELL in seite
-    assert ollama_mock.EINBETTUNG not in seite
-    # Der Foundry-Zugang gehört der Runde: er steht auf der Betreiber-Seite nicht mehr.
-    assert foundry_mock.BENUTZER not in seite
-    return config, client
+    # Das Passwort wird gereicht und nie abgelegt (#64) — auch nicht als Nebenwirkung
+    # des Speicherns.
+    assert foundry_mock.PASSWORT not in str(settings.stored(gruppe))
+    return config
 
 
-def station_3_erster_abgleich(config, client):
+def station_3_erster_abgleich(config):
     """Der Handschlag über eine echte Verbindung — und die Filterung vor dem Speicher."""
     # Ohne Passwort gibt es keinen Versuch: es steht nirgends und wird hier gereicht.
     ohne = foundry.sync(config, runde(config))
@@ -261,9 +237,9 @@ def station_6_wiederfinden(config, sitzung_id):
 
 def test_vom_aufsetzen_bis_zur_ersten_chronik(tmp_path, mock_foundry, mock_ollama):
     """Aufsetzen, konfigurieren, abgleichen, mitschreiben, komponieren, wiederfinden."""
-    config, client = station_1_aufsetzen(tmp_path)
-    config, client = station_2_konfigurieren(config, client, mock_foundry, mock_ollama)
-    station_3_erster_abgleich(config, client)
+    config = station_1_aufsetzen(tmp_path)
+    config = station_2_konfigurieren(config, mock_foundry, mock_ollama)
+    station_3_erster_abgleich(config)
     sitzung_id = station_4_erste_sitzung(config)
     station_5_erste_zusammenfassung(config, sitzung_id, mock_ollama)
     station_6_wiederfinden(config, sitzung_id)
@@ -275,7 +251,7 @@ def test_dieselben_stationen_gegen_die_eingebaute_testwelt(tmp_path):
     Das ist die zweite Hälfte des Beweises. Der Handschlag ist oben abgedeckt; hier zählt
     die Strecke **danach** — und dass kein Abgleich verschweigt, woher die Zahlen stammen.
     """
-    config, _ = station_1_aufsetzen(tmp_path)
+    config = station_1_aufsetzen(tmp_path)
     # Die Quelle gehört der Runde; gewählt wird sie in Discord (``bot.einrichten``).
     assert settings.save_foundry_quelle(runde(config), settings.TESTWELT)
 

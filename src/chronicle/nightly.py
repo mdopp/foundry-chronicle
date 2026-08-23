@@ -1,8 +1,8 @@
 """Die Kette, die nachts von allein läuft — abholen, verschriften, abgleichen, schreiben.
 
-Der Knopf in der Oberfläche und der Stapelaufruf bleiben, was sie sind: der Weg für
-»jetzt sofort«. Der Normalfall ist diese Kette, und sie ruft dieselben Funktionen auf —
-ein dritter Auslöser, kein dritter Weg.
+Der Befehl in Discord und der Stapelaufruf bleiben, was sie sind: der Weg für »jetzt
+sofort«. Der Normalfall ist diese Kette, und sie ruft dieselben Funktionen auf — ein
+dritter Auslöser, kein dritter Weg.
 
 Sie läuft **im Bot-Prozess**, in einem eigenen Faden neben der Gateway-Verbindung, und
 der Lauf selbst noch einmal in einem daneben (``jobs.start``). Auf der Ereignisschleife
@@ -12,7 +12,7 @@ Herzschlag zu Discord aus — der Bot fiele mitten in der Nacht vom Gateway.
 Ein verpasstes Fenster wird nicht nachgeholt. War der Server um vier Uhr aus, ist das
 Material am nächsten Morgen so alt wie vorher — ein Lauf um zehn Uhr vormittags brächte
 niemandem etwas und stünde mitten im Arbeitstag auf der Maschine. Die nächste Nacht
-genügt, und in den Einstellungen steht das auch so.
+genügt, und `/setup` sagt das auch so.
 
 Verpasst heißt aber »niemand hat hingesehen«, nicht »die Maschine war besetzt«. Bei
 mehreren Runden mit derselben Uhrzeit — der Vorgabe — kommt nur eine sofort dran; die
@@ -104,7 +104,7 @@ class Schritt:
 
 @dataclass(frozen=True)
 class Lauf:
-    """Was aus der letzten Nacht in den Einstellungen zu lesen ist."""
+    """Was aus der letzten Nacht in Discord zu lesen ist."""
 
     zeitpunkt: str
     schritte: dict[str, Schritt]

@@ -1,8 +1,9 @@
 """Das Install-Gate der Box, bedient aus dem Bot-Prozess — zehn Zeilen HTTP, kein Flask.
 
 ``/healthz`` ist der eine Endpunkt, an dem der Dienst hängt: antwortet er nicht mit 200,
-gilt die Installation als gescheitert. Bislang kam er aus der Betreiber-Seite; die fällt
-mit #227, und der Bot ist der Prozess, der bleibt.
+gilt die Installation als gescheitert. Bislang kam er aus der Betreiber-Seite; die ist
+mit #231 gefallen, und der Bot ist der Prozess, der bleibt — seither auch der einzige,
+der über HTTP überhaupt noch antwortet.
 
 **Gebunden wird ausschließlich an die Schleife**, und das ist keine Vorgabe, sondern die
 Eigenschaft: der Pod läuft im Host-Netz (#165), ein ``0.0.0.0`` stünde damit im ganzen

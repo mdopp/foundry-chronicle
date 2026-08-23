@@ -23,7 +23,6 @@ import pytest
 from conftest import PASSWORT, UNSER_KONTO, runde
 
 from chronicle import db, settings
-from chronicle.app import create_app
 from chronicle.bot import chronik, einrichten
 from chronicle.config import Config
 from chronicle.foundry import permissions, service, store, testwelt
@@ -32,8 +31,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
 import anonymisiere_welt as anonym  # noqa: E402
 import erzeuge_testwelt  # noqa: E402
-
-KOPF = {"Remote-User": "erzaehlerin"}
 
 # Die erlaubten Felder werden nicht abgeschrieben, sondern aus den Bauplänen des
 # Anonymisierers gelesen: sonst wüchsen die beiden Listen auseinander, und die Fixture
@@ -330,21 +327,6 @@ class NurDieWelt:
 def test_ohne_testwelt_steht_der_hinweis_nirgends(config, welt):
     stand = service.sync(config, runde(config), client=NurDieWelt(welt))
     assert testwelt.HINWEIS not in stand.message
-
-
-def test_die_betreiberseite_stellt_die_quelle_nicht_mehr_um(config):
-    """Sie gehört der Runde — ein Speichern dort lässt sie, wie sie ist (#89)."""
-    client = create_app(config).test_client()
-    settings.save_foundry_quelle(runde(config), settings.TESTWELT)
-
-    antwort = client.post(
-        "/einstellungen", data={settings.QUELLE_KEY: settings.SERVER}, headers=KOPF
-    )
-
-    assert antwort.status_code == 302
-    assert settings.foundry_quelle(runde(config)) == settings.TESTWELT
-    seite = client.get("/einstellungen", headers=KOPF).get_data(as_text=True)
-    assert f'name="{settings.QUELLE_KEY}"' not in seite
 
 
 def test_mit_testwelt_fragt_der_sitzungsstart_kein_passwort(auf_testwelt):

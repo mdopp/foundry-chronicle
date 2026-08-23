@@ -66,7 +66,7 @@ def _zugang_fehlt(felder: tuple[str, ...]) -> str:
     aufzaehlung = felder[0] if len(felder) == 1 else f"{', '.join(felder[:-1])} und {felder[-1]}"
     return (
         f"Für den Zugang zu Foundry {'fehlt' if len(felder) == 1 else 'fehlen'} noch "
-        f"{aufzaehlung}. Eintragen kannst du das in den Einstellungen."
+        f"{aufzaehlung}. Eintragen kannst du das mit `/setup`."
     )
 
 
@@ -89,8 +89,8 @@ class FoundryClient:
         timeout: float = DEFAULT_TIMEOUT,
     ) -> None:
         if not config.foundry_configured:
-            # Der Grund wird in den Einstellungen angezeigt und landet in der SQLite; die
-            # Namen aus der Umgebung bleiben deshalb im Log.
+            # Der Grund geht als Satz nach Discord und landet in der SQLite; die Namen
+            # aus der Umgebung bleiben deshalb im Log.
             logger.warning(
                 "Foundry ist nicht konfiguriert; es fehlt: %s",
                 ", ".join(config.missing_foundry_variables),
