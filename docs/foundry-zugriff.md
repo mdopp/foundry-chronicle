@@ -255,9 +255,10 @@ blinde, und Würfe mit Hoffnung, Furcht und Kritischem in beiden Ablagen.
 
 > **Warum nicht einfach eine echte Welt pseudonymisieren?** Weil auch eine
 > pseudonymisierte Welt die Welt einer echten, privaten Gruppe bleibt: Konten-Graph,
-> Berechtigungsverteilung, `users[].character` und die Zeitstempel sagen weiterhin, wer
-> wann wie lange mit wem spielt. Das ist pseudonymes Verhaltensdatum und gehört in kein
-> veröffentlichtes Image.
+> Berechtigungsverteilung, `users[].character` und die Abstände zwischen den Nachrichten
+> sagen weiterhin, wer wie lange mit wem spielt. Das *Wann* nimmt der Anonymisierer seit
+> #255 heraus, das Verhaltensmuster nicht — und das ist pseudonymes Verhaltensdatum und
+> gehört in kein veröffentlichtes Image.
 
 ### 2. Eine eigene Welt abgreifen
 
@@ -289,8 +290,8 @@ python scripts/anonymisiere_welt.py dumps/welt-dump.json meine-testwelt.json
 ```
 
 Wer seine eigene Welt lokal durchspielen will, macht daraus eine Fixture derselben Form.
-Eingecheckt wird sie trotzdem nicht — dafür ist Schritt 1 da. Das Skript trägt zwei
-Regeln, und beide sind nötig:
+Eingecheckt wird sie trotzdem nicht — dafür ist Schritt 1 da. Das Skript trägt drei
+Regeln, und alle drei sind nötig:
 
 - **Behalten wird nur, was es ausdrücklich aufzählt — bis ganz nach unten.** Kopfblöcke
   `world`/`system` (ohne den frei vergebenen `title`), Ids, `ownership`, Rollen,
@@ -298,6 +299,16 @@ Regeln, und beide sind nötig:
   Ebene, auch im eingebetteten JSON von `rolls[]`. Journale, Ordner, Makros, Gegenstände,
   Einstellungen, Module und Charakterbiografien fallen weg. Eine Ausschlussliste wäre nach
   dem nächsten Foundry-Update unvollständig, ohne dass es jemandem auffällt.
+- **Ein Zeitstempel überlebt nur als Abstand** (#255). Der früheste Augenblick des
+  Materials wird zur Null, jeder andere zu seinem Abstand davon in Millisekunden — bei
+  einem Mitschnitt über alle Bilder hinweg gegen denselben Ursprung, auch für den
+  Zeitpunkt des Bildes selbst. Ein absoluter Zeitstempel sagt, *wann* eine bestimmte
+  Gruppe gespielt hat; das ist ein Personendatum wie ein Name, nur unauffälliger, weil es
+  eine Zahl ist. Ersatzlos streichen geht nicht: die Szenenzuordnung
+  (`notes.scene_of_moment`) rechnet mit den Abständen, und eine Fixture ohne sie prüfte
+  sie nicht mehr, sondern bestätigte sich selbst. Vorher behielt der Weltabzug seine
+  absoluten Zeitstempel, während der Mitschnitt den Zeitpunkt seiner Bilder wegwarf —
+  zwei Wege durch dasselbe Skript, zwei Antworten auf dieselbe Frage.
 - **Was bleibt, wird nachgeprüft — auf Personendaten, nicht nur auf Namen.** Nach dem
   Umschreiben läuft die Ausgabe noch einmal Zeichenkette für Zeichenkette durch. Findet
   sie einen Namen aus der Eingabe, eine E-Mail, eine Adresse oder einen Rechnernamen, eine
@@ -337,10 +348,13 @@ gegen den ein Abgleich, der Nachtrag und der Strom ohne Netz durchlaufen.
 > python scripts/anonymisiere_welt.py dumps/mitschnitt-runde-1-2026-08-22.jsonl abend.jsonl
 > ```
 >
-> Dieselben zwei Regeln wie beim Abzug, plus zwei Eigenheiten: **eine** Pseudonymtabelle
-> über alle Bilder — sonst spräche im zweiten Bild jemand anderes als im ersten und der
-> Abend ließe sich nicht mehr nachspielen —, und der Zeitstempel des Bildes fällt weg. Er
-> sagt, wann diese Gruppe gespielt hat; für die Wiedergabe zählt die Reihenfolge.
+> Dieselben drei Regeln wie beim Abzug, plus eine Eigenheit, die zweimal greift: **einer**
+> für alle Bilder. Eine Pseudonymtabelle über alle — sonst spräche im zweiten Bild jemand
+> anderes als im ersten und der Abend ließe sich nicht mehr nachspielen —, und ein
+> Zeitursprung über alle: sonst zählte jedes Bild ab seinem eigenen Beginn, und die
+> Abstände zwischen ihnen wären weg. Der Zeitpunkt des Bildes bleibt damit stehen, aber
+> wie jeder andere Zeitstempel nur als Abstand; die ISO-Uhrzeit wird zur
+> Millisekundenzahl ab der Null.
 
 **Belegt ist es seit dem 2026-08-23.** Der Weltabzug vom 2026-08-06 ist durch denselben
 Anonymisierer gelaufen und liegt als `tests/echtwelt-2026-08-06.json` im Repo; die
