@@ -1,10 +1,10 @@
-"""Die Chronik als Datei im Sitzungs-Thread — gegen ein nachgebautes Discord, ohne Netz.
+"""Die Chronik als Datei im Kanal der Sitzung — gegen ein nachgebautes Discord, ohne Netz.
 
 Der Token in diesen Tests ist erfunden und steht nur hier.
 
 Die Sätze, die dieser Suite ihren Sinn geben: **die Trennung zwischen Belegtem und
 Verbindungstext übersteht den Weg nach Discord**, weil sie in den Überschriften des
-abgelegten Textes steht und Markdown sie unverändert trägt; **der Thread ist ein
+abgelegten Textes steht und Markdown sie unverändert trägt; **der Kanal ist ein
 Protokoll** — eine neue Fassung kommt als neue Datei und benennt die alte; und **was
 schiefgeht, wird gesagt** statt zu stürzen.
 """
@@ -74,14 +74,14 @@ def config(tmp_path):
     return gesetzt
 
 
-def sitzung(config, *, thread_id=THREAD, played_on=DATUM):
+def sitzung(config, *, kanal_id=THREAD, played_on=DATUM):
     scope = db.scoped(runde(config))
     try:
         with scope:
             zeiger = scope.execute(
-                "INSERT INTO session (runde_id, played_on, title, created_at, thread_id) "
+                "INSERT INTO session (runde_id, played_on, title, created_at, kanal_id) "
                 "VALUES (?, ?, ?, ?, ?)",
-                (scope.runde_id, played_on, "Der Keller", STAND, thread_id),
+                (scope.runde_id, played_on, "Der Keller", STAND, kanal_id),
             )
         return zeiger.lastrowid
     finally:
@@ -122,10 +122,10 @@ def haengen(config, sitzung_id, api):
     )
 
 
-# --- Die Datei landet im Thread ------------------------------------------------------
+# --- Die Datei landet im Kanal der Sitzung -------------------------------------------
 
 
-def test_die_chronik_haengt_als_markdown_datei_im_sitzungs_thread(config):
+def test_die_chronik_haengt_als_markdown_datei_im_sitzungskanal(config):
     sitzung_id = sitzung(config)
     protokoll(config, sitzung_id)
     api = FakeDiscord()
@@ -167,8 +167,8 @@ def test_die_datei_sagt_welche_fassung_sie_ist(config):
     assert api.angehaengt[0][2].startswith("_Fassung vom ")
 
 
-def test_ohne_zustellkanal_landet_die_chronik_trotzdem_im_thread(tmp_path):
-    """Der Kanal gilt dem Rückblick; die Chronik gehört in den Thread und geht ihn nichts an."""
+def test_ohne_zustellkanal_landet_die_chronik_trotzdem_im_sitzungskanal(tmp_path):
+    """Der Zustellkanal gilt dem Rückblick; die Chronik gehört in den Kanal ihrer Sitzung."""
     ohne = Config(discord_bot_token=TOKEN, data_dir=tmp_path / "daten")
     db.init(ohne.database_path)
     sitzung_id = sitzung(ohne)
@@ -222,7 +222,7 @@ def test_eine_neu_geschriebene_fassung_kommt_als_neue_datei_und_benennt_die_alte
     assert f"ersetzt die Fassung vom {ausgabe._lesbar(erster)}" in zweite[2]
     assert "Szene 2" in zweite[2]
     assert ausgabe.NEUE.split("{")[0] in zweite[4]["payload_json"]
-    # Die erste Datei bleibt stehen — der Thread ist ein Protokoll, keine Tafel.
+    # Die erste Datei bleibt stehen — der Kanal ist ein Protokoll, keine Tafel.
     assert "Szene 2" not in api.angehaengt[0][2]
 
 
@@ -235,11 +235,11 @@ def test_der_rueckblick_geht_nicht_als_datei_hinaus(config):
     assert api.angehaengt == []
 
 
-# --- Ohne Thread, ohne Token: nichts passiert, und nichts stürzt ----------------------
+# --- Ohne Kanal, ohne Token: nichts passiert, und nichts stürzt -----------------------
 
 
-def test_eine_sitzung_ohne_thread_bleibt_ohne_anhang(config):
-    sitzung_id = sitzung(config, thread_id=None)
+def test_eine_sitzung_ohne_kanal_bleibt_ohne_anhang(config):
+    sitzung_id = sitzung(config, kanal_id=None)
     protokoll(config, sitzung_id)
     api = FakeDiscord()
 

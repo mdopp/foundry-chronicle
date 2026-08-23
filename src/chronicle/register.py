@@ -113,7 +113,7 @@ EINTRAEGE = (
 )
 
 ERWAEHNUNGEN = (
-    "SELECT m.entry_id, m.session_id, m.scene_id, s.played_on, s.title, s.thread_id, c.position "
+    "SELECT m.entry_id, m.session_id, m.scene_id, s.played_on, s.title, s.kanal_id, c.position "
     "FROM register_mention m JOIN session s ON s.id = m.session_id "
     "LEFT JOIN scene c ON c.id = m.scene_id "
     "WHERE m.runde_id = ? ORDER BY s.played_on, s.id, c.position"
@@ -127,8 +127,8 @@ class Mention:
     title: str | None = None
     scene_id: int | None = None
     scene_position: int | None = None
-    # Der Thread der Sitzung, in der der Name fiel — der Weg dorthin zurück.
-    thread_id: str | None = None
+    # Der Kanal der Sitzung, in der der Name fiel — der Weg dorthin zurück.
+    kanal_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -338,7 +338,7 @@ def _erwaehnungen(scope: db.Scope) -> dict[int, list[Mention]]:
                 title=zeile["title"],
                 scene_id=zeile["scene_id"],
                 scene_position=zeile["position"],
-                thread_id=zeile["thread_id"],
+                kanal_id=zeile["kanal_id"],
             )
         )
     return je_eintrag

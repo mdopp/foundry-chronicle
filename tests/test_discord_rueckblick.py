@@ -143,14 +143,14 @@ def gastgeber(config):
     return runden.anlegen(config.database_path, "Der Krumme Ast", guild_id=GILDE)
 
 
-def sitzung(gastgeber, *, played_on=DATUM, thread_id=None):
+def sitzung(gastgeber, *, played_on=DATUM, kanal_id=None):
     scope = db.scoped(gastgeber)
     try:
         with scope:
             zeiger = scope.execute(
-                "INSERT INTO session (runde_id, played_on, title, created_at, thread_id) "
+                "INSERT INTO session (runde_id, played_on, title, created_at, kanal_id) "
                 "VALUES (?, ?, ?, ?, ?)",
-                (scope.runde_id, played_on, "Der Keller", STAND, thread_id),
+                (scope.runde_id, played_on, "Der Keller", STAND, kanal_id),
             )
         return zeiger.lastrowid
     finally:
@@ -445,7 +445,7 @@ def _beide_wege(config, gastgeber, api, sitzung_id):
 
 
 def _beide_protokolle(gastgeber):
-    sitzung_id = sitzung(gastgeber, thread_id=THREAD)
+    sitzung_id = sitzung(gastgeber, kanal_id=THREAD)
     protokoll(gastgeber, sitzung_id)
     protokoll(gastgeber, sitzung_id, text="# Chronik\n\nAlles, was geschah.\n", kind=KIND)
     return sitzung_id
@@ -484,12 +484,12 @@ def test_ein_verweigerter_kanal_haelt_die_chronik_nicht_auf_und_sagt_warum(
     assert TOKEN not in caplog.text and TOKEN not in zustellung.meldung
     assert zugestellt_am(gastgeber, sitzung_id) is None
     # Die Chronik geht denselben Lauf durch — der Fehlschlag des einen Wegs ist keiner des
-    # anderen, und der Thread liegt außerhalb des verweigerten Kanals.
+    # anderen, und der Sitzungskanal liegt außerhalb des verweigerten Zustellkanals.
     assert ausgabe == ""
     assert api.angehaengt == [(THREAD, f"chronik-{DATUM}.md")]
 
 
-def test_ein_verweigerter_thread_wird_beim_anhang_genauso_deutlich(config, gastgeber):
+def test_ein_verweigerter_sitzungskanal_wird_beim_anhang_genauso_deutlich(config, gastgeber):
     """Die andere Hälfte: auch der Anhang meldet Status und Rumpf statt eines Namens."""
     sitzung_id = _beide_protokolle(gastgeber)
     api = FakeDiscord(verweigert=(THREAD,))

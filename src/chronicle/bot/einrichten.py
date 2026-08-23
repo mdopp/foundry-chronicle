@@ -141,8 +141,8 @@ UEBERNOMMEN = "Die Runde »{name}« ist aktualisiert."
 KANAL_FRAGE = "Und wohin mit der fertigen Chronik?"
 KANAL_WAEHLEN = "Kanal für die Chronik"
 KANAL_GESETZT = "Die Chronik kommt künftig nach {kanal}."
-KANAL_KEINER = "Kein Kanal — dann lege ich die Chronik im Thread der Sitzung ab."
-KANAL_OHNE = "keiner — im Thread der Sitzung ablegen"
+KANAL_KEINER = "Kein Kanal — dann lege ich die Chronik im Kanal der Sitzung ab."
+KANAL_OHNE = "keiner — im Kanal der Sitzung ablegen"
 
 # -- Woher die Zahlen kommen ------------------------------------------------------------
 

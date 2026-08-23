@@ -96,7 +96,7 @@ class Stand:
     created_at: str
     delivered_at: str | None
     played_on: str
-    thread_id: str | None
+    kanal_id: str | None
 
 
 def _now() -> str:
@@ -111,7 +111,7 @@ def _stand(runde: Runde, session_id: int) -> Stand | None:
     scope = db.scoped(runde)
     try:
         zeile = scope.execute(
-            "SELECT p.text, p.created_at, p.delivered_at, s.played_on, s.thread_id "
+            "SELECT p.text, p.created_at, p.delivered_at, s.played_on, s.kanal_id "
             "FROM protocol p JOIN session s ON s.id = p.session_id AND s.runde_id = p.runde_id "
             "WHERE p.runde_id = ? AND p.session_id = ? AND p.kind = ?",
             (scope.runde_id, session_id, KIND),
@@ -125,7 +125,7 @@ def _stand(runde: Runde, session_id: int) -> Stand | None:
         created_at=str(zeile["created_at"]),
         delivered_at=zeile["delivered_at"],
         played_on=str(zeile["played_on"]),
-        thread_id=zeile["thread_id"],
+        kanal_id=zeile["kanal_id"],
     )
 
 
@@ -198,7 +198,7 @@ def erzaehlung_zustellen(
 def anhaengen(
     config: Config, runde: Runde, session_id: int, *, client: DiscordClient | None = None
 ) -> str:
-    """Hängt die Chronik dieser Sitzung in ihren Thread, wenn diese Fassung noch fehlt."""
+    """Hängt die Chronik dieser Sitzung in ihren Kanal, wenn diese Fassung noch fehlt."""
     zugang = settings.effective(config, runde)
     if not zugang.discord_configured:
         return ""
@@ -207,10 +207,10 @@ def anhaengen(
     if abgelegt is None:
         logger.warning("Sitzung %s hat keine Chronik zum Anhängen.", session_id)
         return ""
-    if not abgelegt.thread_id:
-        # Sitzungen aus der Zeit vor dem Thread haben keinen. Die Chronik steht trotzdem,
+    if not abgelegt.kanal_id:
+        # Sitzungen aus der Zeit vor Discord haben keinen. Die Chronik steht trotzdem,
         # und ein Satz darüber hätte hier keinen Ort, an dem ihn jemand läse.
-        logger.info("Sitzung %s hat keinen Thread — die Chronik bleibt abgelegt.", session_id)
+        logger.info("Sitzung %s hat keinen Kanal — die Chronik bleibt abgelegt.", session_id)
         return ""
     if abgelegt.delivered_at is not None and abgelegt.created_at <= abgelegt.delivered_at:
         return ""
@@ -224,7 +224,7 @@ def anhaengen(
     bot = client if client is not None else DiscordClient(zugang)
     try:
         bot.post_file(
-            abgelegt.thread_id,
+            abgelegt.kanal_id,
             dateiname(abgelegt.played_on),
             inhalt,
             begleitung(abgelegt.delivered_at),

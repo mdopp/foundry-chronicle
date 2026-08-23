@@ -51,7 +51,7 @@ SYSTEMWOERTER = (
     "Authelia",
     "runde_id",
     "guild_id",
-    "thread_id",
+    "kanal_id",
     "session_id",
     "SQLite",
 )

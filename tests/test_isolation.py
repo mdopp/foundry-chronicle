@@ -129,7 +129,7 @@ def _schluessel(modul, name: str) -> str:
 def fuellen(config: Config, runde, marke: str) -> dict[str, int]:
     """Eine Runde mit einem vollständigen Satz Daten — überall dieselbe Marke."""
     sitzung = notes.create_session(
-        runde, played_on="2026-05-01", title=f"Sitzung {marke}", thread_id=f"thread-{marke}"
+        runde, played_on="2026-05-01", title=f"Sitzung {marke}", kanal_id=f"kanal-{marke}"
     )
     szene = notes.session(runde, sitzung).scenes[0]
     notes.add_note(runde, szene.id, f"Im Keller stand {marke}.", message_id=f"nachricht-{marke}")
@@ -259,7 +259,11 @@ def fuellen(config: Config, runde, marke: str) -> dict[str, int]:
     # einzige Sitzung könnte er eine fremde strukturell nie erreichen — und ein vergessenes
     # ``WHERE runde_id = ?`` in der Bereichsabfrage bliebe unbemerkt.
     spaeter = notes.create_session(
-        runde, played_on="2026-05-08", title=f"Zweiter Abend {marke}", thread_id=f"spaet-{marke}"
+        runde,
+        played_on="2026-05-08",
+        title=f"Zweiter Abend {marke}",
+        kanal_id=f"spaet-{marke}",
+        laeuft=True,
     )
     scope = db.scoped(runde)
     try:
@@ -281,7 +285,8 @@ def fuellen(config: Config, runde, marke: str) -> dict[str, int]:
         "aufnahme": aufnahme.id,
         "transkript": transkript,
         "eintrag": eintrag,
-        "thread": f"thread-{marke}",
+        "kanal": f"kanal-{marke}",
+        "laufend": f"spaet-{marke}",
         "nachricht": f"nachricht-{marke}",
     }
 
@@ -316,8 +321,9 @@ ABFRAGEN = {
     "notes.session": lambda c, r, i: notes.session(r, i["sitzung"]),
     "notes.latest_session": lambda c, r, i: notes.latest_session(r),
     "notes.session_of_scene": lambda c, r, i: notes.session_of_scene(r, i["szene"]),
-    "notes.session_of_thread": lambda c, r, i: notes.session_of_thread(r, i["thread"]),
-    "notes.thread_of_session": lambda c, r, i: notes.thread_of_session(r, i["sitzung"]),
+    "notes.running_session": lambda c, r, i: notes.running_session(r),
+    "notes.session_of_note": lambda c, r, i: notes.session_of_note(r, i["nachricht"]),
+    "notes.channel_of_session": lambda c, r, i: notes.channel_of_session(r, i["sitzung"]),
     "dokument.neu": lambda c, r, i: dokument.neu(r, ()),
     "notes.session_contents": lambda c, r, i: notes.session_contents(c, r, _marke(r, i)),
     "notes.sitzungsmarke": lambda c, r, i: notes.sitzungsmarke(notes.session(r, i["sitzung"])),
@@ -423,7 +429,7 @@ ABFRAGEN = {
         people.overview(r).personen[0], people.overview(r).spieler
     ),
     # Die Entscheidung beim Betreten liest nur — geschrieben wird sie von ``zuordnen``,
-    # nachdem der Vermerk im Thread steht. Gefragt wird hier mit **d-2**: die trifft ihr
+    # nachdem der Vermerk im Kanal steht. Gefragt wird hier mit **d-2**: die trifft ihr
     # Konto 1:1 und läuft damit durch den Zweig, der ohne Klick auskommt.
     "erinnern.betreten": lambda c, r, i: erinnern.betreten(r, "d-2"),
     "lebenszyklus.frist_datum": lambda c, r, i: lebenszyklus.frist_datum(r),
@@ -443,6 +449,10 @@ SCHREIBER = frozenset(
         "dokument.anlegen",
         "notes.update_note",
         "notes.remove_note",
+        # Der Abschluss macht aus einer laufenden Sitzung eine geschlossene. Mit
+        # verwechselter Runde schlösse er den Abend der Nachbarn, und deren Getipptes
+        # zählte ab da nicht mehr — geprüft weiter unten mit ihrer Sitzungskennung.
+        "notes.close_session",
         "notes.drop_derived",
         # Die schärfste Löschung unterhalb der Runde: sie nimmt Tondateien von der Platte,
         # und der Weg dorthin führt am Dateinamen entlang und nicht an der Runde. Geprüft
@@ -695,25 +705,39 @@ def test_der_ereignisstrom_sieht_und_schreibt_nur_die_eigene_runde(zwei_runden):
     assert all(nachricht.vanished_at is None for nachricht in fremde)
 
 
-def test_der_thread_der_fremden_runde_ist_keine_sitzung(zwei_runden):
-    """Der Thread ist die Sitzung — und ein Thread von nebenan ist keine Sitzung von hier.
+def test_der_kanal_der_fremden_runde_ist_keine_sitzung(zwei_runden):
+    """Die laufende Sitzung gehört ihrer Runde — die von nebenan ist keine Sitzung von hier.
 
     Discord meldet Nachricht, Änderung und Löschung mit ihrer Kennung, sonst nichts. Ohne
-    diese Schranke schriebe ein Thread aus einem fremden Server in eine fremde Chronik.
+    diese Schranke schriebe ein Kanal aus einem fremden Server in eine fremde Chronik.
     """
     config, a, b, ids = zwei_runden
-    assert notes.session_of_thread(a, ids[2]["thread"]) is None
-    assert notes.session_of_thread(a, ids[1]["thread"]) == ids[1]["sitzung"]
+    laufend = notes.running_session(a)
+    assert laufend is not None
+    assert laufend.kanal_id == ids[1]["laufend"]
+    assert laufend.id == ids[1]["spaeter"]
 
-    # Und die Gegenrichtung ebenso: der Bot sagt einer Sitzung in ihren Thread, dass er
-    # den Mitschnitt beendet hat — ein Thread von nebenan wäre der falsche Server.
-    assert notes.thread_of_session(a, ids[2]["sitzung"]) is None
-    assert notes.thread_of_session(a, ids[1]["sitzung"]) == ids[1]["thread"]
+    # Und die Gegenrichtung ebenso: der Bot sagt einer Sitzung in ihren Kanal, dass er
+    # den Mitschnitt beendet hat — ein Kanal von nebenan wäre der falsche Server.
+    assert notes.channel_of_session(a, ids[2]["sitzung"]) is None
+    assert notes.channel_of_session(a, ids[1]["sitzung"]) == ids[1]["kanal"]
+
+    # Und eine Notiz von nebenan zieht ihre Sitzung nicht in diese Runde.
+    assert notes.session_of_note(a, ids[2]["nachricht"]) is None
+    assert notes.session_of_note(a, ids[1]["nachricht"]) == ids[1]["sitzung"]
 
     assert notes.update_note(a, ids[2]["nachricht"], "umgeschrieben") is False
     assert notes.remove_note(a, ids[2]["nachricht"]) is False
     fremde = notes.session(b, ids[2]["sitzung"]).scenes[0].notes
     assert [notiz.text for notiz in fremde] == [f"Im Keller stand {MARKE[2]}."]
+
+
+def test_die_fremde_sitzung_wird_nicht_geschlossen(zwei_runden):
+    """Der Abschluss von nebenan lässt den laufenden Abend dieser Runde laufen."""
+    _config, a, b, ids = zwei_runden
+    assert notes.close_session(a, ids[2]["spaeter"]) is False
+    laufend = notes.running_session(b)
+    assert laufend is not None and laufend.id == ids[2]["spaeter"]
 
 
 def test_die_fremde_sitzung_wird_nicht_geloescht(zwei_runden):

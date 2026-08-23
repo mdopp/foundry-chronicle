@@ -7,7 +7,8 @@ kosten.
 Die Szenenfolge ist im Präsenzfall die einzige Zeitachse: ``position`` zählt hoch, die
 Zeitstempel aus Foundry taugen dafür nicht.
 
-Seit die Sitzung ein Discord-Thread ist, hat eine Szene außerdem einen **Zeitpunkt**: den
+Seit die Sitzung im Chat eines Discord-Kanals läuft, hat eine Szene außerdem einen
+**Zeitpunkt**: den
 ihrer Trennlinie. Eine Notiz gehört in die letzte Szene, deren Trennlinie vor ihr liegt —
 nicht in »die aktuelle«. Nur so landet eine Nachricht, die Tage später nachgetragen wird,
 dort, wo sie hingehört, statt in der Szene, die gerade zufällig die letzte ist.
@@ -63,6 +64,14 @@ class Session:
 
 
 @dataclass(frozen=True)
+class Running:
+    """Die laufende Sitzung: ihre Kennung und der Kanal, in dem sie geführt wird."""
+
+    id: int
+    kanal_id: str | None
+
+
+@dataclass(frozen=True)
 class Contents:
     """Was an einer Sitzung hängt — die Zahlen, mit denen die Rückfrage sie benennt.
 
@@ -94,21 +103,28 @@ def today() -> str:
 
 
 def create_session(
-    runde: Runde, *, played_on: str = "", title: str = "", thread_id: str = ""
+    runde: Runde,
+    *,
+    played_on: str = "",
+    title: str = "",
+    kanal_id: str = "",
+    laeuft: bool = False,
 ) -> int:
     zeitpunkt = _now()
     scope = db.scoped(runde)
     try:
         with scope:
             cursor = scope.execute(
-                "INSERT INTO session (runde_id, played_on, title, created_at, thread_id, token) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
+                "INSERT INTO session "
+                "(runde_id, played_on, title, created_at, kanal_id, laeuft, token) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (
                     scope.runde_id,
                     played_on.strip() or today(),
                     title.strip() or None,
                     zeitpunkt,
-                    str(thread_id).strip() or None,
+                    str(kanal_id).strip() or None,
+                    1 if laeuft else 0,
                     db.kennung(),
                 ),
             )
@@ -213,30 +229,76 @@ def latest_session(runde: Runde) -> Session | None:
     return None if zeile is None else session(runde, int(zeile["id"]))
 
 
-def session_of_thread(runde: Runde, thread_id: str) -> int | None:
-    """Die Sitzung hinter einem Discord-Thread — der Thread *ist* die Sitzung."""
+def running_session(runde: Runde) -> Running | None:
+    """Die Sitzung, die gerade läuft — Kennung und Kanal, oder nichts.
+
+    Seit #271 ist das die ganze Grenze: kein Thread zieht sie mehr, also steht in der
+    Datenbank, ob eine Sitzung zwischen Start und Abschluss liegt. Je Runde ist höchstens
+    eine offen — ``sitzung_anlegen`` fragt genau hier, bevor es eine zweite anlegt.
+    """
     scope = db.scoped(runde)
     try:
         row = scope.execute(
-            "SELECT id FROM session WHERE runde_id = ? AND thread_id = ?",
-            (scope.runde_id, str(thread_id)),
+            "SELECT id, kanal_id FROM session WHERE runde_id = ? AND laeuft = 1 "
+            "ORDER BY id DESC LIMIT 1",
+            (scope.runde_id,),
         ).fetchone()
     finally:
         scope.close()
-    return None if row is None else int(row["id"])
+    if row is None:
+        return None
+    return Running(id=int(row["id"]), kanal_id=row["kanal_id"])
 
 
-def thread_of_session(runde: Runde, session_id: int) -> str | None:
-    """Der Thread einer Sitzung — die Gegenrichtung, für wen ihr etwas zu sagen hat."""
+def close_session(runde: Runde, session_id: int) -> bool:
+    """Die Sitzung ist zu — was danach im Kanal steht, ist keine Notiz mehr."""
+    scope = db.scoped(runde)
+    try:
+        with scope:
+            cursor = scope.execute(
+                "UPDATE session SET laeuft = 0 WHERE runde_id = ? AND id = ? AND laeuft = 1",
+                (scope.runde_id, session_id),
+            )
+        return cursor.rowcount > 0
+    finally:
+        scope.close()
+
+
+def channel_of_session(runde: Runde, session_id: int) -> str | None:
+    """Der Kanal einer Sitzung — die Gegenrichtung, für wen ihr etwas zu sagen hat.
+
+    Er bleibt auch nach dem Abschluss stehen: der Sprung aus der Suche zeigt Wochen später
+    noch dorthin, und die fertige Chronik wird dort angehängt.
+    """
     scope = db.scoped(runde)
     try:
         row = scope.execute(
-            "SELECT thread_id FROM session WHERE runde_id = ? AND id = ?",
+            "SELECT kanal_id FROM session WHERE runde_id = ? AND id = ?",
             (scope.runde_id, session_id),
         ).fetchone()
     finally:
         scope.close()
-    return None if row is None else row["thread_id"]
+    return None if row is None else row["kanal_id"]
+
+
+def session_of_note(runde: Runde, message_id: str) -> int | None:
+    """Die Sitzung, in der diese Nachricht zur Notiz wurde — auch eine Woche später.
+
+    Eine nachträglich bearbeitete Nachricht gehört ihrer eigenen Sitzung und nicht der,
+    die gerade läuft. Ohne diesen Weg landete die Korrektur einer alten Notiz am heutigen
+    Abend, sobald die Sitzungsgrenze nicht mehr am Ort hängt (#271).
+    """
+    scope = db.scoped(runde)
+    try:
+        row = scope.execute(
+            "SELECT c.session_id FROM note n JOIN scene c "
+            "ON c.id = n.scene_id AND c.runde_id = n.runde_id "
+            "WHERE n.runde_id = ? AND n.discord_message_id = ?",
+            (scope.runde_id, str(message_id)),
+        ).fetchone()
+    finally:
+        scope.close()
+    return None if row is None else int(row["session_id"])
 
 
 def add_scene(runde: Runde, session_id: int, *, title: str = "", at: str = "") -> int | None:

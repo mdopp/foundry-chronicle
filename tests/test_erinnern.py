@@ -45,7 +45,7 @@ from chronicle.foundry.model import Character, Player, WorldSnapshot
 GILDE = "1101"
 FREMDE_GILDE = "9909"
 
-THREAD = "5001"
+SITZUNGSKANAL = "5001"
 NACHRICHT = "7001"
 
 # Zahlen und keine sprechenden Kennungen: Discord vergibt Zahlen, und wer ein übernommenes
@@ -159,9 +159,9 @@ def bot(stelle, pycord):
 
 
 def sitzung_mit_notiz(
-    runde, *, thread=THREAD, nachricht=NACHRICHT, text="Im Keller lag ein Schwert."
+    runde, *, kanal=SITZUNGSKANAL, nachricht=NACHRICHT, text="Im Keller lag ein Schwert."
 ):
-    sitzung = notes.create_session(runde, played_on="2026-05-01", thread_id=thread)
+    sitzung = notes.create_session(runde, played_on="2026-05-01", kanal_id=kanal)
     szene = notes.session(runde, sitzung).scenes[0]
     notes.add_note(runde, szene.id, text, message_id=nachricht)
     return sitzung
@@ -356,10 +356,10 @@ def test_ein_treffer_fuehrt_in_die_nachricht_zurueck(stelle, bot):
     arten = {feld["name"] for feld in embed.gebaut["fields"]}
     assert arten == {"Notizen", "Chronik"}
     notizen = next(f for f in embed.gebaut["fields"] if f["name"] == "Notizen")["value"]
-    assert f"https://discord.com/channels/{GILDE}/{THREAD}/{NACHRICHT}" in notizen
+    assert f"https://discord.com/channels/{GILDE}/{SITZUNGSKANAL}/{NACHRICHT}" in notizen
     assert "**Schwert**" in notizen
     chronik = next(f for f in embed.gebaut["fields"] if f["name"] == "Chronik")["value"]
-    assert f"https://discord.com/channels/{GILDE}/{THREAD}" in chronik
+    assert f"https://discord.com/channels/{GILDE}/{SITZUNGSKANAL}" in chronik
     assert ctx.fluechtig == [True]
 
 
@@ -394,7 +394,7 @@ def test_die_suche_verlaesst_die_runde_nicht(stelle, bot):
     config, unsere = stelle
     sitzung_mit_notiz(unsere)
     fremde = runden.anlegen(config.database_path, "Nebenan", guild_id=FREMDE_GILDE)
-    sitzung_mit_notiz(fremde, thread="6001", nachricht="8001", text="Nebenan lag ein Beil.")
+    sitzung_mit_notiz(fremde, kanal="6001", nachricht="8001", text="Nebenan lag ein Beil.")
     ctx = FakeCtx()
 
     asyncio.run(befehl(bot, gateway.BEFEHL_SUCHE)(ctx, "Beil"))
@@ -423,7 +423,7 @@ def test_ein_langes_embed_wird_gekappt_statt_abgewiesen(stelle, bot):
     )
     for nummer in range(40):
         weitere = notes.create_session(
-            unsere, played_on=f"2026-06-{nummer % 28 + 1:02d}", thread_id=f"60{nummer:02d}"
+            unsere, played_on=f"2026-06-{nummer % 28 + 1:02d}", kanal_id=f"60{nummer:02d}"
         )
         erwaehnung_anlegen(unsere, eintrag, weitere)
     ctx = FakeCtx()
@@ -464,7 +464,7 @@ def test_wer_zeigt_den_eintrag_mit_art_satz_und_sitzung(stelle, bot):
     assert embed.gebaut["description"] == "Ein Söldner aus dem Norden."
     felder = {feld["name"]: feld["value"] for feld in embed.gebaut["fields"]}
     assert felder[erinnern.WER_ART] == "Figur"
-    assert f"https://discord.com/channels/{GILDE}/{THREAD}" in felder[erinnern.WER_ERWAEHNT]
+    assert f"https://discord.com/channels/{GILDE}/{SITZUNGSKANAL}" in felder[erinnern.WER_ERWAEHNT]
 
 
 def test_ein_unbekannter_name_bekommt_eine_rueckfrage(stelle, bot):
@@ -814,33 +814,33 @@ def test_im_zuordnungsmenue_laesst_sich_ein_fremdes_konto_uebernehmen(stelle, bo
 
 
 def uebernahme_buehne(unsere, bot):
-    """Die Lage der Übernahme: Broks Konto, ein Thread zum Vermerken, ein erreichbares Postfach."""
+    """Die Lage der Übernahme: Broks Konto, ein Kanal zum Vermerken, ein erreichbares Postfach."""
     sitzung = sitzung_mit_notiz(unsere)
     aufgenommen(unsere, sitzung, (MIRA, "Mira am Handy"), (BROK, "Mira"))
     welt_ablegen(unsere)
     people.confirm(unsere, {BROK: "u-mira"})
-    thread = FakeTextkanal()
-    bot.kanaele[int(THREAD)] = thread
+    kanal = FakeTextkanal()
+    bot.kanaele[int(SITZUNGSKANAL)] = kanal
     vorbesitzerin = FakeMitglied(int(BROK), "Mira")
     bot.nutzer[int(BROK)] = vorbesitzerin
-    return thread, vorbesitzerin
+    return kanal, vorbesitzerin
 
 
-def test_eine_uebernahme_steht_im_thread_und_bei_der_vorbesitzerin(stelle, bot):
+def test_eine_uebernahme_steht_im_sitzungskanal_und_bei_der_vorbesitzerin(stelle, bot):
     """Der Schritt mit der größten Folge war der stillste — jetzt hat er Tageslicht.
 
     Getragen wird die Sichtbarkeit **nicht** von der Ansicht: ``/zuordnung`` zeigt nur
     ``PRO_SEITE`` Personen, und ab der sechsten steht die Vorbesitzerin weder vorher noch
-    nachher darin. Also der Thread für die Runde und ein Wort an sie selbst.
+    nachher darin. Also der Kanal der Sitzung für die Runde und ein Wort an sie selbst.
     """
     _config, unsere = stelle
-    thread, vorbesitzerin = uebernahme_buehne(unsere, bot)
+    kanal, vorbesitzerin = uebernahme_buehne(unsere, bot)
     ctx = FakeCtx()
     asyncio.run(befehl(bot, gateway.BEFEHL_ZUORDNUNG)(ctx))
 
     waehlen(ctx.ansichten[0], MIRA, "u-mira")
 
-    assert thread.geschrieben == [
+    assert kanal.geschrieben == [
         erinnern.UEBERNAHME_VERMERK.format(name="Mira am Handy", spieler="Mira", vorher="Mira")
     ]
     assert [text for text, _ansicht in vorbesitzerin.zwiegespraech] == [
@@ -852,12 +852,12 @@ def test_eine_uebernahme_steht_im_thread_und_bei_der_vorbesitzerin(stelle, bot):
 
 
 def test_ein_geschlossenes_postfach_verwirft_die_uebernahme_nicht(stelle, bot, caplog):
-    """Der Thread ist der belastbare Weg — eine zugemachte Direktnachricht hebt nichts auf.
+    """Der Sitzungskanal ist der belastbare Weg — eine zugemachte Direktnachricht hebt nichts auf.
 
     Und im Log steht der Grund, aber kein Name und keine Kennung.
     """
     _config, unsere = stelle
-    thread, vorbesitzerin = uebernahme_buehne(unsere, bot)
+    kanal, vorbesitzerin = uebernahme_buehne(unsere, bot)
     vorbesitzerin.zwiegespraech_zu = True
     ctx = FakeCtx()
     asyncio.run(befehl(bot, gateway.BEFEHL_ZUORDNUNG)(ctx))
@@ -867,7 +867,7 @@ def test_ein_geschlossenes_postfach_verwirft_die_uebernahme_nicht(stelle, bot, c
 
     assert people.speakers(unsere)[MIRA].confirmed.id == "u-mira"
     assert people.speakers(unsere)[BROK].confirmed is None
-    assert thread.geschrieben == [
+    assert kanal.geschrieben == [
         erinnern.UEBERNAHME_VERMERK.format(name="Mira am Handy", spieler="Mira", vorher="Mira")
     ]
     # Und der Klick hat ordentlich geantwortet, statt »hat nicht geklappt« zu melden.
@@ -877,11 +877,12 @@ def test_ein_geschlossenes_postfach_verwirft_die_uebernahme_nicht(stelle, bot, c
         assert geheim not in caplog.text
 
 
-def test_ohne_thread_sagt_das_log_was_wirklich_geschah(stelle, bot, caplog):
-    """Eine Sitzung aus der Zeit vor dem Sitzungs-Thread hat keinen — dann trägt er nichts.
+def test_ohne_kanal_sagt_das_log_was_wirklich_geschah(stelle, bot, caplog):
+    """Eine Sitzung, die nie in einem Discord-Kanal lief, hat keinen — dann trägt er nichts.
 
-    »Der Thread-Vermerk trägt sie« wäre hier eine Auskunft über etwas, das nicht geschehen
-    ist, und genau die liest Wochen später jemand, der wissen will, ob die Runde es erfuhr.
+    »Der Vermerk im Kanal trägt sie« wäre hier eine Auskunft über etwas, das nicht
+    geschehen ist, und genau die liest Wochen später jemand, der wissen will, ob die Runde
+    es erfuhr.
     """
     _config, unsere = stelle
     sitzung = notes.create_session(unsere, played_on="2026-05-01")
@@ -895,8 +896,8 @@ def test_ohne_thread_sagt_das_log_was_wirklich_geschah(stelle, bot, caplog):
     with caplog.at_level(logging.WARNING):
         waehlen(ctx.ansichten[0], MIRA, "u-mira")
 
-    assert "in keinem Thread" in caplog.text
-    assert "Thread-Vermerk trägt sie" not in caplog.text
+    assert "in keinem Kanal" in caplog.text
+    assert "Vermerk im Kanal trägt sie" not in caplog.text
     # Und die Vorbesitzerin erfährt es trotzdem — der eine Weg, der noch da ist.
     assert len(vorbesitzerin.zwiegespraech) == 1
     assert "Mira am Handy" not in caplog.text
@@ -908,15 +909,15 @@ def test_ohne_uebernahme_wird_nichts_gesagt(stelle, bot):
     sitzung = sitzung_mit_notiz(unsere)
     aufgenommen(unsere, sitzung, (MIRA, "Mira"))
     welt_ablegen(unsere)
-    thread = FakeTextkanal()
-    bot.kanaele[int(THREAD)] = thread
+    kanal = FakeTextkanal()
+    bot.kanaele[int(SITZUNGSKANAL)] = kanal
     ctx = FakeCtx()
     asyncio.run(befehl(bot, gateway.BEFEHL_ZUORDNUNG)(ctx))
 
     waehlen(ctx.ansichten[0], MIRA, "u-mira")
 
     assert people.speakers(unsere)[MIRA].confirmed.id == "u-mira"
-    assert thread.geschrieben == []
+    assert kanal.geschrieben == []
 
 
 def test_ein_verschwundener_spieler_aendert_nichts(stelle, bot):
