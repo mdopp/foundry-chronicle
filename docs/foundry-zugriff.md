@@ -373,9 +373,12 @@ Testwelt etwas anderes als den Betrieb.
 
 Zwei Eigenschaften hängen daran:
 
-- **Unübersehbar ehrlich.** Solange die Testwelt aktiv ist, sagen das Band auf jeder
-  Seite und die Foundry-Karte: *Testwelt aktiv — das sind keine echten Kampagnendaten.*
-  Erfundene Zahlen für echte zu halten ist das Hauptrisiko dieses Schalters.
+- **Unübersehbar ehrlich.** Solange die Testwelt aktiv ist, sagt es **jede Meldung des
+  Abgleichs**: *Testwelt aktiv — das sind keine echten Kampagnendaten.* Erfundene Zahlen
+  für echte zu halten ist das Hauptrisiko dieses Schalters. (Bis #157 stand derselbe Satz
+  zusätzlich als Band auf jeder Web-Seite. Die Seiten sind mit #231 ganz gefallen; der
+  Hinweis hängt seither allein an der Meldung — `foundry.service`, `TESTWELT_STAND` —,
+  und das ist die Stelle, an der die Zahlen tatsächlich hereinkommen.)
 - **Keine Weltbindung.** Die Runde wird an die Testwelt **nicht** gebunden. Sonst gälte
   das Zurückschalten auf den echten Server als Weltwechsel und der Abgleich müsste sich
   verweigern.
