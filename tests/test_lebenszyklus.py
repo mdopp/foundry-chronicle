@@ -430,7 +430,9 @@ def test_neben_einer_zweiten_runde_wird_nichts_uebernommen(konfiguration, stille
     anmelden(stiller_bot, FakeGilde(system=kanal))
 
     assert gilde_von(konfiguration, verwaist.id) is None
-    assert kanal.gesendet == []
+    # Begrüßt wird trotzdem — diese Gilde hat keine Runde. Übernommen wurde aber nichts,
+    # und das ist der Satz, der hier nicht fallen darf.
+    assert kanal.gesendet == [einrichten.WILLKOMMEN]
 
 
 def test_eine_runde_mit_gilde_wird_nicht_umgehaengt(konfiguration, stiller_bot):
@@ -442,7 +444,7 @@ def test_eine_runde_mit_gilde_wird_nicht_umgehaengt(konfiguration, stiller_bot):
     anmelden(stiller_bot, FakeGilde(system=kanal))
 
     assert gilde_von(konfiguration, fremde.id) == NACHBARGILDE
-    assert kanal.gesendet == []
+    assert kanal.gesendet == [einrichten.WILLKOMMEN]
 
 
 def test_in_zwei_gilden_wird_nichts_uebernommen(konfiguration, stiller_bot):
@@ -458,7 +460,8 @@ def test_in_zwei_gilden_wird_nichts_uebernommen(konfiguration, stiller_bot):
     )
 
     assert gilde_von(konfiguration, verwaist.id) is None
-    assert hier.gesendet == [] and dort.gesendet == []
+    assert hier.gesendet == [einrichten.WILLKOMMEN]
+    assert dort.gesendet == [einrichten.WILLKOMMEN]
 
 
 def test_ohne_jede_runde_meldet_sich_der_bot_trotzdem_an(konfiguration, stiller_bot):
@@ -468,7 +471,7 @@ def test_ohne_jede_runde_meldet_sich_der_bot_trotzdem_an(konfiguration, stiller_
     anmelden(stiller_bot, FakeGilde(system=kanal))
 
     assert runden.alle(konfiguration.database_path) == ()
-    assert kanal.gesendet == []
+    assert kanal.gesendet == [einrichten.WILLKOMMEN]
 
 
 def test_das_zweite_anmelden_uebernimmt_nicht_noch_einmal(konfiguration, stiller_bot):
@@ -493,6 +496,68 @@ def test_ohne_kanal_zum_reden_steht_die_uebernahme_nur_im_log(konfiguration, sti
 
     assert gilde_von(konfiguration, verwaist.id) == GILDE
     assert "Kein Kanal" in caplog.text
+
+
+# -- Was der Beitritt verpasst hat --------------------------------------------------------
+
+
+def test_beim_start_wird_die_verpasste_begruessung_genau_einmal_nachgeholt(
+    konfiguration, stiller_bot
+):
+    """Der Fall vom 2026-08-18 (#270): die Autorisierung fiel in einen Neustart.
+
+    Discord spielt ``on_guild_join`` nach einer Wiederverbindung nicht nach — der Bot saß
+    in der Gilde und sagte nie ein Wort, die Gruppe sah nur eine Fehlermeldung. Damit hat
+    sie auch die Offenlegung nie gelesen, und die gibt es genau für diesen Zustand.
+    """
+    lebenszyklus.loeschen(konfiguration, runden.erste(konfiguration.database_path))
+    kanal = FakeKanal("300", "allgemein")
+    gilde = FakeGilde(system=kanal)
+
+    anmelden(stiller_bot, gilde)
+    anmelden(stiller_bot, gilde)
+
+    assert kanal.gesendet == [einrichten.WILLKOMMEN]
+    assert einrichten.OFFENLEGUNG in kanal.gesendet[0]
+
+
+def test_die_begruessung_beim_beitritt_wiederholt_sich_beim_naechsten_start_nicht(
+    konfiguration, stiller_bot
+):
+    """Wer den Satz beim Beitritt bekam, bekommt ihn nach dem nächsten Neustart nicht noch
+    einmal — sonst begrüßte der Bot dieselbe Gruppe bei jedem Wiederverbinden."""
+    lebenszyklus.loeschen(konfiguration, runden.erste(konfiguration.database_path))
+    kanal = FakeKanal("300", "allgemein")
+    gilde = FakeGilde(system=kanal)
+
+    eintritt(stiller_bot, gilde)
+    anmelden(stiller_bot, gilde)
+
+    assert kanal.gesendet == [einrichten.WILLKOMMEN]
+
+
+def test_wer_schon_eingerichtet_ist_bekommt_beim_start_keinen_ersten_satz(
+    konfiguration, stiller_bot
+):
+    lebenszyklus.beanspruchen(konfiguration, GILDE, GILDENAME)
+    kanal = FakeKanal("300", "allgemein")
+
+    anmelden(stiller_bot, FakeGilde(system=kanal))
+
+    assert kanal.gesendet == []
+
+
+def test_ohne_kanal_zum_reden_gilt_die_gilde_nicht_als_begruesst(konfiguration, stiller_bot):
+    """Ein Satz, den niemand lesen konnte, ist keine Offenlegung — also bleibt er offen."""
+    lebenszyklus.loeschen(konfiguration, runden.erste(konfiguration.database_path))
+    stumm = FakeKanal("300", "regeln", darf=False)
+    offen = FakeKanal("301", "tisch")
+
+    anmelden(stiller_bot, FakeGilde(kanaele=(stumm,)))
+    anmelden(stiller_bot, FakeGilde(kanaele=(stumm, offen)))
+
+    assert stumm.gesendet == []
+    assert offen.gesendet == [einrichten.WILLKOMMEN]
 
 
 # -- Einladen ---------------------------------------------------------------------------
@@ -1701,6 +1766,19 @@ def test_einrichten_ist_kein_befehl_fuer_jedes_mitglied(konfiguration, bot):
 def test_discord_kennt_die_schranke_vor_dem_einrichten(bot):
     """Nicht nur wir rechnen sie aus — der Befehl trägt sie bei Discord."""
     assert bot.rechte[gateway.BEFEHL_SETUP].rechte == {"manage_guild": True}
+
+
+def test_die_absage_ohne_runde_nennt_das_recht_das_setup_ueberhaupt_sichtbar_macht(bot):
+    """Punkt 2 aus #270: ein Rat, den der Empfänger nicht befolgen kann, ist keiner.
+
+    Genau diese Schranke blendet ``/setup`` bei Discord für jedes Mitglied ohne »Server
+    verwalten« **vollständig** aus. Am 2026-08-18 wurde der Betreiber deshalb zu einem
+    Befehl geschickt, den er nicht einmal sehen konnte. Der Satz wird hier gegen die
+    Schranke selbst geprüft, damit er nicht stehenbleibt, wenn sie sich ändert.
+    """
+    assert bot.rechte[gateway.BEFEHL_SETUP].rechte == {"manage_guild": True}
+    assert "Server verwalten" in chronik.KEINE_RUNDE
+    assert "`/setup`" in chronik.KEINE_RUNDE
 
 
 def test_loeschen_ist_kein_befehl_fuer_jedes_mitglied(konfiguration, bot):

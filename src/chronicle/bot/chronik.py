@@ -51,9 +51,15 @@ from chronicle.runde import Runde
 
 logger = logging.getLogger(__name__)
 
+# Genannt wird das Recht und nicht nur der Befehl: ``/setup`` trägt
+# ``default_member_permissions(manage_guild=True)``, und Discord blendet ihn damit für
+# jeden ohne »Server verwalten« vollständig aus (#270). Wer ihn nicht sieht, sucht sonst
+# nach einem Befehl, den es für ihn gar nicht gibt — ein Rat, den der Empfänger nicht
+# befolgen kann, ist schlimmer als keiner.
 KEINE_RUNDE = (
     "Für diesen Server ist noch keine Runde eingerichtet — ich lege hier nichts ab und "
-    "erfinde auch keine. `/setup` richtet sie ein; das dauert eine Minute."
+    "erfinde auch keine. **Jemand mit »Server verwalten«** muss einmal `/setup` aufrufen; "
+    "danach funktioniert alles andere."
 )
 
 # Die Runde ist noch da, sie schweigt nur. Das zu sagen ist wichtiger, als es zu erklären:

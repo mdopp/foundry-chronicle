@@ -340,7 +340,9 @@ festhält, wäre die falsche Sorte Gedächtnis.
 
 **Der Server bestimmt die Runde.** Eine Discord-Gilde gehört genau einer Runde; ist für
 einen Server noch keine eingerichtet, sagt der Bot das und verweist auf `/setup`, statt in
-irgendeine Chronik zu schreiben. Eine gesperrte Runde gilt dabei als keine — sie ist
+irgendeine Chronik zu schreiben — samt dem Recht, das dafür nötig ist: Discord blendet
+`/setup` ohne »Server verwalten« vollständig aus, und ein Rat, den der Empfänger nicht
+befolgen kann, ist schlimmer als keiner ([#270](../../issues/270)). Eine gesperrte Runde gilt dabei als keine — sie ist
 verabschiedet und wartet nur noch auf ihre Frist. Ohne das Recht, im Kanal einen Thread
 anzulegen, entsteht keine halbe Sitzung, sondern eine Meldung.
 
