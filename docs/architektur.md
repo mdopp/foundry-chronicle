@@ -125,7 +125,10 @@ Gespräch in die Szenen, und zwar über die **Sitzungsuhr** — jede Äußerung 
 Szene ihres Startzeitpunkts. Voraussetzung ist, dass der Nullpunkt dieser Uhr in
 `recording.started_at` steht; er wird beim Start des Mitschnitts festgehalten, nie
 später geschätzt. Seit #217 schneidet der Recorder eine Sprecherspur in **Häppchen** von
-dreißig Minuten, damit die Verschriftung schon während der Sitzung laufen kann; alle
+fünf Minuten (bis #269 dreißig), und seither läuft die Verschriftung auch wirklich während
+der Sitzung: `chronicle.mitlauf` sieht im Bot-Prozess minütlich in die Warteschlange, in
+einem eigenen Faden neben der Ereignisschleife und still — sichtbar wird weiterhin erst,
+was am Ende steht, nur eben früher. Alle
 Häppchen einer Aufnahme tragen denselben Nullpunkt, und wo die einzelne Datei auf der Uhr
 liegt, sagt `recording.offset_ms`. Aufgeschlagen wird er vor dem Speichern — was in
 `transcript_segment` steht, bleibt sitzungsabsolut, und die Verschränkung merkt vom

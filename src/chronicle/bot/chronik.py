@@ -117,7 +117,14 @@ STUMM_ANGELEGT = (
 SZENE = "Neue Szene »{name}«. Was ab jetzt geschrieben wird, gehört dazu."
 SZENE_OHNE_NAMEN = "Neue Szene. Was ab jetzt geschrieben wird, gehört dazu."
 
-DIKTAT = "Aufnahme angekommen — verschriftet wird sie, sobald du `/chronik fertig` gibst."
+# Seit #269 nimmt der Mitlauf sie meist binnen einer Minute; spätestens der Abschluss holt
+# sie. Zugesagt wird trotzdem nur das Spätestens: was der Mitlauf gerade schafft, hängt an
+# einem Nachbardienst, und ein Versprechen auf die Minute wäre eines, das wir hier nicht
+# halten können.
+DIKTAT = (
+    "Aufnahme angekommen — verschriftet wird sie im Hintergrund, spätestens wenn du "
+    "`/chronik fertig` gibst."
+)
 
 ZU_GROSS = "»{name}« ist größer als {grenze} MB und bleibt liegen."
 

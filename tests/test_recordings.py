@@ -488,6 +488,25 @@ def test_die_meldung_sagt_warum_die_aufnahme_weg_ist(config, sitzung_id):
     assert recordings.pending(runde(config)) == ()
 
 
+def test_ein_ganzer_abend_bleibt_auch_bei_240_haeppchen_eine_zeile(config, sitzung_id):
+    """Seit dem Häppchen von fünf Minuten (#269) sind vier Stunden mit fünf Sprechern
+    rund 240 Dateien statt vierzig. Gezählt wird je Sitzung, die Rechnung trägt das: was
+    wächst, ist die Zahl **in** der Zeile und nicht die Zahl der Zeilen.
+    """
+    for nummer in range(240):
+        aufnahme = hochladen(config, sitzung_id, name=f"haeppchen-{nummer}.wav")
+        altern(config, aufnahme.id, recordings.RETENTION_TAGE + 1)
+
+    meldungen = recordings.sweep(config, runde(config))
+
+    assert meldungen == (
+        recordings.OHNE_TEXT.format(
+            sitzung=sitzung_id, was="240 Aufnahmen", tage=recordings.RETENTION_TAGE
+        ),
+    )
+    assert list(config.recordings_dir.iterdir()) == []
+
+
 def test_eine_nie_verschriftete_spur_verschwindet_nicht_stillschweigend(config, sitzung_id):
     """Die Frist gilt auch ihr — aber niemand darf es erst hinterher merken (#181).
 

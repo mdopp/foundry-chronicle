@@ -26,7 +26,7 @@ from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 
-from chronicle import consent, lebenszyklus, nightly, recordings
+from chronicle import consent, lebenszyklus, mitlauf, nightly, recordings
 from chronicle.bot import (
     BotFehler,
     BotHaelt,
@@ -2812,6 +2812,10 @@ def run(config: Config) -> None:
     # ``jobs.start`` noch einen. Auf der Ereignisschleife bliebe während einer Verschriftung
     # der Herzschlag zu Discord aus, und der Bot fiele mitten in der Nacht vom Gateway.
     nightly.starten(config)
+    # Dasselbe Muster, dieselbe Begründung, nur tagsüber: der Mitlauf verschriftet die
+    # Häppchen, während die Sitzung noch läuft (#269). Mitten in der Sitzung wöge der
+    # Abfall vom Gateway schwerer als nachts — dort schneidet dieser Prozess gerade mit.
+    mitlauf.starten(config)
     try:
         bot.run(config.discord_bot_token)
     except discord.errors.PrivilegedIntentsRequired as fehler:
