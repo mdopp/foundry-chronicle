@@ -58,10 +58,9 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
-from werkzeug.utils import secure_filename
-
 from chronicle import db
 from chronicle import runde as runden
+from chronicle.dateiname import sicherer_dateiname
 from chronicle.runde import Runde
 
 logger = logging.getLogger(__name__)
@@ -225,7 +224,7 @@ def target_path(recordings_dir: Path, session_id: int, name: str) -> Path:
     Der Stamm wird die Quellenkennung der Spur, und die ist je Sitzung eindeutig — zwei
     Diktate derselben Sekunde dürfen einander deshalb nicht überschreiben.
     """
-    stamm = secure_filename(Path(name).stem) or "diktat"
+    stamm = sicherer_dateiname(Path(name).stem) or "diktat"
     zeit = datetime.now(UTC).strftime("%Y%m%dT%H%M%S")
     suffix = Path(name).suffix.lower()
     ziel = recordings_dir / f"sitzung{session_id}-{zeit}-{stamm}{suffix}"

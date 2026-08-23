@@ -84,3 +84,24 @@ jobs:
       - name: Diff-Coverage
         if: github.event_name == 'pull_request'
         run: python3 scripts/check_diff_coverage.py --base "origin/${{ github.base_ref }}"
+
+  # Der Job, der am 2026-08-23 gefehlt hat (#259). Alle anderen laufen gegen ``.[dev]``
+  # und sahen deshalb ein werkzeug, das im Abbild nie stand; 1469 grüne Tests, und der
+  # Bot kam auf der Box nicht bis zur Gateway-Verbindung. Hier wird **derselbe Befehl
+  # wie im Dockerfile** ausgeführt — ``.[discord]``, ohne dev-Extra, nicht editierbar —
+  # und dann importiert. Was hier grün ist, importiert auch im Container.
+  laufzeit:
+    name: Laufzeit-Import
+    needs: pfade
+    if: needs.pfade.outputs.python == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      # libopus0 wie im Abbild: py-cord bringt nur die Bindung mit, und ohne die
+      # Bibliothek scheitert schon der Import von ``discord``.
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libopus0
+      - run: pip install ".[discord]"
+      - run: python3 scripts/pruefe_laufzeit_importe.py

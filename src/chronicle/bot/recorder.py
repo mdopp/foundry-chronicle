@@ -47,11 +47,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Protocol
 
-from werkzeug.utils import secure_filename
-
 from chronicle import consent, lebenszyklus, notes, recordings
 from chronicle.bot import BotFehler, ansage, namen
 from chronicle.config import Config
+from chronicle.dateiname import sicherer_dateiname
 from chronicle.runde import Runde
 
 logger = logging.getLogger(__name__)
@@ -304,7 +303,7 @@ def _loeschen(spur: _Spur) -> bool:
 def _spurname(sprecher: consent.Member) -> str:
     # Der Anzeigename kann aus Zeichen bestehen, die kein Dateiname sein können; dann
     # bleibt die Id. Wer wirklich gesprochen hat, steht ohnehin im Einwilligungsprotokoll.
-    return f"{secure_filename(sprecher.name) or f'sprecher-{sprecher.id}'}.wav"
+    return f"{sicherer_dateiname(sprecher.name) or f'sprecher-{sprecher.id}'}.wav"
 
 
 class Aufnahme:
