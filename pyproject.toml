@@ -8,6 +8,14 @@ requires-python = ">=3.12"
 # ``/healthz``, das Install-Gate der Box, bedient seit #228 ``chronicle.bot.healthz`` mit
 # der Standardbibliothek. ``markupsafe`` bleibt — es steht hier für ``chronicle.search``,
 # das Treffer hervorhebt, und nicht als Anhängsel von Jinja.
+#
+# **``werkzeug`` fehlt hier mit Absicht** (#259). Es kam als Anhängsel von Flask mit, und
+# als Flask ging, ging es mit — das Abbild startete nicht mehr, weil zwei Module
+# ``secure_filename`` importierten. Nachgetragen wurde deshalb nicht das Paket, sondern
+# die Funktion: ``chronicle.dateiname`` macht dasselbe in vier Zeilen, und ein
+# Bot-Prozess ohne WSGI-Fläche hält keinen Webrahmenwerk-Werkzeugkasten für eine
+# Funktion vor. Wer hier etwas hinzufügt: es gibt zwei Tore, die das prüfen —
+# ``tests/test_laufzeit_importe.py`` und der CI-Job »Laufzeit-Import«.
 dependencies = [
     "markupsafe>=2.1",
     "requests>=2.31",
