@@ -41,6 +41,18 @@ Diese Regeln gelten für jede Sitzung, Mensch oder Agent.
     leeren Raum. Wer an den Bot-Token darf, entscheidet jetzt, wer die Template-Variablen
     dieses Dienstes bearbeiten darf — also ServiceBay, wo die Frage ohnehin hingehört
     (#90 bleibt davon unberührt: über einer *Runde* steht weiterhin niemand).
+- **Der Bot führt, statt auf Befehle zu warten** (Betreiber-Entscheidung 2026-08-23,
+  #265). Das schärft die Entscheidung darüber, *wo* bedient wird, zu einer darüber, *wie*:
+  kann der Bot einen Moment selbst erkennen und von sich aus anbieten — ein Knopf im
+  Thread, eine Rückfrage, ein Hinweis zur richtigen Zeit —, ist das besser als ein Befehl.
+  Gebraucht wird ein **Führer durch den Abend**, kein passiver Zuhörer. Ein Slash-Befehl
+  ist die **Rückfallebene**, nicht der Normalfall: jeder ist etwas, das jemand kennen,
+  erinnern und richtig eintippen muss. Der Anlass war der erste echte Spielabend am
+  2026-08-18 — schiefgegangen ist nie ein einzelner Befehl, sondern die Reihenfolge und
+  das Nichtwissen, welche es überhaupt gibt; der Betreiber konnte mehrere der siebzehn
+  selbst nicht erklären, und was der Erbauer nicht erklären kann, findet eine spielende
+  Gruppe nicht. **Folge für den PR-Alltag: kommt ein neuer Slash-Befehl dazu, steht im PR
+  ein Satz, warum der Bot den Moment nicht selbst erkennen kann.**
 - **Eine Instanz trägt mehrere Runden** (#62/#63). Eine Runde ist eine Discord-Gilde
   mit eigenem Foundry-Zugang. Das löst »eine Instanz pro Gruppe« aus Epic #1 ab.
 
@@ -151,12 +163,13 @@ Wert (`db._abgeloeste_werte_verwerfen`, `tests/test_db.py`).
 > entschieden: eine Homelab-Instanz, Backup auf eigenem NAS, und der Betrieb wäre sonst
 > nur über ServiceBay-Template-Variablen zu ändern. Er ist außerdem **unser** Token und
 > nicht der einer fremden Gegenstelle. Die Abwägung hing an drei Bedingungen, die für
-> jedes Geheimnis in `settings.SECRET_KEYS` galten: die Seite steht hinter Authelia und
-> dem `Remote-User`-Guard (seit #190 wörtlich: geglaubt wird die Kopfzeile nur von einer
+> jedes Geheimnis in `settings.SECRET_KEYS` galten: die Seite **stand** hinter Authelia und
+> dem `Remote-User`-Guard (seit #190 wörtlich: geglaubt wurde die Kopfzeile nur von einer
 > Adresse dieser Maschine, `chronicle.herkunft` — davor konnte ein Unangemeldeter im LAN
-> den Token überschreiben); der Wert wird nirgends angezeigt, sondern nur *ob* er gesetzt
-> ist; übertragen wird nur per POST, nie in einer URL, und ein leeres Feld heißt
-> unverändert.
+> den Token überschreiben); der Wert wurde nirgends angezeigt, sondern nur *ob* er gesetzt
+> war; übertragen wurde nur per POST, nie in einer URL, und ein leeres Feld hieß
+> unverändert. Alle drei sind mit der Seite gefallen und stehen hier im Imperfekt, weil
+> keine Zeile dieser Datei eine Seite behaupten soll, die es nicht gibt.
 >
 > **Warum sie fällt:** der harte Einwand gegen Template-Variablen war #33 — der
 > Installations-Assistent würfelte für `type: secret` einen Zufallswert, der sich als

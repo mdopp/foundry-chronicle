@@ -25,6 +25,7 @@ Break into bite-size child issues filed in the repo: each independently shippabl
 ### Classification of build-ready survivors
 - **Security/privacy-sensitive** — the `security` label, **or** a change that meets the draft criterion in `CLAUDE.md` § »Aufnahmen sind personenbezogen« (Operator-Entscheidung 2026-08-14) → set `"security": true` in the unit; gate it by path like anything else (`verify` if path-mandated, else `normal`). It runs the **full loop** but ships through the **pre-merge draft gate** (builder opens a draft, `queue.py park <issue> review --comment "..."`, never auto-merges). Keep it its **own unit** (don't cluster) for clean review attribution. If the `security` label is missing on the issue, add it (`gh issue edit <N> --add-label security`).
   **Open that section and apply it as written — it is deliberately not restated here.** A second copy drifts from the first, and the same change then gets classified two different ways depending on which file the agent read. It turns on what a change *does*, not on which file it sits in, so judge the intended effect, and take the draft when you are unsure.
+- **A Discord unit that would add a slash command** — `CLAUDE.md` § »Der Bot führt, statt auf Befehle zu warten« (#265) makes a command the **fallback**, not the default. Before enqueuing, ask the question the decision demands and put the answer in the unit's `scope`: can the bot recognise this moment itself and offer it — a button in the thread, a follow-up question, a hint at the right time? If a command is still the right shape, `scope` must say **why the bot cannot recognise the moment** (the builder owes that same sentence to the PR). If deciding that needs a product call, it's a needs-refinement question, not a guess.
 - **Everything else** → `gate:"normal"`, unless its files are in the path-mandated list (Step 4 of `builder.md`) → `gate:"verify"`.
 - **Upstream routing does not apply here.** This project is standalone — there is no platform repo to hand a symptom to. A dependency's bug (Foundry, a Discord library, faster-whisper) gets worked around here and, if worth it, reported upstream by a human. The `autoloop:upstream-wait` label is unused in this repo.
 
@@ -53,7 +54,7 @@ Don't exit; don't blindly default to lint.
 
 ## Codebase-evaluation prompt (track c — run verbatim against HEAD)
 
-Evaluate this codebase across its areas: the service and its storage, the Foundry adapter, the Discord surface (note entry above all), the composition step, the Discord recorder, the transcription stage, and the operator page.
+Evaluate this codebase across its areas: the service and its storage, the Foundry adapter, the Discord surface (note entry above all), the composition step, the Discord recorder, and the transcription stage. **There is no operator page** — #231 removed the last of it; the service is a single bot process whose only HTTP listener is `/healthz` on loopback. Don't go looking for one.
 
 Assume the baseline that this is a small, real, self-hosted tool used weekly by a handful of people, one instance carrying several rounds. Do not give generic style-guide complaints unless they have a direct, measurable impact on bugs or developer velocity.
 
