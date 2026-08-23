@@ -15,11 +15,15 @@ in dieser Sitzung gesprochen hat und wie die Figuren der Kampagne heißen, weiß
 Dienst nie. Er zählt die Token mit dem echten Tokenizer nach und meldet, was er dabei
 fallen lässt; hier steht die Rangfolge davor und eine Schätzung, die eher zu viel
 verwirft als zu wenig.
+
+Und hier steht der Rückweg: ``registerpapagei`` erkennt, wenn genau diese Liste als
+Transkript **zurückkommt** (#262).
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+import re
+from collections.abc import Iterable, Sequence
 
 # Whispers Dekoder-Kontext: 448 Token (``max_target_positions``). Aus **demselben**
 # Fenster kommen Vorspann und erkannter Text, und faster-whisper füllt es in dieser
@@ -70,3 +74,64 @@ def capped(names: Iterable[str], *, max_tokens: int = MAX_TOKEN) -> tuple[str, .
         gesehen.add(sauber)
         gewaehlt.append(sauber)
     return tuple(gewaehlt)
+
+
+# Woran ein Glied endet. Bindestriche stehen nicht dabei: sie halten Namen zusammen
+# (»Sturm-Wind«), und ein Gedankenstrich mitten in einem Satz macht das Glied ohnehin zu
+# lang, um noch als Name durchzugehen.
+_GLIEDER = re.compile(r"[,;:.!?…\n\r\t]+")
+
+# Wo die Grenze zwischen Papagei und Rede liegt (#262).
+#
+# Ein einzeln stehender Name ist Rede: »Erlok.« kann die Antwort auf »wer war das?« sein,
+# und den zu verwerfen hieße, echte Sprache zu löschen, um erfundene zu verhindern. Zwei
+# nebeneinander sind es auch noch — zwei Angesprochene, zwei Ziele. **Ab dem dritten**
+# kippt es: drei bloße Namen in einem Segment, ohne ein Verb, einen Artikel oder eine
+# Partikel dazwischen, sind eine Liste, und gesprochen wird nicht in Listen. Was dabei im
+# schlimmsten Fall verlorengeht, ist die Auskunft, dass drei Namen fielen — die trägt keine
+# Chronik. Was ohne die Grenze bleibt, ist erfundener Text in einem Protokoll, das Wochen
+# später niemand mehr nachprüft, und das ist der teurere der beiden Fehler.
+MINDEST_GLIEDER = 3
+MAX_WOERTER = 2
+
+
+def _normal(text: str) -> str:
+    return " ".join(text.split()).casefold()
+
+
+def _namensfoermig(glied: str) -> bool:
+    """Ein bis zwei Wörter, keins davon kleingeschrieben — so sieht ein Name aus.
+
+    Kleinschreibung ist der Verräter der Rede: Verben, Artikel, Partikeln, »und«, »nein«
+    tragen sie, Eigennamen nicht. Nicht-Buchstaben (Ziffern, fremde Schriftzeichen aus
+    einer verstümmelten Ausgabe) gelten als groß — sie sprechen weder für noch gegen Rede.
+    """
+    woerter = glied.split()
+    return 1 <= len(woerter) <= MAX_WOERTER and not any(wort[0].islower() for wort in woerter)
+
+
+def registerpapagei(text: str, register: Sequence[str]) -> bool:
+    """Ist dieses Segment nur das Register, das wir vorgespannt haben — zurückgegeben?
+
+    Whisper füllt stille Abschnitte mit dem, worauf es vorgespannt wurde, und liefert die
+    Namen dieser Runde als Transkript zurück (#262). Nichts davon ist gesprochen worden.
+
+    Verlangt werden drei Dinge zugleich, und die beiden ersten sind die Bremse: **jedes**
+    Glied muss namensförmig sein — ein einziges »wer ist noch da?« daneben rettet das
+    Segment —, es müssen ``MINDEST_GLIEDER`` sein, und die **Mehrheit** muss wörtlich aus
+    dem Register stammen. Keine reine Mehrheit, sondern eine unter den beiden anderen
+    Bedingungen: der Erkenner gibt das Register verstümmelt zurück (aus einem Namen wird
+    »Zie近pe«), eine Forderung »alle« liefe deshalb an genau dem Fall vorbei, der gemeldet
+    wurde. Umgekehrt reicht Mehrheit allein nicht — »Arion, Hamed, Gwendol — wer ist noch
+    da?« ist Rede und bleibt.
+
+    Ohne Register gibt es nichts zurückzugeben; dann ist das hier nicht zuständig.
+    """
+    if not register:
+        return False
+    glieder = [teil for teil in (" ".join(t.split()) for t in _GLIEDER.split(text)) if teil]
+    if len(glieder) < MINDEST_GLIEDER or not all(_namensfoermig(teil) for teil in glieder):
+        return False
+    bekannt = {_normal(name) for name in register}
+    treffer = sum(1 for teil in glieder if _normal(teil) in bekannt)
+    return treffer * 2 > len(glieder)

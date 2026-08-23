@@ -189,6 +189,58 @@ def test_die_namen_der_sitzung_stehen_vor_dem_zwischenspeicher(scope, welt):
     assert "Aelin Sturmwind" in namen[1:]
 
 
+# --- Vokabular: der Rückweg (#262) --------------------------------------------------
+
+# Das Register einer Runde, wie es als ``hotwords`` mitgeht. Erfunden, nicht abgeschrieben:
+# die Namen aus der gemeldeten Spur sind Figuren- und Spielernamen einer echten Gruppe und
+# gehören nicht ins Repo. Nachgebaut ist die Form — Wiederholungen, verstümmelte Glieder.
+REGISTER = (
+    "Aelin Sturmwind",
+    "Brok Eisenfaust",
+    "Erlok",
+    "Arion",
+    "Hamed",
+    "Gwendol",
+    "Garret",
+    "Werth",
+    "Heimbringer",
+)
+
+# Was der Erkenner in der stillen Passage zurückgab: das Register, teils verstümmelt.
+PAPAGEI = (
+    "Brok Eisenfaust, Brok Eisenfaust, Zie近pe, Geschwil, Arion, Hamed, Gwendol, "
+    "Achseg Werth, Garret, Erlok, Erlok, Erlok, Erlok."
+)
+
+
+def test_das_zurueckgegebene_register_ist_keine_aeusserung():
+    assert vocabulary.registerpapagei(PAPAGEI, REGISTER)
+
+
+def test_ein_einzelner_name_ist_rede_und_bleibt():
+    """Die Grenze: »Erlok.« kann die Antwort auf »wer war das?« sein."""
+    assert not vocabulary.registerpapagei("Erlok.", REGISTER)
+
+
+def test_zwei_namen_nebeneinander_bleiben():
+    assert not vocabulary.registerpapagei("Arion, Hamed!", REGISTER)
+
+
+def test_ein_gesprochenes_wort_rettet_das_ganze_segment():
+    assert not vocabulary.registerpapagei("Arion, Hamed, Gwendol — wer ist noch da?", REGISTER)
+    assert not vocabulary.registerpapagei("Arion und Hamed greifen Erlok an.", REGISTER)
+
+
+def test_drei_kurze_wiederholungen_ohne_register_bleiben():
+    """»Nein, nein, nein« ist Rede — und steht in keinem Register."""
+    assert not vocabulary.registerpapagei("Nein, nein, nein.", REGISTER)
+    assert not vocabulary.registerpapagei("Ja. Ja. Ja.", REGISTER)
+
+
+def test_ohne_register_gibt_es_nichts_zurueckzugeben():
+    assert not vocabulary.registerpapagei(PAPAGEI, ())
+
+
 # --- Zeitstempel --------------------------------------------------------------------
 
 
@@ -235,6 +287,40 @@ def test_das_vokabular_der_sitzung_geht_in_den_erkenner(config, scope, spur, wel
     assert "Aelin Sturmwind" in erkenner.vokabular
     erwartet = vocabulary.capped(service.names(scope, sitzung_id))
     assert ergebnis.vocabulary_names == len(erwartet)
+
+
+def test_die_stille_gibt_das_register_zurueck_und_es_bleibt_draussen(
+    config, scope, spur, welt, caplog
+):
+    """#262: eine Spur mit stillen Abschnitten, das Register gefüllt.
+
+    Der Erkenner liefert für die Stille die vorgespannten Namen zurück. Vor dem Riegel
+    stand das wörtlich in der Chronik — erfundener Text, und zwar schon bei der
+    Verschriftung. Die echte Äußerung derselben Spur muss dabei unversehrt durchkommen.
+    """
+    store.save(scope, project(welt, UNSER_KONTO, fetched_at=STAND))
+    sitzung_id = sitzung(scope)
+    erkenner = Erkenner(
+        Segment(start=0.0, end=2.5, text=" Aelin Sturmwind zieht das Schwert."),
+        Segment(
+            start=30.0,
+            end=60.0,
+            text=" Aelin Sturmwind, Brok Eisenfaust, Aelin Sturmwind, Aelin Sturmwind.",
+        ),
+    )
+
+    with caplog.at_level("INFO"):
+        ergebnis = service.transcribe_session(
+            config, runde(config), sitzung_id, spur, model=erkenner
+        )
+
+    assert "Aelin Sturmwind" in erkenner.vokabular
+    assert ergebnis.segment_count == 1
+    zeilen = segmente(scope, sitzung_id)
+    assert [z["text"] for z in zeilen] == ["Aelin Sturmwind zieht das Schwert."]
+    # Gezählt, nicht genannt (#194, #199).
+    verworfen = [zeile for zeile in caplog.messages if "verworfen" in zeile]
+    assert verworfen and all("Sturmwind" not in zeile for zeile in verworfen)
 
 
 def test_ein_zweiter_lauf_ersetzt_die_spur(config, scope, spur):

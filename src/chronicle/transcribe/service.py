@@ -28,6 +28,10 @@ andere Frage als »steckt eine Äußerung darin«; und er sieht nur die eigenen 
 die hochgeladenen. Alles trifft sich erst hier, vor dem Modell. Die Schranke zusätzlich
 dort zu ziehen hieße, dieselbe Regel an zwei Stellen zu pflegen — und es bliebe der Weg,
 auf dem sie umgangen wird.
+
+Dieselbe Schranke ein zweites Mal, hinter dem Modell: ``_ohne_papagei`` verwirft, was nur
+das vorgespannte Namensregister zurückgibt (#262). Die erste Schranke fragt vor dem Lauf,
+ob überhaupt Ton da ist; diese fragt danach, ob das Zurückgekommene Rede war.
 """
 
 from __future__ import annotations
@@ -101,10 +105,13 @@ class Transcript:
         """Der Lauf fand keine einzige Äußerung — und hat damit nichts zu melden.
 
         Seit der Mitschnitt in Häppchen läuft (#217) ist das der Normalfall: wer eine halbe
-        Stunde zuhört, hinterlässt ein Häppchen ohne ein Wort darin. Erfundene Sätze fängt
-        die Stille-Erkennung (#209) davor ab; bliebe die Meldung, läse die Runde am Ende
-        einer Sitzung zwanzigmal denselben Satz über nichts. Der Stand steht weiter an der
-        Zeile — er ist gesucht auffindbar, drängt sich aber niemandem auf.
+        Stunde zuhört, hinterlässt ein Häppchen ohne ein Wort darin. Erfundene Sätze fangen
+        die Stille-Erkennung des Nachbardienstes und ``_ohne_papagei`` (#209, #262) davor
+        ab — der zweite Riegel, weil der erste seit #216 nicht mehr unserer ist und ein
+        Häppchen aus reiner Stille auch dann noch das Register zurückgab. Bliebe die
+        Meldung, läse die Runde am Ende einer Sitzung zwanzigmal denselben Satz über
+        nichts. Der Stand steht weiter an der Zeile — er ist gesucht auffindbar, drängt
+        sich aber niemandem auf.
 
         Nicht dasselbe wie ``uebersprungen``: das ist der Fall, in dem gar nicht erst
         gerechnet wurde, und **der** gehört gesagt.
@@ -213,6 +220,32 @@ def kennung(session_id: int, job_id: int | None = None) -> str:
     return f"Job {job_id} in Sitzung {session_id}"
 
 
+def _ohne_papagei(
+    segments: Iterator[Segment], register: tuple[str, ...], marke: str
+) -> Iterator[Segment]:
+    """Was nur das vorgespannte Register zurückgibt, ist keine Äußerung (#262).
+
+    **Warum diese Schranke hier steht und nicht drüben.** Die Stille-Erkennung aus #209
+    war ``vad_filter`` an unserem eigenen faster-whisper; mit #216 ist das Modell in den
+    Nachbardienst gezogen, und der Schalter mit ihm. ``POST /transcribe`` nimmt Pfad,
+    Sprache und Wortvorgaben entgegen und sonst nichts — wir können dort weder einstellen
+    noch ablesen, wie mit Stille verfahren wird. Was durchkommt, kommt mit **unserem**
+    Register zurück, und nur wir kennen es. Also liegt der zweite Riegel hier, und er hält
+    unabhängig davon, was der Nachbar tut.
+
+    Gezählt wird, nicht genannt: die verworfenen Texte sind Figuren- und Spielernamen und
+    haben im Log des Betreibers nichts verloren (#194, #199).
+    """
+    verworfen = 0
+    for teil in segments:
+        if vocabulary.registerpapagei(teil.text, register):
+            verworfen += 1
+            continue
+        yield teil
+    if verworfen:
+        logger.info("%s: %s Segmente verworfen — nur das Register, keine Rede", marke, verworfen)
+
+
 def _mit_fortschritt(segments: Iterator[Segment], marke: str) -> Iterator[Segment]:
     gemeldet = 0.0
     for teil in segments:
@@ -295,7 +328,11 @@ def transcribe_session(
 
         logger.info("%s: Spur beginnt, %s Namen vorgegeben", marke, len(eigennamen))
         segmente = segment_rows(
-            _mit_fortschritt(erkenner.transcribe(audio_path, hotwords=eigennamen), marke),
+            _ohne_papagei(
+                _mit_fortschritt(erkenner.transcribe(audio_path, hotwords=eigennamen), marke),
+                eigennamen,
+                marke,
+            ),
             offset_ms=offset_ms,
         )
         store(scope, session_id, spur, segmente, _now())

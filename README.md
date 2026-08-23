@@ -180,6 +180,16 @@ Eigennamen dieser Sitzung mit — erst, wer im Chat-Log gesprochen hat, dann der
 Foundry-Zwischenspeicher, hart auf rund 224 Token gekappt. Die Stille-Erkennung (#209)
 und die Dekodierung der Telefon-Formate liegen mit dem Modell drüben.
 
+**Was von drüben zurückkommt, wird gegengelesen.** In stillen Abschnitten gibt der
+Erkenner die vorgespannten Namen als Transkript zurück, und die landeten unverändert in
+der Chronik (#262) — erfundener Text, noch vor dem Sprachmodell. Ein Segment, das aus
+mindestens drei bloßen Namen besteht und mehrheitlich wörtlich aus dem Register stammt,
+wird deshalb verworfen. Ein einzeln stehender Name überlebt, zwei nebeneinander auch, und
+ein einziges gesprochenes Wort dazwischen rettet das ganze Segment: die Grenze ist so
+gezogen, dass sie eher einen Papagei durchlässt als eine Äußerung löscht. Dass sie hier
+liegt und nicht drüben, ist kein Umweg — seit #216 können wir die Stille-Erkennung des
+Nachbardienstes weder einstellen noch ablesen, und das Register kennen ohnehin nur wir.
+
 **Einen Rückfall gibt es nicht.** Der CPU-Weg aus #84 ist ersatzlos entfallen — das ist so
 entschieden, nicht vergessen. Ist der Erkenner aus, bleibt die Spur **wartend** liegen,
 der nächtliche Lauf sagt es auf seiner Karte und schreibt für diese Sitzung **keine**
