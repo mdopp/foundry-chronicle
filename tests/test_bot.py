@@ -2353,17 +2353,23 @@ def test_ohne_kanal_chat_geht_die_vorstellung_dorthin_wo_der_befehl_kam(
     assert kanal.verbindung.schneidet
 
 
-def test_ohne_eigene_runde_nimmt_die_gilde_nicht_auf(konfiguration, ohne_espeak, runde):
-    """Dieselbe Absage wie vor ``/chronik start``, und vor dem Beitreten in den Kanal."""
+@pytest.mark.parametrize("welcher", ["start", "test"])
+def test_ohne_eigene_runde_nimmt_die_gilde_nicht_auf(konfiguration, ohne_espeak, runde, welcher):
+    """Dieselbe Absage wie vor ``/chronik start``, und vor dem Beitreten in den Kanal.
+
+    Und damit vor jeder Ankündigung (#270): im Kanal steht kein Wort, das die nächste
+    Zeile zurücknehmen müsste — nur die Absage an den, der den Befehl gab.
+    """
     db.init(konfiguration.database_path)
     bot = gateway.baue(konfiguration)
     ctx = FakeCtx(runde.mira)
 
-    asyncio.run(befehl(bot, "start")(ctx))
+    asyncio.run(befehl(bot, welcher)(ctx))
 
     (antwort,) = ctx.antworten
     assert chronik.KEINE_RUNDE in antwort
     assert runde.kanal.verbindung is None
+    assert runde.kanal.geschrieben == []
 
 
 def test_die_ruhende_runde_nimmt_nichts_mehr_auf(konfiguration, sitzung_id, ohne_espeak, runde):
@@ -2557,21 +2563,48 @@ def test_der_lauf_der_einen_gilde_ist_nicht_der_der_anderen(
     assert laeufe.fuer_gilde("13") is None
 
 
-def test_start_ohne_sitzung_trennt_wieder(konfiguration, ohne_espeak, runde):
+@pytest.mark.parametrize("welcher", ["start", "test"])
+def test_ohne_sitzung_wird_abgesagt_bevor_irgendetwas_angekuendigt_ist(
+    konfiguration, ohne_espeak, runde, welcher
+):
+    """Punkt 1 aus #270: erst prüfen, dann ansagen.
+
+    Am 2026-08-18 kam der Bot in den Sprachkanal, schrieb die vollständige
+    Einwilligungs-Ansage hinein — »gleich kommt die hörbare Ansage, danach höre ich zu« —
+    und stellte erst danach fest, dass es keine Sitzung gibt; die nächste Zeile nahm alles
+    zurück. Eine zurückgenommene Einwilligungs-Ansage ist schlimmer als keine, also fällt
+    hier weder eine Ankündigung noch ein Widerruf: der Bot betritt den Kanal gar nicht.
+    """
     unsere_runde(konfiguration)
     bot = gateway.baue(konfiguration)
     ctx = FakeCtx(runde.mira)
 
-    asyncio.run(befehl(bot, "start")(ctx))
+    asyncio.run(befehl(bot, welcher)(ctx))
 
-    (antwort,) = ctx.antworten
-    assert antwort.startswith("Das hat nicht geklappt:")
-    assert recorder.OHNE_SITZUNG in antwort
-    assert runde.kanal.verbindung.getrennt
+    assert ctx.antworten == [recorder.OHNE_SITZUNG]
+    assert runde.kanal.geschrieben == []
+    assert runde.kanal.verbindung is None
+    assert der_lauf(bot, konfiguration).aufnahme is None
+
+
+def _start_stolpert(monkeypatch, grund=recorder.VERSCHOBEN_BEIM_START):
+    """Der Start scheitert **nach** der Vorstellung — dort, wo es einen Widerruf braucht.
+
+    Bis #270 genügte dafür die fehlende Sitzung. Seither prüft der Befehl sie, bevor er
+    ankündigt — genau darum ging es —, und die Zweige darunter brauchen einen Anlass, der
+    erst hinter der Ankündigung eintritt. ``VERSCHOBEN_BEIM_START`` ist einer davon: der
+    Bot wird gezogen, während die hörbare Ansage läuft.
+    """
+
+    async def stolpert(*args, **rest):
+        raise recorder.AufnahmeFehler(grund)
+
+    monkeypatch.setattr(recorder, "starten", stolpert)
+    return grund
 
 
 def test_ein_gescheiterter_start_nimmt_die_vorstellung_dort_zurueck_wo_sie_steht(
-    konfiguration, ohne_espeak, runde
+    konfiguration, sitzung_id, ohne_espeak, runde, monkeypatch
 ):
     """Die Absage ist ephemer, die Ankündigung ist öffentlich — das war die Lücke (#189).
 
@@ -2579,7 +2612,7 @@ def test_ein_gescheiterter_start_nimmt_die_vorstellung_dort_zurueck_wo_sie_steht
     dem Glauben, er werde festgehalten. Nur wer den Befehl tippte, erführe je das
     Gegenteil.
     """
-    unsere_runde(konfiguration)
+    grund = _start_stolpert(monkeypatch)
     bot = gateway.baue(konfiguration)
     ctx = FakeCtx(runde.mira)
 
@@ -2588,7 +2621,7 @@ def test_ein_gescheiterter_start_nimmt_die_vorstellung_dort_zurueck_wo_sie_steht
     gesagt = [text for text, _ in runde.kanal.geschrieben]
     widerruf = gesagt[-1]
     assert "".join(gesagt[:-1]) == gateway.VORSTELLUNG
-    assert widerruf == gateway.WIDERRUF.format(grund=recorder.OHNE_SITZUNG)
+    assert widerruf == gateway.WIDERRUF.format(grund=grund)
     assert "ich schneide nicht mit" in widerruf
     assert not runde.kanal.verbindung.schneidet
     assert runde.kanal.verbindung.getrennt
@@ -2686,7 +2719,7 @@ def test_die_halb_zugestellte_vorstellung_wird_auch_zurueckgenommen(
 
 
 def test_ein_stolperndes_trennen_nimmt_den_widerruf_nicht_mit(
-    konfiguration, ohne_espeak, runde, monkeypatch
+    konfiguration, sitzung_id, ohne_espeak, runde, monkeypatch
 ):
     """Der Widerruf ist die Zusage an die Aufgenommenen, das Trennen nur Aufräumen.
 
@@ -2694,7 +2727,7 @@ def test_ein_stolperndes_trennen_nimmt_den_widerruf_nicht_mit(
     Ankündigung im Kanal stehen, sobald es das tat — der Bot saß dann obendrein noch da.
     Deshalb wird erst geredet und danach aufgeräumt.
     """
-    unsere_runde(konfiguration)
+    grund = _start_stolpert(monkeypatch)
     echt_verbinden = runde.kanal.connect
 
     async def verbindet_und_stolpert_beim_trennen():
@@ -2710,7 +2743,7 @@ def test_ein_stolperndes_trennen_nimmt_den_widerruf_nicht_mit(
 
     gesagt = [text for text, _ in runde.kanal.geschrieben]
     assert "".join(gesagt[:-1]) == gateway.VORSTELLUNG
-    assert gesagt[-1] == gateway.WIDERRUF.format(grund=recorder.OHNE_SITZUNG)
+    assert gesagt[-1] == gateway.WIDERRUF.format(grund=grund)
     assert not runde.kanal.verbindung.getrennt
     assert not runde.kanal.verbindung.schneidet
     assert der_lauf(bot, konfiguration).aufnahme is None
@@ -2730,7 +2763,7 @@ def _stolpert_beim_trennen(kanal, monkeypatch):
 
 
 def test_der_widerruf_kommt_auch_wenn_die_vorstellung_selbst_abreisst(
-    konfiguration, ohne_espeak, runde, monkeypatch
+    konfiguration, sitzung_id, ohne_espeak, runde, monkeypatch
 ):
     """Zweig 1 von vieren: die Vorstellung bricht mittendrin ab, noch vor dem Mitschnitt.
 
@@ -2766,7 +2799,7 @@ def test_der_widerruf_kommt_auch_wenn_die_vorstellung_selbst_abreisst(
 
 
 def test_der_widerruf_kommt_auch_wenn_der_empfangstest_nicht_anlaeuft(
-    konfiguration, ohne_espeak, runde, monkeypatch
+    konfiguration, sitzung_id, ohne_espeak, runde, monkeypatch
 ):
     """Zweig 4 von vieren: dieselbe Reihenfolge im Empfangstest, hinter der Ankündigung.
 
@@ -2774,7 +2807,7 @@ def test_der_widerruf_kommt_auch_wenn_der_empfangstest_nicht_anlaeuft(
     an, wird sie zurückgenommen — und zwar bevor aufgeräumt wird, weil das Aufräumen ans
     Netz geht und den Widerruf sonst mitnimmt.
     """
-    unsere_runde(konfiguration)
+    grund = _start_stolpert(monkeypatch)
     _stolpert_beim_trennen(runde.kanal, monkeypatch)
     bot = gateway.baue(konfiguration)
 
@@ -2782,7 +2815,7 @@ def test_der_widerruf_kommt_auch_wenn_der_empfangstest_nicht_anlaeuft(
 
     gesagt = [text for text, _ in runde.kanal.geschrieben]
     assert gesagt[0] == gateway.PROBE_VORSTELLUNG
-    assert gesagt[-1] == gateway.WIDERRUF.format(grund=recorder.OHNE_SITZUNG)
+    assert gesagt[-1] == gateway.WIDERRUF.format(grund=grund)
     assert not runde.kanal.verbindung.getrennt
     assert probespuren(konfiguration) == []
 
@@ -2799,10 +2832,10 @@ def test_die_probe_vorstellung_passt_in_eine_nachricht():
 
 
 def test_wer_nach_einem_gescheiterten_start_dazukommt_wird_nicht_aufgenommen(
-    konfiguration, ohne_espeak, runde
+    konfiguration, sitzung_id, ohne_espeak, runde, monkeypatch
 ):
     """Der Nachzügler zur Aufnahme, die es nicht gibt: keine Ansage, kein Protokoll."""
-    unsere_runde(konfiguration)
+    _start_stolpert(monkeypatch)
     bot = gateway.baue(konfiguration)
     asyncio.run(befehl(bot, "start")(FakeCtx(runde.mira)))
     gespielt_vorher = len(runde.kanal.verbindung.gespielt)
@@ -2816,10 +2849,10 @@ def test_wer_nach_einem_gescheiterten_start_dazukommt_wird_nicht_aufgenommen(
 
 
 def test_der_widerruf_haelt_den_urspruenglichen_fehler_nicht_auf(
-    konfiguration, ohne_espeak, runde, monkeypatch, caplog
+    konfiguration, sitzung_id, ohne_espeak, runde, monkeypatch, caplog
 ):
     """Ein zweites Mal abgewiesener Kanal darf die Absage an den Aufrufer nicht schlucken."""
-    unsere_runde(konfiguration)
+    grund = _start_stolpert(monkeypatch)
     echt = runde.kanal.send
     anfang = gateway.WIDERRUF.split("{")[0]
 
@@ -2835,7 +2868,7 @@ def test_der_widerruf_haelt_den_urspruenglichen_fehler_nicht_auf(
     with caplog.at_level(logging.ERROR):
         asyncio.run(befehl(bot, "start")(ctx))
 
-    assert recorder.OHNE_SITZUNG in ctx.antworten[0]
+    assert grund in ctx.antworten[0]
     assert runde.kanal.verbindung.getrennt
     assert "Widerruf" in caplog.text
 
@@ -3171,24 +3204,24 @@ def test_der_empfangstest_ohne_sprachkanal_verbindet_nicht(
     assert runde.kanal.verbindung is None
 
 
-def test_der_empfangstest_ohne_sitzung_trennt_wieder(
-    konfiguration, ohne_espeak, runde, kurze_probe
+def test_der_gescheiterte_empfangstest_trennt_wieder(
+    konfiguration, sitzung_id, ohne_espeak, runde, kurze_probe, monkeypatch
 ):
     """Der Abbruch **vor** dem Mitschnitt: den räumt ``pruefen`` nicht mehr ab."""
-    unsere_runde(konfiguration)
+    grund = _start_stolpert(monkeypatch)
     bot = gateway.baue(konfiguration)
     ctx = FakeCtx(runde.mira)
 
     asyncio.run(befehl(bot, "test")(ctx))
 
-    assert recorder.OHNE_SITZUNG in ctx.antworten[0]
+    assert grund in ctx.antworten[0]
     assert runde.kanal.verbindung.getrennt
     assert der_lauf(bot, konfiguration).probe is False
     # Auch diese Ankündigung steht öffentlich im Kanal und kündigt zehn Sekunden Aufnahme
     # an — sie darf so wenig allein stehenbleiben wie die vor einer Sitzung.
     gesagt = [text for text, _ in runde.kanal.geschrieben]
     assert "".join(gesagt[:-1]) == gateway.PROBE_VORSTELLUNG
-    assert gesagt[-1] == gateway.WIDERRUF.format(grund=recorder.OHNE_SITZUNG)
+    assert gesagt[-1] == gateway.WIDERRUF.format(grund=grund)
 
 
 def test_die_ruhende_runde_wird_auch_nicht_geprueft(

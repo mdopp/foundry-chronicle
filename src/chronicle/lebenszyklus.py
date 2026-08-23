@@ -235,6 +235,57 @@ def _gilde_schreiben(database_path: Path, runde_id: int, guild_id: str) -> None:
         connection.close()
 
 
+# Der Vermerk, dass eine Gilde ihren ersten Satz bekommen hat. Er liegt in ``meta`` und
+# damit bei der Instanz, nicht an der Runde: eine Gilde ohne Runde hat keine Zeile, an der
+# er hängen könnte — und genau die ist der Fall, für den es ihn gibt.
+BEGRUESST = "begruesst:{gilde}"
+
+
+@runden.instanzweit
+def ungegruesst(config: Config, gilde: Gilde) -> bool:
+    """Ob dieser Gilde noch nie etwas gesagt wurde — die Lücke, die ``on_guild_join`` lässt.
+
+    Discord spielt den Beitritt nach einer Wiederverbindung nicht nach. Fällt die
+    Autorisierung in einen Neustart, sitzt der Bot in der Gilde und sagt nie ein Wort; die
+    Gruppe sieht nur eine Fehlermeldung und hat die Offenlegung nie gelesen (#270).
+
+    Gemeint ist die Gilde ohne Runde **im Dienst** — eine ruhende zählt dazu, denn ihre
+    Rückkehr hat dasselbe Ereignis verpasst und wartet ebenso auf die Offenlegung.
+    """
+    vorhanden = runden.fuer_gilde(config.database_path, str(gilde.id))
+    if vorhanden is not None and not vorhanden.gesperrt:
+        return False
+    return _vermerk(config.database_path, BEGRUESST.format(gilde=gilde.id)) is None
+
+
+@runden.instanzweit
+def begruessung_vermerken(database_path: Path, guild_id: str) -> None:
+    """Gesagt ist gesagt — der Vermerk kommt nach dem Zustellen, nie davor.
+
+    Sonst gilt eine Gilde als begrüßt, in der die Nachricht am Schreibrecht scheiterte:
+    die Offenlegung wäre für immer ausgeblieben, und niemand käme je darauf zurück.
+    """
+    connection = db.connect(database_path)
+    try:
+        with connection:
+            connection.execute(
+                "INSERT INTO meta (key, value) VALUES (?, ?) "
+                "ON CONFLICT (key) DO UPDATE SET value = excluded.value",
+                (BEGRUESST.format(gilde=guild_id), _stempel(_now())),
+            )
+    finally:
+        connection.close()
+
+
+def _vermerk(database_path: Path, schluessel: str) -> str | None:
+    connection = db.connect(database_path)
+    try:
+        zeile = connection.execute("SELECT value FROM meta WHERE key = ?", (schluessel,)).fetchone()
+    finally:
+        connection.close()
+    return None if zeile is None else zeile["value"]
+
+
 @runden.instanzweit
 def sperren(database_path: Path, guild_id: str) -> Runde | None:
     """Sofort still, Löschung auf den Kalender. Ein zweiter Rauswurf verschiebt nichts."""

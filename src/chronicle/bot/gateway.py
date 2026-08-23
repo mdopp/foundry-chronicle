@@ -1546,6 +1546,48 @@ def _begruessungskanal(gilde):
     return None
 
 
+async def _begruessen(config: Config, kanal, guild_id: str) -> None:
+    """Der erste Satz in einer Gilde — und erst danach Vermerk und Freigabe.
+
+    Die Reihenfolge trägt zweimal dasselbe: als begrüßt zu gelten oder wieder im Dienst zu
+    sein, ohne dass die Gruppe die Offenlegung je gelesen hat, ist genau der Zustand, für
+    den es sie gibt.
+    """
+    # Eine abgelaufene Runde wird hier gelöscht, mit Dateien und Zeilen: nicht auf der
+    # Ereignisschleife, sonst steht der ganze Bot währenddessen.
+    zurueck = await asyncio.to_thread(einrichten.begruessung, config, guild_id)
+    await _zustellen(kanal.send, zurueck.text)
+    lebenszyklus.begruessung_vermerken(config.database_path, guild_id)
+    if zurueck.wartet is not None:
+        einrichten.wieder_im_dienst(config, zurueck.wartet)
+
+
+async def _begruessung_nachholen(config: Config, bot) -> None:
+    """Nachholen, was ``on_guild_join`` verpasst hat — einmal je Gilde, nicht je Neustart.
+
+    Discord spielt den Beitritt nach einer Wiederverbindung nicht nach; fällt die
+    Autorisierung in einen Neustart, steht der Bot in der Gilde und sagt nie ein Wort
+    (#270). Hier und nicht in einem Befehl, weil nur hier bekannt ist, in welchen Gilden
+    er steht — und weil eine Gruppe, die auf den richtigen Befehl kommen müsste, den Satz
+    gerade nicht gelesen hat.
+
+    Ein Fehlschlag hält weder die nächste Gilde noch den Start auf, und ohne Vermerk holt
+    der nächste Anlauf ihn nach.
+    """
+    for gilde in bot.guilds:
+        wer = lebenszyklus.Gilde(id=str(gilde.id), name=gilde.name)
+        if not lebenszyklus.ungegruesst(config, wer):
+            continue
+        kanal = _begruessungskanal(gilde)
+        if kanal is None:
+            logger.warning("Kein Kanal zum Begrüßen in %s", wer.id)
+            continue
+        try:
+            await _begruessen(config, kanal, wer.id)
+        except Exception:  # noqa: BLE001
+            logger.exception("Die nachgeholte Begrüßung blieb in %s ungesagt", wer.id)
+
+
 async def _verwaiste_runde_uebernehmen(config: Config, bot) -> None:
     """Eine Runde aus der Zeit vor den Gilden zurückholen — und es der Gruppe sagen.
 
@@ -2282,6 +2324,13 @@ def baue(config: Config):
         if lauf.probe:
             await _zustellen(ctx.respond, PROBE_LAEUFT, ephemeral=True)
             return
+        # Vor dem Beitreten und damit vor jeder Ankündigung: ohne Sitzung bricht
+        # ``recorder.starten`` ohnehin ab — bis dahin stünde die vollständige
+        # Einwilligungs-Ansage im Kanal, und die nächste Zeile nähme sie zurück. Eine
+        # zurückgenommene Einwilligungs-Ansage ist schlimmer als keine (#270).
+        if chronik.letzte_sitzung(runde) is None:
+            await _zustellen(ctx.respond, recorder.OHNE_SITZUNG, ephemeral=True)
+            return
         kanal = getattr(getattr(ctx.author, "voice", None), "channel", None)
         if kanal is None:
             await _zustellen(ctx.respond, NICHT_IM_KANAL, ephemeral=True)
@@ -2348,6 +2397,11 @@ def baue(config: Config):
             return
         if lauf.probe:
             await _zustellen(ctx.respond, PROBE_LAEUFT, ephemeral=True)
+            return
+        # Dieselbe Prüfung vor derselben Ankündigung: genau hier lief sie am 2026-08-18 zu
+        # spät, und die Gruppe las die Ansage, die die nächste Zeile zurücknahm (#270).
+        if chronik.letzte_sitzung(runde) is None:
+            await _zustellen(ctx.respond, recorder.OHNE_SITZUNG, ephemeral=True)
             return
         kanal = getattr(getattr(ctx.author, "voice", None), "channel", None)
         if kanal is None:
@@ -2720,12 +2774,7 @@ def baue(config: Config):
         if kanal is None:
             logger.warning("Kein Kanal zum Begrüßen in %s", gilde.id)
             return
-        # Eine abgelaufene Runde wird hier gelöscht, mit Dateien und Zeilen: nicht auf der
-        # Ereignisschleife, sonst steht der ganze Bot währenddessen.
-        zurueck = await asyncio.to_thread(einrichten.begruessung, config, str(gilde.id))
-        await _zustellen(kanal.send, zurueck.text)
-        if zurueck.wartet is not None:
-            einrichten.wieder_im_dienst(config, zurueck.wartet)
+        await _begruessen(config, kanal, str(gilde.id))
 
     @bot.event
     async def on_guild_remove(gilde) -> None:
@@ -2735,6 +2784,10 @@ def baue(config: Config):
     async def on_ready() -> None:
         # Vor den Fristen: eine Runde, die niemand mehr erreicht, ist der dringendere Fall.
         await _verwaiste_runde_uebernehmen(config, bot)
+        # Und danach, nicht davor: eine übernommene Runde ist keine Gilde ohne Runde mehr,
+        # und die Übernahme sagt sich selbst — zwei Sätze zum selben Anlass wären einer zu
+        # viel.
+        await _begruessung_nachholen(config, bot)
         # Der Prozess läuft ohnehin durch — er ist damit der zuverlässigste Ort, die in
         # der Ansage zugesagte Frist einzuhalten, auch wenn der nächtliche Stapel steht.
         # Ein beendeter Faden ist nicht ``None``: ohne ``_erledigt`` bliebe eine Zusage

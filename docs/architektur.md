@@ -8,7 +8,10 @@ Betreiber-Seite ist mit #231 gefallen, der Dienst ist ein einzelner Bot-Prozess.
 
 Der Lebenszyklus einer Runde hängt an der Gilde (#68, `chronicle.lebenszyklus`): Beim
 Betreten sagt der Bot einmal, was er tut und **dass der Betreiber der Box alles lesen
-kann**; `/setup` beansprucht die Runde für den Server oder legt sie an. Verlässt der Bot
+kann**; `/setup` beansprucht die Runde für den Server oder legt sie an. Discord spielt das
+Betreten nach einer Wiederverbindung nicht nach — fällt die Autorisierung in einen
+Neustart, holt `on_ready` den Satz nach, **einmal je Gilde** (#270; der Vermerk steht unter
+`begruesst:<gilde>` in `meta`, weil eine Gilde ohne Runde keine eigene Zeile hat). Verlässt der Bot
 die Gilde, wird sie sofort gesperrt und nach 30 Tagen vollständig gelöscht — Dateien
 eingeschlossen. Gesperrt heißt in jedem Faden: der nächtliche Lauf überspringt sie,
 Verschriften, Komponieren und Foundry-Abgleich weigern sich (`lebenszyklus.ruht`), und das
