@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 from conftest import UNSER_KONTO, runde
 
-from chronicle import db
+from chronicle import db, notes
 from chronicle.foundry import store
 from chronicle.foundry.world import project
 
@@ -273,6 +273,39 @@ def test_eine_sitzung_von_vor_der_kennung_bekommt_die_spalte_und_ihren_wert(tmp_
     assert all(kennungen)
     assert len(set(kennungen)) == 2
     assert db.current_schema_version(pfad) == db.SCHEMA_VERSION
+
+
+def test_eine_sitzung_von_vor_der_zeitgrenze_gilt_nicht_als_laufend(tmp_path):
+    """``thread_id`` ist mit #271 fort; was aus der Zeit davor liegt, läuft nicht mehr.
+
+    Der Vorgabewert der neuen Spalte trägt die Wanderung: stünde dort ``1``, sperrte jede
+    alte Sitzung die erste neue aus, denn zwei dürfen sich nicht überlappen.
+    """
+    pfad = tmp_path / "vor-der-grenze.sqlite3"
+    verbindung = db.connect(pfad)
+    try:
+        with verbindung:
+            verbindung.execute(
+                "CREATE TABLE session (id INTEGER PRIMARY KEY, runde_id INTEGER NOT NULL, "
+                "played_on TEXT NOT NULL, title TEXT, created_at TEXT NOT NULL, "
+                "thread_id TEXT, UNIQUE (id, runde_id))"
+            )
+            verbindung.execute(
+                "INSERT INTO session (id, runde_id, played_on, created_at, thread_id) "
+                "VALUES (1, 1, ?, ?, '5001')",
+                ("2026-05-01", STAND),
+            )
+    finally:
+        verbindung.close()
+
+    db.init(pfad)
+
+    unsere = runde(pfad)
+    # Nicht trivial wahr: die alte Zeile gehört jetzt wirklich dieser Runde.
+    assert notes.session(unsere, 1) is not None
+    assert notes.running_session(unsere) is None
+    # Und der Kanal der alten Sitzung ist leer: der Thread ist fort, nicht umgezogen.
+    assert notes.channel_of_session(unsere, 1) is None
 
 
 BESTAND = Path(__file__).with_name("bestand.sql")

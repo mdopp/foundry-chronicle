@@ -82,7 +82,7 @@ SPRACHE_FEHLT = (
 # und Discord setzt den Token zurück. Genau so ist es am 2026-08-10 passiert.
 RECHTE_FEHLEN = (
     "Discord verweigert die Anmeldung: dem Bot fehlt die Freigabe für den Nachrichten-Inhalt. "
-    "Ohne sie kommt jede Notiz aus dem Thread leer an, deshalb fordert der Bot sie an. "
+    "Ohne sie kommt jede Notiz aus dem Kanal leer an, deshalb fordert der Bot sie an. "
     "Einschalten unter https://discord.com/developers/applications → die Anwendung → Bot → "
     "Privileged Gateway Intents → Message Content Intent. "
     "Ich versuche es bis dahin nicht wieder — bitte danach den Dienst neu starten."
@@ -125,15 +125,13 @@ PROBE_LAEUFT = (
 # es zu dem Zeitpunkt nicht mehr gab.
 LEER_FRIST = 90
 
-# Beendet wird der **Mitschnitt**, nicht die Sitzung: der Thread bleibt offen, Notizen
-# gehen weiter, und ``/chronik fertig`` bleibt eine Entscheidung der Runde. Sie hier
-# mitzunehmen hieße, den ganzen Lauf ohne jemanden anzustoßen, der ihn wollte — und er
-# verlangt ohnehin ein Passwort, das niemand eingibt, der schon gegangen ist.
+# Seit #271 endet hier der ganze Abend und nicht nur der Mitschnitt: den Abschluss zu
+# vergessen war der häufigste Fehler, und wer schon gegangen ist, tippt ihn nicht mehr.
+# Das Passwort dafür liegt seit dem Start im Merkzettel — niemand muss es noch eingeben.
 LEER_BEENDET = (
     "Im Sprachkanal war niemand mehr — ich habe den Mitschnitt beendet und bin gegangen. "
-    "Die Sitzung bleibt offen: hier weiterzuschreiben geht, und `/chronik fertig` bleibt "
-    "eure Entscheidung. Für einen neuen Mitschnitt `/aufnahme start` — die Ansage läuft "
-    "dann noch einmal."
+    "Damit schließe ich auch die Sitzung ab. Für einen neuen Abend `/chronik start`; für "
+    "einen neuen Mitschnitt `/aufnahme start` — die Ansage läuft dann noch einmal."
 )
 
 # Nicht angehalten, sondern gesagt: der Betreiber hat entschieden, dass niemand ungefragt
@@ -215,14 +213,14 @@ ABGERISSEN = (
 )
 
 BEFEHLE = (
-    "• `/chronik start` — ich lege die Sitzung an und öffne ihren Thread; ab dort wird jede "
+    "• `/chronik start` — ich lege die Sitzung an; ab dann wird in diesem Kanal jede "
     "Nachricht eine Notiz. Das Fenster davor nimmt das Foundry-Passwort; gebt ihr eines, "
     "stelle ich die offenen Würfe aus eurem Foundry ein, während ihr spielt.\n"
     "• `/szene <Name>` — die Trennlinie zur nächsten Szene.\n"
     "• `/aufnahme start` — ich komme in deinen Sprachkanal, spiele eine hörbare Ansage "
     "und schneide **erst danach** mit, je Stimme eine eigene Spur.\n"
     "• `/aufnahme stop` — ich höre auf und gehe wieder; die Spuren werden nachts zu Text. "
-    "Bin ich allein im Kanal, höre ich von selbst auf und sage es im Thread.\n"
+    "Bin ich allein im Kanal, höre ich von selbst auf und sage es hier.\n"
     f"• `/aufnahme test` — {recorder.PROBE_DAUER} Sekunden lauschen und dir allein sagen, ob "
     "der Ton hier wirklich ankommt. Angesagt wird auch dafür, und alles Mitgeschnittene "
     "wird sofort gelöscht.\n"
@@ -269,7 +267,7 @@ HILFE = (
     # und dieser Fall tritt erst mitten in der Sitzung ein. Gesagt wird er ohnehin,
     # wenn er eintritt.
     "Bleibt eine Person allein im Sprachkanal zurück, schneide ich weiter mit und sage "
-    "ihr das im Thread; `/aufnahme stop` beendet es. "
+    "ihr das im Kanal der Sitzung; `/aufnahme stop` beendet es. "
     f"Die Aufnahmen werden nach {recordings.RETENTION_TAGE} Tagen gelöscht.\n"
     f"{BEFEHLE}"
     "Meine Antworten sieht nur, wer den Befehl gegeben hat."
@@ -766,40 +764,52 @@ async def _abriss_melden(hinaus, jedes: dict, zugestellt: int, ganz: int) -> Non
         await hinaus(_abrisssatz(zugestellt, ganz), **jedes)
 
 
-async def _in_den_thread(bot, aufnahme: Aufnahme, text: str) -> bool:
-    """Ein Satz in den Thread der Sitzung — dort liest die Runde ohnehin mit.
+async def _in_den_kanal(bot, aufnahme: Aufnahme, text: str) -> bool:
+    """Ein Satz in den Kanal der Sitzung — dort liest die Runde ohnehin mit.
 
     Nicht ``_sagen``: das antwortet einem, der gerade etwas angeklickt hat. Hier gibt es
     niemanden, der wartet — der Beobachter meldet sich von selbst, an die Runde.
 
     Zurück kommt, ob es einen Weg dorthin gab. Wo der Satz nur begleitet, ist das
     gleichgültig; wo er die Bedingung des Weitermachens ist, hängt daran die Entscheidung.
-    Ein **fortgeräumter** Thread ist dabei kein Weg, sondern ein fehlender: Discords 404
+    Ein **fortgeräumter** Kanal ist dabei kein Weg, sondern ein fehlender: Discords 404
     kommt beim nächsten Ereignis genauso wieder, und wer ihn wie ein Zucken behandelt,
     schneidet ewig weiter, ohne dass je etwas gesagt wurde. Alles andere fliegt weiter —
     ein zuckendes Discord ist beim nächsten Wechsel womöglich wieder da.
     """
     # Die Aufnahme hält ihre Runde seit Stunden. Ist sie inzwischen gelöscht und ihre
-    # Kennung neu vergeben, führte die Frage nach dem Thread in eine fremde Kampagne.
+    # Kennung neu vergeben, führte die Frage nach dem Kanal in eine fremde Kampagne.
     gemeint = lebenszyklus.dieselbe(aufnahme.runde)
     if gemeint is None:
         return False
-    return await _in_den_sitzungsthread(bot, gemeint, aufnahme.session_id, text)
+    return await _in_den_sitzungskanal(bot, gemeint, aufnahme.session_id, text)
 
 
-async def _in_den_sitzungsthread(bot, runde: Runde, session_id: int, text: str) -> bool:
-    """Derselbe Weg, ohne Aufnahme: ein Befehl kennt seine Runde, aber keinen Mitschnitt."""
-    thread_id = chronik.thread_der_sitzung(runde, session_id)
-    if thread_id is None:
-        logger.info("Sitzung %s hat keinen Thread — es bleibt ungesagt.", session_id)
-        return False
-    kennung = int(thread_id)
+async def _sitzungskanal(bot, runde: Runde, session_id: int):
+    """Der Discord-Kanal, in dem diese Sitzung geführt wird — oder nichts."""
+    kanal_id = chronik.kanal_der_sitzung(runde, session_id)
+    if kanal_id is None:
+        logger.info("Sitzung %s hat keinen Kanal — es bleibt ungesagt.", session_id)
+        return None
+    kennung = int(kanal_id)
     discord = _discord()
     try:
-        thread = bot.get_channel(kennung) or await bot.fetch_channel(kennung)
-        await _zustellen(thread.send, text)
+        return bot.get_channel(kennung) or await bot.fetch_channel(kennung)
     except discord.NotFound:
-        logger.info("Thread %s der Sitzung %s ist fort — es bleibt ungesagt.", kennung, session_id)
+        logger.info("Kanal %s der Sitzung %s ist fort — es bleibt ungesagt.", kennung, session_id)
+        return None
+
+
+async def _in_den_sitzungskanal(bot, runde: Runde, session_id: int, text: str) -> bool:
+    """Derselbe Weg, ohne Aufnahme: ein Befehl kennt seine Runde, aber keinen Mitschnitt."""
+    kanal = await _sitzungskanal(bot, runde, session_id)
+    if kanal is None:
+        return False
+    discord = _discord()
+    try:
+        await _zustellen(kanal.send, text)
+    except discord.NotFound:
+        logger.info("Der Kanal der Sitzung %s ist fort — es bleibt ungesagt.", session_id)
         return False
     return True
 
@@ -829,7 +839,7 @@ async def _allein_melden(bot, lauf: _Lauf, zurueck: consent.Member) -> None:
     vermerkt.add(zurueck.id)
     lauf.allein = (aufnahme, vermerkt)
     try:
-        angekommen = await _in_den_thread(bot, aufnahme, ALLEIN)
+        angekommen = await _in_den_kanal(bot, aufnahme, ALLEIN)
     except Exception:  # noqa: BLE001
         vermerkt.discard(zurueck.id)
         logger.exception("Der Satz ans Alleinsein kam nicht durch — beim nächsten Wechsel neu")
@@ -878,7 +888,7 @@ async def _von_selbst_zuordnen(bot, aufnahme: Aufnahme, runde, kennung: str, sta
         logger.info("Das Konto war beim Betreten schon vergeben — es bleibt beim Discord-Namen.")
         return
     try:
-        gesagt = await _in_den_thread(bot, aufnahme, stand.vermerk)
+        gesagt = await _in_den_kanal(bot, aufnahme, stand.vermerk)
     except Exception:  # noqa: BLE001
         logger.exception("Der Vermerk zur Zuordnung beim Betreten kam nicht durch")
         gesagt = False
@@ -966,7 +976,7 @@ async def _beenden_und_sagen(
         # obwohl offen ist, ob noch mitgeschnitten wird. Also wenigstens in den Thread.
         logger.exception("Das Beenden von selbst ist gescheitert")
         with contextlib.suppress(Exception):
-            await _in_den_thread(bot, aufnahme, gescheitert)
+            await _in_den_kanal(bot, aufnahme, gescheitert)
         return
     if not meldungen:
         # Leer heißt: ein anderer war schneller. Dann gehört ihm auch der Satz dazu.
@@ -982,27 +992,57 @@ async def _beenden_und_sagen(
     # zugestellten Text — mehrere Stücke sind mehrere Aufrufe. Erkennbar bleibt das nicht
     # durch diesen Fang, sondern weil ``_zustellen`` den Abriss vorher selbst ansagt.
     try:
-        await _in_den_thread(bot, aufnahme, " ".join((beendet, *meldungen)))
+        await _in_den_kanal(bot, aufnahme, " ".join((beendet, *meldungen)))
     except Exception:  # noqa: BLE001
         logger.exception("Das Ende des Mitschnitts blieb ungesagt")
 
 
-async def _abschied_bei_leere(bot, lauf: _Lauf, aufnahme: Aufnahme) -> None:
-    """Nach der Frist noch einmal nachsehen — und dann Schluss.
+async def _abschied_bei_leere(config: Config, bot, lauf: _Lauf, aufnahme: Aufnahme) -> None:
+    """Nach der Frist noch einmal nachsehen — und dann Schluss, für den ganzen Abend.
 
     Noch einmal, weil die Frist genau dafür da ist: wer die Verbindung verliert und
     zurückkommt, soll keine zerschnittene Sitzung vorfinden. Und gegen *diese* Aufnahme,
     denn in der Frist kann eine neue begonnen haben, die diese Frist nichts angeht.
+
+    Seit #271 endet hier nicht nur der Mitschnitt, sondern die **Sitzung**: Zahlen holen,
+    verschriften, Chronik schreiben. Der häufigste Fehler war, den Abschluss zu vergessen
+    und einen Abend ohne Zahlen zu bekommen — und wer schon gegangen ist, tippt ihn nicht
+    mehr. Die zweite Prüfung oben gilt damit auch für den Abschluss.
     """
     await asyncio.sleep(LEER_FRIST)
     if lauf.aufnahme is not aufnahme or _menschen(lauf):
         return
     # Die Sitzung statt des Kanalnamens (#206/#211): der Name beschreibt die Struktur
     # einer fremden Gilde, die Sitzungskennung niemanden. Sie genügt trotzdem, weil an
-    # ihr Thread, Spuren und Einwilligungsnachweis hängen — und im Nachweis steht der
+    # ihr Kanal, Spuren und Einwilligungsnachweis hängen — und im Nachweis steht der
     # Kanalname weiter, einen Schritt entfernt und dort mit Grund.
-    logger.info("Sitzung %s: Sprachkanal leer — der Mitschnitt endet.", aufnahme.session_id)
+    logger.info("Sitzung %s: Sprachkanal leer — der Abend endet.", aufnahme.session_id)
     await _beenden_und_sagen(bot, lauf, aufnahme, LEER_BEENDET, LEER_GESCHEITERT)
+    await _sitzung_von_selbst_abschliessen(config, bot, lauf, aufnahme)
+
+
+async def _sitzung_von_selbst_abschliessen(
+    config: Config, bot, lauf: _Lauf, aufnahme: Aufnahme
+) -> None:
+    """Den Abschluss anstoßen, den sonst ``/chronik fertig`` anstößt — mit denselben Mitteln.
+
+    Kein Passwort von hier: ``None`` heißt »keines gegeben«, und der Abgleich liest dann
+    den Merkzettel, in dem seit dem Start das Passwort dessen liegt, der die Sitzung
+    eröffnet hat. Ein eigener Weg an ein Geheimnis entsteht dadurch nicht.
+
+    Läuft die Sitzung nicht mehr, geschieht nichts: dann hat die Runde selbst
+    abgeschlossen, und ein zweiter Lauf schriebe die Chronik ein zweites Mal.
+    """
+    gemeint = lebenszyklus.dieselbe(aufnahme.runde)
+    if gemeint is None or not chronik.sitzung_laeuft(gemeint, aufnahme.session_id):
+        return
+    kanal = await _sitzungskanal(bot, gemeint, aufnahme.session_id)
+    try:
+        antwort = await _abschliessen(config, gemeint, aufnahme.session_id, None, lauf, kanal)
+    except Exception:  # noqa: BLE001
+        logger.exception("Der Abschluss von selbst ist gescheitert")
+        return
+    await _in_den_sitzungskanal(bot, gemeint, aufnahme.session_id, antwort)
 
 
 async def _abschied_beim_kanalverlust(bot, lauf: _Lauf, aufnahme: Aufnahme, woanders: bool) -> None:
@@ -1074,7 +1114,7 @@ async def _ereignisstrom(config: Config, bot, lauf: _Lauf, strom: chronik.Strom)
             await asyncio.sleep(chronik.STROM_ABSTAND)
             try:
                 meldung = await _blick(config, strom)
-                zugestellt = not meldung.text or await _in_den_sitzungsthread(
+                zugestellt = not meldung.text or await _in_den_sitzungskanal(
                     bot, strom.runde, strom.session_id, meldung.text
                 )
             except Exception:  # noqa: BLE001
@@ -1164,25 +1204,6 @@ def _runde_des_ereignisses(config: Config, payload):
     return chronik.runde_der_gilde(config, payload.guild_id)
 
 
-async def _thread_anlegen(ctx, name: str):
-    """Der Thread ist die Sitzung — ohne ihn wird auch keine angelegt.
-
-    Gefragt wird **vorher**, ob der Kanal überhaupt Threads trägt: der eingebettete Chat
-    eines Sprachkanals ist ein ``VoiceChannel``, und dort scheitert schon der
-    Attributzugriff — vor jedem ``HTTPException``-Fang und damit als roher
-    ``AttributeError`` (#241). Das ist keine fehlende Berechtigung, sondern eine andere
-    Art Kanal, also bekommt die Gruppe auch einen anderen Satz.
-    """
-    anlegen = getattr(ctx.channel, "create_thread", None)
-    if not callable(anlegen):
-        raise chronik.ChronikFehler(chronik.KANAL_OHNE_THREAD)
-    discord = _discord()
-    try:
-        return await anlegen(name=name)
-    except discord.HTTPException as fehler:
-        raise chronik.ChronikFehler(chronik.KEIN_THREAD) from fehler
-
-
 def _vorstellungsziel(ctx, kanal):
     """Der Chat des Sprachkanals — und wo der keiner ist, der Ort, an dem der Befehl kam.
 
@@ -1216,6 +1237,10 @@ async def _widerrufen(ziel, fehler: BaseException) -> None:
 
 def _melder(ziel) -> Callable[[str], None]:
     """Der Lauf trägt sich in einem eigenen Faden zu; melden darf nur die Ereignisschleife."""
+    if ziel is None:
+        # Der Abschluss von selbst kennt keinen Aufrufer, und der Kanal der Sitzung kann
+        # fortgeräumt sein. Der Lauf ist deshalb kein Fehlschlag — er sagt nur nichts.
+        return lambda text: None
     schleife = asyncio.get_running_loop()
 
     def melden(text: str) -> None:
@@ -1297,18 +1322,20 @@ def _gefenstert(rueckruf):
 async def _sitzung_eroeffnen(
     config: Config, bot, lauf: _Lauf, ziel, runde, titel: str, eingabe: str, wer: str
 ) -> str:
-    """Thread, Sitzung, Passwort, Beobachter — ein Satz, der jeden Ausgang unterscheidbar macht.
+    """Sitzung, Passwort, Beobachter — ein Satz, der jeden Ausgang unterscheidbar macht.
+
+    Die Sitzung hängt seit #271 an dem Kanal, in dem der Befehl kam — im Regelfall der
+    Chat des Sprachkanals, an dem die Runde ohnehin sitzt. Kein Thread mehr: damit fällt
+    zugleich der Absturz weg, den ``/chronik start`` in einem Sprachkanal auslöste (#241).
 
     Der breite Fang ist das Sicherheitsnetz, das ``@antwortet`` sonst um den Befehlsrumpf
     legt: aus dem Rückruf eines Fensters entkäme eine Ausnahme in py-cords ``on_error``,
-    das die Interaktion **nie** beantwortet — der Thread stünde, die Sitzung nicht, und
-    niemand erführe es. Scheitert dagegen erst die Begrüßung, stehen Thread und Sitzung
-    schon; dann darf die Antwort nicht »versuch es noch einmal« sagen, sonst legt der
-    zweite Anlauf beides ein zweites Mal an.
+    das die Interaktion **nie** beantwortet — die Sitzung stünde und niemand erführe es.
+    Scheitert dagegen erst die Ansage, steht die Sitzung schon; dann darf die Antwort
+    nicht »versuch es noch einmal« sagen, sonst legt der zweite Anlauf eine zweite an.
     """
     try:
-        thread = await _thread_anlegen(ziel, chronik.threadname(titel))
-        sitzung = chronik.sitzung_anlegen(runde, str(thread.id), titel)
+        sitzung = chronik.sitzung_anlegen(runde, str(ziel.channel.id), titel)
         gemerkt = chronik.passwort_merken(runde, eingabe, wer)
     except BotFehler as fehler:
         return GESCHEITERT.format(grund=str(fehler))
@@ -1322,11 +1349,13 @@ async def _sitzung_eroeffnen(
     if gemerkt:
         _strom_stellen(config, bot, lauf, runde, sitzung)
     try:
-        await _zustellen(thread.send, chronik.ANGELEGT)
+        # Öffentlich und nicht nur an den Aufrufer: ab jetzt wird jede Zeile in diesem
+        # Kanal eine Notiz, und das muss lesen können, wer hier tippt.
+        await _zustellen(ziel.channel.send, chronik.ANGELEGT)
     except Exception:  # noqa: BLE001
-        logger.exception("Begrüßung im neuen Thread nicht zugestellt")
-        return f"{chronik.STUMM_ANGELEGT.format(thread=thread.mention)} {hinweis}"
-    return f"{chronik.THREAD_STEHT.format(thread=thread.mention)} {hinweis}"
+        logger.exception("Ansage zur neuen Sitzung nicht zugestellt")
+        return f"{chronik.STUMM_ANGELEGT} {hinweis}"
+    return f"{chronik.SITZUNG_STEHT} {hinweis}"
 
 
 def _startfenster(config: Config, bot, lauf: _Lauf, runde, titel: str):
@@ -2080,17 +2109,17 @@ async def _uebernahme_sagen(bot, runde, ergebnis: erinnern.Zugeordnet) -> None:
     Runde nebeneinander zeigt, trägt das nicht — die Ansicht reicht bis ``PRO_SEITE``, und
     ab der sechsten Person steht die Vorbesitzerin weder vorher noch nachher darin.
 
-    Zwei Wege, und der **Thread** ist der belastbare: er erreicht die Runde auch dann, wenn
-    die Vorbesitzerin keine Direktnachrichten annimmt. Deren Ausbleiben verwirft die
+    Zwei Wege, und der **Kanal der Sitzung** ist der belastbare: er erreicht die Runde auch
+    dann, wenn die Vorbesitzerin keine Direktnachrichten annimmt. Deren Ausbleiben verwirft die
     Übernahme deshalb nicht; es wird protokolliert, ohne Namen und ohne Kennung.
 
-    Ob es den Thread überhaupt gab, steht im Log: eine Runde ohne Sitzung hat keinen, und
-    »der Thread-Vermerk trägt sie« wäre dann eine Auskunft über etwas, das nicht geschehen
-    ist.
+    Ob es den Weg überhaupt gab, steht im Log: eine Runde ohne Sitzung hat keinen, und
+    »der Vermerk im Kanal trägt sie« wäre dann eine Auskunft über etwas, das nicht
+    geschehen ist.
     """
     wer, vorher, spieler = ergebnis.wer, ergebnis.vorher, ergebnis.spieler
     sitzung = chronik.letzte_sitzung(runde)
-    im_thread = sitzung is not None and await _in_den_sitzungsthread(
+    im_kanal = sitzung is not None and await _in_den_sitzungskanal(
         bot,
         runde,
         sitzung,
@@ -2098,10 +2127,10 @@ async def _uebernahme_sagen(bot, runde, ergebnis: erinnern.Zugeordnet) -> None:
             name=wer.discord_name, spieler=spieler.name, vorher=vorher.discord_name
         ),
     )
-    if not im_thread:
+    if not im_kanal:
         # Nur die Tatsache, keine Vorhersage: der Brief an die Vorbesitzerin geht erst
         # danach los und kann genauso scheitern. Ob er ankam, sagt der Aufrufer.
-        logger.warning("Die Übernahme steht in keinem Thread.")
+        logger.warning("Die Übernahme steht in keinem Kanal.")
     kennung = int(vorher.discord_user_id)
     ziel = bot.get_user(kennung) or await bot.fetch_user(kennung)
     await _zustellen(
@@ -2242,7 +2271,7 @@ def _betretensansicht(bot, aufnahme: Aufnahme, runde, stand: erinnern.Betreten):
         # Gefangen, weil die Antwort oben schon steht: eine Ausnahme von hier machte daraus
         # über ``_geklickt`` ein »hat nicht geklappt«, obwohl die Zuordnung entstanden ist.
         try:
-            await _in_den_thread(
+            await _in_den_kanal(
                 bot,
                 aufnahme,
                 erinnern.MENUE_VERMERK.format(
@@ -2286,13 +2315,13 @@ def _notizdatei(anhang) -> chronik.Notizdatei:
 
 
 def baue(config: Config):
-    """Der Bot mit seinen Befehlen und dem Thread, der die Sitzung ist — ohne Verbindung."""
+    """Der Bot mit seinen Befehlen und der Sitzung, die im Kanal läuft — ohne Verbindung."""
     discord = _discord()
     _sprache_pruefen(discord)
     absichten = discord.Intents.none()
     absichten.guilds = True
     absichten.voice_states = True
-    # Ohne diese beiden ist der Thread ein leerer Behälter: Discord meldete weder die
+    # Ohne diese beiden ist die Sitzung ein leerer Behälter: Discord meldete weder die
     # Nachrichten noch ihren Inhalt, und jede Notiz käme leer an.
     absichten.messages = True
     absichten.message_content = True
@@ -2442,7 +2471,7 @@ def baue(config: Config):
     async def hilfe(ctx) -> None:
         await _zustellen(ctx.respond, HILFE, ephemeral=True)
 
-    @chronikgruppe.command(name="start", description="Sitzung anlegen und den Thread öffnen")
+    @chronikgruppe.command(name="start", description="Sitzung in diesem Kanal beginnen")
     @antwortet
     async def chronik_start(
         ctx,
@@ -2713,7 +2742,7 @@ def baue(config: Config):
     ) -> None:
         runde = chronik.runde_verlangen(config, ctx.guild_id)
         sitzung = chronik.sitzung_verlangen(runde, str(ctx.channel_id))
-        # Sichtbar für alle: die Trennlinie gehört in den Thread, nicht nur zu dem, der
+        # Sichtbar für alle: die Trennlinie gehört in den Kanal, nicht nur zu dem, der
         # sie gezogen hat.
         await _zustellen(ctx.respond, chronik.szene_setzen(runde, sitzung, name), ephemeral=False)
 
@@ -2724,13 +2753,15 @@ def baue(config: Config):
         runde = chronik.runde_der_gilde(config, nachricht.guild.id)
         if runde is None:
             return
-        sitzung = chronik.sitzung_des_threads(runde, str(nachricht.channel.id))
+        # Die Grenze ist die Zeit und nicht mehr der Ort (#271): derselbe Kanal, aber nur
+        # zwischen Start und Abschluss. Davor und danach ist eine Zeile hier Gerede.
+        sitzung = chronik.sitzung_im_kanal(runde, str(nachricht.channel.id))
         if sitzung is None:
             return
         try:
             meldungen = await chronik.aufnehmen(config, runde, sitzung, _nachricht(nachricht))
         except Exception as fehler:  # noqa: BLE001
-            logger.exception("Nachricht im Sitzungs-Thread nicht abgelegt")
+            logger.exception("Nachricht der laufenden Sitzung nicht abgelegt")
             grund = UNERWARTET.format(typ=type(fehler).__name__)
             await _zustellen(nachricht.reply, chronik.NICHT_ABGELEGT.format(grund=grund))
             return
@@ -2756,7 +2787,7 @@ def baue(config: Config):
             ),
         )
         if wechsel.antwort is not None:
-            await _in_den_sitzungsthread(bot, runde, wechsel.sitzung, wechsel.antwort)
+            await _in_den_sitzungskanal(bot, runde, wechsel.sitzung, wechsel.antwort)
 
     @bot.event
     async def on_raw_message_delete(payload) -> None:
@@ -2849,7 +2880,7 @@ def baue(config: Config):
                 # dem ersten Gehen, und wer bei T=89 zurückkommt und bei T=89,5 wieder
                 # geht, hat eine halbe Sekunde Karenz statt der zugesagten neunzig.
                 _leerlauf_absagen(lauf)
-                lauf.leer = asyncio.create_task(_abschied_bei_leere(bot, lauf, aufnahme))
+                lauf.leer = asyncio.create_task(_abschied_bei_leere(config, bot, lauf, aufnahme))
             elif len(verblieben) == 1:
                 await _allein_melden(bot, lauf, verblieben[0])
 

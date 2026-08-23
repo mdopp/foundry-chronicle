@@ -139,7 +139,7 @@ Schnitt nichts. Ein Auswahlweg in Discord ist bewusst verworfen. Was aus den Spu
 kommt, wird bei jedem Lauf ersetzt (`note.origin`); was ein Mensch geschrieben hat,
 bleibt unangetastet. **Ein Diktat hat keine Sitzungsuhr** und wird deshalb nicht
 verschränkt — es bekommt seine Szene über den Zeitpunkt der **Nachricht**, mit der es im
-Thread ankam (`recording.message_at`, #160): dieselbe Regel, nach der eine getippte Notiz
+Kanal der Sitzung ankam (`recording.message_at`, #160): dieselbe Regel, nach der eine getippte Notiz
 ihre Szene findet, und derselbe `note.origin`, also ersetzt der zweite Lauf auch hier.
 Für den Präsenzweg bleibt die Szenenfolge die einzige Zeitachse.
 
@@ -148,7 +148,7 @@ werden nie aus gesprochener oder getippter Sprache rekonstruiert, sondern aus de
 Chat-Log eingesetzt. Das Modell ordnet und verknüpft; es rechnet und rät nicht.
 
 Seit #97 kommen sie **während** der Sitzung: liegt ein Passwort im Speicher, sieht der Bot
-alle zwei Minuten nach und stellt neue Würfe in den Thread — durch denselben
+alle zwei Minuten nach und stellt neue Würfe in den Kanal der Sitzung — durch denselben
 Berechtigungsfilter und denselben System-Adapter wie der Abgleich, und ohne Rückkanal.
 Damit ist die Reihenfolge keine Rekonstruktion aus Zeitstempeln mehr: der Wurf hängt an der
 Szene, die lief, als er fiel. Angehängt wird er als **Fakt** an dieser Szene und nicht als
@@ -156,14 +156,14 @@ Notiz — sonst verlöre die Chronik genau die Grenze zwischen Belegtem und Verb
 für die es diesen Weg gibt. Wie oft nachgesehen wird, ist eine Betriebsfrage: eine Runde
 soll ein fremdes Foundry nicht wund fragen.
 
-**Der Thread ist die Gruppe, nicht das Konto.** Vor ihm liegt deshalb eine zweite, engere
+**Der Sitzungskanal ist die Gruppe, nicht das Konto.** Vor ihm liegt deshalb eine zweite, engere
 Grenze als vor dem Archiv: dort entscheidet die Berechtigungsstufe des angemeldeten Kontos,
 was gespeichert wird — hier entscheidet, ob die Nachricht für **alle** bestimmt war. Ein
 Geflüster an unser Konto ist es nicht, ein blinder Wurf auch nicht, und mit einem
 GM-Zugang (#78) käme sonst beides mitten im Spiel dort an, wo die Runde mitliest. Voll
 bleibt davon unberührt das **Archiv** (`foundry_message`); die Chronik nicht — sie liest
 `scene_foundry_message`, und dort steht nur, was diese engere Grenze passiert hat. Die
-frühere Fassung sagte, eingeengt sei nur der Weg in den Thread; das war ungenau (#219).
+frühere Fassung sagte, eingeengt sei nur der Weg in den Kanal; das war ungenau (#219).
 
 **Und der Abschluss trägt nach, was der Strom nicht geholt hat** (#219). Der Strom war
 lange der einzige Schreiber von `scene_foundry_message` — wer beim Sitzungsstart kein
@@ -250,7 +250,7 @@ passiert ist** — und Teile davon nacherzählen können.
 - **Erst schreiben, dann vermerken** — und das ist die schwächere, ehrliche Zusage. Über
   SQLite und Discord hinweg gibt es kein gemeinsames Zusammenschreiben; eine der beiden
   Reihenfolgen muss danebengehen können, also gilt die, deren Fehlerfall **Schweigen** ist
-  und keine Lüge im Thread. Kommt der Vermerk nicht hinaus, wird die Zuordnung
+  und keine Lüge im Kanal. Kommt der Vermerk nicht hinaus, wird die Zuordnung
   zurückgenommen — und zwar **nur, wenn dort noch genau das steht, was eben geschrieben
   wurde**: dazwischen liegt ein Gang ans Netz, und wer in diesem Fenster über `/zuordnung`
   dieselbe Person umhängt, verlöre seine Entscheidung sonst still. **Scheitert auch die
@@ -263,10 +263,10 @@ passiert ist** — und Teile davon nacherzählen können.
   einen Vermerk stehenließ, der eine Verbindung behauptete, die es nicht gab. Eine Zusage,
   die die Wirklichkeit nicht halten kann, ist schlimmer als eine ehrliche schwächere.
 - **Je schwächer der Beleg, desto mehr Tageslicht** (Betreiber-Entscheidung 2026-08-12).
-  Deshalb steht auch die im Zwiegespräch **gewählte** Zuordnung im Thread — sie hat keinen
+  Deshalb steht auch die im Zwiegespräch **gewählte** Zuordnung im Kanal — sie hat keinen
   Beleg, nur eine Antwort, und der Satz sagt, wie sie zustande kam: gewählt, nicht erkannt.
   Über Namen sagt er **nichts**: ins Menü führt auch die Mehrdeutigkeit, und dort ist der
-  Name gerade derselbe. Anders als beim 1:1-Vermerk ist der Weg in den Thread dort keine
+  Name gerade derselbe. Anders als beim 1:1-Vermerk ist der Weg in den Kanal dort keine
   Bedingung: dort entscheidet niemand, hier hat die Person selbst geantwortet.
 - **Korrigiert wird in `/zuordnung`, und nur dort darf ein Konto umgehängt werden.** Der
   Fall ist echt: benennt sich Brok in »Mira« um, während die echte Mira »Mira am Handy«
@@ -280,8 +280,8 @@ passiert ist** — und Teile davon nacherzählen können.
   der Zuordnung bleibt danach genau eine Zeile stehen. Dass `/zuordnung` die Runde
   nebeneinander zeigt, trägt das **nicht** — die Ansicht reicht bis `PRO_SEITE`, und ab der
   sechsten Person steht die Vorbesitzerin weder vorher noch nachher darin. Also ein
-  **Thread-Vermerk**, der beide nennt, und eine **Nachricht an die Vorbesitzerin**. Der
-  Thread ist der belastbare Weg; ein geschlossenes Postfach wird protokolliert und verwirft
+  **Vermerk im Sitzungskanal**, der beide nennt, und eine **Nachricht an die Vorbesitzerin**.
+  Der Kanal ist der belastbare Weg; ein geschlossenes Postfach wird protokolliert und verwirft
   die Übernahme nicht.
 - **`/zuordnung` kennt keinen `_wer`-Abgleich** — jedes Mitglied handelt in jeder Zeile.
   Das ist so gewollt: nach #62 entscheiden Discords Kanal- und Rollenrechte, wer den Befehl

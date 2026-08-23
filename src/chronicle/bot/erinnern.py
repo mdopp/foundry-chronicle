@@ -144,7 +144,7 @@ SPIELER_WEG = "Diesen Foundry-Spieler kenne ich nicht mehr — ich habe nichts g
 SPIELER_VERGEBEN = (
     "Dieses Foundry-Konto gehört schon jemand anderem — ich habe nichts geändert. "
     "Soll es wechseln, geht das in `/zuordnung`: dort darf ein Konto umgehängt werden, "
-    "und die Runde erfährt es dann im Thread."
+    "und die Runde erfährt es dann im Kanal der Sitzung."
 )
 UEBERNOMMEN = (
     "{name} spielt als {spieler}. Das Konto hatte {vorher} — dort steht jetzt wieder nichts."
@@ -303,20 +303,20 @@ def _sitzungsname(hit: search.Hit) -> str:
     return titel or WER_SITZUNG.format(datum=hit.played_on)
 
 
-def _sprung(runde: Runde, thread_id: str | None, message_id: str | None = None) -> str | None:
+def _sprung(runde: Runde, kanal_id: str | None, message_id: str | None = None) -> str | None:
     """Der Weg zurück an die Stelle — solange es eine gibt.
 
-    Eine Sitzung aus der Zeit vor dem Sitzungs-Thread hat keine; dann steht der Treffer
+    Eine Sitzung, die nie in einem Discord-Kanal lief, hat keine; dann steht der Treffer
     ohne Verweis da, statt hinter einem Verweis ins Leere.
     """
-    if not runde.guild_id or not thread_id:
+    if not runde.guild_id or not kanal_id:
         return None
-    ziel = f"https://discord.com/channels/{runde.guild_id}/{thread_id}"
+    ziel = f"https://discord.com/channels/{runde.guild_id}/{kanal_id}"
     return f"{ziel}/{message_id}" if message_id else ziel
 
 
 def _trefferzeile(runde: Runde, hit: search.Hit) -> str:
-    ziel = _sprung(runde, hit.thread_id, hit.message_id)
+    ziel = _sprung(runde, hit.kanal_id, hit.message_id)
     kopf = _sitzungsname(hit)
     verweis = f" [{SPRUNG}]({ziel})" if ziel else ""
     return f"**{kopf}** — {_hervorgehoben(hit)}{verweis}"
@@ -355,7 +355,7 @@ def suche(runde: Runde, begriff: str) -> Antwort:
 def _erwaehnungen(runde: Runde, eintrag: register.Entry) -> str:
     zeilen = []
     for erwaehnung in eintrag.mentions:
-        ziel = _sprung(runde, erwaehnung.thread_id)
+        ziel = _sprung(runde, erwaehnung.kanal_id)
         name = erwaehnung.title or WER_SITZUNG.format(datum=erwaehnung.played_on)
         zeilen.append(f"[{name}]({ziel})" if ziel else name)
     if not zeilen:

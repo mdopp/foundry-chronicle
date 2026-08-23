@@ -1,12 +1,15 @@
-"""Der Thread ist die Sitzung.
+"""Die Sitzung ist eine Spanne Zeit in einem Kanal.
 
-``/chronik start`` legt beides zugleich an: die Sitzung und den Discord-Thread, in dem sie
-geschrieben wird. Danach braucht es kein Formular mehr — **jede Nachricht im Thread ist
-eine Notiz**, ``/szene`` zieht die Trennlinie zur nächsten, eine Sprachnachricht wird ein
-Diktat, und ``/chronik fertig`` stößt den einen Lauf an, der aus alldem die Chronik macht.
+``/chronik start`` beginnt sie im Kanal, in dem der Befehl kam — seit #271 im Regelfall
+der Chat des Sprachkanals, an dem die Runde ohnehin sitzt, und kein eigener Thread mehr.
+Danach braucht es kein Formular — **jede Nachricht dort ist eine Notiz**, ``/szene`` zieht
+die Trennlinie zur nächsten, eine Sprachnachricht wird ein Diktat, und ``/chronik fertig``
+stößt den einen Lauf an, der aus alldem die Chronik macht. Wird der Sprachkanal leer,
+erkennt der Bot den Abschluss selbst.
 
-Der Thread ist der natürliche Behälter: Anfang, Ende, Teilnehmerliste, Zeitachse — und die
-Runde tippt ohnehin dort.
+Die Grenze ist damit die **Zeit** und nicht mehr der Ort: was vor dem Start oder nach dem
+Abschluss im selben Kanal steht, ist Gerede. Und höchstens eine Sitzung je Runde ist
+offen — das verhinderte vorher der Thread von selbst.
 
 Diese Datei kennt Discord nicht. Sie bekommt Kennungen, Text und Zeitpunkte und gibt Sätze
 zurück; wer sie damit füttert, entscheidet ``gateway.py``.
@@ -14,7 +17,7 @@ zurück; wer sie damit füttert, entscheidet ``gateway.py``.
 Drei Regeln stehen über allem:
 
 * **Die Gilde bestimmt die Runde.** Es gibt hier keinen Rückfall auf »die erste« — ein
-  Thread aus einem fremden Server, der in eine fremde Chronik schriebe, wäre genau das
+  Kanal aus einem fremden Server, der in eine fremde Chronik schriebe, wäre genau das
   Leck, gegen das das Runden-Modell gebaut ist. Ohne Runde passiert nichts, und das wird
   gesagt statt verschluckt.
 * **Die Szene entscheidet der Zeitpunkt der Nachricht**, nicht der des Ablegens. Deshalb
@@ -77,9 +80,17 @@ VERALTET = (
     "nichts geändert — ruf den Befehl noch einmal auf."
 )
 
-NUR_IM_THREAD = (
-    "Das geht nur im Thread einer Sitzung. `/chronik start` beginnt eine — danach dort "
-    "weiterschreiben."
+NUR_IN_DER_SITZUNG = (
+    "Das geht nur, solange hier eine Sitzung läuft. `/chronik start` beginnt eine — "
+    "danach zählt in diesem Kanal alles Getippte."
+)
+
+# Die Grenze, die vorher der Thread von selbst zog: zwei Sitzungen nebeneinander hätten
+# zwei Ziele für dieselbe getippte Zeile, und der Mitschnitt hinge an der falschen (#271).
+SITZUNG_LAEUFT_SCHON = (
+    "Hier läuft schon eine Sitzung — zwei nebeneinander gibt es nicht, sonst wüsste "
+    "niemand, in welche das Getippte gehört. `/chronik fertig` schließt die laufende ab, "
+    "danach beginnt `/chronik start` die nächste."
 )
 
 # Was der Abschluss sagt, wenn wirklich keine Sitzung offen ist. Nur dann ist der Rat zu
@@ -90,34 +101,23 @@ KEINE_SITZUNG = (
     "`/chronik start` beginnt eine."
 )
 
-KEIN_THREAD = (
-    "Ich darf in diesem Kanal keinen Thread anlegen, und eine halbe Sitzung lege ich nicht "
-    "an. Gib mir das Recht dazu oder ruf mich in einem Kanal, in dem ich es habe."
-)
-
-# Nicht dasselbe wie ``KEIN_THREAD``: hier fehlt kein Recht, das jemand geben könnte —
-# der eingebettete Chat eines Sprachkanals ist der Kanal selbst und trägt gar keine
-# Threads. Ein Rat, mir das Recht zu geben, schickte die Gruppe in die Irre (#241).
-KANAL_OHNE_THREAD = (
-    "Hier kann ich keinen Thread öffnen: ein Sprachkanal ist schon sein eigener Chat und "
-    "trägt keine. Ruf `/chronik start` in einem Textkanal auf, dann steht die Sitzung dort."
-)
-
 ANGELEGT = (
     "Die Sitzung läuft. Ab jetzt hier schreiben: **jede Nachricht wird eine Notiz**, eine "
     "Sprachnachricht oder eine Audiodatei wird ein Diktat. `/szene <Name>` beginnt die "
-    "nächste Szene, `/chronik fertig` schließt die Sitzung ab. Wer eine Nachricht ändert "
-    "oder löscht, ändert oder löscht damit auch die Notiz."
+    "nächste Szene, `/chronik fertig` schließt die Sitzung ab — und wenn der Sprachkanal "
+    "leer wird, mache ich das von selbst. Wer eine Nachricht ändert oder löscht, ändert "
+    "oder löscht damit auch die Notiz."
 )
 
-THREAD_STEHT = "Die Sitzung steht: {thread} — dort geht es weiter."
+SITZUNG_STEHT = "Die Sitzung steht — ab jetzt zählt hier alles Getippte."
 
-# Thread und Sitzung stehen, nur die Begrüßung darin kam nicht durch. Das muss anders
-# klingen als ein Fehlschlag: »noch einmal versuchen« legte hier ein zweites Paar an.
+# Die Sitzung steht, nur die Ansage im Kanal kam nicht durch. Das muss anders klingen als
+# ein Fehlschlag: »noch einmal versuchen« legte hier eine zweite an — und niemand außer
+# dem Aufrufer weiß, dass jede Zeile jetzt eine Notiz wird.
 STUMM_ANGELEGT = (
-    "Die Sitzung steht: {thread} — meine Begrüßung darin ist aber nicht angekommen. Ruf "
-    "`/chronik start` **nicht** noch einmal auf, sonst stehen zwei; schreib einfach dort "
-    "weiter, jede Nachricht wird eine Notiz."
+    "Die Sitzung steht — meine Ansage in diesem Kanal ist aber nicht angekommen. Ruf "
+    "`/chronik start` **nicht** noch einmal auf; sag der Runde bitte selbst, dass ab "
+    "jetzt jede Nachricht hier eine Notiz wird."
 )
 
 SZENE = "Neue Szene »{name}«. Was ab jetzt geschrieben wird, gehört dazu."
@@ -314,13 +314,12 @@ FERTIG = (
 
 # Welche Sitzung gemeint ist und wo ihre Chronik erscheint, gehört seit #156 in die
 # Antwort: abgeschlossen wird auch aus dem Sprachkanal, und dort sieht man beides nicht.
-SCHLIESST = "Ich schließe **{sitzung}** ab — die Chronik kommt in {thread}."
+SCHLIESST = "Ich schließe **{sitzung}** ab — die Chronik kommt in {kanal}."
 
-# Sitzungen aus der Weboberfläche haben keinen Thread. Das ist kein Fehlschlag: die
+# Sitzungen aus der Weboberfläche haben keinen Kanal. Das ist kein Fehlschlag: die
 # Chronik entsteht trotzdem, sie wird nur nirgends angehängt.
-SCHLIESST_OHNE_THREAD = (
-    "Ich schließe **{sitzung}** ab — einen Thread hat sie nicht, die Chronik wird also "
-    "nur abgelegt."
+SCHLIESST_OHNE_KANAL = (
+    "Ich schließe **{sitzung}** ab — einen Kanal hat sie nicht, die Chronik wird also nur abgelegt."
 )
 
 LAEUFT_SCHON = "Ich bin schon dabei — ich melde mich hier, wenn die Chronik steht."
@@ -561,18 +560,37 @@ def dieselbe_runde(config: Config, guild_id: str | None, runde: Runde) -> Runde 
     return gefunden
 
 
-def sitzung_des_threads(runde: Runde, thread_id: str) -> int | None:
-    return notes.session_of_thread(runde, thread_id)
+def sitzung_im_kanal(runde: Runde, kanal_id: str) -> int | None:
+    """Die Sitzung, in die eine Zeile aus diesem Kanal gehört — oder keine.
+
+    Die Grenze ist seit #271 die **Zeit** und nicht mehr der Ort: es genügt nicht, dass
+    der Kanal derselbe ist, die Sitzung muss auch laufen. Was vor dem Start oder nach dem
+    Abschluss im Chat des Sprachkanals steht, ist Gerede und keine Notiz.
+    """
+    laufend = notes.running_session(runde)
+    if laufend is None or laufend.kanal_id != str(kanal_id):
+        return None
+    return laufend.id
 
 
-def thread_der_sitzung(runde: Runde, session_id: int) -> str | None:
-    return notes.thread_of_session(runde, session_id)
+def kanal_der_sitzung(runde: Runde, session_id: int) -> str | None:
+    return notes.channel_of_session(runde, session_id)
 
 
-def sitzung_verlangen(runde: Runde, thread_id: str) -> int:
-    sitzung = sitzung_des_threads(runde, thread_id)
+def sitzung_laeuft(runde: Runde, session_id: int) -> bool:
+    """Ob genau diese Sitzung noch offen ist — die Schranke vor dem Abschluss von selbst."""
+    laufend = notes.running_session(runde)
+    return laufend is not None and laufend.id == session_id
+
+
+def sitzung_schliessen(runde: Runde, session_id: int) -> bool:
+    return notes.close_session(runde, session_id)
+
+
+def sitzung_verlangen(runde: Runde, kanal_id: str) -> int:
+    sitzung = sitzung_im_kanal(runde, kanal_id)
     if sitzung is None:
-        raise ChronikFehler(NUR_IM_THREAD)
+        raise ChronikFehler(NUR_IN_DER_SITZUNG)
     return sitzung
 
 
@@ -594,7 +612,7 @@ def letzte_sitzung(runde: Runde) -> int | None:
     """Dieselbe Auskunft wie ``laufende_sitzung``, nur ohne Wurf — für alles, was bloß sagt.
 
     Ein Befehl, der eine Auskunft gibt, darf an einer fehlenden Sitzung nicht scheitern:
-    dann gibt es eben keinen Thread, in dem etwas stehen könnte.
+    dann gibt es eben keinen Kanal, in dem etwas stehen könnte.
     """
     sitzung = notes.latest_session(runde)
     return None if sitzung is None else sitzung.id
@@ -611,21 +629,24 @@ def abschlussmeldung(runde: Runde, session_id: int) -> str:
     if sitzung is None:
         return FERTIG
     name = sitzungsname(sitzung)
-    thread = thread_der_sitzung(runde, session_id)
+    kanal = kanal_der_sitzung(runde, session_id)
     kopf = (
-        SCHLIESST.format(sitzung=name, thread=f"<#{thread}>")
-        if thread
-        else SCHLIESST_OHNE_THREAD.format(sitzung=name)
+        SCHLIESST.format(sitzung=name, kanal=f"<#{kanal}>")
+        if kanal
+        else SCHLIESST_OHNE_KANAL.format(sitzung=name)
     )
     return f"{kopf} {FERTIG}"
 
 
-def threadname(titel: str) -> str:
-    return titel.strip() or f"Sitzung vom {notes.today()}"
+def sitzung_anlegen(runde: Runde, kanal_id: str, titel: str = "") -> int:
+    """Die Sitzung in diesem Kanal — höchstens eine je Runde zur selben Zeit.
 
-
-def sitzung_anlegen(runde: Runde, thread_id: str, titel: str = "") -> int:
-    return notes.create_session(runde, title=titel, thread_id=thread_id)
+    Gefragt und geschrieben wird ohne ``await`` dazwischen: der Bot bedient seine Befehle
+    in einer Ereignisschleife, damit ist zwischen Prüfen und Anlegen kein zweiter Start.
+    """
+    if notes.running_session(runde) is not None:
+        raise ChronikFehler(SITZUNG_LAEUFT_SCHON)
+    return notes.create_session(runde, title=titel, kanal_id=kanal_id, laeuft=True)
 
 
 def passwort_merken(runde: Runde, eingabe: str, wer: str) -> bool:
@@ -985,21 +1006,24 @@ def _mit_chronikstand(runde: Runde, session_id: int, satz: str) -> str | None:
     return " ".join(teil for teil in (satz, nachsatz) if teil)
 
 
-def notiz_aendern(runde: Runde, thread_id: str, nachricht: Nachricht) -> Notizwechsel:
-    """Eine im Thread geänderte Nachricht auf ihre Notiz ziehen — in allen drei Fällen.
+def notiz_aendern(runde: Runde, kanal_id: str, nachricht: Nachricht) -> Notizwechsel:
+    """Eine geänderte Nachricht auf ihre Notiz ziehen — in allen drei Fällen.
 
-    Geänderter Text zieht die Notiz nach und sagt nichts: die neue Fassung steht im Thread,
+    Geänderter Text zieht die Notiz nach und sagt nichts: die neue Fassung steht im Kanal,
     eine Quittung darunter wäre die zweite Hälfte jedes Satzes. **Geleerter** Text nimmt
     die Notiz fort — Discord schickt ``content: ""``, wenn eine Nachricht mit Anhang ihre
     Bildunterschrift verliert, und ein so zurückgenommener Wortlaut, der in ``/suche`` und
     in der komponierten Chronik weiterlebte, wäre genau das Gedächtnis, gegen das die
-    Zusage im Thread steht. **Nachgetragener** Text an einer Nachricht, die nie eine Notiz
+    Zusage beim Start steht. **Nachgetragener** Text an einer Nachricht, die nie eine Notiz
     hatte, legt sie jetzt an; vorher traf er keine Zeile und war still verloren (#184).
 
-    Der Thread entscheidet mit: außerhalb einer Sitzung wird nichts angelegt, auch wenn die
-    Kennung zufällig eine Notiz träfe.
+    Gesucht wird zuerst die Sitzung der **Notiz** und erst dann die laufende: eine
+    Woche alte Notiz gehört ihrem Abend, nicht dem heutigen. Seit die Grenze auf der Zeit
+    liegt (#271) ist das der Unterschied — der Thread beantwortete es vorher von selbst.
+    Neu **angelegt** wird trotzdem nur, wo gerade eine Sitzung läuft: sonst zöge ein
+    nachgetragener Satz irgendwo im Server eine Notiz nach sich.
     """
-    sitzung = sitzung_des_threads(runde, thread_id)
+    sitzung = notes.session_of_note(runde, nachricht.id) or sitzung_im_kanal(runde, kanal_id)
     if sitzung is None:
         return Notizwechsel()
     inhalt = nachricht.text.strip()
@@ -1207,7 +1231,7 @@ def abschluss_starten(
     merken: bool = True,
     melden: Callable[[str], None],
 ) -> str:
-    """Abgleich, Verschriften, Komponieren — ein Auftrag, eine Meldung im Thread.
+    """Abgleich, Verschriften, Komponieren — ein Auftrag, eine Meldung im Kanal.
 
     Das Passwort **reist mit dem Auftrag** und wird vom Abgleich verbraucht; liegen bleibt
     es nicht. Der Auftrag holt es sich nicht selbst aus dem Merkzettel: er läuft in einem
@@ -1232,4 +1256,10 @@ def abschluss_starten(
         _mit_meldung(lambda: jobs.abschluss(config, runde, session_id, passwort=passwort), melden),
         session_id=session_id,
     )
-    return abschlussmeldung(runde, session_id) if auftrag is not None else jobs.belegt(runde)
+    if auftrag is None:
+        return jobs.belegt(runde)
+    # Erst wenn der Lauf wirklich steht: eine Sitzung, die auf einer belegten Maschine
+    # abprallt, bleibt offen — sonst zählte das Getippte danach nirgends mehr, obwohl
+    # niemand abgeschlossen hat.
+    sitzung_schliessen(runde, session_id)
+    return abschlussmeldung(runde, session_id)

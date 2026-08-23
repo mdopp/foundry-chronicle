@@ -131,9 +131,14 @@ CREATE INDEX IF NOT EXISTS foundry_message_zeit ON foundry_message (runde_id, ti
 -- verweisen auf **beides**, und damit kann keine Zeile an einer Sitzung einer fremden
 -- Runde hängen. Ein falsch zusammengesetztes INSERT scheitert an der Datenbank statt an
 -- der Aufmerksamkeit dessen, der es schrieb.
--- ``thread_id`` ist der Discord-Thread, in dem diese Sitzung geschrieben wird: er hat
--- einen Anfang, ein Ende, eine Teilnehmerliste und eine Zeitachse, und die Runde tippt
--- ohnehin dort. Er bleibt leer, wo eine Sitzung anders entstanden ist.
+-- ``kanal_id`` ist der Discord-Kanal, in dem diese Sitzung geführt wird — seit #271 der
+-- Chat des Sprachkanals, an dem die Runde ohnehin sitzt, und kein eigener Thread mehr.
+-- Er bleibt leer, wo eine Sitzung anders entstanden ist, und er bleibt **stehen**, wenn
+-- sie abgeschlossen ist: Suche und Register springen später dorthin zurück.
+-- ``laeuft`` zieht die Grenze, die vorher der Thread von selbst zog: eine Nachricht wird
+-- zur Notiz, solange sie zwischen Start und Abschluss in diesem Kanal steht — davor und
+-- danach nicht. Der Vorgabewert ``0`` trägt zugleich die Wanderung: was aus der Zeit vor
+-- #271 liegt, läuft nicht mehr und sperrt damit keine neue Sitzung aus.
 -- ``token`` ist der Zufallswert, an dem eine Sitzung über einen Klick hinweg wiedererkannt
 -- wird — dasselbe wie bei ``runde`` und aus demselben Grund: die ``id`` ist ein
 -- ``INTEGER PRIMARY KEY`` ohne ``AUTOINCREMENT`` und wird nach einer Löschung wieder
@@ -148,7 +153,8 @@ CREATE TABLE IF NOT EXISTS session (
     played_on  TEXT NOT NULL,
     title      TEXT,
     created_at TEXT NOT NULL,
-    thread_id  TEXT,
+    kanal_id   TEXT,
+    laeuft     INTEGER NOT NULL DEFAULT 0,
     token      TEXT,
     UNIQUE (id, runde_id)
 );

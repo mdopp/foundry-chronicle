@@ -1858,8 +1858,8 @@ class FakeTextkanal:
         self.geschrieben.append(text)
 
 
-class FakeFortgeraeumterThread:
-    """Ein Thread, den es in Discord nicht mehr gibt — ``send`` bleibt bei 404."""
+class FakeFortgeraeumterKanal:
+    """Ein Kanal, den es in Discord nicht mehr gibt — ``send`` bleibt bei 404."""
 
     def __init__(self):
         self.versuche = 0
@@ -2405,23 +2405,23 @@ def test_ein_zweiter_start_schneidet_nicht_doppelt(konfiguration, sitzung_id, oh
     assert len(runde.kanal.verbindung.gespielt) == 1
 
 
-def test_chronik_start_im_sprachkanal_sagt_wo_es_stattdessen_geht(konfiguration, runde):
+def test_chronik_start_im_sprachkanal_legt_die_sitzung_genau_dort_an(konfiguration, runde):
     """Der wahrscheinlichste Weg: der Befehl kommt aus dem Chat des Sprachkanals.
 
-    Dort steht die Gruppe beim Spielen ohnehin, und ein ``VoiceChannel`` trägt keine
-    Threads — bis #241 flog das als roher ``AttributeError`` an der Behandlung vorbei und
-    die Gruppe las »unerwarteter Fehler im Bot«.
+    Dort steht die Gruppe beim Spielen ohnehin. Bis #241 flog hier ein roher
+    ``AttributeError`` — ein ``VoiceChannel`` trägt keine Threads. Seit #271 gibt es
+    keinen mehr, und genau dieser Kanal ist der richtige Ort für die Sitzung.
     """
-    unsere_runde(konfiguration)
+    unsere = unsere_runde(konfiguration)
     bot = gateway.baue(konfiguration)
     ctx = FakeCtx(runde.mira, kanal=runde.kanal)
 
     asyncio.run(bot.gruppen[gateway.GRUPPE_CHRONIK].befehle["start"](ctx, "Der erste Abend"))
 
     (antwort,) = ctx.antworten
-    assert chronik.KANAL_OHNE_THREAD in antwort
+    assert chronik.SITZUNG_STEHT in antwort
     assert "AttributeError" not in antwort
-    assert notes.latest_session(unsere_runde(konfiguration)) is None
+    assert chronik.sitzung_im_kanal(unsere, str(runde.kanal.id)) is not None
 
 
 # -- Zwei Gilden am selben Abend --------------------------------------------------------
@@ -3316,12 +3316,26 @@ def test_ohne_laufende_aufnahme_bleibt_der_beitritt_folgenlos(konfiguration, sit
     assert consent.for_session(unsere_runde(konfiguration), sitzung_id) == ()
 
 
-THREAD = 88
+SITZUNGSKANAL = 88
 
 
 @pytest.fixture
-def sitzung_im_thread(konfiguration):
-    return notes.create_session(unsere_runde(konfiguration), thread_id=str(THREAD))
+def sitzung_im_kanal(konfiguration):
+    """Eine Sitzung mit Kanal, aber **nicht** laufend — hier geht es um den Mitschnitt.
+
+    Die Sitzungsgrenze hat ihre eigenen Tests: eine laufende Sitzung zöge in jedem
+    Mitschnitt-Test den ganzen Abschluss nach sich (Zahlen, Verschriftung, Chronik) und
+    prüfte damit überall dasselbe. Die laufende Fassung steht in
+    ``laufende_sitzung_im_kanal``.
+    """
+    return notes.create_session(unsere_runde(konfiguration), kanal_id=str(SITZUNGSKANAL))
+
+
+@pytest.fixture
+def laufende_sitzung_im_kanal(konfiguration):
+    return notes.create_session(
+        unsere_runde(konfiguration), kanal_id=str(SITZUNGSKANAL), laeuft=True
+    )
 
 
 def zustand(kanal=None):
@@ -3372,12 +3386,12 @@ def alle_gehen(bot, runde):
 
 
 def test_ist_niemand_mehr_da_hoert_der_bot_von_selbst_auf(
-    konfiguration, sitzung_im_thread, ohne_espeak, runde, kurze_frist
+    konfiguration, sitzung_im_kanal, ohne_espeak, runde, kurze_frist
 ):
     """Die Einwilligung galt dieser Runde, nicht dem, was danach im leeren Kanal fällt."""
     bot = gateway.baue(konfiguration)
-    thread = FakeTextkanal()
-    bot.kanaele[THREAD] = thread
+    kanal = FakeTextkanal()
+    bot.kanaele[SITZUNGSKANAL] = kanal
 
     alle_gehen(bot, runde)
 
@@ -3385,13 +3399,13 @@ def test_ist_niemand_mehr_da_hoert_der_bot_von_selbst_auf(
     assert runde.kanal.verbindung.getrennt
     (spur,) = recordings.pending(unsere_runde(konfiguration))
     assert spur.filename.endswith("Mira.wav")
-    (gesagt,) = thread.geschrieben
+    (gesagt,) = kanal.geschrieben
     assert gesagt.startswith(gateway.LEER_BEENDET)
     assert "wartet auf den Stapel" in gesagt
 
 
 def test_das_ende_im_leeren_kanal_steht_ohne_kanalnamen_im_log(
-    konfiguration, sitzung_im_thread, ohne_espeak, runde, kurze_frist, caplog
+    konfiguration, sitzung_im_kanal, ohne_espeak, runde, kurze_frist, caplog
 ):
     """Wie #206, nur die Zeile, die dort nicht im Issue stand (#211).
 
@@ -3402,16 +3416,16 @@ def test_das_ende_im_leeren_kanal_steht_ohne_kanalnamen_im_log(
     caplog.set_level(logging.DEBUG)
     runde.kanal.name = "Am-Runden-Tisch"
     bot = gateway.baue(konfiguration)
-    bot.kanaele[THREAD] = FakeTextkanal()
+    bot.kanaele[SITZUNGSKANAL] = FakeTextkanal()
 
     alle_gehen(bot, runde)
 
     assert runde.kanal.name not in caplog.text
-    assert f"Sitzung {sitzung_im_thread}: Sprachkanal leer" in caplog.text
+    assert f"Sitzung {sitzung_im_kanal}: Sprachkanal leer" in caplog.text
 
 
 def test_viele_spurmeldungen_fallen_nicht_still_weg(
-    konfiguration, sitzung_im_thread, ohne_espeak, runde, kurze_frist, monkeypatch
+    konfiguration, sitzung_im_kanal, ohne_espeak, runde, kurze_frist, monkeypatch
 ):
     """Der Fall aus #120: dreißig Spuren ergaben einen Satz, den Discord nicht mehr annahm.
 
@@ -3431,30 +3445,30 @@ def test_viele_spurmeldungen_fallen_nicht_still_weg(
 
     monkeypatch.setattr(gateway.recorder, "stoppen", viele)
     bot = gateway.baue(konfiguration)
-    thread = FakeTextkanal()
-    bot.kanaele[THREAD] = thread
+    kanal = FakeTextkanal()
+    bot.kanaele[SITZUNGSKANAL] = kanal
 
     alle_gehen(bot, runde)
 
     ganz = " ".join((gateway.LEER_BEENDET, *meldungen))
     assert len(ganz) > grenzen.NACHRICHT
-    assert len(thread.geschrieben) > 1
-    assert all(len(gesagt) <= grenzen.NACHRICHT for gesagt in thread.geschrieben)
-    assert "".join(thread.geschrieben) == ganz
+    assert len(kanal.geschrieben) > 1
+    assert all(len(gesagt) <= grenzen.NACHRICHT for gesagt in kanal.geschrieben)
+    assert "".join(kanal.geschrieben) == ganz
     assert all(meldung in ganz for meldung in meldungen)
 
 
 def test_wenige_spurmeldungen_bleiben_eine_nachricht(
-    konfiguration, sitzung_im_thread, ohne_espeak, runde, kurze_frist
+    konfiguration, sitzung_im_kanal, ohne_espeak, runde, kurze_frist
 ):
     """Gegenprobe: geteilt wird nur, was geteilt werden muss."""
     bot = gateway.baue(konfiguration)
-    thread = FakeTextkanal()
-    bot.kanaele[THREAD] = thread
+    kanal = FakeTextkanal()
+    bot.kanaele[SITZUNGSKANAL] = kanal
 
     alle_gehen(bot, runde)
 
-    assert len(thread.geschrieben) == 1
+    assert len(kanal.geschrieben) == 1
 
 
 class FakeZuckendesDiscord:
@@ -3521,23 +3535,68 @@ def test_scheitert_schon_das_erste_stueck_bleibt_es_beim_alles_oder_nichts(caplo
     assert "abgerissen" not in caplog.text
 
 
-def test_der_leere_kanal_beendet_den_mitschnitt_und_nicht_die_sitzung(
-    konfiguration, sitzung_im_thread, ohne_espeak, runde, kurze_frist
+def test_der_leere_kanal_schliesst_die_sitzung_ab(
+    konfiguration, laufende_sitzung_im_kanal, ohne_espeak, runde, kurze_frist, monkeypatch
 ):
-    """Ausdrücklich offen gelassen und ausdrücklich entschieden: der Thread bleibt offen.
+    """Seit #271 endet hier der Abend und nicht nur der Mitschnitt.
 
-    ``/chronik fertig`` verlangt ein Passwort und ist damit eine Entscheidung von Hand —
-    niemand gibt es ein, der schon gegangen ist.
+    Den Abschluss zu vergessen war der häufigste Fehler und kostete den ganzen Abend seine
+    Zahlen. Wer schon gegangen ist, tippt ihn nicht mehr — also erkennt der Bot ihn selbst.
     """
+    gesehen = []
+    monkeypatch.setattr(
+        jobs,
+        "abschluss",
+        lambda config, eine, session_id, *, passwort=None: gesehen.append(session_id) or "steht",
+    )
     bot = gateway.baue(konfiguration)
-    bot.kanaele[THREAD] = FakeTextkanal()
+    bot.kanaele[SITZUNGSKANAL] = FakeTextkanal()
 
     alle_gehen(bot, runde)
 
     unsere = unsere_runde(konfiguration)
-    assert chronik.sitzung_des_threads(unsere, str(THREAD)) == sitzung_im_thread
-    assert jobs.latest(unsere, jobs.CHRONIK) is None
-    assert "`/chronik fertig`" in bot.kanaele[THREAD].geschrieben[0]
+    assert gesehen == [laufende_sitzung_im_kanal]
+    # Und die Sitzung ist zu: was jetzt noch im Kanal steht, ist keine Notiz mehr.
+    assert chronik.sitzung_im_kanal(unsere, str(SITZUNGSKANAL)) is None
+    gesagt = bot.kanaele[SITZUNGSKANAL].geschrieben
+    assert gesagt[0].startswith(gateway.LEER_BEENDET)
+    assert any(chronik.FERTIG in satz for satz in gesagt)
+
+
+def test_wer_rechtzeitig_zurueckkommt_behaelt_seine_offene_sitzung(
+    konfiguration, laufende_sitzung_im_kanal, ohne_espeak, runde, kurze_frist, monkeypatch
+):
+    """Die zweite Prüfung nach der Frist gilt jetzt dem ganzen Abschluss.
+
+    Ein Verbindungsabriss darf keine zerschnittene Sitzung hinterlassen: wer in der Frist
+    zurückkommt, findet seinen Abend vor und nicht dessen Chronik.
+    """
+    gesehen = []
+    monkeypatch.setattr(
+        jobs,
+        "abschluss",
+        lambda config, eine, session_id, *, passwort=None: gesehen.append(session_id) or "steht",
+    )
+    bot = gateway.baue(konfiguration)
+    bot.kanaele[SITZUNGSKANAL] = FakeTextkanal()
+    dazu = bot.ereignisse["on_voice_state_update"]
+
+    async def ablauf():
+        await befehl(bot, "start")(FakeCtx(runde.mira))
+        runde.kanal.verbindung.senke.write(sprachdaten(stille(480)), runde.mira)
+        anwesend = nur_der_bot(runde.kanal)
+        await dazu(runde.mira, zustand(runde.kanal), zustand())
+        # Zurück, bevor die Frist um ist — genau der Fall, für den es sie gibt.
+        runde.kanal.members = anwesend
+        await dazu(runde.mira, zustand(), zustand(runde.kanal))
+        await ruhen()
+
+    asyncio.run(ablauf())
+
+    unsere = unsere_runde(konfiguration)
+    assert gesehen == []
+    assert chronik.sitzung_im_kanal(unsere, str(SITZUNGSKANAL)) == laufende_sitzung_im_kanal
+    assert runde.kanal.verbindung.schneidet
 
 
 def einer_bleibt(kanal, wer):
@@ -3594,7 +3653,7 @@ def test_der_satz_ans_alleinsein_zeigt_den_widerspruch_und_traegt_keinen_namen()
 
 
 def test_bleibt_eine_person_allein_wird_es_ihr_gesagt_und_weiter_geschnitten(
-    konfiguration, sitzung_im_thread, ohne_espeak, runde, kurze_frist
+    konfiguration, sitzung_im_kanal, ohne_espeak, runde, kurze_frist
 ):
     """Entscheidung des Betreibers: nachfragen statt anhalten — niemand verliert ungefragt.
 
@@ -3602,8 +3661,8 @@ def test_bleibt_eine_person_allein_wird_es_ihr_gesagt_und_weiter_geschnitten(
     Zurückgebliebene, dass sie allein ist. Angehalten wird darunter nichts.
     """
     bot = gateway.baue(konfiguration)
-    thread = FakeTextkanal()
-    bot.kanaele[THREAD] = thread
+    kanal = FakeTextkanal()
+    bot.kanaele[SITZUNGSKANAL] = kanal
     dazu = bot.ereignisse["on_voice_state_update"]
 
     async def ablauf():
@@ -3614,19 +3673,19 @@ def test_bleibt_eine_person_allein_wird_es_ihr_gesagt_und_weiter_geschnitten(
 
     asyncio.run(ablauf())
 
-    assert thread.geschrieben == [gateway.ALLEIN]
+    assert kanal.geschrieben == [gateway.ALLEIN]
     assert runde.kanal.verbindung.schneidet
     assert not runde.kanal.verbindung.getrennt
     assert recordings.pending(unsere_runde(konfiguration)) == ()
 
 
 def test_dass_sie_allein_ist_wird_genau_einmal_gesagt(
-    konfiguration, sitzung_im_thread, ohne_espeak, runde, kurze_frist
+    konfiguration, sitzung_im_kanal, ohne_espeak, runde, kurze_frist
 ):
-    """Sonst stünde bei jedem Stummschalten derselbe Satz noch einmal im Thread."""
+    """Sonst stünde bei jedem Stummschalten derselbe Satz noch einmal im Kanal."""
     bot = gateway.baue(konfiguration)
-    thread = FakeTextkanal()
-    bot.kanaele[THREAD] = thread
+    kanal = FakeTextkanal()
+    bot.kanaele[SITZUNGSKANAL] = kanal
     dazu = bot.ereignisse["on_voice_state_update"]
 
     async def ablauf():
@@ -3644,19 +3703,19 @@ def test_dass_sie_allein_ist_wird_genau_einmal_gesagt(
 
     asyncio.run(ablauf())
 
-    assert thread.geschrieben == [gateway.ALLEIN]
+    assert kanal.geschrieben == [gateway.ALLEIN]
 
 
 def test_gehen_zwei_im_selben_schwung_steht_der_satz_trotzdem_nur_einmal_da(
-    konfiguration, sitzung_im_thread, ohne_espeak, runde, kurze_frist
+    konfiguration, sitzung_im_kanal, ohne_espeak, runde, kurze_frist
 ):
     """py-cord stellt jedes Sprachereignis als eigenen Task zu — und hat den Cache der
     Mitglieder vorher aktualisiert. Beide Handler sehen deshalb dieselbe eine Verbliebene;
     wer den Vermerk erst hinter dem ``await`` setzt, schreibt den Satz zweimal.
     """
     bot = gateway.baue(konfiguration)
-    thread = FakeTextkanal()
-    bot.kanaele[THREAD] = thread
+    kanal = FakeTextkanal()
+    bot.kanaele[SITZUNGSKANAL] = kanal
     dazu = bot.ereignisse["on_voice_state_update"]
 
     async def ablauf():
@@ -3671,19 +3730,19 @@ def test_gehen_zwei_im_selben_schwung_steht_der_satz_trotzdem_nur_einmal_da(
 
     asyncio.run(ablauf())
 
-    assert thread.geschrieben == [gateway.ALLEIN]
+    assert kanal.geschrieben == [gateway.ALLEIN]
     assert runde.kanal.verbindung.schneidet
 
 
 def test_bleiben_zwei_zurueck_sagt_der_bot_nichts(
-    konfiguration, sitzung_im_thread, ohne_espeak, runde, kurze_frist
+    konfiguration, sitzung_im_kanal, ohne_espeak, runde, kurze_frist
 ):
     """»Nur noch **eine** Person« ist eine Tatsachenbehauptung, an der die Einwilligung
     hängt: sie soll aufhören können, weil sie allein ist. Zu zweit wäre sie falsch.
     """
     bot = gateway.baue(konfiguration)
-    thread = FakeTextkanal()
-    bot.kanaele[THREAD] = thread
+    kanal = FakeTextkanal()
+    bot.kanaele[SITZUNGSKANAL] = kanal
     dazu = bot.ereignisse["on_voice_state_update"]
 
     async def ablauf():
@@ -3695,12 +3754,12 @@ def test_bleiben_zwei_zurueck_sagt_der_bot_nichts(
 
     asyncio.run(ablauf())
 
-    assert thread.geschrieben == []
+    assert kanal.geschrieben == []
     assert runde.kanal.verbindung.schneidet
 
 
 def test_ein_ortswechsel_im_selben_kanal_ist_gar_kein_gehen(
-    konfiguration, sitzung_im_thread, ohne_espeak, runde, kurze_frist
+    konfiguration, sitzung_im_kanal, ohne_espeak, runde, kurze_frist
 ):
     """Stummschalten meldet Discord mit demselben Kanal auf beiden Seiten des Ereignisses.
 
@@ -3709,8 +3768,8 @@ def test_ein_ortswechsel_im_selben_kanal_ist_gar_kein_gehen(
     vorheriges Gehen fängt das auch kein Vermerk ab.
     """
     bot = gateway.baue(konfiguration)
-    thread = FakeTextkanal()
-    bot.kanaele[THREAD] = thread
+    kanal = FakeTextkanal()
+    bot.kanaele[SITZUNGSKANAL] = kanal
     dazu = bot.ereignisse["on_voice_state_update"]
 
     async def ablauf():
@@ -3721,17 +3780,17 @@ def test_ein_ortswechsel_im_selben_kanal_ist_gar_kein_gehen(
 
     asyncio.run(ablauf())
 
-    assert thread.geschrieben == []
+    assert kanal.geschrieben == []
     assert runde.kanal.verbindung.schneidet
 
 
 def test_ein_vermerk_von_vorhin_verschluckt_den_satz_der_naechsten_aufnahme_nicht(
-    konfiguration, sitzung_im_thread, ohne_espeak, runde, kurze_frist
+    konfiguration, sitzung_im_kanal, ohne_espeak, runde, kurze_frist
 ):
     """Dieselbe Falle wie beim Wächter des leeren Kanals: gemerkt wird die Aufnahme."""
     bot = gateway.baue(konfiguration)
-    thread = FakeTextkanal()
-    bot.kanaele[THREAD] = thread
+    kanal = FakeTextkanal()
+    bot.kanaele[SITZUNGSKANAL] = kanal
     dazu = bot.ereignisse["on_voice_state_update"]
 
     async def ablauf():
@@ -3748,11 +3807,11 @@ def test_ein_vermerk_von_vorhin_verschluckt_den_satz_der_naechsten_aufnahme_nich
 
     asyncio.run(ablauf())
 
-    assert thread.geschrieben == [gateway.ALLEIN, gateway.ALLEIN]
+    assert kanal.geschrieben == [gateway.ALLEIN, gateway.ALLEIN]
 
 
 def test_auch_die_zweite_zurueckgebliebene_erfaehrt_es(
-    konfiguration, sitzung_im_thread, ohne_espeak, runde, kurze_frist
+    konfiguration, sitzung_im_kanal, ohne_espeak, runde, kurze_frist
 ):
     """Genau der Fall aus dem Issue: nacheinander bleiben zwei verschiedene allein zurück.
 
@@ -3760,8 +3819,8 @@ def test_auch_die_zweite_zurueckgebliebene_erfaehrt_es(
     allein im Kanal und erführe es nie. Er hängt deshalb an der Person.
     """
     bot = gateway.baue(konfiguration)
-    thread = FakeTextkanal()
-    bot.kanaele[THREAD] = thread
+    kanal = FakeTextkanal()
+    bot.kanaele[SITZUNGSKANAL] = kanal
     dazu = bot.ereignisse["on_voice_state_update"]
 
     async def ablauf():
@@ -3776,12 +3835,12 @@ def test_auch_die_zweite_zurueckgebliebene_erfaehrt_es(
 
     asyncio.run(ablauf())
 
-    assert thread.geschrieben == [gateway.ALLEIN, gateway.ALLEIN]
+    assert kanal.geschrieben == [gateway.ALLEIN, gateway.ALLEIN]
     assert runde.kanal.verbindung.schneidet
 
 
-def test_ein_zuckender_thread_verbrennt_den_satz_nicht(
-    konfiguration, sitzung_im_thread, ohne_espeak, runde, kurze_frist
+def test_ein_zuckender_kanal_verbrennt_den_satz_nicht(
+    konfiguration, sitzung_im_kanal, ohne_espeak, runde, kurze_frist
 ):
     """Vermerkt wird erst, was ankam — sonst bliebe der Satz nach einem Fehlschlag aus.
 
@@ -3790,9 +3849,9 @@ def test_ein_zuckender_thread_verbrennt_den_satz_nicht(
     nicht mehr.
     """
     bot = gateway.baue(konfiguration)
-    thread = FakeTextkanal()
-    thread.stolpert = 1
-    bot.kanaele[THREAD] = thread
+    kanal = FakeTextkanal()
+    kanal.stolpert = 1
+    bot.kanaele[SITZUNGSKANAL] = kanal
     dazu = bot.ereignisse["on_voice_state_update"]
 
     async def ablauf():
@@ -3807,17 +3866,17 @@ def test_ein_zuckender_thread_verbrennt_den_satz_nicht(
 
     asyncio.run(ablauf())
 
-    assert thread.geschrieben == [gateway.ALLEIN]
+    assert kanal.geschrieben == [gateway.ALLEIN]
     assert runde.kanal.verbindung.schneidet
     assert not runde.kanal.verbindung.getrennt
 
 
-def test_ohne_thread_wird_allein_nicht_weitergeschnitten(
+def test_ohne_kanal_wird_allein_nicht_weitergeschnitten(
     konfiguration, sitzung_id, ohne_espeak, runde, kurze_frist
 ):
     """Zugesagt war, dass sie es erfährt — nicht, dass wir es versuchen.
 
-    Eine Sitzung ohne Thread hat keinen Weg für den Satz. Still weiterzuschneiden wäre
+    Eine Sitzung ohne Kanal hat keinen Weg für den Satz. Still weiterzuschneiden wäre
     genau der Zustand, gegen den die Zusage steht; also endet der Mitschnitt, und die
     Spuren gehen nicht verloren.
     """
@@ -3838,8 +3897,8 @@ def test_ohne_thread_wird_allein_nicht_weitergeschnitten(
     assert len(recordings.pending(unsere_runde(konfiguration))) == 1
 
 
-def test_ein_fortgeraeumter_thread_beendet_den_mitschnitt_statt_ewig_weiterzuschneiden(
-    konfiguration, sitzung_im_thread, ohne_espeak, runde, kurze_frist
+def test_ein_fortgeraeumter_kanal_beendet_den_mitschnitt_statt_ewig_weiterzuschneiden(
+    konfiguration, sitzung_im_kanal, ohne_espeak, runde, kurze_frist
 ):
     """Fort ist nicht »zuckt«: der 404 käme bei jedem weiteren Wechsel genauso wieder.
 
@@ -3848,8 +3907,8 @@ def test_ein_fortgeraeumter_thread_beendet_den_mitschnitt_statt_ewig_weiterzusch
     durch die andere Tür.
     """
     bot = gateway.baue(konfiguration)
-    fort = FakeFortgeraeumterThread()
-    bot.kanaele[THREAD] = fort
+    fort = FakeFortgeraeumterKanal()
+    bot.kanaele[SITZUNGSKANAL] = fort
     dazu = bot.ereignisse["on_voice_state_update"]
 
     async def ablauf():
@@ -3868,11 +3927,11 @@ def test_ein_fortgeraeumter_thread_beendet_den_mitschnitt_statt_ewig_weiterzusch
 
 
 def test_der_vermerk_ans_alleinsein_ueberlebt_das_ende_der_aufnahme_nicht(
-    konfiguration, sitzung_im_thread, ohne_espeak, runde, kurze_frist
+    konfiguration, sitzung_im_kanal, ohne_espeak, runde, kurze_frist
 ):
     """Der Vermerk führt Discord-Kennungen. Nach dem Ende liest sie niemand mehr."""
     bot = gateway.baue(konfiguration)
-    bot.kanaele[THREAD] = FakeTextkanal()
+    bot.kanaele[SITZUNGSKANAL] = FakeTextkanal()
     dazu = bot.ereignisse["on_voice_state_update"]
 
     async def ablauf():
@@ -3893,14 +3952,14 @@ def test_der_vermerk_ans_alleinsein_ueberlebt_das_ende_der_aufnahme_nicht(
 
 
 def test_die_rueckkehr_setzt_dieselbe_aufnahme_fort(
-    konfiguration, sitzung_im_thread, ohne_espeak, runde, kurze_frist
+    konfiguration, sitzung_im_kanal, ohne_espeak, runde, kurze_frist
 ):
     """Entscheidung des Betreibers: kein Bruch, keine neue Sitzung, keine zweite Ansage.
 
     Die Spur läuft durch — dieselbe Senke, dieselbe Verbindung, dieselbe Sitzung.
     """
     bot = gateway.baue(konfiguration)
-    bot.kanaele[THREAD] = FakeTextkanal()
+    bot.kanaele[SITZUNGSKANAL] = FakeTextkanal()
     dazu = bot.ereignisse["on_voice_state_update"]
 
     async def ablauf():
@@ -3919,13 +3978,13 @@ def test_die_rueckkehr_setzt_dieselbe_aufnahme_fort(
     assert runde.kanal.verbindung.senke is senke
     assert runde.kanal.verbindung.schneidet
     assert not runde.kanal.verbindung.getrennt
-    assert notes.latest_session(unsere).id == sitzung_im_thread
-    angesagt = [ereignis for ereignis in consent.for_session(unsere, sitzung_im_thread)]
+    assert notes.latest_session(unsere).id == sitzung_im_kanal
+    angesagt = [ereignis for ereignis in consent.for_session(unsere, sitzung_im_kanal)]
     assert [ereignis.kind for ereignis in angesagt] == [consent.ANSAGE, consent.NACHZUEGLER]
 
 
 def test_wer_zurueckkommt_ist_ein_nachzuegler_und_hoert_die_ansage(
-    konfiguration, sitzung_im_thread, ohne_espeak, runde, kurze_frist
+    konfiguration, sitzung_im_kanal, ohne_espeak, runde, kurze_frist
 ):
     """Die zweite Hälfte derselben Entscheidung: fortsetzen heißt nicht ungefragt.
 
@@ -3933,7 +3992,7 @@ def test_wer_zurueckkommt_ist_ein_nachzuegler_und_hoert_die_ansage(
     Einwilligung steht danach im Protokoll.
     """
     bot = gateway.baue(konfiguration)
-    bot.kanaele[THREAD] = FakeTextkanal()
+    bot.kanaele[SITZUNGSKANAL] = FakeTextkanal()
     dazu = bot.ereignisse["on_voice_state_update"]
 
     async def ablauf():
@@ -3947,17 +4006,17 @@ def test_wer_zurueckkommt_ist_ein_nachzuegler_und_hoert_die_ansage(
     asyncio.run(ablauf())
 
     assert len(runde.kanal.verbindung.gespielt) == 2
-    _, zurueck = consent.for_session(unsere_runde(konfiguration), sitzung_im_thread)
+    _, zurueck = consent.for_session(unsere_runde(konfiguration), sitzung_im_kanal)
     assert zurueck.kind == consent.NACHZUEGLER
     assert [wer.name for wer in zurueck.members] == [BROK.name]
 
 
 def test_wer_allein_widerspricht_beendet_damit_den_mitschnitt(
-    konfiguration, sitzung_im_thread, ohne_espeak, runde, kurze_frist
+    konfiguration, sitzung_im_kanal, ohne_espeak, runde, kurze_frist
 ):
     """»Bis sie widerspricht« braucht einen benannten Weg — und der ist der vorhandene."""
     bot = gateway.baue(konfiguration)
-    bot.kanaele[THREAD] = FakeTextkanal()
+    bot.kanaele[SITZUNGSKANAL] = FakeTextkanal()
     dazu = bot.ereignisse["on_voice_state_update"]
 
     async def ablauf():
@@ -3978,12 +4037,12 @@ def test_wer_allein_widerspricht_beendet_damit_den_mitschnitt(
 
 
 def test_wer_in_der_frist_wiederkommt_findet_seine_aufnahme_vor(
-    konfiguration, sitzung_im_thread, ohne_espeak, runde, kurze_frist
+    konfiguration, sitzung_im_kanal, ohne_espeak, runde, kurze_frist
 ):
     """Der Verbindungsabriss dauert wirklich — hier vergeht Zeit, keine null Sekunden."""
     bot = gateway.baue(konfiguration)
-    thread = FakeTextkanal()
-    bot.kanaele[THREAD] = thread
+    kanal = FakeTextkanal()
+    bot.kanaele[SITZUNGSKANAL] = kanal
     dazu = bot.ereignisse["on_voice_state_update"]
 
     async def ablauf():
@@ -4002,12 +4061,12 @@ def test_wer_in_der_frist_wiederkommt_findet_seine_aufnahme_vor(
 
     assert runde.kanal.verbindung.schneidet
     assert not runde.kanal.verbindung.getrennt
-    assert thread.geschrieben == []
+    assert kanal.geschrieben == []
     assert recordings.pending(unsere_runde(konfiguration)) == ()
 
 
 def test_wer_wieder_geht_bekommt_die_ganze_frist_noch_einmal(
-    konfiguration, sitzung_im_thread, ohne_espeak, runde, kurze_frist
+    konfiguration, sitzung_im_kanal, ohne_espeak, runde, kurze_frist
 ):
     """Sonst wären aus neunzig Sekunden Karenz eine halbe geworden.
 
@@ -4017,7 +4076,7 @@ def test_wer_wieder_geht_bekommt_die_ganze_frist_noch_einmal(
     geschnitten vor.
     """
     bot = gateway.baue(konfiguration)
-    bot.kanaele[THREAD] = FakeTextkanal()
+    bot.kanaele[SITZUNGSKANAL] = FakeTextkanal()
     dazu = bot.ereignisse["on_voice_state_update"]
 
     async def ablauf():
@@ -4042,7 +4101,7 @@ def test_wer_wieder_geht_bekommt_die_ganze_frist_noch_einmal(
 
 
 def test_der_waechter_der_alten_aufnahme_verdraengt_den_der_neuen_nicht(
-    konfiguration, sitzung_im_thread, ohne_espeak, runde, kurze_frist
+    konfiguration, sitzung_im_kanal, ohne_espeak, runde, kurze_frist
 ):
     """Genau der Zustand, gegen den dieser Wächter gebaut ist: ein leerer Kanal läuft weiter.
 
@@ -4051,8 +4110,8 @@ def test_der_waechter_der_alten_aufnahme_verdraengt_den_der_neuen_nicht(
     Y unbegrenzt einen leeren Kanal mit, und ein zweites Ereignis kommt nicht mehr.
     """
     bot = gateway.baue(konfiguration)
-    thread = FakeTextkanal()
-    bot.kanaele[THREAD] = thread
+    kanal = FakeTextkanal()
+    bot.kanaele[SITZUNGSKANAL] = kanal
     dazu = bot.ereignisse["on_voice_state_update"]
 
     async def ablauf():
@@ -4073,7 +4132,7 @@ def test_der_waechter_der_alten_aufnahme_verdraengt_den_der_neuen_nicht(
 
     assert not zweite.schneidet
     assert zweite.getrennt
-    assert thread.geschrieben[-1].startswith(gateway.LEER_BEENDET)
+    assert kanal.geschrieben[-1].startswith(gateway.LEER_BEENDET)
 
 
 def verschieben(runde, kennung=78):
@@ -4177,7 +4236,7 @@ def test_ein_trennen_zwischen_den_beiden_blicken_wirft_nicht(pycord, runde):
 
 
 def test_verschoben_zaehlt_weiter_der_kanal_der_aufnahme(
-    konfiguration, sitzung_im_thread, ohne_espeak, runde, kurze_frist
+    konfiguration, sitzung_im_kanal, ohne_espeak, runde, kurze_frist
 ):
     """»Gegangen« und »leer« müssen denselben Kanal meinen — den der Ansage.
 
@@ -4185,7 +4244,7 @@ def test_verschoben_zaehlt_weiter_der_kanal_der_aufnahme(
     hängen bleibt, hängt weiter daran, dass der Lauf seinen Ursprungskanal festhält.
     """
     bot = gateway.baue(konfiguration)
-    bot.kanaele[THREAD] = FakeTextkanal()
+    bot.kanaele[SITZUNGSKANAL] = FakeTextkanal()
     dazu = bot.ereignisse["on_voice_state_update"]
 
     async def ablauf():
@@ -4202,16 +4261,16 @@ def test_verschoben_zaehlt_weiter_der_kanal_der_aufnahme(
 
 
 def test_wer_verschoben_wird_hoert_auf_und_sagt_warum(
-    konfiguration, sitzung_im_thread, ohne_espeak, runde, kurze_frist
+    konfiguration, sitzung_im_kanal, ohne_espeak, runde, kurze_frist
 ):
     """Der Bot hat den Raum verlassen, für den die Einwilligung galt — also ist Schluss.
 
     Nebenan sitzen Leute, die die Ansage nie gehört haben. Dass der Mitschnitt endet,
-    steht im Thread, und es steht dabei, **warum**.
+    steht im Kanal, und es steht dabei, **warum**.
     """
     bot = gateway.baue(konfiguration)
-    thread = FakeTextkanal()
-    bot.kanaele[THREAD] = thread
+    kanal = FakeTextkanal()
+    bot.kanaele[SITZUNGSKANAL] = kanal
 
     async def ablauf():
         await befehl(bot, "start")(FakeCtx(runde.mira))
@@ -4229,13 +4288,13 @@ def test_wer_verschoben_wird_hoert_auf_und_sagt_warum(
     assert runde.kanal.verbindung.getrennt
     (spur,) = recordings.pending(unsere_runde(konfiguration))
     assert spur.filename.endswith("Mira.wav")
-    (gesagt,) = thread.geschrieben
+    (gesagt,) = kanal.geschrieben
     assert gesagt.startswith(gateway.VERSCHOBEN.format(kanal=runde.kanal.name))
     assert "wartet auf den Stapel" in gesagt
 
 
 def test_der_start_im_falschen_kanal_laesst_keinen_lauf_zurueck(
-    konfiguration, sitzung_im_thread, ohne_espeak, runde, kurze_frist, monkeypatch
+    konfiguration, sitzung_im_kanal, ohne_espeak, runde, kurze_frist, monkeypatch
 ):
     """Wird der Bot während der ersten Ansage gezogen, gilt der Lauf nicht als laufend.
 
@@ -4251,8 +4310,8 @@ def test_der_start_im_falschen_kanal_laesst_keinen_lauf_zurueck(
 
     monkeypatch.setattr(FakeVoiceClient, "play", zieht)
     bot = gateway.baue(konfiguration)
-    thread = FakeTextkanal()
-    bot.kanaele[THREAD] = thread
+    kanal = FakeTextkanal()
+    bot.kanaele[SITZUNGSKANAL] = kanal
     ctx = FakeCtx(runde.mira)
 
     async def ablauf():
@@ -4265,13 +4324,13 @@ def test_der_start_im_falschen_kanal_laesst_keinen_lauf_zurueck(
 
     assert not runde.kanal.verbindung.schneidet
     assert runde.kanal.verbindung.getrennt
-    assert consent.for_session(unsere_runde(konfiguration), sitzung_im_thread) == ()
-    assert thread.geschrieben == []
+    assert consent.for_session(unsere_runde(konfiguration), sitzung_im_kanal) == ()
+    assert kanal.geschrieben == []
     assert ctx.antworten[-1] == gateway.GESCHEITERT.format(grund=recorder.VERSCHOBEN_BEIM_START)
 
 
 def test_was_nach_dem_verschieben_ankommt_landet_in_keiner_spur(
-    konfiguration, sitzung_im_thread, ohne_espeak, runde, kurze_frist
+    konfiguration, sitzung_im_kanal, ohne_espeak, runde, kurze_frist
 ):
     """Für das Stück zwischen Verschiebung und Erkennung gibt es keine Zustimmung.
 
@@ -4279,7 +4338,7 @@ def test_was_nach_dem_verschieben_ankommt_landet_in_keiner_spur(
     Rahmen, in dem py-cord den neuen Kanal führt, fällt jede Sprachdatenlieferung weg.
     """
     bot = gateway.baue(konfiguration)
-    bot.kanaele[THREAD] = FakeTextkanal()
+    bot.kanaele[SITZUNGSKANAL] = FakeTextkanal()
 
     async def ablauf():
         await befehl(bot, "start")(FakeCtx(runde.mira))
@@ -4305,14 +4364,14 @@ def test_was_nach_dem_verschieben_ankommt_landet_in_keiner_spur(
 
 
 def test_der_nachzuegler_im_alten_kanal_kommt_nicht_ins_protokoll(
-    konfiguration, sitzung_im_thread, ohne_espeak, runde, kurze_frist
+    konfiguration, sitzung_im_kanal, ohne_espeak, runde, kurze_frist
 ):
     """Die Nebenwirkung derselben Klasse: seine Ansage liefe nebenan, er hörte sie nie.
 
     Kein Einwilligungseintrag darf entstehen, dessen Ansage nachweislich woanders lief.
     """
     bot = gateway.baue(konfiguration)
-    bot.kanaele[THREAD] = FakeTextkanal()
+    bot.kanaele[SITZUNGSKANAL] = FakeTextkanal()
     spaet = FakeMitglied(int(SPAET.id), SPAET.name)
 
     async def ablauf():
@@ -4323,7 +4382,7 @@ def test_der_nachzuegler_im_alten_kanal_kommt_nicht_ins_protokoll(
 
     asyncio.run(ablauf())
 
-    (eintrag,) = consent.for_session(unsere_runde(konfiguration), sitzung_im_thread)
+    (eintrag,) = consent.for_session(unsere_runde(konfiguration), sitzung_im_kanal)
     assert eintrag.kind == consent.ANSAGE
     # Und die zweite Ansage hat gar nicht erst gespielt.
     assert len(runde.kanal.verbindung.gespielt) == 1
@@ -4331,12 +4390,12 @@ def test_der_nachzuegler_im_alten_kanal_kommt_nicht_ins_protokoll(
 
 
 def test_das_verschieben_beendet_genau_einmal_und_nicht_die_naechste_aufnahme(
-    konfiguration, sitzung_im_thread, ohne_espeak, runde, kurze_frist
+    konfiguration, sitzung_im_kanal, ohne_espeak, runde, kurze_frist
 ):
     """Zwei Ereignisse, ein Ende — und der nächste Lauf bleibt davon unberührt."""
     bot = gateway.baue(konfiguration)
-    thread = FakeTextkanal()
-    bot.kanaele[THREAD] = thread
+    kanal = FakeTextkanal()
+    bot.kanaele[SITZUNGSKANAL] = kanal
     dazu = bot.ereignisse["on_voice_state_update"]
 
     async def ablauf():
@@ -4354,18 +4413,18 @@ def test_das_verschieben_beendet_genau_einmal_und_nicht_die_naechste_aufnahme(
 
     zweite = asyncio.run(ablauf())
 
-    assert len(thread.geschrieben) == 1
+    assert len(kanal.geschrieben) == 1
     assert zweite.schneidet
     assert not zweite.getrennt
 
 
 def test_der_gescheiterte_abschied_nach_dem_verschieben_sagt_es(
-    konfiguration, sitzung_im_thread, ohne_espeak, runde, kurze_frist
+    konfiguration, sitzung_im_kanal, ohne_espeak, runde, kurze_frist
 ):
     """Auch hier gilt: lieber ein Satz zu viel als ein Lauf, von dem niemand mehr weiß."""
     bot = gateway.baue(konfiguration)
-    thread = FakeTextkanal()
-    bot.kanaele[THREAD] = thread
+    kanal = FakeTextkanal()
+    bot.kanaele[SITZUNGSKANAL] = kanal
 
     async def ablauf():
         await befehl(bot, "start")(FakeCtx(runde.mira))
@@ -4378,21 +4437,21 @@ def test_der_gescheiterte_abschied_nach_dem_verschieben_sagt_es(
 
     asyncio.run(ablauf())
 
-    assert thread.geschrieben == [gateway.VERSCHOBEN_GESCHEITERT.format(kanal=runde.kanal.name)]
+    assert kanal.geschrieben == [gateway.VERSCHOBEN_GESCHEITERT.format(kanal=runde.kanal.name)]
 
 
 def test_ein_abriss_wird_nicht_als_verschieben_gemeldet(
-    konfiguration, sitzung_im_thread, ohne_espeak, runde, kurze_frist
+    konfiguration, sitzung_im_kanal, ohne_espeak, runde, kurze_frist
 ):
     """Ein harter Abriss endet wie ein Verschieben, begründet sich aber anders (#120).
 
     Wird der Bot hinausgeworfen oder bricht die Verbindung, sitzt er in **keinem** Kanal —
-    im Thread stand trotzdem, jemand habe ihn »in einen anderen Sprachkanal gezogen«. Die
+    im Kanal stand trotzdem, jemand habe ihn »in einen anderen Sprachkanal gezogen«. Die
     Handlung war richtig, die Auskunft falsch, und sie schickte die Runde nebenan suchen.
     """
     bot = gateway.baue(konfiguration)
-    thread = FakeTextkanal()
-    bot.kanaele[THREAD] = thread
+    kanal = FakeTextkanal()
+    bot.kanaele[SITZUNGSKANAL] = kanal
 
     async def ablauf():
         await befehl(bot, "start")(FakeCtx(runde.mira))
@@ -4409,17 +4468,17 @@ def test_ein_abriss_wird_nicht_als_verschieben_gemeldet(
     asyncio.run(ablauf())
 
     assert not runde.kanal.verbindung.schneidet
-    (gesagt,) = thread.geschrieben
+    (gesagt,) = kanal.geschrieben
     assert gesagt.startswith(gateway.GETRENNT.format(kanal=runde.kanal.name))
     assert not gesagt.startswith(gateway.VERSCHOBEN.format(kanal=runde.kanal.name))
 
 
 def test_der_kanalverlust_steht_ohne_kanalnamen_im_log(
-    konfiguration, sitzung_im_thread, ohne_espeak, runde, kurze_frist, caplog
+    konfiguration, sitzung_im_kanal, ohne_espeak, runde, kurze_frist, caplog
 ):
     """Beide Zweige des Kanalverlusts, verschoben und abgerissen, in einem Test (#211).
 
-    Sie unterscheiden sich nur in der Begründung, und die steht im **Thread** — dort mit
+    Sie unterscheiden sich nur in der Begründung, und die steht im **Kanal** — dort mit
     Kanalnamen, denn der gehört der Gilde, die ihre eigenen Kanäle kennt. Im Log des
     Betreibers steht die Sitzung, und geprüft wird beides: dass der Name fort ist und
     dass die Zeile trotzdem noch sagt, welcher Lauf hier endete.
@@ -4427,8 +4486,8 @@ def test_der_kanalverlust_steht_ohne_kanalnamen_im_log(
     caplog.set_level(logging.DEBUG)
     runde.kanal.name = "Am-Runden-Tisch"
     bot = gateway.baue(konfiguration)
-    thread = FakeTextkanal()
-    bot.kanaele[THREAD] = thread
+    kanal = FakeTextkanal()
+    bot.kanaele[SITZUNGSKANAL] = kanal
 
     async def ablauf():
         await befehl(bot, "start")(FakeCtx(runde.mira))
@@ -4442,21 +4501,21 @@ def test_der_kanalverlust_steht_ohne_kanalnamen_im_log(
     asyncio.run(ablauf())
 
     assert runde.kanal.name not in caplog.text
-    assert f"Sitzung {sitzung_im_thread}: der Bot wurde aus dem Sprachkanal verschoben" in (
+    assert f"Sitzung {sitzung_im_kanal}: der Bot wurde aus dem Sprachkanal verschoben" in (
         caplog.text
     )
-    # Der Thread bekommt den Namen weiter — dort ist er die Auskunft, wo es aufhörte.
-    assert runde.kanal.name in " ".join(thread.geschrieben)
+    # Der Kanal bekommt den Namen weiter — dort ist er die Auskunft, wo es aufhörte.
+    assert runde.kanal.name in " ".join(kanal.geschrieben)
 
 
 def test_der_abriss_steht_ohne_kanalnamen_im_log(
-    konfiguration, sitzung_im_thread, ohne_espeak, runde, kurze_frist, caplog
+    konfiguration, sitzung_im_kanal, ohne_espeak, runde, kurze_frist, caplog
 ):
     """Der zweite Zweig: hinausgeworfen statt verschoben, dieselbe Regel (#211)."""
     caplog.set_level(logging.DEBUG)
     runde.kanal.name = "Am-Runden-Tisch"
     bot = gateway.baue(konfiguration)
-    bot.kanaele[THREAD] = FakeTextkanal()
+    bot.kanaele[SITZUNGSKANAL] = FakeTextkanal()
 
     async def ablauf():
         await befehl(bot, "start")(FakeCtx(runde.mira))
@@ -4471,13 +4530,13 @@ def test_der_abriss_steht_ohne_kanalnamen_im_log(
     asyncio.run(ablauf())
 
     assert runde.kanal.name not in caplog.text
-    assert f"Sitzung {sitzung_im_thread}: die Verbindung zum Sprachkanal ist abgerissen" in (
+    assert f"Sitzung {sitzung_im_kanal}: die Verbindung zum Sprachkanal ist abgerissen" in (
         caplog.text
     )
 
 
 def test_die_meldung_vieler_spuren_kommt_geteilt_statt_gar_nicht(
-    konfiguration, sitzung_im_thread, pycord, monkeypatch
+    konfiguration, sitzung_im_kanal, pycord, monkeypatch
 ):
     """Dreißig Spuren ergaben einen Satz über 2000 Zeichen — Discord wies ihn ab (#120).
 
@@ -4486,9 +4545,9 @@ def test_die_meldung_vieler_spuren_kommt_geteilt_statt_gar_nicht(
     an, und aneinandergehängt steht wieder genau derselbe Satz da.
     """
     bot = gateway.baue(konfiguration)
-    thread = FakeTextkanal()
-    bot.kanaele[THREAD] = thread
-    aufnahme = Aufnahme(konfiguration, unsere_runde(konfiguration), sitzung_im_thread, KANAL)
+    kanal = FakeTextkanal()
+    bot.kanaele[SITZUNGSKANAL] = kanal
+    aufnahme = Aufnahme(konfiguration, unsere_runde(konfiguration), sitzung_im_kanal, KANAL)
     lauf = gateway._Lauf()
     lauf.aufnahme = aufnahme
     meldungen = tuple(
@@ -4504,30 +4563,30 @@ def test_die_meldung_vieler_spuren_kommt_geteilt_statt_gar_nicht(
 
     ganz = " ".join((gateway.LEER_BEENDET, *meldungen))
     assert len(ganz) > grenzen.NACHRICHT
-    assert len(thread.geschrieben) > 1
-    assert all(len(stueck) <= grenzen.NACHRICHT for stueck in thread.geschrieben)
-    assert "".join(thread.geschrieben) == ganz
+    assert len(kanal.geschrieben) > 1
+    assert all(len(stueck) <= grenzen.NACHRICHT for stueck in kanal.geschrieben)
+    assert "".join(kanal.geschrieben) == ganz
 
 
 def test_der_gescheiterte_abschied_sagt_es_statt_zu_verschwinden(
-    konfiguration, sitzung_im_thread, ohne_espeak, runde, kurze_frist, monkeypatch
+    konfiguration, sitzung_im_kanal, ohne_espeak, runde, kurze_frist, monkeypatch
 ):
-    """Ein Faden nebenher hat niemanden, dem er antwortet — also sagt er es im Thread."""
+    """Ein Faden nebenher hat niemanden, dem er antwortet — also sagt er es im Kanal."""
 
     async def stolpert(*args, **kwargs):
         raise RuntimeError("You are not recording")
 
     bot = gateway.baue(konfiguration)
-    thread = FakeTextkanal()
-    bot.kanaele[THREAD] = thread
+    kanal = FakeTextkanal()
+    bot.kanaele[SITZUNGSKANAL] = kanal
     monkeypatch.setattr(recorder, "stoppen", stolpert)
 
     alle_gehen(bot, runde)
 
-    assert thread.geschrieben == [gateway.LEER_GESCHEITERT]
+    assert kanal.geschrieben == [gateway.LEER_GESCHEITERT]
 
 
-def test_das_langsamere_netz_meldet_kein_zweites_ende(konfiguration, sitzung_im_thread, pycord):
+def test_das_langsamere_netz_meldet_kein_zweites_ende(konfiguration, sitzung_im_kanal, pycord):
     """Wer leer zurückbekommt, war der zweite — und der Satz gehört dem ersten.
 
     ``_mitschnitt_beenden`` gibt leer zurück, wenn ein anderer den Lauf schon beansprucht
@@ -4535,36 +4594,36 @@ def test_das_langsamere_netz_meldet_kein_zweites_ende(konfiguration, sitzung_im_
     ``/aufnahme stop``, das »keine Aufnahme« antwortet.
     """
     bot = gateway.baue(konfiguration)
-    thread = FakeTextkanal()
-    bot.kanaele[THREAD] = thread
-    aufnahme = Aufnahme(konfiguration, unsere_runde(konfiguration), sitzung_im_thread, KANAL)
+    kanal = FakeTextkanal()
+    bot.kanaele[SITZUNGSKANAL] = kanal
+    aufnahme = Aufnahme(konfiguration, unsere_runde(konfiguration), sitzung_im_kanal, KANAL)
 
     asyncio.run(gateway._beenden_und_sagen(bot, gateway._Lauf(), aufnahme, "beendet", "kaputt"))
 
-    assert thread.geschrieben == []
+    assert kanal.geschrieben == []
 
 
 def test_eine_misslungene_ansage_macht_aus_dem_ende_keinen_fehlschlag(
-    konfiguration, sitzung_im_thread, ohne_espeak, runde, kurze_frist
+    konfiguration, sitzung_im_kanal, ohne_espeak, runde, kurze_frist
 ):
     """``LEER_GESCHEITERT`` gehört dem gescheiterten Beenden, nicht der stummen Ansage.
 
-    Umfasste ein ``try`` beides, schriebe ein zuckendes ``thread.send`` »die Aufnahme gilt
-    weiter als laufend, gib `/aufnahme stop`« in den Thread — während der Lauf beendet, der
+    Umfasste ein ``try`` beides, schriebe ein zuckendes ``kanal.send`` »die Aufnahme gilt
+    weiter als laufend, gib `/aufnahme stop`« in den Kanal — während der Lauf beendet, der
     Bot getrennt und die Spuren eingereiht sind und ``/aufnahme stop`` »keine Aufnahme«
     antwortet. Genau die falsche Anweisung, gegen die dieser Wächter gebaut ist.
     """
     bot = gateway.baue(konfiguration)
-    thread = FakeTextkanal()
-    bot.kanaele[THREAD] = thread
-    ungestoert = thread.send
+    kanal = FakeTextkanal()
+    bot.kanaele[SITZUNGSKANAL] = kanal
+    ungestoert = kanal.send
 
     async def zuckt(text):
         if text.startswith(gateway.LEER_BEENDET):
-            raise RuntimeError("thread.send zuckt")
+            raise RuntimeError("kanal.send zuckt")
         await ungestoert(text)
 
-    thread.send = zuckt
+    kanal.send = zuckt
 
     async def ablauf():
         await befehl(bot, "start")(FakeCtx(runde.mira))
@@ -4584,22 +4643,22 @@ def test_eine_misslungene_ansage_macht_aus_dem_ende_keinen_fehlschlag(
     assert spur.filename.endswith("Mira.wav")
     # Der Lauf ist zu Ende — und die Meldung, die das Gegenteil behauptet, blieb aus.
     assert gateway.LAEUFT_NICHT in ctx.antworten
-    assert thread.geschrieben == []
+    assert kanal.geschrieben == []
 
 
 def test_nach_dem_gescheiterten_abschied_stellt_erst_ein_neuer_gang_den_waechter(
-    konfiguration, sitzung_im_thread, ohne_espeak, runde, kurze_frist
+    konfiguration, sitzung_im_kanal, ohne_espeak, runde, kurze_frist
 ):
     """Die Rücknahme gibt den Lauf zurück, den abbestellten Wächter aber nicht.
 
     Das ist entschieden und nicht vergessen: einen neuen zu stellen hieße, bei bleibendem
-    Fehler alle neunzig Sekunden denselben Fehlschlag in den Thread zu schreiben. Also
+    Fehler alle neunzig Sekunden denselben Fehlschlag in den Kanal zu schreiben. Also
     sagt ``LEER_GESCHEITERT``, was gilt — von selbst geschieht nichts mehr, und erst wer
     den Kanal betritt und wieder verlässt, bestellt einen neuen Wächter.
     """
     bot = gateway.baue(konfiguration)
-    thread = FakeTextkanal()
-    bot.kanaele[THREAD] = thread
+    kanal = FakeTextkanal()
+    bot.kanaele[SITZUNGSKANAL] = kanal
     dazu = bot.ereignisse["on_voice_state_update"]
 
     async def ablauf():
@@ -4610,10 +4669,10 @@ def test_nach_dem_gescheiterten_abschied_stellt_erst_ein_neuer_gang_den_waechter
         anwesend = nur_der_bot(runde.kanal)
         await dazu(runde.mira, zustand(runde.kanal), zustand())
         await ruhen()
-        assert thread.geschrieben == [gateway.LEER_GESCHEITERT]
+        assert kanal.geschrieben == [gateway.LEER_GESCHEITERT]
         # Mehrere Fristen lang von selbst: kein zweiter Versuch, kein zweiter Satz.
         await asyncio.sleep(FRIST * 3)
-        assert thread.geschrieben == [gateway.LEER_GESCHEITERT]
+        assert kanal.geschrieben == [gateway.LEER_GESCHEITERT]
         assert not verbindung.getrennt
         # Und jetzt das, was die Meldung ankündigt: betreten, verlassen, Wächter steht.
         runde.kanal.members = anwesend
@@ -4627,23 +4686,23 @@ def test_nach_dem_gescheiterten_abschied_stellt_erst_ein_neuer_gang_den_waechter
 
     assert runde.kanal.verbindung.getrennt
     assert not runde.kanal.verbindung.schneidet
-    assert thread.geschrieben[-1].startswith(gateway.LEER_BEENDET)
+    assert kanal.geschrieben[-1].startswith(gateway.LEER_BEENDET)
 
 
 def test_nach_gescheitertem_beenden_greift_aufnahme_stop_noch(
-    konfiguration, sitzung_im_thread, ohne_espeak, runde, kurze_frist
+    konfiguration, sitzung_im_kanal, ohne_espeak, runde, kurze_frist
 ):
     """Der Anspruch vor dem Abgeben darf den Fehlerpfad nicht unrettbar machen.
 
     Ohne Rücknahme wäre der Lauf nach einem gescheiterten Trennen geleert: der Bot bliebe
     im Kanal, die Spuren lägen uneingereiht, und ``/aufnahme stop`` antwortete ab da immer
     »keine Aufnahme« — genau der Zustand, gegen den dieser Wächter gebaut ist, nur ohne
-    jeden Befehl, der ihn beendet. Der Satz im Thread verspricht das Gegenteil; hier wird
+    jeden Befehl, der ihn beendet. Der Satz im Kanal verspricht das Gegenteil; hier wird
     das Versprechen eingelöst.
     """
     bot = gateway.baue(konfiguration)
-    thread = FakeTextkanal()
-    bot.kanaele[THREAD] = thread
+    kanal = FakeTextkanal()
+    bot.kanaele[SITZUNGSKANAL] = kanal
 
     async def ablauf():
         await befehl(bot, "start")(FakeCtx(runde.mira))
@@ -4654,7 +4713,7 @@ def test_nach_gescheitertem_beenden_greift_aufnahme_stop_noch(
         await bot.ereignisse["on_voice_state_update"](runde.mira, zustand(runde.kanal), zustand())
         await ruhen()
         assert not verbindung.getrennt
-        # Und jetzt das, wozu die Meldung im Thread auffordert.
+        # Und jetzt das, wozu die Meldung im Kanal auffordert.
         verbindung.trennen_stolpert = False
         ctx = FakeCtx(runde.mira)
         await befehl(bot, "stop")(ctx)
@@ -4662,7 +4721,7 @@ def test_nach_gescheitertem_beenden_greift_aufnahme_stop_noch(
 
     ctx = asyncio.run(ablauf())
 
-    assert thread.geschrieben == [gateway.LEER_GESCHEITERT]
+    assert kanal.geschrieben == [gateway.LEER_GESCHEITERT]
     assert gateway.LAEUFT_NICHT not in ctx.antworten
     assert not any(antwort.startswith("Das hat nicht geklappt") for antwort in ctx.antworten)
     assert runde.kanal.verbindung.getrennt
@@ -4672,7 +4731,7 @@ def test_nach_gescheitertem_beenden_greift_aufnahme_stop_noch(
 
 
 def test_ein_zweites_aufnahme_stop_holt_die_liegengebliebene_spur_nach(
-    konfiguration, sitzung_im_thread, ohne_espeak, runde, monkeypatch
+    konfiguration, sitzung_im_kanal, ohne_espeak, runde, monkeypatch
 ):
     """Der Repro aus #104, so wie er gemeldet wurde: ``/aufnahme stop`` ein zweites Mal.
 
@@ -4681,7 +4740,7 @@ def test_ein_zweites_aufnahme_stop_holt_die_liegengebliebene_spur_nach(
     verschriftet noch nach Frist gelöscht.
     """
     bot = gateway.baue(konfiguration)
-    bot.kanaele[THREAD] = FakeTextkanal()
+    bot.kanaele[SITZUNGSKANAL] = FakeTextkanal()
 
     async def ablauf():
         await befehl(bot, "start")(FakeCtx(runde.mira))
@@ -4707,7 +4766,7 @@ def test_ein_zweites_aufnahme_stop_holt_die_liegengebliebene_spur_nach(
 
 
 def test_zwei_beender_zugleich_geben_dem_zweiten_keine_leere_antwort(
-    konfiguration, sitzung_im_thread, ohne_espeak, runde, kurze_frist
+    konfiguration, sitzung_im_kanal, ohne_espeak, runde, kurze_frist
 ):
     """``recorder.stoppen`` gibt beim Trennen ab; in der Lücke kam bisher ein zweiter durch.
 
@@ -4715,7 +4774,7 @@ def test_zwei_beender_zugleich_geben_dem_zweiten_keine_leere_antwort(
     hat nicht geklappt« für einen Stopp, der geklappt hat.
     """
     bot = gateway.baue(konfiguration)
-    bot.kanaele[THREAD] = FakeTextkanal()
+    bot.kanaele[SITZUNGSKANAL] = FakeTextkanal()
 
     async def ablauf():
         await befehl(bot, "start")(FakeCtx(runde.mira))
@@ -4732,10 +4791,10 @@ def test_zwei_beender_zugleich_geben_dem_zweiten_keine_leere_antwort(
     assert runde.kanal.verbindung.getrennt
 
 
-def test_ohne_thread_endet_der_mitschnitt_trotzdem(
+def test_ohne_kanal_endet_der_mitschnitt_trotzdem(
     konfiguration, sitzung_id, ohne_espeak, runde, kurze_frist
 ):
-    """Eine Sitzung aus der Zeit vor dem Thread hat keinen — gesagt wird es dann nirgends."""
+    """Eine Sitzung aus der Zeit vor dem Kanal hat keinen — gesagt wird es dann nirgends."""
     bot = gateway.baue(konfiguration)
 
     alle_gehen(bot, runde)
@@ -4811,7 +4870,7 @@ def test_die_bestaetigung_sagt_das_wichtigste(konfiguration, sitzung_id, ohne_es
 # -- Zuordnen beim Betreten des Sprachkanals ----------------------------------------------
 #
 # Die Zusage aus #76: jede Äußerung gehört von Anfang an einer Figur. Heißt jemand wie ein
-# Foundry-Spieler oder wie dessen Figur, wird das ohne Rückfrage gesetzt und im Thread
+# Foundry-Spieler oder wie dessen Figur, wird das ohne Rückfrage gesetzt und im Kanal
 # vermerkt; sonst wird **die betroffene Person** im Zwiegespräch gefragt. Was hier nie
 # passieren darf: dass ein Vorschlag als Bestätigung durchgeht.
 
@@ -4864,29 +4923,29 @@ def antworten(menue, wer, wert):
 
 
 @pytest.fixture
-def mit_thread(konfiguration, sitzung_im_thread):
-    """Die Sitzung hat einen Thread — dort steht der Vermerk über eine Zuordnung."""
+def mit_kanal(konfiguration, sitzung_im_kanal):
+    """Die Sitzung hat einen Kanal — dort steht der Vermerk über eine Zuordnung."""
 
     def anhaengen(bot):
-        thread = FakeTextkanal()
-        bot.kanaele[THREAD] = thread
-        return thread
+        kanal = FakeTextkanal()
+        bot.kanaele[SITZUNGSKANAL] = kanal
+        return kanal
 
     return anhaengen
 
 
 def test_beim_start_wird_zugeordnet_wer_gleich_heisst_und_gefragt_wer_nicht(
-    konfiguration, mit_thread, ohne_espeak, runde
+    konfiguration, mit_kanal, ohne_espeak, runde
 ):
     """Beides beim Betreten und nicht erst am Ende des Abends — das ist der Punkt von #76."""
     foundry_spieler(konfiguration, "Mira", "Brok Eisenfaust")
     bot = gateway.baue(konfiguration)
-    thread = mit_thread(bot)
+    kanal = mit_kanal(bot)
 
     asyncio.run(befehl(bot, "start")(FakeCtx(runde.mira)))
 
     assert zugeordnet(konfiguration) == {MIRA.id: "Mira", BROK.id: None}
-    assert thread.geschrieben == [erinnern.BETRETEN_VERMERK.format(name=MIRA.name, spieler="Mira")]
+    assert kanal.geschrieben == [erinnern.BETRETEN_VERMERK.format(name=MIRA.name, spieler="Mira")]
     # Wer von selbst zugeordnet wurde, wird nicht auch noch gefragt — und umgekehrt.
     assert runde.mira.zwiegespraech == []
     assert gefragt_wurde(runde.brok) is not None
@@ -4894,7 +4953,7 @@ def test_beim_start_wird_zugeordnet_wer_gleich_heisst_und_gefragt_wer_nicht(
 
 
 def test_das_menue_im_zwiegespraech_bietet_kein_fremdes_konto_an(
-    konfiguration, mit_thread, ohne_espeak, runde
+    konfiguration, mit_kanal, ohne_espeak, runde
 ):
     """Der Weg, auf dem Brok privat und unbeaufsichtigt zu Mira wurde — er ist zu.
 
@@ -4903,7 +4962,7 @@ def test_das_menue_im_zwiegespraech_bietet_kein_fremdes_konto_an(
     """
     foundry_spieler(konfiguration, "Mira", "Brok Eisenfaust")
     bot = gateway.baue(konfiguration)
-    mit_thread(bot)
+    mit_kanal(bot)
 
     asyncio.run(befehl(bot, "start")(FakeCtx(runde.mira)))
     menue = gefragt_wurde(runde.brok)
@@ -4917,7 +4976,7 @@ def test_das_menue_im_zwiegespraech_bietet_kein_fremdes_konto_an(
 
 
 def test_die_frage_im_zwiegespraech_ist_noch_keine_zuordnung(
-    konfiguration, mit_thread, ohne_espeak, runde
+    konfiguration, mit_kanal, ohne_espeak, runde
 ):
     """Die Gegenprobe zur Namensgleichheit: gefragt heißt nicht gesetzt.
 
@@ -4926,7 +4985,7 @@ def test_die_frage_im_zwiegespraech_ist_noch_keine_zuordnung(
     """
     foundry_spieler(konfiguration, "Mira", "Brok Eisenfaust")
     bot = gateway.baue(konfiguration)
-    mit_thread(bot)
+    mit_kanal(bot)
     asyncio.run(befehl(bot, "start")(FakeCtx(runde.mira)))
     menue = gefragt_wurde(runde.brok)
 
@@ -4938,11 +4997,11 @@ def test_die_frage_im_zwiegespraech_ist_noch_keine_zuordnung(
 
 
 def test_wer_bestaetigt_hat_wird_beim_naechsten_betreten_nicht_erneut_gefragt(
-    konfiguration, mit_thread, ohne_espeak, runde
+    konfiguration, mit_kanal, ohne_espeak, runde
 ):
     foundry_spieler(konfiguration, "Mira", "Brok Eisenfaust")
     bot = gateway.baue(konfiguration)
-    thread = mit_thread(bot)
+    kanal = mit_kanal(bot)
 
     async def ablauf():
         await befehl(bot, "start")(FakeCtx(runde.mira))
@@ -4955,7 +5014,7 @@ def test_wer_bestaetigt_hat_wird_beim_naechsten_betreten_nicht_erneut_gefragt(
 
     # Je einmal aus dem ersten Lauf, kein zweites Mal aus dem zweiten.
     assert len(runde.brok.zwiegespraech) == 1
-    assert thread.geschrieben == [
+    assert kanal.geschrieben == [
         erinnern.BETRETEN_VERMERK.format(name=MIRA.name, spieler="Mira"),
         erinnern.MENUE_VERMERK.format(name=BROK.name, spieler="Brok Eisenfaust"),
     ]
@@ -4963,12 +5022,12 @@ def test_wer_bestaetigt_hat_wird_beim_naechsten_betreten_nicht_erneut_gefragt(
 
 
 def test_je_aufnahme_wird_genau_einmal_gefragt(
-    konfiguration, mit_thread, ohne_espeak, runde, kurze_frist
+    konfiguration, mit_kanal, ohne_espeak, runde, kurze_frist
 ):
     """Sonst stünde bei jedem Gehen und Wiederkommen dieselbe Frage noch einmal im Postfach."""
     foundry_spieler(konfiguration, "Mira", "Brok Eisenfaust")
     bot = gateway.baue(konfiguration)
-    mit_thread(bot)
+    mit_kanal(bot)
     dazu = bot.ereignisse["on_voice_state_update"]
 
     async def ablauf():
@@ -4985,12 +5044,12 @@ def test_je_aufnahme_wird_genau_einmal_gefragt(
 
 
 def test_ein_vermerk_von_vorhin_verschluckt_die_frage_der_naechsten_aufnahme_nicht(
-    konfiguration, mit_thread, ohne_espeak, runde
+    konfiguration, mit_kanal, ohne_espeak, runde
 ):
     """Dieselbe Falle wie beim Wächter des leeren Kanals — deshalb hängt er an der Aufnahme."""
     foundry_spieler(konfiguration, "Mira", "Brok Eisenfaust")
     bot = gateway.baue(konfiguration)
-    mit_thread(bot)
+    mit_kanal(bot)
 
     async def ablauf():
         await befehl(bot, "start")(FakeCtx(runde.mira))
@@ -5009,20 +5068,18 @@ def test_ein_vermerk_von_vorhin_verschluckt_die_frage_der_naechsten_aufnahme_nic
 
 
 def test_ein_nachzuegler_wird_beim_betreten_zugeordnet(
-    konfiguration, mit_thread, ohne_espeak, runde
+    konfiguration, mit_kanal, ohne_espeak, runde
 ):
     foundry_spieler(konfiguration, "Aelin")
     bot = gateway.baue(konfiguration)
-    thread = mit_thread(bot)
+    kanal = mit_kanal(bot)
     spaet = FakeMitglied(int(SPAET.id), SPAET.name)
 
     asyncio.run(befehl(bot, "start")(FakeCtx(runde.mira)))
     asyncio.run(bot.ereignisse["on_voice_state_update"](spaet, zustand(), zustand(runde.kanal)))
 
     assert zugeordnet(konfiguration)[SPAET.id] == "Aelin"
-    assert thread.geschrieben == [
-        erinnern.BETRETEN_VERMERK.format(name=SPAET.name, spieler="Aelin")
-    ]
+    assert kanal.geschrieben == [erinnern.BETRETEN_VERMERK.format(name=SPAET.name, spieler="Aelin")]
 
 
 def schon_einmal_dabei(konfiguration, wer):
@@ -5047,7 +5104,7 @@ def schon_einmal_dabei(konfiguration, wer):
         text="Ansage",
         members=(wer,),
     )
-    notes.create_session(unsere, thread_id=str(THREAD))
+    notes.create_session(unsere, kanal_id=str(SITZUNGSKANAL))
 
 
 def waehrend_der_ansage_ziehen(runde, wohin):
@@ -5067,7 +5124,7 @@ def waehrend_der_ansage_ziehen(runde, wohin):
 
 
 def test_der_nachzuegler_im_falschen_kanal_wird_nicht_zugeordnet(
-    konfiguration, mit_thread, ohne_espeak, runde
+    konfiguration, mit_kanal, ohne_espeak, runde
 ):
     """Ohne Eintrag im Einwilligungsprotokoll gibt es nichts zuzuordnen.
 
@@ -5079,7 +5136,7 @@ def test_der_nachzuegler_im_falschen_kanal_wird_nicht_zugeordnet(
     foundry_spieler(konfiguration, "Aelin")
     schon_einmal_dabei(konfiguration, SPAET)
     bot = gateway.baue(konfiguration)
-    thread = mit_thread(bot)
+    kanal = mit_kanal(bot)
     spaet = FakeMitglied(int(SPAET.id), SPAET.name)
     asyncio.run(befehl(bot, "start")(FakeCtx(runde.mira)))
     anderswo = FakeSprachkanal(runde.gilde)
@@ -5093,17 +5150,17 @@ def test_der_nachzuegler_im_falschen_kanal_wird_nicht_zugeordnet(
 
     assert zugeordnet(konfiguration)[SPAET.id] is None
     assert spaet.zwiegespraech == []
-    assert thread.geschrieben == []
+    assert kanal.geschrieben == []
 
 
 def test_ein_geschlossenes_zwiegespraech_haelt_den_mitschnitt_nicht_auf(
-    konfiguration, mit_thread, ohne_espeak, runde, caplog
+    konfiguration, mit_kanal, ohne_espeak, runde, caplog
 ):
     """Keine Antwort ist auch eine: die Spur bleibt unter dem Discord-Namen."""
     foundry_spieler(konfiguration, "Mira", "Brok Eisenfaust")
     runde.brok.zwiegespraech_zu = True
     bot = gateway.baue(konfiguration)
-    mit_thread(bot)
+    mit_kanal(bot)
     ctx = FakeCtx(runde.mira)
 
     with caplog.at_level(logging.WARNING):
@@ -5118,12 +5175,12 @@ def test_ein_geschlossenes_zwiegespraech_haelt_den_mitschnitt_nicht_auf(
 
 
 def test_die_frage_beim_betreten_beantwortet_nur_die_betroffene_person(
-    konfiguration, mit_thread, ohne_espeak, runde
+    konfiguration, mit_kanal, ohne_espeak, runde
 ):
     """Wer wer ist, entscheidet man über sich selbst — nicht über jemand anderen."""
     foundry_spieler(konfiguration, "Mira", "Brok Eisenfaust")
     bot = gateway.baue(konfiguration)
-    mit_thread(bot)
+    mit_kanal(bot)
     asyncio.run(befehl(bot, "start")(FakeCtx(runde.mira)))
 
     interaktion = antworten(gefragt_wurde(runde.brok), runde.mira, "u-brok eisenfaust")
@@ -5133,7 +5190,7 @@ def test_die_frage_beim_betreten_beantwortet_nur_die_betroffene_person(
 
 
 def test_eine_frage_von_vorhin_ordnet_nicht_in_die_frische_runde(
-    konfiguration, mit_thread, ohne_espeak, runde
+    konfiguration, mit_kanal, ohne_espeak, runde
 ):
     """Im Zwiegespräch nennt Discord keine Gilde — geprüft wird die Runde gegen sich selbst.
 
@@ -5142,7 +5199,7 @@ def test_eine_frage_von_vorhin_ordnet_nicht_in_die_frische_runde(
     """
     foundry_spieler(konfiguration, "Mira", "Brok Eisenfaust")
     bot = gateway.baue(konfiguration)
-    mit_thread(bot)
+    mit_kanal(bot)
     asyncio.run(befehl(bot, "start")(FakeCtx(runde.mira)))
     menue = gefragt_wurde(runde.brok)
 
@@ -5157,68 +5214,68 @@ def test_eine_frage_von_vorhin_ordnet_nicht_in_die_frische_runde(
     assert people.overview(frisch).personen == ()
 
 
-def test_ohne_weg_in_den_thread_entsteht_keine_zuordnung(
-    konfiguration, mit_thread, ohne_espeak, runde, caplog
+def test_ohne_weg_in_den_kanal_entsteht_keine_zuordnung(
+    konfiguration, mit_kanal, ohne_espeak, runde, caplog
 ):
     """Erst schreiben, dann sagen — und was nicht gesagt werden kann, wird zurückgenommen.
 
-    Der Fehlerfall dieser Reihenfolge ist **Schweigen** und keine Lüge im Thread. Am Ende
+    Der Fehlerfall dieser Reihenfolge ist **Schweigen** und keine Lüge im Kanal. Am Ende
     steht dasselbe wie zuvor: kein Vermerk, keine Zuordnung, und die Frage steht beim
     nächsten Mitschnitt wieder an.
     """
     foundry_spieler(konfiguration, "Mira", "Brok Eisenfaust")
     bot = gateway.baue(konfiguration)
-    thread = mit_thread(bot)
-    thread.stolpert = 99
+    kanal = mit_kanal(bot)
+    kanal.stolpert = 99
 
     with caplog.at_level(logging.WARNING):
         asyncio.run(befehl(bot, "start")(FakeCtx(runde.mira)))
 
-    assert thread.geschrieben == []
+    assert kanal.geschrieben == []
     assert zugeordnet(konfiguration)[MIRA.id] is None
-    # Und der Mitschnitt läuft: ein verschlossener Thread ist kein Grund, nicht zu hören.
+    # Und der Mitschnitt läuft: ein verschlossener Kanal ist kein Grund, nicht zu hören.
     assert runde.kanal.verbindung.schneidet
     assert MIRA.name not in caplog.text
 
 
 @pytest.fixture
-def sitzung_ohne_thread(konfiguration):
-    """Eine Sitzung aus der Zeit vor dem Sitzungs-Thread — es gibt dorthin gar keinen Weg."""
+def sitzung_ohne_kanal(konfiguration):
+    """Eine Sitzung aus der Zeit vor dem Sitzungs-Kanal — es gibt dorthin gar keinen Weg."""
     return notes.create_session(unsere_runde(konfiguration))
 
 
-def test_ohne_thread_an_der_sitzung_entsteht_keine_zuordnung(
-    konfiguration, sitzung_ohne_thread, ohne_espeak, runde
+def test_ohne_kanal_an_der_sitzung_entsteht_keine_zuordnung(
+    konfiguration, sitzung_ohne_kanal, ohne_espeak, runde
 ):
     """Der zweite der drei Wege, auf denen der Vermerk nicht hinauskommt.
 
-    ``_in_den_thread`` gibt hier ``False`` zurück, statt zu werfen — der werfende Thread
+    ``_in_den_kanal`` gibt hier ``False`` zurück, statt zu werfen — der werfende Weg
     allein deckt die Zusage also nicht ab.
     """
     foundry_spieler(konfiguration, "Mira", "Brok Eisenfaust")
     bot = gateway.baue(konfiguration)
-    thread = FakeTextkanal()
-    bot.kanaele[THREAD] = thread
+    kanal = FakeTextkanal()
+    bot.kanaele[SITZUNGSKANAL] = kanal
 
     asyncio.run(befehl(bot, "start")(FakeCtx(runde.mira)))
 
-    assert thread.geschrieben == []
+    assert kanal.geschrieben == []
     assert zugeordnet(konfiguration)[MIRA.id] is None
     assert runde.kanal.verbindung.schneidet
 
 
-def test_ein_fortgeraeumter_thread_laesst_keine_zuordnung_entstehen(
-    konfiguration, sitzung_im_thread, ohne_espeak, runde
+def test_ein_fortgeraeumter_kanal_laesst_keine_zuordnung_entstehen(
+    konfiguration, sitzung_im_kanal, ohne_espeak, runde
 ):
-    """Und der dritte: den Thread gibt es nicht mehr, Discord antwortet mit 404.
+    """Und der dritte: den Kanal gibt es nicht mehr, Discord antwortet mit 404.
 
     Auch das ist ein ``False`` und kein Wurf. Fort ist dabei nicht »zuckt« — der 404 käme
     beim nächsten Betreten genauso wieder, also entsteht die Zuordnung auch später nicht.
     """
     foundry_spieler(konfiguration, "Mira", "Brok Eisenfaust")
     bot = gateway.baue(konfiguration)
-    fort = FakeFortgeraeumterThread()
-    bot.kanaele[THREAD] = fort
+    fort = FakeFortgeraeumterKanal()
+    bot.kanaele[SITZUNGSKANAL] = fort
 
     asyncio.run(befehl(bot, "start")(FakeCtx(runde.mira)))
 
@@ -5228,16 +5285,16 @@ def test_ein_fortgeraeumter_thread_laesst_keine_zuordnung_entstehen(
 
 
 def test_ein_gescheitertes_festschreiben_bleibt_still(
-    konfiguration, mit_thread, ohne_espeak, runde, monkeypatch, caplog
+    konfiguration, mit_kanal, ohne_espeak, runde, monkeypatch, caplog
 ):
     """Geht das Schreiben nicht durch — die SQLite hängt, etwa —, wird auch nichts gesagt.
 
     Der Gewinn der umgedrehten Reihenfolge: es gibt keinen Zustand, in dem ein Satz im
-    Thread eine Zuordnung behauptet, die nie entstanden ist.
+    Kanal eine Zuordnung behauptet, die nie entstanden ist.
     """
     foundry_spieler(konfiguration, "Mira", "Brok Eisenfaust")
     bot = gateway.baue(konfiguration)
-    thread = mit_thread(bot)
+    kanal = mit_kanal(bot)
 
     def stolpert(*_args, **_rest):
         raise RuntimeError("database is locked")
@@ -5248,18 +5305,18 @@ def test_ein_gescheitertes_festschreiben_bleibt_still(
         asyncio.run(befehl(bot, "start")(FakeCtx(runde.mira)))
 
     assert zugeordnet(konfiguration) == {MIRA.id: None, BROK.id: None}
-    assert thread.geschrieben == []
+    assert kanal.geschrieben == []
     assert "RuntimeError" in caplog.text
     assert MIRA.name not in caplog.text
 
 
 def test_vermerkt_wird_nur_was_zuordnen_auch_geschrieben_hat(
-    konfiguration, mit_thread, ohne_espeak, runde, monkeypatch
+    konfiguration, mit_kanal, ohne_espeak, runde, monkeypatch
 ):
-    """Weist ``zuordnen`` ab, steht nichts im Thread — sonst wäre der Satz eine Behauptung."""
+    """Weist ``zuordnen`` ab, steht nichts im Kanal — sonst wäre der Satz eine Behauptung."""
     foundry_spieler(konfiguration, "Mira", "Brok Eisenfaust")
     bot = gateway.baue(konfiguration)
-    thread = mit_thread(bot)
+    kanal = mit_kanal(bot)
 
     monkeypatch.setattr(
         erinnern,
@@ -5269,12 +5326,12 @@ def test_vermerkt_wird_nur_was_zuordnen_auch_geschrieben_hat(
 
     asyncio.run(befehl(bot, "start")(FakeCtx(runde.mira)))
 
-    assert thread.geschrieben == []
+    assert kanal.geschrieben == []
     assert zugeordnet(konfiguration)[MIRA.id] is None
 
 
 def test_ohne_ruecknahme_bleibt_eine_wahre_zuordnung_ohne_ansage_stehen(
-    konfiguration, mit_thread, ohne_espeak, runde, monkeypatch, caplog
+    konfiguration, mit_kanal, ohne_espeak, runde, monkeypatch, caplog
 ):
     """Der eine Fall, in dem beides danebengeht: der Vermerk **und** seine Rücknahme.
 
@@ -5285,8 +5342,8 @@ def test_ohne_ruecknahme_bleibt_eine_wahre_zuordnung_ohne_ansage_stehen(
     """
     foundry_spieler(konfiguration, "Mira", "Brok Eisenfaust")
     bot = gateway.baue(konfiguration)
-    thread = mit_thread(bot)
-    thread.stolpert = 99
+    kanal = mit_kanal(bot)
+    kanal.stolpert = 99
     echt = people.confirm
     geschrieben = []
 
@@ -5303,24 +5360,24 @@ def test_ohne_ruecknahme_bleibt_eine_wahre_zuordnung_ohne_ansage_stehen(
         asyncio.run(befehl(bot, "start")(FakeCtx(runde.mira)))
 
     assert zugeordnet(konfiguration)[MIRA.id] == "Mira"
-    assert thread.geschrieben == []
+    assert kanal.geschrieben == []
     assert "ohne Ansage" in caplog.text
     assert MIRA.name not in caplog.text
 
 
 def test_die_ruecknahme_loescht_keine_entscheidung_von_zwischendurch(
-    konfiguration, mit_thread, ohne_espeak, runde, caplog
+    konfiguration, mit_kanal, ohne_espeak, runde, caplog
 ):
     """Zwischen Schreiben und Rücknahme liegt ein Gang ans Netz — und in dem gibt es `/zuordnung`.
 
-    Der Thread hier tut genau das, was ein langsames Discord zulässt: er lässt jemanden
+    Der Kanal hier tut genau das, was ein langsames Discord zulässt: er lässt jemanden
     dieselbe Person auf ein anderes Konto legen und wirft danach. Nähme die Rücknahme
     blind, was gerade dasteht, wäre diese Entscheidung still fort — niemand hat sie
     zurückgenommen, und trotzdem stünde am Ende nichts mehr da.
     """
     foundry_spieler(konfiguration, "Mira", "Brok Eisenfaust")
     bot = gateway.baue(konfiguration)
-    thread = mit_thread(bot)
+    kanal = mit_kanal(bot)
     unsere = unsere_runde(konfiguration)
 
     async def dazwischenfunken(text):
@@ -5328,7 +5385,7 @@ def test_die_ruecknahme_loescht_keine_entscheidung_von_zwischendurch(
         people.confirm(unsere, {MIRA.id: "u-brok eisenfaust"})
         raise RuntimeError("Discord hat abgelehnt")
 
-    thread.send = dazwischenfunken
+    kanal.send = dazwischenfunken
 
     with caplog.at_level(logging.INFO):
         asyncio.run(befehl(bot, "start")(FakeCtx(runde.mira)))
@@ -5338,8 +5395,8 @@ def test_die_ruecknahme_loescht_keine_entscheidung_von_zwischendurch(
     assert MIRA.name not in caplog.text
 
 
-def test_wer_sich_im_zwiegespraech_waehlt_steht_danach_im_thread(
-    konfiguration, mit_thread, ohne_espeak, runde
+def test_wer_sich_im_zwiegespraech_waehlt_steht_danach_im_kanal(
+    konfiguration, mit_kanal, ohne_espeak, runde
 ):
     """Je schwächer der Beleg, desto mehr Tageslicht — hier stimmt gar kein Name überein.
 
@@ -5347,19 +5404,19 @@ def test_wer_sich_im_zwiegespraech_waehlt_steht_danach_im_thread(
     """
     foundry_spieler(konfiguration, "Mira", "Brok Eisenfaust")
     bot = gateway.baue(konfiguration)
-    thread = mit_thread(bot)
+    kanal = mit_kanal(bot)
     asyncio.run(befehl(bot, "start")(FakeCtx(runde.mira)))
 
     antworten(gefragt_wurde(runde.brok), runde.brok, "u-brok eisenfaust")
 
-    assert thread.geschrieben[-1] == erinnern.MENUE_VERMERK.format(
+    assert kanal.geschrieben[-1] == erinnern.MENUE_VERMERK.format(
         name=BROK.name, spieler="Brok Eisenfaust"
     )
     assert erinnern.MENUE_VERMERK != erinnern.BETRETEN_VERMERK
 
 
-def test_ein_verschlossener_thread_wirft_die_eigene_antwort_nicht_weg(
-    konfiguration, mit_thread, ohne_espeak, runde, caplog
+def test_ein_verschlossener_kanal_wirft_die_eigene_antwort_nicht_weg(
+    konfiguration, mit_kanal, ohne_espeak, runde, caplog
 ):
     """Anders als beim 1:1-Vermerk ist der Satz hier keine Bedingung — sie hat geantwortet.
 
@@ -5368,9 +5425,9 @@ def test_ein_verschlossener_thread_wirft_die_eigene_antwort_nicht_weg(
     """
     foundry_spieler(konfiguration, "Mira", "Brok Eisenfaust")
     bot = gateway.baue(konfiguration)
-    thread = mit_thread(bot)
+    kanal = mit_kanal(bot)
     asyncio.run(befehl(bot, "start")(FakeCtx(runde.mira)))
-    thread.stolpert = 99
+    kanal.stolpert = 99
 
     with caplog.at_level(logging.ERROR):
         interaktion = antworten(gefragt_wurde(runde.brok), runde.brok, "u-brok eisenfaust")
@@ -5383,18 +5440,18 @@ def test_ein_verschlossener_thread_wirft_die_eigene_antwort_nicht_weg(
     assert "ungesagt" in caplog.text
 
 
-def test_wer_im_zwiegespraech_abgewiesen_wird_steht_nicht_im_thread(
-    konfiguration, mit_thread, ohne_espeak, runde
+def test_wer_im_zwiegespraech_abgewiesen_wird_steht_nicht_im_kanal(
+    konfiguration, mit_kanal, ohne_espeak, runde
 ):
     """Gegenprobe: vermerkt wird, was entstanden ist — nicht, was versucht wurde."""
     foundry_spieler(konfiguration, "Mira", "Brok Eisenfaust")
     bot = gateway.baue(konfiguration)
-    thread = mit_thread(bot)
+    kanal = mit_kanal(bot)
     asyncio.run(befehl(bot, "start")(FakeCtx(runde.mira)))
 
     antworten(gefragt_wurde(runde.brok), runde.brok, "u-mira")
 
-    assert thread.geschrieben == [erinnern.BETRETEN_VERMERK.format(name=MIRA.name, spieler="Mira")]
+    assert kanal.geschrieben == [erinnern.BETRETEN_VERMERK.format(name=MIRA.name, spieler="Mira")]
 
 
 class FakeCtxMitLoeschung(FakeCtx):
@@ -5424,7 +5481,7 @@ class FakeCtxMitLoeschung(FakeCtx):
         lebenszyklus.loeschen(self.konfiguration, alte)
         self.frisch = runden.anlegen(self.konfiguration.database_path, "Nebenan", guild_id="12")
         assert self.frisch.id == alte.id
-        sitzung = notes.create_session(self.frisch, thread_id=str(THREAD))
+        sitzung = notes.create_session(self.frisch, kanal_id=str(SITZUNGSKANAL))
         consent.record(
             self.frisch,
             session_id=sitzung,
@@ -5439,7 +5496,7 @@ class FakeCtxMitLoeschung(FakeCtx):
 
 
 def test_eine_aufnahme_von_vorhin_ordnet_nicht_in_die_frische_runde(
-    konfiguration, mit_thread, ohne_espeak, runde
+    konfiguration, mit_kanal, ohne_espeak, runde
 ):
     """Die Aufnahme hält ihre Runde — die Kennung kann inzwischen einer fremden Gilde gehören.
 
@@ -5450,7 +5507,7 @@ def test_eine_aufnahme_von_vorhin_ordnet_nicht_in_die_frische_runde(
     """
     foundry_spieler(konfiguration, "Mira")
     bot = gateway.baue(konfiguration)
-    thread = mit_thread(bot)
+    kanal = mit_kanal(bot)
     ctx = FakeCtxMitLoeschung(runde.mira, konfiguration)
 
     asyncio.run(befehl(bot, "start")(ctx))
@@ -5459,11 +5516,11 @@ def test_eine_aufnahme_von_vorhin_ordnet_nicht_in_die_frische_runde(
     assert [wer.confirmed for wer in people.overview(ctx.frisch).personen] == [None, None]
     assert runde.mira.zwiegespraech == []
     assert runde.brok.zwiegespraech == []
-    assert thread.geschrieben == []
+    assert kanal.geschrieben == []
 
 
 def test_zwei_ereignisse_im_selben_schwung_fragen_nur_einmal(
-    konfiguration, mit_thread, ohne_espeak, runde
+    konfiguration, mit_kanal, ohne_espeak, runde
 ):
     """Deshalb steht der Vermerk vor dem ersten ``await`` und nicht dahinter.
 
@@ -5472,7 +5529,7 @@ def test_zwei_ereignisse_im_selben_schwung_fragen_nur_einmal(
     """
     foundry_spieler(konfiguration, "Mira", "Brok Eisenfaust")
     bot = gateway.baue(konfiguration)
-    mit_thread(bot)
+    mit_kanal(bot)
     spaet = FakeMitglied(int(SPAET.id), SPAET.name)
     dazu = bot.ereignisse["on_voice_state_update"]
 
@@ -5489,11 +5546,11 @@ def test_zwei_ereignisse_im_selben_schwung_fragen_nur_einmal(
     assert len(spaet.zwiegespraech) == 1
 
 
-def test_die_nachbarrunde_bekommt_von_alldem_nichts(konfiguration, mit_thread, ohne_espeak, runde):
+def test_die_nachbarrunde_bekommt_von_alldem_nichts(konfiguration, mit_kanal, ohne_espeak, runde):
     """Neben der Gilden-Runde steht in jeder dieser Datenbanken noch die erste."""
     foundry_spieler(konfiguration, "Mira", "Brok Eisenfaust")
     bot = gateway.baue(konfiguration)
-    mit_thread(bot)
+    mit_kanal(bot)
     fremde = erste_runde(konfiguration)
     assert fremde.id != unsere_runde(konfiguration).id
 
@@ -5853,7 +5910,7 @@ def _decoder_am_echten_dekodierpfad(router, opus_decoder, paket):
 def test_ein_dekodierfehler_toetet_den_paket_router_nicht(konfiguration, sitzung_id, caplog):
     """Warum wir auf einem unveroeffentlichten py-cord sitzen — gegen die echte Bibliothek.
 
-    Echter ``AudioReader``, echter ``PacketRouter``, echter Thread und py-cords eigenes
+    Echter ``AudioReader``, echter ``PacketRouter``, echter Kanal und py-cords eigenes
     ``PacketDecoder._decode_packet``. Der festgenagelte Stand aus Pycord-PR #3159 faengt
     den ``OpusError`` an der Quelle ab und dekodiert mit Paketverlust-Verschleierung
     weiter — ``decode(None)`` ist genau das. Ein Schluesselwechsel kostet damit Rahmen
@@ -5917,7 +5974,7 @@ def test_ein_sterbender_paket_router_beendet_den_mitschnitt_aus_seinem_eigenen_f
 ):
     """Das einzige Signal, das ein Abbruch noch hergibt — gegen die echte Bibliothek.
 
-    ``PacketRouter`` ist ein eigener Thread. Faellt er doch einmal um, faengt ``run`` den
+    ``PacketRouter`` ist ein eigener Kanal. Faellt er doch einmal um, faengt ``run`` den
     Fehler, legt ihn in ``reader.error`` und ruft aus **seinem** Faden
     ``client.stop_recording()``. Im Befehl, der den Mitschnitt gestartet hat, kommt nichts
     an; heraus gereicht wird der Fehler seit #3159 nirgends mehr. Was bleibt, ist, dass

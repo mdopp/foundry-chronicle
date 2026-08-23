@@ -1,15 +1,16 @@
 # Foundry Chronicle
 
-**Ein Discord-Bot, der eure Spielabende mitschreibt.** Aus dem, was ihr im Thread
-notiert, was im Sprachkanal gesprochen wird und was in eurem Foundry VTT gewürfelt
+**Ein Discord-Bot, der eure Spielabende mitschreibt.** Aus dem, was ihr im Chat des
+Sprachkanals notiert, was dort gesprochen wird und was in eurem Foundry VTT gewürfelt
 wird, entsteht nach der Sitzung eine lesbare Chronik — Zahlen kommen ausschließlich
 aus dem Foundry-Chat-Log, erfunden werden sie nie.
 
-Bedient wird alles in Discord: `/chronik start` öffnet die Sitzung als Thread, jede
-Nachricht darin wird eine Notiz, `/aufnahme start` schneidet je Sprecher eine Spur
-mit, `/chronik fertig` schließt ab. Am Morgen liegt der Rückblick im Gruppenkanal und
-die Chronik als Markdown-Datei im Thread. Der ganze Ablauf steht weiter unten unter
-[Erfassen per Discord](#erfassen-per-discord-der-thread-ist-die-sitzung).
+Bedient wird alles in Discord: `/chronik start` beginnt die Sitzung im Kanal, in dem ihr
+sie aufruft, jede Nachricht darin wird eine Notiz, `/aufnahme start` schneidet je Sprecher
+eine Spur mit, `/chronik fertig` schließt ab — und wenn der Sprachkanal leer wird, macht
+der Bot das von selbst. Am Morgen liegt der Rückblick im Gruppenkanal und die Chronik als
+Markdown-Datei im Kanal der Sitzung. Der ganze Ablauf steht weiter unten unter
+[Erfassen per Discord](#erfassen-per-discord-die-sitzung-ist-eine-spanne-zeit).
 
 **Eine Instanz trägt mehrere Runden.** Eine Runde ist eine Discord-Gilde; sie bringt
 ihren eigenen Foundry-Zugang mit und sieht nichts von den anderen. Das Foundry-Passwort
@@ -164,7 +165,7 @@ Lauf ginge weiter nach der Vorgabe. Die Stapel-Einstiege oben sind der Weg für 
 Betrieb und Ungeduld.
 
 Ohne Argumente wird abgearbeitet, was noch wartet: ein **Diktat** — eine Sprachnotiz aus
-der Sprachmemo-App des Telefons — hängt als Anhang im Sitzungs-Thread und wird in dieselbe
+der Sprachmemo-App des Telefons — hängt als Anhang im Kanal der Sitzung und wird in dieselbe
 Warteschlange eingereiht. Beim Abschluss wird es verschriftet und findet über den
 Zeitpunkt seiner Nachricht in die Szene, in die es gehört. Eine Sprachmemo-App übersteht
 Bildschirmsperre und Anruf, und die Quelle bleibt erhalten, bis das Transkript taugt.
@@ -287,31 +288,36 @@ weil ihr es sagt, oder weil die Frist nach dem Rauswurf abläuft. Dass er *lesen
 hier liegt, steht in der ersten Nachricht und bleibt wahr; es ist seine Kiste. Fortnehmen
 ist die andere Zusage, und die gibt es hier bewusst nicht.
 
-## Erfassen per Discord: der Thread ist die Sitzung
+## Erfassen per Discord: die Sitzung ist eine Spanne Zeit
 
-`/chronik start [Titel]` legt beides zugleich an — die Sitzung und den Thread, in dem sie
-geschrieben wird. Davor steht ein Fenster für das **Foundry-Passwort**: wer es gibt, hat
+`/chronik start [Titel]` beginnt die Sitzung **in dem Kanal, in dem ihr sie aufruft** — im
+Regelfall der Chat des Sprachkanals, an dem ihr ohnehin sitzt. Einen eigenen Thread gibt
+es seit [#271](../../issues/271) nicht mehr; die Grenze liegt auf der **Zeit**: Notiz ist,
+was zwischen Start und Abschluss dort steht, davor und danach nichts. Zwei Sitzungen
+nebeneinander gibt es nicht — erst abschließen, dann die nächste beginnen. Vor dem Start
+steht ein Fenster für das **Foundry-Passwort**: wer es gibt, hat
 Foundry die ganze Sitzung über offen; wer das Feld leer lässt, spielt ohne die Zahlen
 weiter und wird beim Abschluss noch einmal gefragt — **an einem fehlenden Passwort
 scheitert keine Sitzung.** Wo gar kein Foundry-Server eingetragen ist oder die Runde auf
-der Testwelt läuft, kommt das Fenster erst gar nicht. Der Thread ist der natürliche
-Behälter: Anfang, Ende,
-Teilnehmerliste, Zeitachse, und die Runde tippt ohnehin dort. Darin gilt:
+der Testwelt läuft, kommt das Fenster erst gar nicht. Solange sie läuft, gilt:
 
 - **Jede Nachricht ist eine Notiz** der laufenden Szene. Eingefügter Text — Log,
   Notizzettel, was auch immer — ist einfach eine Nachricht. Der Bot quittiert sie nicht:
-  sie steht im Thread und *ist* die Notiz.
+  sie steht im Kanal und *ist* die Notiz.
 - **`/szene <Name>`** zieht die Trennlinie zur nächsten Szene.
 - **Eine Sprachnachricht oder ein Audio-Anhang** ist ein Diktat und reiht sich in dieselbe
-  Warteschlange ein wie ein Upload — quittiert wird er, weil er den Thread verlässt.
+  Warteschlange ein wie ein Upload — quittiert wird er, weil er den Kanal verlässt.
 - **`/chronik fertig`** schließt die Sitzung ab: Abgleich mit Foundry, Transkription der
-  wartenden Spuren, Komposition — **ein** Auftrag, mit Statusmeldung im Thread. Nach dem
+  wartenden Spuren, Komposition — **ein** Auftrag, mit Statusmeldung im Kanal. **Vergessen
+  kostet nichts mehr:** verlässt die letzte Person den Sprachkanal, schließt der Bot nach
+  neunzig Sekunden selbst ab — kommt in der Frist jemand zurück, bleibt der Abend offen.
+  Nach dem
   Foundry-Passwort fragt ein Fenster nur, wenn **du selbst** beim Start keines gegeben
   hast: `/chronik start` steht jedem Mitglied offen, und die Eingabe eines anderen wird
   nicht stillschweigend deinem Abschluss untergeschoben. Verwendet und vergessen wird es
   so oder so (siehe *Zugangsdaten*). Ein Befehls-Argument gibt es dafür nicht — es stünde
   als Klartext im Kanalverlauf.
-- **`/chronik abgleich`** holt nur die Zahlen, ohne Sitzung und ohne Thread: der Griff für
+- **`/chronik abgleich`** holt nur die Zahlen, ganz ohne Sitzung: der Griff für
   den Abend, an dem Foundry aus war und der Stand nachgezogen werden soll, statt bis zum
   nächtlichen Lauf zu warten ([#116](../../issues/116)). Dasselbe Fenster fürs Passwort,
   derselbe server-eigene Lauf, dieselbe Meldung im Kanal — ein dritter Auslöser, kein
@@ -319,7 +325,7 @@ Teilnehmerliste, Zeitachse, und die Runde tippt ohnehin dort. Darin gilt:
 
 **Ein vorhandener Notizbestand kommt nachträglich herein.** Wer schon länger spielt und
 seine Notizen in **einem** Markdown-Dokument hat — ein Abschnitt je Abend —, hängt es an
-`/chronik einlesen` an, **im Kanal der Runde** und nicht im Thread: ein Dokument deckt
+`/chronik einlesen` an, **im Kanal der Runde** und nicht in einer Sitzung: ein Dokument deckt
 mehrere Abende ab und gehört in keinen einzelnen. Aufgeteilt wird an den Überschriften,
 und zwar relativ statt fest: die Abende trennt die oberste Ebene, deren Überschriften ein
 **Datum** tragen, alles darunter die Szenen — dasselbe Dokument mit `#` je Abend ergibt
@@ -332,10 +338,11 @@ nicht wiederzuerkennen, also wird auch er benannt und nicht angelegt
 entstünde**; ohne Bestätigung entsteht nichts, und dieselbe Datei ein zweites Mal
 hochgeladen verdoppelt den Bestand nicht ([#169](../../issues/169)).
 
-**Nachträgliches Erfassen geht.** Eine Nachricht Tage später im Thread gehört weiter zu
-dieser Sitzung, und in welche **Szene** sie fällt, entscheidet ihr eigener Zeitpunkt: die
-letzte Trennlinie *vor* ihr. Eine bearbeitete Nachricht ändert ihre Notiz, eine gelöschte
-entfernt sie — Discord meldet beides, und ein Protokoll, das eine zurückgenommene Zeile
+**Nachträgliches Erfassen geht.** Eine bearbeitete Nachricht ändert **ihre** Notiz, auch
+Wochen später und auch dann, wenn längst ein anderer Abend läuft — sie bleibt bei der
+Sitzung, zu der sie gehört. In welche **Szene** ein nachgetragener Satz fällt, entscheidet
+sein eigener Zeitpunkt: die letzte Trennlinie *vor* ihm. Eine gelöschte Nachricht entfernt
+ihre Notiz — Discord meldet beides, und ein Protokoll, das eine zurückgenommene Zeile
 festhält, wäre die falsche Sorte Gedächtnis.
 
 **Der Server bestimmt die Runde.** Eine Discord-Gilde gehört genau einer Runde; ist für
@@ -343,8 +350,7 @@ einen Server noch keine eingerichtet, sagt der Bot das und verweist auf `/setup`
 irgendeine Chronik zu schreiben — samt dem Recht, das dafür nötig ist: Discord blendet
 `/setup` ohne »Server verwalten« vollständig aus, und ein Rat, den der Empfänger nicht
 befolgen kann, ist schlimmer als keiner ([#270](../../issues/270)). Eine gesperrte Runde gilt dabei als keine — sie ist
-verabschiedet und wartet nur noch auf ihre Frist. Ohne das Recht, im Kanal einen Thread
-anzulegen, entsteht keine halbe Sitzung, sondern eine Meldung.
+verabschiedet und wartet nur noch auf ihre Frist.
 
 Die Befehle trägt derselbe dauerhafte Prozess wie die Aufnahme (`python -m chronicle.bot`,
 siehe *Aufnahme per Discord*); er muss dafür laufen. Und er braucht die **Message Content
@@ -400,7 +406,7 @@ fragt, was seit dem letzten Zeiger dazugekommen ist. Ein zweiter Lauf verdoppelt
 neben dem Zeiger steht die Kennung jeder erledigten Nachricht in der Datenbank. Das Diktat
 läuft durch Discords Cloud; für Online-Gruppen ändert das nichts, für reine Präsenzgruppen
 ist es eine bewusste Entscheidung — der Diktat-Kanal darf leer bleiben, dann bleiben die
-getippten Notizen im Sitzungs-Thread der Weg. (Bis #157 stand hier das Web-Formular; das
+getippten Notizen im Kanal der Sitzung der Weg. (Bis #157 stand hier das Web-Formular; das
 gibt es nicht mehr.)
 
 ## Rückblick nach Discord
@@ -440,7 +446,7 @@ nichts hineingereicht.
 
 Discord kappt bei **2000 Zeichen**. Ein längerer Rückblick ist ein Fehler des Rückblicks
 und kein Grund zum Aufteilen: gepostet wird der Anfang plus der Hinweis, dass die ganze
-Sitzung als Chronik-Datei im Thread liegt; die volle Länge steht in der Logzeile. (Bis
+Sitzung als Chronik-Datei im Kanal liegt; die volle Länge steht in der Logzeile. (Bis
 #157 zeigte der Hinweis auf eine Protokollseite unter `CHRONICLE_PUBLIC_URL`; die Seite
 war schon damals fort, und mit #231 auch die Variable.)
 
