@@ -177,7 +177,9 @@ seine Unit; wählbar je Auftrag ist es nicht, sein Endpunkt nimmt nur Pfad, Spra
 Wortvorgaben entgegen. `CHRONICLE_WHISPER_URL` überschreibt die Adresse (Vorgabe
 `http://127.0.0.1:10301`); ein Feld dafür gibt es nirgends. Als Wortvorgabe gehen die
 Eigennamen dieser Sitzung mit — erst, wer im Chat-Log gesprochen hat, dann der übrige
-Foundry-Zwischenspeicher, hart auf rund 224 Token gekappt. Die Stille-Erkennung (#209)
+Foundry-Zwischenspeicher, hart gekappt auf `vocabulary.MAX_TOKEN` (448 − 223 − 4 − 125 = 96
+Token, deutlich unter Whispers Dekoder-Fenster von 448 — siehe
+`src/chronicle/transcribe/vocabulary.py` für die Herleitung). Die Stille-Erkennung (#209)
 und die Dekodierung der Telefon-Formate liegen mit dem Modell drüben.
 
 **Was von drüben zurückkommt, wird gegengelesen.** In stillen Abschnitten gibt der
