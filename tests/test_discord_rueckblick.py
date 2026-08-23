@@ -22,6 +22,7 @@ from chronicle import runde as runden
 from chronicle.compose.service import KIND, RUECKBLICK
 from chronicle.config import Config
 from chronicle.discord import rueckblick
+from chronicle.discord.ausgabe import anhaengen
 from chronicle.discord.client import API, DiscordClient
 from chronicle.discord.rueckblick import deliver
 
@@ -37,6 +38,9 @@ FREMDER_KANAL = "c-nachbarchronik"
 KANAL = "chronik"
 
 STAND = "2026-08-06T20:00:00+00:00"
+
+THREAD = "t-4711"
+DATUM = "2026-08-06"
 
 TITEL = "Rückblick — Sitzung vom 2026-08-06"
 RUMPF = (
@@ -59,16 +63,36 @@ class Antwort:
         return self._payload
 
 
+class Abgewiesen:
+    """Was Discord antwortet, wenn der Bot in diesem Kanal nicht schreiben darf."""
+
+    status_code = 403
+    text = '{"message": "Missing Permissions", "code": 50013}'
+
+    def raise_for_status(self):
+        raise requests.HTTPError("403 Client Error", response=self)
+
+    def json(self):
+        return {}
+
+
 class FakeDiscord:
     """Discords REST-API, so weit die Zustellung sie braucht.
 
     Zwei Gilden, und in beiden ein Kanal mit demselben Namen — genau daran hängt die
     Trennung: eine Suche über alle Gilden fände hier die falsche.
+
+    Angenommen wird beides, Embed und Anhang, und getrennt vermerkt: die Chronik und der
+    Rückblick gehen verschiedene Wege (#261), und ein Gegenüber, das nur einen davon kennt,
+    könnte den Unterschied nicht zeigen. ``verweigert`` sind die Kanäle, in denen der Bot
+    nicht schreiben darf — im echten Discord eine Rechteüberschreibung am einzelnen Kanal.
     """
 
-    def __init__(self, *, kanal=KANAL):
+    def __init__(self, *, kanal=KANAL, verweigert=()):
         self.kanal = kanal
+        self.verweigert = set(verweigert)
         self.gepostet = []
+        self.angehaengt = []
 
     def request(self, method, url, **kwargs):
         pfad = url[len(API) :]
@@ -86,8 +110,14 @@ class FakeDiscord:
         if pfad == f"/guilds/{FREMDE_GILDE}/channels":
             return Antwort([{"id": FREMDER_KANAL, "name": KANAL, "type": 0}])
         if method == "POST" and pfad.startswith("/channels/"):
+            ziel = pfad.split("/")[2]
+            if ziel in self.verweigert:
+                return Abgewiesen()
+            if "files" in kwargs:
+                self.angehaengt.append((ziel, kwargs["files"]["files[0]"][0]))
+                return Antwort({})
             (eingebettet,) = kwargs["json"]["embeds"]
-            self.gepostet.append((pfad.split("/")[2], eingebettet))
+            self.gepostet.append((ziel, eingebettet))
             return Antwort({})
         raise AssertionError(f"unerwarteter Aufruf: {method} {pfad}")
 
@@ -113,13 +143,14 @@ def gastgeber(config):
     return runden.anlegen(config.database_path, "Der Krumme Ast", guild_id=GILDE)
 
 
-def sitzung(gastgeber, *, played_on="2026-08-06"):
+def sitzung(gastgeber, *, played_on=DATUM, thread_id=None):
     scope = db.scoped(gastgeber)
     try:
         with scope:
             zeiger = scope.execute(
-                "INSERT INTO session (runde_id, played_on, title, created_at) VALUES (?, ?, ?, ?)",
-                (scope.runde_id, played_on, "Der Keller", STAND),
+                "INSERT INTO session (runde_id, played_on, title, created_at, thread_id) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (scope.runde_id, played_on, "Der Keller", STAND, thread_id),
             )
         return zeiger.lastrowid
     finally:
@@ -401,6 +432,74 @@ def test_ein_unerreichbares_discord_verschiebt_die_zustellung_ohne_token(config,
     assert zustellung.gescheitert
     assert TOKEN not in zustellung.meldung
     assert zugestellt_am(gastgeber, sitzung_id) is None
+
+
+# --- Zwei Wege, und was passiert, wenn einer davon zu ist (#261) ---------------------
+
+
+def _beide_wege(config, gastgeber, api, sitzung_id):
+    """Beide Zustellungen desselben Laufs, in der Reihenfolge aus ``kette.schreiben``."""
+    bot = DiscordClient(config, http=lambda: api)
+    zustellung = deliver(config, gastgeber, sitzung_id, client=bot)
+    return zustellung, anhaengen(config, gastgeber, sitzung_id, client=bot)
+
+
+def _beide_protokolle(gastgeber):
+    sitzung_id = sitzung(gastgeber, thread_id=THREAD)
+    protokoll(gastgeber, sitzung_id)
+    protokoll(gastgeber, sitzung_id, text="# Chronik\n\nAlles, was geschah.\n", kind=KIND)
+    return sitzung_id
+
+
+def test_chronik_und_rueckblick_nehmen_zwei_verschiedene_wege(config, gastgeber):
+    """Der Befund aus #261: verschiedenes Ziel, verschiedene Form — im selben Lauf.
+
+    Festgehalten, damit niemand aus »die Chronik kam an« schließt, der Rückblick müsste
+    es auch. Zusammengelegt sind sie nicht: der Rückblick wird im Gruppenkanal gelesen,
+    die Chronik passt in kein Embed.
+    """
+    sitzung_id = _beide_protokolle(gastgeber)
+    api = FakeDiscord()
+
+    _beide_wege(config, gastgeber, api, sitzung_id)
+
+    assert [ziel for ziel, _ in api.gepostet] == [CHRONIK_KANAL]
+    assert api.angehaengt == [(THREAD, f"chronik-{DATUM}.md")]
+
+
+def test_ein_verweigerter_kanal_haelt_die_chronik_nicht_auf_und_sagt_warum(
+    config, gastgeber, caplog
+):
+    """Genau das Bild aus drei Läufen — nur sagt die Meldung jetzt, woran es lag."""
+    sitzung_id = _beide_protokolle(gastgeber)
+    api = FakeDiscord(verweigert=(CHRONIK_KANAL,))
+
+    with caplog.at_level("WARNING"):
+        zustellung, ausgabe = _beide_wege(config, gastgeber, api, sitzung_id)
+
+    assert zustellung.gescheitert
+    assert "HTTP 403" in zustellung.meldung
+    assert "Missing Permissions" in zustellung.meldung
+    assert GILDE in caplog.text
+    assert TOKEN not in caplog.text and TOKEN not in zustellung.meldung
+    assert zugestellt_am(gastgeber, sitzung_id) is None
+    # Die Chronik geht denselben Lauf durch — der Fehlschlag des einen Wegs ist keiner des
+    # anderen, und der Thread liegt außerhalb des verweigerten Kanals.
+    assert ausgabe == ""
+    assert api.angehaengt == [(THREAD, f"chronik-{DATUM}.md")]
+
+
+def test_ein_verweigerter_thread_wird_beim_anhang_genauso_deutlich(config, gastgeber):
+    """Die andere Hälfte: auch der Anhang meldet Status und Rumpf statt eines Namens."""
+    sitzung_id = _beide_protokolle(gastgeber)
+    api = FakeDiscord(verweigert=(THREAD,))
+
+    zustellung, ausgabe = _beide_wege(config, gastgeber, api, sitzung_id)
+
+    assert not zustellung.gescheitert
+    assert "HTTP 403" in ausgabe
+    assert "Missing Permissions" in ausgabe
+    assert TOKEN not in ausgabe
 
 
 # --- Die Maße eines Embeds -----------------------------------------------------------

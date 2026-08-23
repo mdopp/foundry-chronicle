@@ -17,6 +17,12 @@ Der Token steht in genau einem Header — nicht in einer Logzeile, nicht in ``re
 nicht in einer Fehlermeldung. Der Anhang wird **ohne** ihn geholt: die CDN-Adresse ist
 bereits signiert, und einen Bot-Token an einen fremden Host zu schicken wäre der
 kürzeste Weg nach draußen.
+
+Ein gescheiterter Aufruf nimmt **Statuscode und Antwortrumpf** mit (#261). Das ist keine
+Bequemlichkeit: der Rumpf ist die einzige Stelle, an der Discord sagt, ob der Bot in
+diesem Kanal nicht schreiben darf oder ob die Nachricht selbst abgewiesen wurde — und
+ohne ihn sieht jeder Fehlschlag gleich aus. Der Rumpf wird gekürzt und der Token darin
+ersetzt; er käme sonst über diesen Umweg doch in eine Logzeile.
 """
 
 from __future__ import annotations
@@ -30,7 +36,7 @@ from urllib.parse import quote
 
 import requests
 
-from chronicle.config import Config, masked
+from chronicle.config import MASK, Config, masked
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +56,11 @@ DEFAULT_TIMEOUT = 60.0
 BLOCK = 64 * 1024
 
 MARKDOWN = "text/markdown"
+
+# Wie viel vom Antwortrumpf in die Meldung geht. Discords Fehler sind kurz — »Missing
+# Permissions« steht in den ersten fünfzig Zeichen; was länger ist, ist die Fehlerseite
+# eines Zwischenstücks, und von der genügt der Anfang.
+RUMPF_GRENZE = 400
 
 
 class DiscordError(RuntimeError):
@@ -130,6 +141,27 @@ class DiscordClient:
     def __repr__(self) -> str:
         return f"DiscordClient(token={masked(self._token)})"
 
+    def _grund(self, fehler: requests.RequestException) -> str:
+        """Warum der Aufruf scheiterte — mit Statuscode und Antwortrumpf, wenn es einen gibt.
+
+        Ein nacktes ``HTTPError`` unterscheidet nicht zwischen »der Bot darf in diesem Kanal
+        nicht schreiben«, »die Nachricht hat Discord nicht angenommen« und »Discord streikt
+        gerade«. Discord sagt es im Rumpf im Klartext; genau der wurde hier weggeworfen und
+        kostete bei #248 Stunden und bei #261 drei Läufe. Ohne Antwort — kein Netz, kein
+        Zeitfenster — bleibt es beim Namen der Ausnahme, mehr gibt es dann nicht.
+        """
+        antwort = getattr(fehler, "response", None)
+        if antwort is None:
+            return type(fehler).__name__
+        rumpf = " ".join(str(getattr(antwort, "text", "") or "").split())[:RUMPF_GRENZE]
+        # Discord schickt den Token nicht zurück. Ein Rumpf, der ihn doch trüge, ginge von
+        # hier ohne Umweg in eine Logzeile.
+        if self._token:
+            rumpf = rumpf.replace(self._token, MASK)
+        status = getattr(antwort, "status_code", None)
+        kopf = f"HTTP {status}" if status else type(fehler).__name__
+        return f"{kopf}: {rumpf}" if rumpf else kopf
+
     def _call(self, method: str, path: str, **kwargs):
         try:
             antwort = self._http.request(
@@ -144,7 +176,7 @@ class DiscordClient:
             # Bewusst ohne ``raise ... from``: die verkettete Ursache trägt den Request
             # samt Authorization-Header, und der landet in jedem logger.exception.
             raise DiscordUnreachable(
-                f"{method} {path} fehlgeschlagen: {type(fehler).__name__}"
+                f"{method} {path} fehlgeschlagen: {self._grund(fehler)}"
             ) from None
         return antwort
 

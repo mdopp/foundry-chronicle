@@ -579,6 +579,62 @@ def test_ein_kaputtes_discord_ist_eine_verstaendliche_meldung_ohne_token(config)
     assert TOKEN not in str(fehler.value)
 
 
+class Abgewiesen:
+    """Eine Antwort, die Discord nicht annimmt — mit Status und Rumpf, wie im Ernstfall.
+
+    ``requests`` hängt die Antwort an den ``HTTPError``; genau dort stand der Grund, und
+    genau dort wurde er weggeworfen (#248, #261).
+    """
+
+    def __init__(self, status=403, text='{"message": "Missing Permissions", "code": 50013}'):
+        self.status_code = status
+        self.text = text
+
+    def raise_for_status(self):
+        raise requests.HTTPError(f"{self.status_code} Client Error", response=self)
+
+
+def _abweisend(antwort):
+    class Abweisend:
+        def request(self, *args, **kwargs):
+            return antwort
+
+    return Abweisend()
+
+
+def test_ein_abgewiesener_aufruf_nennt_statuscode_und_rumpf(config):
+    """Der Server sagt den Grund im Klartext — ein nacktes ``HTTPError`` warf ihn weg."""
+    with pytest.raises(DiscordUnreachable) as fehler:
+        klient(config, _abweisend(Abgewiesen())).post_embed(GRUPPEN_KANAL, {"description": "x"})
+
+    gemeldet = str(fehler.value)
+    assert f"POST /channels/{GRUPPEN_KANAL}/messages fehlgeschlagen" in gemeldet
+    assert "HTTP 403" in gemeldet
+    assert "Missing Permissions" in gemeldet
+    assert "50013" in gemeldet
+
+
+def test_ein_antwortrumpf_mit_token_traegt_ihn_nicht_weiter(config, caplog):
+    """Discord schickt den Token nicht zurück — und wenn doch, endet er hier."""
+    antwort = Abgewiesen(status=401, text=f'{{"message": "Bot {TOKEN} abgelehnt"}}')
+
+    with caplog.at_level("DEBUG"), pytest.raises(DiscordUnreachable) as fehler:
+        klient(config, _abweisend(antwort)).post(GRUPPEN_KANAL, "Hallo")
+
+    assert "HTTP 401" in str(fehler.value)
+    assert TOKEN not in str(fehler.value)
+    assert TOKEN not in caplog.text
+
+
+def test_ein_langer_antwortrumpf_wird_gekappt_statt_das_log_zu_fluten(config):
+    antwort = Abgewiesen(status=500, text="<html>" + "x" * 9000 + "</html>")
+
+    with pytest.raises(DiscordUnreachable) as fehler:
+        klient(config, _abweisend(antwort)).post(GRUPPEN_KANAL, "Hallo")
+
+    assert len(str(fehler.value)) < 600
+
+
 def test_eine_antwort_ohne_json_ist_keine_kanalliste(config):
     class Stumm:
         def request(self, *args, **kwargs):

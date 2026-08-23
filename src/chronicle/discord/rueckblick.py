@@ -32,6 +32,17 @@ Kanalform allein, sondern dass beide Aufrufer die Meldung verwarfen und das Schw
 sich wie eine gelungene Zustellung las. Ein gescheiterter Versuch steht jetzt im Ergebnis
 des Laufs — im Nachtbericht und in der Antwort auf ``/chronik`` — und als Warnung im Log.
 
+**Warum das ein anderer Weg ist als der der Chronik** (#261). Beides geht nach Discord und
+im selben Lauf, aber es sind drei Unterschiede auf einmal: ein anderes **Ziel** — die
+Chronik in den Sitzungs-Thread, den der Bot selbst angelegt hat, der Rückblick in den
+Kanal, den ``/setup`` aus der Gildenliste anbietet —, eine andere **Form** — Anhang gegen
+Embed —, und damit ein anderes **Recht**, das Discord dafür verlangt. Aus »die Chronik kam
+an« folgt deshalb nichts über den Rückblick; drei Läufe lang sah es trotzdem so aus, als
+müsste es das. Zusammengelegt wird darum nichts: der Rückblick wird vor der nächsten
+Sitzung im Gruppenkanal gelesen und nicht in einem Thread gesucht, und eine ganze Chronik
+passt in kein Embed. Was fehlte, war kein gemeinsamer Weg, sondern eine Meldung, die sagt,
+welcher der beiden woran scheiterte — die trägt seit #261 ``chronicle.discord.client``.
+
 **Eine Sitzung, eine Zustellung.** Der Zeitpunkt steht in ``protocol.delivered_at``; ein
 zweiter Lauf sieht ihn und schweigt. Eine neu komponierte Fassung wird deshalb *nicht*
 noch einmal gepostet: der Kanal ist die Zeitachse der Gruppe, ein zweiter Rückblick darin
@@ -193,6 +204,16 @@ def deliver(
         # Der Rückblick steht bereits in der Datenbank; ein Discord, das gerade nicht
         # antwortet, macht daraus keinen fehlgeschlagenen Stapellauf. ``delivered_at``
         # bleibt leer, der nächste Lauf holt die Zustellung nach.
+        #
+        # Die Gilde steht nur hier, nicht in der Meldung an die Gruppe: sie sagt der Gruppe
+        # nichts und dem Betreiber alles — er sieht sonst drei Läufe lang denselben Satz,
+        # ohne zu wissen, welche Runde ihn schreibt.
+        logger.warning(
+            "Rückblick zur Sitzung %s nicht zugestellt — Gilde %s: %s",
+            session_id,
+            runde.guild_id,
+            fehler,
+        )
         return Zustellung(GESCHEITERT.format(sitzung=session_id, grund=fehler), gescheitert=True)
     # Erst posten, dann merken: ein fehlgeschlagener Post soll wiederholt werden. Die
     # Lücke dazwischen ist ein Prozessabbruch zwischen HTTP-200 und einem lokalen UPDATE.
