@@ -538,12 +538,17 @@ nicht bloß billiger, sondern exakt — jede Diarisierung rät bei Überlappunge
 Rollenspielrunde reden fünf Leute durcheinander. Geschrieben wird im Strom auf die Platte
 und nie in einen Puffer im Speicher.
 
-Je Sprecher entsteht dabei eine **Folge von Häppchen** von je dreißig Minuten und nicht
-mehr eine Datei über den ganzen Abend (#217). Jedes wird eingereiht, sobald es voll ist —
-die Verschriftung kann damit schon während der Sitzung laufen statt vollständig hinter
-ihr. Geschnitten wird nach der Zeit und nicht an Sprechpausen: py-cord füllt die Pausen
-vor unserem `write` auf, sie sind an dieser Stelle also gar nicht greifbar. Der Preis ist
-ein Wort je Schnitt.
+Je Sprecher entsteht dabei eine **Folge von Häppchen** von je fünf Minuten und nicht
+mehr eine Datei über den ganzen Abend (#217). Jedes wird eingereiht, sobald es voll ist,
+und `chronicle.mitlauf` verschriftet es **noch während der Sitzung** (#269) — in einem
+eigenen Faden im Bot-Prozess, still, ohne Zwischenstand im Kanal: der Unterschied ist
+»morgen früh steht die Chronik« gegen »sie steht, wenn ihr aufhört«. Bis dahin lag die
+Warteschlange bis zum Abschluss oder bis zur Nacht unangetastet da. Die fünf Minuten
+lösen dreißig ab, weil an ihnen jetzt hängt, wie lange es bis zum ersten Text dauert;
+vier Stunden mit fünf Sprechern sind damit rund 240 Dateien statt vierzig, und jede
+Meldung darüber zählt je Sitzung oder je Sprecher. Geschnitten wird nach der Zeit und
+nicht an Sprechpausen: py-cord füllt die Pausen vor unserem `write` auf, sie sind an
+dieser Stelle also gar nicht greifbar. Der Preis ist ein Wort je Schnitt.
 
 **Jedes Häppchen bringt seinen Startversatz mit** (`recording.offset_ms`), und daran hängt
 die Zusammenführung. `transcript_segment.start_ms` ist sitzungsabsolut; eine Datei fängt

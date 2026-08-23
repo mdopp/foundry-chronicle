@@ -37,6 +37,7 @@ ob überhaupt Ton da ist; diese fragt danach, ob das Zurückgekommene Rede war.
 from __future__ import annotations
 
 import logging
+import threading
 import wave
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
@@ -88,6 +89,20 @@ UEBERSPRUNGEN = (
     "wird sie nicht verschriftet. Verlorengegangen ist nichts, und die übrigen Spuren der "
     "Sitzung sind davon unberührt."
 )
+
+# **Der Erkenner verträgt keine Gleichzeitigkeit.** Gemessen am 2026-08-22: vier Anfragen
+# innerhalb von sechzehn Sekunden gegen ``solaris-whisper-batch``, drei davon HTTP 500;
+# dieselbe Datei allein aufgerufen kam in sechs Sekunden durch. Seit #269 arbeitet
+# ``chronicle.mitlauf`` die Warteschlange schon **während** der Sitzung ab, und der
+# Nachtlauf, der Abschluss und der Stapelaufruf tun es weiterhin — vier Wege in denselben
+# Dienst, und der erste läuft, während die anderen jederzeit anspringen können.
+#
+# Also läuft immer nur ein Durchgang; wer dazukommt, wartet. Das Schloss liegt um den
+# **ganzen** Durchgang und nicht um die einzelne Anfrage: die Liste der wartenden Spuren
+# steht vor der Schleife fest, zwei Durchgänge nebeneinander nähmen sich sonst dieselbe
+# Spur vor und verschrifteten sie zweimal. Warten kostet hier nichts — kein Aufrufer liegt
+# auf der Ereignisschleife, alle vier laufen in eigenen Fäden.
+_ERKENNER = threading.Lock()
 
 
 @dataclass(frozen=True)
@@ -359,6 +374,7 @@ def run_queue(
     *,
     model: SpeechModel | None = None,
     delete_audio: bool = False,
+    mitlaufend: bool = False,
 ) -> tuple[str, ...]:
     """Arbeitet die wartenden Spuren ab — der Stapel, den die Oberfläche befüllt.
 
@@ -370,8 +386,27 @@ def run_queue(
     das Transkript einer Quelle wird ohnehin im Ganzen ersetzt. Innerhalb **eines** Laufs
     wiederholt wird nichts: die Liste steht vor der Schleife fest.
 
+    Ein Fehlschlag an einer Spur hält die übrigen nicht auf — er wird zur Meldung und zum
+    Stand an ihrer Zeile, und die Schleife geht weiter. Die eine Ausnahme ist der
+    abgeschaltete Erkenner: der ist keine Eigenschaft dieser Spur, und die übrigen liefen
+    in denselben Fehler.
+
     Am Ende wird die zugesagte Aufbewahrungsfrist durchgesetzt — auch nach einem leeren
     Lauf, denn zugesagt ist sie unabhängig davon, ob heute etwas zu tun war.
+
+    ``mitlaufend`` ist der Durchgang **während** der Sitzung (``chronicle.mitlauf``, #269).
+    Er unterscheidet sich in zweierlei, und beides hat denselben Grund — er sagt niemandem
+    etwas, also darf er niemandem etwas wegnehmen:
+
+    * Er nimmt nur, was noch **keinen** Anlauf hinter sich hat. Sonst verbrauchte eine
+      gescheiterte Spur ihre drei Anläufe in drei Minuten statt in drei Nächten, und
+      ``recordings.MAX_VERSUCHE`` stünde für etwas anderes als das, was daneben steht: die
+      gemessenen Gründe waren vorübergehend, aber nicht binnen einer Minute vorbei.
+    * Er räumt die Frist nicht ab. ``recordings.sweep`` **meldet**, was es löscht, und
+      besonders die nie verschriftete Spur; diese Meldung gehört der Runde und erreicht
+      sie über den Nachtlauf. Hier fiele sie in einen Rückgabewert, den niemand liest.
+      Durchgesetzt wird die Frist deshalb weiter von ``recordings.taeglich`` und vom
+      Nachtlauf, und zwar unverändert.
     """
     db.init(config.database_path)
     # Eine ruhende Runde verschriftet nicht mehr: die eingereihten Spuren würden sonst
@@ -379,14 +414,32 @@ def run_queue(
     # setzt ``recordings.sweep_alle`` durch, die gilt ihr weiter.
     if lebenszyklus.ruht(runde):
         return ()
-    # Vor dem Blick in die Warteschlange: was ein Neustart auf ``laeuft`` stehen ließ,
-    # gehört wieder hinein. Sonst wäre die Spur für ``pending`` unsichtbar und verlöre
-    # nach der Frist ihre Datei, ohne je verschriftet worden zu sein (#181).
-    recordings.zurueckstellen(runde)
-    wartend = recordings.pending(runde)
-    meldungen = []
-    if wartend:
+    meldungen = list(_abarbeiten(config, runde, model, delete_audio, mitlaufend))
+    if not mitlaufend:
+        meldungen.extend(recordings.sweep(config, runde))
+    return tuple(meldungen)
+
+
+def _abarbeiten(
+    config: Config,
+    runde: Runde,
+    model: SpeechModel | None,
+    delete_audio: bool,
+    mitlaufend: bool,
+) -> tuple[str, ...]:
+    """Die Schleife durch die Warteschlange — unter dem Schloss, immer nur einmal zugleich."""
+    with _ERKENNER:
+        # Vor dem Blick in die Warteschlange: was ein Neustart auf ``laeuft`` stehen ließ,
+        # gehört wieder hinein. Sonst wäre die Spur für ``pending`` unsichtbar und verlöre
+        # nach der Frist ihre Datei, ohne je verschriftet worden zu sein (#181).
+        recordings.zurueckstellen(runde)
+        wartend = recordings.pending(runde)
+        if mitlaufend:
+            wartend = tuple(spur for spur in wartend if spur.versuche == 0)
+        if not wartend:
+            return ()
         erkenner = model if model is not None else model_from_config(config)
+        meldungen = []
         for aufnahme in wartend:
             try:
                 with recordings.in_arbeit(runde, aufnahme.id):
@@ -408,8 +461,7 @@ def run_queue(
             # Der Stand steht an der Zeile, gemeldet wird nur, was etwas ergab.
             if not stumm:
                 meldungen.append(meldung)
-    meldungen.extend(recordings.sweep(config, runde))
-    return tuple(meldungen)
+        return tuple(meldungen)
 
 
 def _eine_spur(

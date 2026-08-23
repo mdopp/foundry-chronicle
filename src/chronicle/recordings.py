@@ -89,9 +89,13 @@ MAX_VERSUCHE = 3
 SWEEP_ABSTAND = 24 * 60 * 60
 
 # Gezählt je Sitzung und nicht je Datei: eine Spur wird in Häppchen geschnitten (#217),
-# und vier Stunden mit fünf Sprechern sind vierzig Dateien. Vierzigmal denselben Satz zu
-# schreiben verdeckt genau das, was daneben steht — und der Stamm eines Spurnamens ist der
-# Anzeigename des Sprechers (#194), der hier in einer Meldung stünde, die auch ins Log geht.
+# und vier Stunden mit fünf Sprechern sind seit #269 rund 240 Dateien statt vierzig.
+# 240-mal denselben Satz zu schreiben verdeckt genau das, was daneben steht — und der
+# Stamm eines Spurnamens ist der Anzeigename des Sprechers (#194), der hier in einer
+# Meldung stünde, die auch ins Log geht. Die Rechnung wurde mit dem kürzeren Häppchen
+# sechsmal schärfer, aber sie ändert sich nicht: gezählt wird ohnehin schon je Sitzung,
+# und ein Abend bleibt eine Zeile, ob vierzig oder zweihundertvierzig Dateien darunter
+# liegen.
 NACH_FRIST = "Sitzung {sitzung}: {was} nach {tage} Tagen gelöscht — die Frist aus der Ansage."
 
 # Die Frist gilt auch der Spur, die es nie durch die Verschriftung geschafft hat: sie ist
@@ -678,8 +682,10 @@ def sweep(config, runde: Runde, *, tage: int = RETENTION_TAGE) -> tuple[str, ...
     niemand mehr wartet (#181).
 
     Gelöscht wird Datei für Datei, **gemeldet** wird je Sitzung: seit dem Schnitt in
-    Häppchen (#217) hat ein Abend keine fünf Zeilen mehr, sondern vierzig, und vierzigmal
-    derselbe Satz ist keine Meldung mehr, sondern eine Wand.
+    Häppchen (#217) hat ein Abend keine fünf Zeilen mehr, sondern seit #269 rund 240, und
+    240-mal derselbe Satz ist keine Meldung mehr, sondern eine Wand. Die Bündelung je
+    Sitzung trägt das kürzere Häppchen ohne Änderung: was wächst, ist die Zahl **in** der
+    Zeile, nicht die Zahl der Zeilen.
     """
     geraeumt: dict[tuple[int, bool], int] = {}
     for aufnahme in expired(runde, tage=tage):

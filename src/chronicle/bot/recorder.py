@@ -78,8 +78,8 @@ GESTARTET = (
 )
 NICHTS_GESPROCHEN = "Es hat niemand gesprochen — keine Spur abgelegt."
 
-# Eine Zeile je Sprecher und nicht je Häppchen: vier Stunden mit fünf Sprechern sind
-# vierzig Dateien, und vierzig Zeilen im Kanal sagen weniger als fünf.
+# Eine Zeile je Sprecher und nicht je Häppchen: vier Stunden mit fünf Sprechern sind seit
+# #269 rund 240 Dateien, und 240 Zeilen im Kanal sagen weniger als fünf.
 EINGEREIHT = "Spur »{spur}« → Sitzung {sitzung}, wartet auf den Stapel."
 EINGEREIHT_HAEPPCHEN = (
     "Spur »{spur}« in {anzahl} Häppchen → Sitzung {sitzung}, wartet auf den Stapel."
@@ -172,16 +172,28 @@ PROBE_AUFGERAEUMT_REST = (
 
 # Wie lang ein Häppchen wird — die eine Zahl, an der dieser Schnitt hängt (#217).
 #
-# Dreißig Minuten und nicht zehn. Geschnitten wird nach der **Zeit** und nicht an
-# Sprechpausen: py-cord füllt die Pausen vor unserem ``write`` mit Stille auf — genau das
-# hält die Spuren auf einer Zeitachse —, sie sind hier also gar nicht greifbar. Über die
-# Amplitude ginge es, das ist Bastelei und gehört nicht in den ersten Wurf. Jeder Schnitt
-# fällt damit blind, im schlechtesten Fall mitten in ein Wort; der Preis ist ein Wort je
-# Häppchen. Bei zehn Minuten wäre er dreimal so hoch für einen Gewinn, den es nicht gibt:
-# offen ist am Ende einer Sitzung immer nur **ein** Häppchen je Sprecher, und dreißig
-# Minuten Ton sind nach der Stille-Erkennung (#209) wenige Minuten Arbeit. Kürzer nimmt der
-# Erkennung außerdem den Kontext, von dem sie lebt.
-HAEPPCHEN_MINUTEN = 30
+# Geschnitten wird nach der **Zeit** und nicht an Sprechpausen: py-cord füllt die Pausen
+# vor unserem ``write`` mit Stille auf — genau das hält die Spuren auf einer Zeitachse —,
+# sie sind hier also gar nicht greifbar. Über die Amplitude ginge es, das ist Bastelei und
+# gehört nicht hierher. Jeder Schnitt fällt damit blind, im schlechtesten Fall mitten in
+# ein Wort; der Preis ist ein Wort je Häppchen.
+#
+# **Fünf Minuten und nicht dreißig** (Betreiber-Entscheidung 2026-08-23, #269). Die
+# Rechnung von #217 stimmte für eine Warteschlange, die niemand vor dem Abschluss anfasste:
+# dann war nur wichtig, dass am Ende je Sprecher genau **ein** Häppchen offen ist, und
+# länger hieß weniger blinde Schnitte umsonst. Seit ``chronicle.mitlauf`` die Schlange
+# während der Sitzung abarbeitet, entscheidet diese Zahl etwas anderes — wie lange es
+# dauert, bis das erste gesprochene Wort als Text dasteht. Bei dreißig Minuten wäre das
+# eine halbe Stunde, in der nichts geschieht, obwohl alles bereitsteht.
+#
+# Was es kostet, ist gezählt: vier Stunden mit fünf Sprechern sind rund 240 Dateien statt
+# 40. Der Preis in verlorenen Wörtern wächst mit — sechs statt einem je Spur und Stunde —,
+# und jede Stelle, die je Datei meldete, meldet jetzt sechsmal so viel. Deshalb zählen
+# ``recordings.NACH_FRIST``, ``recordings.sweep`` und die Meldungen dieses Moduls je
+# Sitzung beziehungsweise je Sprecher; ohne das wären die Meldungen der teuerste Teil.
+# Kürzer als fünf nähme der Erkennung den Kontext, von dem sie lebt, und der Schnitt fiele
+# öfter als jede zehnte Äußerung.
+HAEPPCHEN_MINUTEN = 5
 
 # Ein Rahmen ist ``KANAELE * BREITE`` Bytes, davon ``RATE`` je Sekunde. Gerechnet wird in
 # Bytes und nicht nach der Wanduhr: py-cord füllt die Sprechpausen auf, die Byte-Position
@@ -488,9 +500,10 @@ class Aufnahme:
         und niemand löscht.
 
         Zu tun ist hier seit dem Schnitt in Häppchen (#217) meist wenig: die vollen
-        Häppchen stehen längst in der Warteschlange, offen ist je Sprecher genau eines.
-        Gemeldet wird trotzdem **je Sprecher** und nicht je Datei — vierzig gleichlautende
-        Zeilen im Kanal sagen weniger als fünf.
+        Häppchen stehen längst in der Warteschlange, offen ist je Sprecher genau eines —
+        und seit #269 sind die vollen meist auch schon verschriftet. Gemeldet wird
+        trotzdem **je Sprecher** und nicht je Datei — 240 gleichlautende Zeilen im Kanal
+        sagen weniger als fünf.
         """
         gemeint = lebenszyklus.dieselbe(self.runde)
         if gemeint is None:
