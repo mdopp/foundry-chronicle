@@ -8,6 +8,10 @@ Diese Datei prüft deshalb den zweiten Einstieg, und sie tut es an Material, das
 sie geschrieben wurde: die **mitgelieferte Testwelt**, aus der nur der ``system``-Block
 entfernt ist. Ihre ``rolls[]``-Einträge stammen aus ``scripts/erzeuge_testwelt.py``, und
 das Skript hat die Form an einem echten Abzug ausgezählt.
+
+Die *echte* Form eines Wurfs steht daneben in ``tests/test_foundry_echtwelt.py`` — dort
+gegen einen anonymisierten Weltabzug. Hier bleiben die Randfälle, die ein einzelner Abend
+nicht liefert: kaputte Einträge, ein leerer Block, ein halber.
 """
 
 from __future__ import annotations
@@ -17,11 +21,11 @@ import json
 from chronicle.foundry import systems, testwelt
 
 # Der Wurf aus #242, so wie ihn die Karte auf dem echten Server zeigte: ein Reaktionswurf
-# »Wurf: Wissen« mit Ergebnis 8 aus 1W12 + 1W12 + 3. Die *Form* darum herum ist die
-# recherchierte aus #146 — ``class``, ``formula``, ``total``, ``terms[]``, ``options`` —
-# und **nicht** an diesem Server gemessen: was er wirklich sendet, sagt erst ein
-# Mitschnitt von der Box. Der Fall steht hier trotzdem, weil er der ungünstigste ist:
-# ``rolls[]`` ohne aufbereiteten Block.
+# »Wurf: Wissen« mit Ergebnis 8 aus 1W12 + 1W12 + 3. Die Form darum herum ist die
+# recherchierte aus #146 und deckt sich mit dem Weltabzug vom 2026-08-06 — bis auf die
+# Würfelklasse: dort heißen die beiden Terme ``HopeDie`` und ``FearDie``, hier stehen sie
+# als blankes ``Die``. Genau deshalb bleibt dieser Fall stehen: er ist der ungünstigste —
+# ``rolls[]`` ohne aufbereiteten Block **und** ohne benannte Würfel.
 NUR_KERN = {
     "class": "DualityRoll",
     "formula": "1d12 + 1d12 + 3",
@@ -87,8 +91,13 @@ def test_der_wurf_steht_als_json_string_und_nicht_als_objekt():
     assert wurf.kind == "DualityRoll"
 
 
-def test_ohne_aufbereiteten_block_wird_keine_hoffnung_erfunden():
-    """Welcher d12 die Hoffnung war, sagt nur der aufbereitete Block — geraten wird nicht."""
+def test_ein_blankes_die_bleibt_namenlos():
+    """Ein Term, der sich nicht selbst benennt, wird nicht benannt.
+
+    Aus zwei gleich aussehenden ``Die``-Termen zu schließen, welcher die Hoffnung war,
+    wäre geraten — und eine geratene Zahl im Protokoll ist teurer als eine fehlende. Nur
+    wo Foundry den Term selbst ``HopeDie`` nennt, steht der Name auch bei uns.
+    """
     assert systems.read_roll(systems.DAGGERHEART, {"rolls": [json.dumps(NUR_KERN)]}).dice == ()
 
 

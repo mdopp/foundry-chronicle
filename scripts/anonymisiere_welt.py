@@ -17,8 +17,10 @@ werden darf — und zwar nach zwei Regeln, die beide nötig sind:
    JSON von ``rolls[]``.
 2. **Was bleibt, wird nachgeprüft — auf Personendaten, nicht nur auf Namen.** Nach dem
    Umschreiben läuft die Ausgabe noch einmal Zeichenkette für Zeichenkette durch, Werte
-   **und** Schlüssel — die Schlüssel lange nicht, und ``ownership`` mit einer
-   E-Mail-Adresse darin kam so mit Exit 0 und Erfolgsmeldung durch. Findet
+   **und** die Schlüssel, die aus der Eingabe stammen — die Schlüssel lange nicht, und
+   ``ownership`` mit einer E-Mail-Adresse darin kam so mit Exit 0 und Erfolgsmeldung
+   durch. Unsere eigenen Feldnamen bleiben außen vor, sonst bräche der Lauf an einer
+   Zeichenkette ab, die aus diesem Skript stammt (``EIGENE_SCHLUESSEL``). Findet
    sie einen Namen aus der Eingabe, eine E-Mail-Adresse, eine Adresse oder einen
    Rechnernamen, eine IP, eine telefonnummernförmige Ziffernfolge oder einen
    Heimatverzeichnis-Pfad, bricht der Lauf ab und schreibt **nichts**. Ein Werkzeug, das
@@ -156,6 +158,55 @@ FIGUR_PLAN = {feld: WERT for feld in FIGUR_FELDER} | {"ownership": STUFEN}
 SZENEN_PLAN = {feld: WERT for feld in SZENEN_FELDER} | {"ownership": STUFEN}
 NACHRICHT_PLAN = {feld: WERT for feld in NACHRICHT_FELDER} | {"whisper": [WERT]}
 SPRECHER_PLAN = {feld: WERT for feld in SPRECHER_FELDER}
+
+
+def _plan_schluessel(plan: object) -> Iterator[str]:
+    if isinstance(plan, Mapping):
+        for feld, unterplan in plan.items():
+            yield feld
+            yield from _plan_schluessel(unterplan)
+    elif isinstance(plan, list):
+        for eintrag in plan:
+            yield from _plan_schluessel(eintrag)
+
+
+# Die Schlüssel, die **dieses Skript** schreibt — Feldnamen aus den Bauplänen oben, keine
+# Eingabe. Die Prüfung überspringt sie, und zwar nicht aus Bequemlichkeit: am echten Abzug
+# heißt eine Figur wie ein Stück eines unserer Feldnamen, und der Lauf brach an
+# ``world.<Schlüssel>`` ab — an einer Zeichenkette, die aus dieser Datei stammt und aus
+# keinem Weltabzug. Ein Abbruch, den niemand beheben kann, ohne die Ausgabe von Hand
+# anzufassen, ist schlimmer als kein Abbruch. Die Prüfung wird dadurch nicht schwächer:
+# **freie** Schlüssel bleiben drin — ``ownership`` bildet Konto-Ids ab, und genau der Fall
+# (``{"bob@example.org": 2}`` mit Exit 0) war der Grund, Schlüssel überhaupt zu prüfen.
+# Die Liste wird aus den Bauplänen gebildet und kann deshalb nicht hinter ihnen zurückbleiben.
+EIGENE_SCHLUESSEL = frozenset(
+    WELT_FELDER
+    + SYSTEM_FELDER
+    + BENUTZER_FELDER
+    + FIGUR_FELDER
+    + SZENEN_FELDER
+    + NACHRICHT_FELDER
+    + SPRECHER_FELDER
+    + PERSONEN_LISTEN
+    + ORT_LISTEN
+    + (
+        VORGABE_STUFE,
+        "userId",
+        "world",
+        "system",
+        "bilder",
+        "name",
+        "navName",
+        "alias",
+        "content",
+        "ownership",
+        "rolls",
+    )
+) | frozenset(
+    schluessel
+    for plan in (FIGUR_PLAN, SZENEN_PLAN, NACHRICHT_PLAN, SPRECHER_PLAN, WURF_PLAN, WURF_JSON_PLAN)
+    for schluessel in _plan_schluessel(plan)
+)
 
 
 class Anonymisierung(RuntimeError):
@@ -365,9 +416,15 @@ def _nachricht(nachricht: Mapping, ersatz: Ersatz) -> dict:
             gekuerzt["alias"] = ersatz.name(sprecher.get("alias"))
         behalten["speaker"] = gekuerzt
     system = nachricht.get("system")
-    # Der dokumentierte Ort der Zahlen. Fehlt er, wird hier keiner erfunden.
-    if isinstance(system, Mapping) and isinstance(system.get("roll"), Mapping):
-        behalten["system"] = {"roll": _nach_plan(system["roll"], WURF_PLAN, ersatz)}
+    # Der dokumentierte Ort der Zahlen. Fehlt der Wurf, wird hier keiner erfunden — aber
+    # der leere Block bleibt stehen: dass eine Nachricht sehr wohl einen ``system``-Block
+    # trägt und darin **keinen** ``roll``, ist der Befund aus #242. Ohne ihn sähe die
+    # Fixture aus wie eine Welt ganz ohne Regelwerksdaten, und genau das war sie nicht.
+    if isinstance(system, Mapping):
+        wurf = system.get("roll")
+        behalten["system"] = (
+            {"roll": _nach_plan(wurf, WURF_PLAN, ersatz)} if isinstance(wurf, Mapping) else {}
+        )
     wuerfe = [_wurf(eintrag, ersatz) for eintrag in nachricht.get("rolls") or []]
     if any(wuerfe):
         behalten["rolls"] = [wurf for wurf in wuerfe if wurf]
@@ -430,11 +487,13 @@ def _zeichenketten(wert: object, pfad: str = "") -> Iterable[tuple[str, str]]:
             yield from _zeichenketten(geladen, pfad)
     elif isinstance(wert, Mapping):
         for schluessel, inhalt in wert.items():
-            # Auch der Schlüssel wird geprüft. Er ist hier fast überall ein Feldname aus
-            # einem Bauplan — aber ``ownership`` bildet auf Konto-Ids ab, und die kamen
-            # als E-Mail-Adresse oder Heimatpfad ungeprüft durch. Der Pfad nennt die
-            # Stelle, nie den Schlüssel selbst: der Schlüssel *ist* hier der Wert.
-            yield f"{pfad}.<Schlüssel>", str(schluessel)
+            # Auch der Schlüssel wird geprüft, sofern er aus der Eingabe stammt:
+            # ``ownership`` bildet auf Konto-Ids ab, und die kamen als E-Mail-Adresse oder
+            # Heimatpfad ungeprüft durch. Unsere eigenen Feldnamen stehen nicht zur Prüfung
+            # (siehe ``EIGENE_SCHLUESSEL``). Der Pfad nennt die Stelle, nie den Schlüssel
+            # selbst: der Schlüssel *ist* hier der Wert.
+            if str(schluessel) not in EIGENE_SCHLUESSEL:
+                yield f"{pfad}.<Schlüssel>", str(schluessel)
             yield from _zeichenketten(inhalt, f"{pfad}.{schluessel}")
     elif isinstance(wert, list):
         for stelle, inhalt in enumerate(wert):

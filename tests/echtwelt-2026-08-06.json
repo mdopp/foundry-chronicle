@@ -1,0 +1,3525 @@
+{
+ "userId": "dOB6TdSOn7NL3qrR",
+ "world": {
+  "id": "daggerheart",
+  "type": "world",
+  "version": null,
+  "coreVersion": "14.365",
+  "systemVersion": "2.6.4"
+ },
+ "system": {
+  "id": "daggerheart",
+  "type": "system",
+  "version": "2.6.4"
+ },
+ "users": [
+  {
+   "_id": "QALIE8jmoPXah1yb",
+   "role": 4,
+   "character": null,
+   "name": "Baba-001"
+  },
+  {
+   "_id": "L4cXn74yoVds8VOJ",
+   "role": 4,
+   "character": null,
+   "name": "Beba-002"
+  },
+  {
+   "_id": "m3GUFdKrO3AOqCq2",
+   "role": 1,
+   "character": null,
+   "name": "Biba-003"
+  },
+  {
+   "_id": "LKy6AzIYWDCads6K",
+   "role": 1,
+   "character": null,
+   "name": "Boba-004"
+  },
+  {
+   "_id": "0KIbAAK9lWzqEzlW",
+   "role": 1,
+   "character": null,
+   "name": "Buba-005"
+  },
+  {
+   "_id": "YL1DH9VUoQixkszx",
+   "role": 1,
+   "character": "5fy58wRNpN6nl489",
+   "name": "Byba-006"
+  },
+  {
+   "_id": "n74OseDtmjhm6lRF",
+   "role": 1,
+   "character": "6PKKKg577b0oZns7",
+   "name": "Daba-007"
+  },
+  {
+   "_id": "bFpFJpN8Sr02oqa8",
+   "role": 1,
+   "character": "Jkkhufrxqy6Hcx46",
+   "name": "Deba-008"
+  },
+  {
+   "_id": "82yxtt0rbJ72XJeA",
+   "role": 1,
+   "character": "J0ZhUKgniIkJWU3P",
+   "name": "Diba-009"
+  },
+  {
+   "_id": "fCZVOz7SGzgxcrtZ",
+   "role": 1,
+   "character": "IdabWSOgiAEte08h",
+   "name": "Doba-010"
+  },
+  {
+   "_id": "YtrONu1n3HPJFEl3",
+   "role": 1,
+   "character": "ddSmlTvmkYbW6Xxk",
+   "name": "Duba-011"
+  },
+  {
+   "_id": "msKLXJiqmQHmUr2w",
+   "role": 1,
+   "character": "Ye82oT1plEaU8AnW",
+   "name": "Dyba-012"
+  },
+  {
+   "_id": "kaxNmrTY4GITw00i",
+   "role": 1,
+   "character": "QjjpvJQ2xBHB8q2P",
+   "name": "Faba-013"
+  },
+  {
+   "_id": "tyUFPzF1IOd3Zcnq",
+   "role": 1,
+   "character": "r9KRWzBO0PtD2ugI",
+   "name": "Feba-014"
+  },
+  {
+   "_id": "HxN3GhOQ0xrPGdkk",
+   "role": 1,
+   "character": "RObtOmsxOOF0Dwie",
+   "name": "Fiba-015"
+  },
+  {
+   "_id": "dOB6TdSOn7NL3qrR",
+   "role": 1,
+   "character": "80SUu8HVhgabNzCR",
+   "name": "Foba-016"
+  },
+  {
+   "_id": "7qWkhTOzEtc02TPs",
+   "role": 1,
+   "character": null,
+   "name": "Fuba-017"
+  }
+ ],
+ "actors": [
+  {
+   "_id": "WVGLi9ZSkpcWietO",
+   "type": "companion",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3,
+    "bFpFJpN8Sr02oqa8": 1,
+    "n74OseDtmjhm6lRF": 1,
+    "82yxtt0rbJ72XJeA": 1,
+    "fCZVOz7SGzgxcrtZ": 1,
+    "YtrONu1n3HPJFEl3": 1
+   },
+   "name": "Fyba-018"
+  },
+  {
+   "_id": "ljZG88SvteICKXut",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Gaba-019"
+  },
+  {
+   "_id": "MPmRyD9MenUReCet",
+   "type": "adversary",
+   "ownership": {
+    "default": 1,
+    "QALIE8jmoPXah1yb": 3,
+    "m3GUFdKrO3AOqCq2": 0,
+    "LKy6AzIYWDCads6K": 0,
+    "0KIbAAK9lWzqEzlW": 0,
+    "YL1DH9VUoQixkszx": 0
+   },
+   "name": "Geba-020"
+  },
+  {
+   "_id": "9VJAv9n9BoTFeSzB",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Giba-021"
+  },
+  {
+   "_id": "5Y7RQ0Euea0sVh0k",
+   "type": "adversary",
+   "ownership": {
+    "default": 2,
+    "QALIE8jmoPXah1yb": 3,
+    "m3GUFdKrO3AOqCq2": 0,
+    "LKy6AzIYWDCads6K": 0,
+    "0KIbAAK9lWzqEzlW": 0,
+    "YL1DH9VUoQixkszx": 0
+   },
+   "name": "Goba-022"
+  },
+  {
+   "_id": "gGgRyALCdDYIevNC",
+   "type": "character",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Guba-023"
+  },
+  {
+   "_id": "shsAsc4y1xagzuai",
+   "type": "character",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Gyba-024"
+  },
+  {
+   "_id": "RObtOmsxOOF0Dwie",
+   "type": "character",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3,
+    "HxN3GhOQ0xrPGdkk": 3,
+    "msKLXJiqmQHmUr2w": 2,
+    "kaxNmrTY4GITw00i": 2,
+    "tyUFPzF1IOd3Zcnq": 2,
+    "dOB6TdSOn7NL3qrR": 2
+   },
+   "name": "Kaba-025"
+  },
+  {
+   "_id": "Ajw78l3tujjdQ6lc",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Keba-026"
+  },
+  {
+   "_id": "LGbXB6xrqivSngap",
+   "type": "npc",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Kiba-027"
+  },
+  {
+   "_id": "vFVAoD44MXVWgrtY",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Koba-028"
+  },
+  {
+   "_id": "nBVs4oSEXOshXGd2",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Kuba-029"
+  },
+  {
+   "_id": "KPalZ7r1nP0zlaUn",
+   "type": "character",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3,
+    "m3GUFdKrO3AOqCq2": 3,
+    "LKy6AzIYWDCads6K": 3,
+    "0KIbAAK9lWzqEzlW": 2,
+    "YL1DH9VUoQixkszx": 2
+   },
+   "name": "Kyba-030"
+  },
+  {
+   "_id": "5fy58wRNpN6nl489",
+   "type": "character",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3,
+    "m3GUFdKrO3AOqCq2": 3,
+    "LKy6AzIYWDCads6K": 3,
+    "0KIbAAK9lWzqEzlW": 2,
+    "YL1DH9VUoQixkszx": 3
+   },
+   "name": "Maba-031"
+  },
+  {
+   "_id": "IdabWSOgiAEte08h",
+   "type": "character",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3,
+    "bFpFJpN8Sr02oqa8": 2,
+    "n74OseDtmjhm6lRF": 2,
+    "82yxtt0rbJ72XJeA": 2,
+    "fCZVOz7SGzgxcrtZ": 3,
+    "YtrONu1n3HPJFEl3": 2
+   },
+   "name": "Meba-032"
+  },
+  {
+   "_id": "nbOmA14F7Bo8NaN1",
+   "type": "adversary",
+   "ownership": {
+    "default": 1,
+    "QALIE8jmoPXah1yb": 3,
+    "msKLXJiqmQHmUr2w": 1,
+    "kaxNmrTY4GITw00i": 1,
+    "tyUFPzF1IOd3Zcnq": 1,
+    "HxN3GhOQ0xrPGdkk": 1,
+    "m3GUFdKrO3AOqCq2": 0,
+    "LKy6AzIYWDCads6K": 0,
+    "0KIbAAK9lWzqEzlW": 0,
+    "YL1DH9VUoQixkszx": 0
+   },
+   "name": "Miba-033"
+  },
+  {
+   "_id": "q3M3lLlDLmQQRkgN",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Muba-035"
+  },
+  {
+   "_id": "XoXRTvOzOijXFK46",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Myba-036"
+  },
+  {
+   "_id": "WllMOWpG9p2qvWJQ",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Naba-037"
+  },
+  {
+   "_id": "mA4x4DGFhnJ3yiml",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3,
+    "msKLXJiqmQHmUr2w": 1,
+    "kaxNmrTY4GITw00i": 1,
+    "tyUFPzF1IOd3Zcnq": 1,
+    "HxN3GhOQ0xrPGdkk": 1,
+    "dOB6TdSOn7NL3qrR": 1
+   },
+   "name": "Neba-038"
+  },
+  {
+   "_id": "NoRZ1PqB8N5wcIw0",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Niba-039"
+  },
+  {
+   "_id": "gUWpoaYTAwra9nYl",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Noba-040"
+  },
+  {
+   "_id": "qvInXfDfnxgojo02",
+   "type": "adversary",
+   "ownership": {
+    "default": 1,
+    "QALIE8jmoPXah1yb": 3,
+    "m3GUFdKrO3AOqCq2": 0,
+    "LKy6AzIYWDCads6K": 0,
+    "0KIbAAK9lWzqEzlW": 0,
+    "YL1DH9VUoQixkszx": 0
+   },
+   "name": "Nuba-041"
+  },
+  {
+   "_id": "Lg8rtuXyzTwAwQQ9",
+   "type": "adversary",
+   "ownership": {
+    "default": 1,
+    "QALIE8jmoPXah1yb": 3,
+    "m3GUFdKrO3AOqCq2": 0,
+    "LKy6AzIYWDCads6K": 0,
+    "0KIbAAK9lWzqEzlW": 0,
+    "YL1DH9VUoQixkszx": 0
+   },
+   "name": "Nyba-042"
+  },
+  {
+   "_id": "kMe7ZlqnYW7Nt8MU",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Paba-043"
+  },
+  {
+   "_id": "fsxW3g8JloWIgQmB",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Peba-044"
+  },
+  {
+   "_id": "Nq6iCKzwEAAEdm0b",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Piba-045"
+  },
+  {
+   "_id": "rYrhUa1HCy0TNHHJ",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Poba-046"
+  },
+  {
+   "_id": "ddSmlTvmkYbW6Xxk",
+   "type": "character",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3,
+    "bFpFJpN8Sr02oqa8": 2,
+    "n74OseDtmjhm6lRF": 2,
+    "82yxtt0rbJ72XJeA": 2,
+    "fCZVOz7SGzgxcrtZ": 2,
+    "YtrONu1n3HPJFEl3": 3
+   },
+   "name": "Puba-047"
+  },
+  {
+   "_id": "Ew5XshlYJCrMbCcf",
+   "type": "companion",
+   "ownership": {
+    "default": 1,
+    "QALIE8jmoPXah1yb": 3,
+    "m3GUFdKrO3AOqCq2": 0,
+    "LKy6AzIYWDCads6K": 0,
+    "0KIbAAK9lWzqEzlW": 0,
+    "YL1DH9VUoQixkszx": 0
+   },
+   "name": "Pyba-048"
+  },
+  {
+   "_id": "8aJCG2zmTpBYbOoE",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Raba-049"
+  },
+  {
+   "_id": "zOO6osxAhpKHaPFZ",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3,
+    "msKLXJiqmQHmUr2w": 1,
+    "kaxNmrTY4GITw00i": 1,
+    "tyUFPzF1IOd3Zcnq": 1,
+    "HxN3GhOQ0xrPGdkk": 1,
+    "dOB6TdSOn7NL3qrR": 1
+   },
+   "name": "Reba-050"
+  },
+  {
+   "_id": "UXHo4TF4hLywjVl3",
+   "type": "environment",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Riba-051"
+  },
+  {
+   "_id": "ebXmIfmt6nHsGUBN",
+   "type": "companion",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3,
+    "n74OseDtmjhm6lRF": 2,
+    "bFpFJpN8Sr02oqa8": 2,
+    "82yxtt0rbJ72XJeA": 2,
+    "fCZVOz7SGzgxcrtZ": 2,
+    "YtrONu1n3HPJFEl3": 2
+   },
+   "name": "Roba-052"
+  },
+  {
+   "_id": "r9KRWzBO0PtD2ugI",
+   "type": "character",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3,
+    "tyUFPzF1IOd3Zcnq": 3,
+    "msKLXJiqmQHmUr2w": 2,
+    "kaxNmrTY4GITw00i": 2,
+    "HxN3GhOQ0xrPGdkk": 2,
+    "dOB6TdSOn7NL3qrR": 2
+   },
+   "name": "Ruba-053"
+  },
+  {
+   "_id": "HohOtOcubPYsSHTI",
+   "type": "character",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3,
+    "msKLXJiqmQHmUr2w": 3,
+    "kaxNmrTY4GITw00i": 2,
+    "tyUFPzF1IOd3Zcnq": 2,
+    "HxN3GhOQ0xrPGdkk": 2,
+    "dOB6TdSOn7NL3qrR": 2
+   },
+   "name": "Ryba-054"
+  },
+  {
+   "_id": "Ye82oT1plEaU8AnW",
+   "type": "character",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3,
+    "msKLXJiqmQHmUr2w": 3,
+    "kaxNmrTY4GITw00i": 2,
+    "tyUFPzF1IOd3Zcnq": 2,
+    "HxN3GhOQ0xrPGdkk": 2,
+    "dOB6TdSOn7NL3qrR": 2
+   },
+   "name": "Saba-055"
+  },
+  {
+   "_id": "L9rZHkjuRjUw0T9L",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Seba-056"
+  },
+  {
+   "_id": "YxZYYI3RLugK38zW",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Seba-056"
+  },
+  {
+   "_id": "0gjswygwg4BMpmxL",
+   "type": "adversary",
+   "ownership": {
+    "default": 1,
+    "QALIE8jmoPXah1yb": 3,
+    "n74OseDtmjhm6lRF": 1,
+    "bFpFJpN8Sr02oqa8": 1,
+    "82yxtt0rbJ72XJeA": 1,
+    "fCZVOz7SGzgxcrtZ": 1,
+    "YtrONu1n3HPJFEl3": 1,
+    "msKLXJiqmQHmUr2w": 1,
+    "kaxNmrTY4GITw00i": 1,
+    "tyUFPzF1IOd3Zcnq": 1,
+    "HxN3GhOQ0xrPGdkk": 1,
+    "m3GUFdKrO3AOqCq2": 0,
+    "LKy6AzIYWDCads6K": 0,
+    "0KIbAAK9lWzqEzlW": 0,
+    "YL1DH9VUoQixkszx": 0
+   },
+   "name": "Siba-057"
+  },
+  {
+   "_id": "i2Bu4vOZM38q2cdU",
+   "type": "adversary",
+   "ownership": {
+    "default": 1,
+    "QALIE8jmoPXah1yb": 3,
+    "m3GUFdKrO3AOqCq2": 0,
+    "LKy6AzIYWDCads6K": 0,
+    "0KIbAAK9lWzqEzlW": 0,
+    "YL1DH9VUoQixkszx": 0
+   },
+   "name": "Soba-058"
+  },
+  {
+   "_id": "oqg05m7Ffja77b67",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Suba-059"
+  },
+  {
+   "_id": "TzAaGdDFgPWTCNId",
+   "type": "adversary",
+   "ownership": {
+    "default": 1,
+    "QALIE8jmoPXah1yb": 3,
+    "m3GUFdKrO3AOqCq2": 0,
+    "LKy6AzIYWDCads6K": 0,
+    "0KIbAAK9lWzqEzlW": 0,
+    "YL1DH9VUoQixkszx": 0
+   },
+   "name": "Syba-060"
+  },
+  {
+   "_id": "5bBGIAQibFDA52NW",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Taba-061"
+  },
+  {
+   "_id": "RXvuSI6aimTqkBMu",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Teba-062"
+  },
+  {
+   "_id": "LekfjHwYQxR0jQxh",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Tiba-063"
+  },
+  {
+   "_id": "xN6tgObRyGxUcIom",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Toba-064"
+  },
+  {
+   "_id": "2FPTQxhqiIZXAZ2N",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Tuba-065"
+  },
+  {
+   "_id": "um1o26vFNJWImvJr",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Tyba-066"
+  },
+  {
+   "_id": "hoV6kN7TeOU5N91v",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Vaba-067"
+  },
+  {
+   "_id": "CTcA8mNEsySqpNPM",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Veba-068"
+  },
+  {
+   "_id": "2SYc24DKJ0JEh8nv",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Viba-069"
+  },
+  {
+   "_id": "WjoBYpIKFo5TtCpu",
+   "type": "adversary",
+   "ownership": {
+    "default": 1,
+    "QALIE8jmoPXah1yb": 3,
+    "m3GUFdKrO3AOqCq2": 0,
+    "LKy6AzIYWDCads6K": 0,
+    "0KIbAAK9lWzqEzlW": 0,
+    "YL1DH9VUoQixkszx": 0
+   },
+   "name": "Viba-069"
+  },
+  {
+   "_id": "xFgNQajp8urZjvFt",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Voba-070"
+  },
+  {
+   "_id": "ucVZtmP3Tu52j7PO",
+   "type": "adversary",
+   "ownership": {
+    "default": 1,
+    "QALIE8jmoPXah1yb": 3,
+    "msKLXJiqmQHmUr2w": 2,
+    "kaxNmrTY4GITw00i": 2,
+    "tyUFPzF1IOd3Zcnq": 2,
+    "HxN3GhOQ0xrPGdkk": 2,
+    "m3GUFdKrO3AOqCq2": 0,
+    "LKy6AzIYWDCads6K": 0,
+    "0KIbAAK9lWzqEzlW": 0,
+    "YL1DH9VUoQixkszx": 0,
+    "dOB6TdSOn7NL3qrR": 2
+   },
+   "name": "Vuba-071"
+  },
+  {
+   "_id": "KqGahluj587pgxGP",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Vyba-072"
+  },
+  {
+   "_id": "6ICa2bEHzvN71J57",
+   "type": "party",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3,
+    "n74OseDtmjhm6lRF": 2,
+    "bFpFJpN8Sr02oqa8": 2,
+    "82yxtt0rbJ72XJeA": 2,
+    "fCZVOz7SGzgxcrtZ": 2,
+    "YtrONu1n3HPJFEl3": 2
+   },
+   "name": "Zaba-073"
+  },
+  {
+   "_id": "ZNOftCGOSbsRJ4ct",
+   "type": "companion",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3,
+    "m3GUFdKrO3AOqCq2": 1,
+    "LKy6AzIYWDCads6K": 1,
+    "0KIbAAK9lWzqEzlW": 1,
+    "YL1DH9VUoQixkszx": 1
+   },
+   "name": "Zeba-074"
+  },
+  {
+   "_id": "QjjpvJQ2xBHB8q2P",
+   "type": "character",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3,
+    "kaxNmrTY4GITw00i": 3,
+    "msKLXJiqmQHmUr2w": 2,
+    "tyUFPzF1IOd3Zcnq": 2,
+    "HxN3GhOQ0xrPGdkk": 2,
+    "dOB6TdSOn7NL3qrR": 2
+   },
+   "name": "Ziba-075"
+  },
+  {
+   "_id": "KRVQjtfo9aXombqY",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Zoba-076"
+  },
+  {
+   "_id": "n2KSWROwLj9wCXuS",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Zuba-077"
+  },
+  {
+   "_id": "f3Ho6jCUOhE3jdwu",
+   "type": "character",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3,
+    "m3GUFdKrO3AOqCq2": 3,
+    "LKy6AzIYWDCads6K": 3,
+    "0KIbAAK9lWzqEzlW": 2,
+    "YL1DH9VUoQixkszx": 2
+   },
+   "name": "Zyba-078"
+  },
+  {
+   "_id": "ER4raDJnrtVTX6Sl",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Babe-079"
+  },
+  {
+   "_id": "gRS0KwRdaSs6lJCr",
+   "type": "adversary",
+   "ownership": {
+    "default": 1,
+    "QALIE8jmoPXah1yb": 3,
+    "n74OseDtmjhm6lRF": 1,
+    "bFpFJpN8Sr02oqa8": 1,
+    "82yxtt0rbJ72XJeA": 1,
+    "fCZVOz7SGzgxcrtZ": 1,
+    "YtrONu1n3HPJFEl3": 1,
+    "msKLXJiqmQHmUr2w": 1,
+    "kaxNmrTY4GITw00i": 1,
+    "tyUFPzF1IOd3Zcnq": 1,
+    "HxN3GhOQ0xrPGdkk": 1,
+    "m3GUFdKrO3AOqCq2": 0,
+    "LKy6AzIYWDCads6K": 0,
+    "0KIbAAK9lWzqEzlW": 0,
+    "YL1DH9VUoQixkszx": 0
+   },
+   "name": "Bebe-080"
+  },
+  {
+   "_id": "4h5WjoopBGbghYn3",
+   "type": "party",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3,
+    "msKLXJiqmQHmUr2w": 2,
+    "kaxNmrTY4GITw00i": 2,
+    "tyUFPzF1IOd3Zcnq": 2,
+    "HxN3GhOQ0xrPGdkk": 3,
+    "dOB6TdSOn7NL3qrR": 2
+   },
+   "name": "Bibe-081"
+  },
+  {
+   "_id": "wWoWrHKawXzk8ure",
+   "type": "adversary",
+   "ownership": {
+    "default": 1,
+    "QALIE8jmoPXah1yb": 3,
+    "m3GUFdKrO3AOqCq2": 0,
+    "LKy6AzIYWDCads6K": 0,
+    "0KIbAAK9lWzqEzlW": 0,
+    "YL1DH9VUoQixkszx": 0
+   },
+   "name": "Bobe-082"
+  },
+  {
+   "_id": "7qrbwIsEb8prVWh5",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Bube-083"
+  },
+  {
+   "_id": "vNnHovSpRNRlJQYU",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3,
+    "m3GUFdKrO3AOqCq2": 1,
+    "LKy6AzIYWDCads6K": 1,
+    "0KIbAAK9lWzqEzlW": 1,
+    "YL1DH9VUoQixkszx": 1
+   },
+   "name": "Bybe-084"
+  },
+  {
+   "_id": "MI126iMOOobQ1Obn",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Dabe-085"
+  },
+  {
+   "_id": "HN4K05ZXizX1Yz2b",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Debe-086"
+  },
+  {
+   "_id": "d9cc6majfONpL35r",
+   "type": "adversary",
+   "ownership": {
+    "default": 1,
+    "QALIE8jmoPXah1yb": 3,
+    "m3GUFdKrO3AOqCq2": 0,
+    "LKy6AzIYWDCads6K": 0,
+    "0KIbAAK9lWzqEzlW": 0,
+    "YL1DH9VUoQixkszx": 0
+   },
+   "name": "Dibe-087"
+  },
+  {
+   "_id": "ne9GC2VgZi5ntXxu",
+   "type": "adversary",
+   "ownership": {
+    "default": 1,
+    "QALIE8jmoPXah1yb": 3,
+    "m3GUFdKrO3AOqCq2": 0,
+    "LKy6AzIYWDCads6K": 0,
+    "0KIbAAK9lWzqEzlW": 0,
+    "YL1DH9VUoQixkszx": 0
+   },
+   "name": "Dobe-088"
+  },
+  {
+   "_id": "Fno4LDz1PiVVYqEP",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Dube-089"
+  },
+  {
+   "_id": "dikwyQQ49MDz2dC1",
+   "type": "adversary",
+   "ownership": {
+    "default": 1,
+    "QALIE8jmoPXah1yb": 3,
+    "m3GUFdKrO3AOqCq2": 0,
+    "LKy6AzIYWDCads6K": 0,
+    "0KIbAAK9lWzqEzlW": 0,
+    "YL1DH9VUoQixkszx": 0
+   },
+   "name": "Dybe-090"
+  },
+  {
+   "_id": "Jkkhufrxqy6Hcx46",
+   "type": "character",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3,
+    "bFpFJpN8Sr02oqa8": 3,
+    "n74OseDtmjhm6lRF": 2,
+    "82yxtt0rbJ72XJeA": 2,
+    "fCZVOz7SGzgxcrtZ": 2,
+    "YtrONu1n3HPJFEl3": 2
+   },
+   "name": "Fabe-091"
+  },
+  {
+   "_id": "D9vJY4xnyXQS5lP5",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Febe-092"
+  },
+  {
+   "_id": "H49jUWDVdCPlAnrm",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Fibe-093"
+  },
+  {
+   "_id": "RkJz2xFwt9RXHK6H",
+   "type": "character",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Fobe-094"
+  },
+  {
+   "_id": "AZUEUEl2JpHRr367",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Fube-095"
+  },
+  {
+   "_id": "tyruCQND6jY61Ofy",
+   "type": "adversary",
+   "ownership": {
+    "default": 1,
+    "QALIE8jmoPXah1yb": 3,
+    "m3GUFdKrO3AOqCq2": 0,
+    "LKy6AzIYWDCads6K": 0,
+    "0KIbAAK9lWzqEzlW": 0,
+    "YL1DH9VUoQixkszx": 0
+   },
+   "name": "Fybe-096"
+  },
+  {
+   "_id": "1dwOXyAzufc9d2Da",
+   "type": "companion",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3,
+    "msKLXJiqmQHmUr2w": 3,
+    "kaxNmrTY4GITw00i": 3,
+    "tyUFPzF1IOd3Zcnq": 3,
+    "HxN3GhOQ0xrPGdkk": 3,
+    "dOB6TdSOn7NL3qrR": 3
+   },
+   "name": "Gabe-097"
+  },
+  {
+   "_id": "949gyfBQlHdRISD9",
+   "type": "companion",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3,
+    "n74OseDtmjhm6lRF": 3,
+    "bFpFJpN8Sr02oqa8": 3,
+    "82yxtt0rbJ72XJeA": 3,
+    "fCZVOz7SGzgxcrtZ": 3,
+    "YtrONu1n3HPJFEl3": 3
+   },
+   "name": "Gebe-098"
+  },
+  {
+   "_id": "6PKKKg577b0oZns7",
+   "type": "character",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3,
+    "bFpFJpN8Sr02oqa8": 2,
+    "n74OseDtmjhm6lRF": 3,
+    "82yxtt0rbJ72XJeA": 2,
+    "fCZVOz7SGzgxcrtZ": 2,
+    "YtrONu1n3HPJFEl3": 2
+   },
+   "name": "Gibe-099"
+  },
+  {
+   "_id": "yLGZ8Aw8saai5WG9",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Gobe-100"
+  },
+  {
+   "_id": "oZkXuuOR1qR5WYCx",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Gube-101"
+  },
+  {
+   "_id": "26eYks0hoQ9FvyD0",
+   "type": "environment",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Gybe-102"
+  },
+  {
+   "_id": "PPExV1Fvuzl8NfA1",
+   "type": "party",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Kabe-103"
+  },
+  {
+   "_id": "W902x1LeDoqUrGLU",
+   "type": "adversary",
+   "ownership": {
+    "default": 1,
+    "QALIE8jmoPXah1yb": 3,
+    "m3GUFdKrO3AOqCq2": 0,
+    "LKy6AzIYWDCads6K": 0,
+    "0KIbAAK9lWzqEzlW": 0,
+    "YL1DH9VUoQixkszx": 0
+   },
+   "name": "Kebe-104"
+  },
+  {
+   "_id": "42vplW4KHah6YHoB",
+   "type": "adversary",
+   "ownership": {
+    "default": 1,
+    "QALIE8jmoPXah1yb": 3,
+    "m3GUFdKrO3AOqCq2": 0,
+    "LKy6AzIYWDCads6K": 0,
+    "0KIbAAK9lWzqEzlW": 0,
+    "YL1DH9VUoQixkszx": 0
+   },
+   "name": "Kibe-105"
+  },
+  {
+   "_id": "t72HxheTPCffarhi",
+   "type": "adversary",
+   "ownership": {
+    "default": 1,
+    "QALIE8jmoPXah1yb": 3,
+    "msKLXJiqmQHmUr2w": 1,
+    "kaxNmrTY4GITw00i": 1,
+    "tyUFPzF1IOd3Zcnq": 1,
+    "HxN3GhOQ0xrPGdkk": 1,
+    "m3GUFdKrO3AOqCq2": 0,
+    "LKy6AzIYWDCads6K": 0,
+    "0KIbAAK9lWzqEzlW": 0,
+    "YL1DH9VUoQixkszx": 0
+   },
+   "name": "Kobe-106"
+  },
+  {
+   "_id": "7dXnYn0ovKagWyDK",
+   "type": "character",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3,
+    "dOB6TdSOn7NL3qrR": 3,
+    "msKLXJiqmQHmUr2w": 2,
+    "kaxNmrTY4GITw00i": 2,
+    "tyUFPzF1IOd3Zcnq": 2,
+    "HxN3GhOQ0xrPGdkk": 2
+   },
+   "name": "Kube-107"
+  },
+  {
+   "_id": "70jPIi5UMXkr2dWD",
+   "type": "adversary",
+   "ownership": {
+    "default": 2,
+    "QALIE8jmoPXah1yb": 3,
+    "m3GUFdKrO3AOqCq2": 0,
+    "LKy6AzIYWDCads6K": 0,
+    "0KIbAAK9lWzqEzlW": 0,
+    "YL1DH9VUoQixkszx": 0
+   },
+   "name": "Kybe-108"
+  },
+  {
+   "_id": "dzqONozzn6yhtFB8",
+   "type": "adversary",
+   "ownership": {
+    "default": 1,
+    "QALIE8jmoPXah1yb": 3,
+    "m3GUFdKrO3AOqCq2": 0,
+    "LKy6AzIYWDCads6K": 0,
+    "0KIbAAK9lWzqEzlW": 0,
+    "YL1DH9VUoQixkszx": 0
+   },
+   "name": "Mabe-109"
+  },
+  {
+   "_id": "zktbEvJ0RCdZPHBI",
+   "type": "adversary",
+   "ownership": {
+    "default": 1,
+    "QALIE8jmoPXah1yb": 3,
+    "m3GUFdKrO3AOqCq2": 0,
+    "LKy6AzIYWDCads6K": 0,
+    "0KIbAAK9lWzqEzlW": 0,
+    "YL1DH9VUoQixkszx": 0
+   },
+   "name": "Mebe-110"
+  },
+  {
+   "_id": "cfmaKBvXzafRgJjw",
+   "type": "adversary",
+   "ownership": {
+    "default": 1,
+    "QALIE8jmoPXah1yb": 3,
+    "LKy6AzIYWDCads6K": 0,
+    "0KIbAAK9lWzqEzlW": 0,
+    "YL1DH9VUoQixkszx": 0
+   },
+   "name": "Mibe-111"
+  },
+  {
+   "_id": "b44X7bV7UEhd8lYv",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Mube-113"
+  },
+  {
+   "_id": "nEMsarStrmuoMQZb",
+   "type": "adversary",
+   "ownership": {
+    "default": 2,
+    "QALIE8jmoPXah1yb": 3,
+    "m3GUFdKrO3AOqCq2": 0,
+    "LKy6AzIYWDCads6K": 0,
+    "0KIbAAK9lWzqEzlW": 0,
+    "YL1DH9VUoQixkszx": 0
+   },
+   "name": "Mybe-114"
+  },
+  {
+   "_id": "R3SkgFQD4BHekf6D",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3,
+    "m3GUFdKrO3AOqCq2": 1,
+    "LKy6AzIYWDCads6K": 1,
+    "0KIbAAK9lWzqEzlW": 1,
+    "YL1DH9VUoQixkszx": 1
+   },
+   "name": "Nabe-115"
+  },
+  {
+   "_id": "VLCt9OvuKiCMhvOx",
+   "type": "npc",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Nebe-116"
+  },
+  {
+   "_id": "RjfQ6eJrD4YVt7Jc",
+   "type": "adversary",
+   "ownership": {
+    "default": 1,
+    "QALIE8jmoPXah1yb": 3,
+    "m3GUFdKrO3AOqCq2": 0,
+    "LKy6AzIYWDCads6K": 0,
+    "0KIbAAK9lWzqEzlW": 0,
+    "YL1DH9VUoQixkszx": 0
+   },
+   "name": "Nibe-117"
+  },
+  {
+   "_id": "K4l09dWUg54FBhbz",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Nobe-118"
+  },
+  {
+   "_id": "80SUu8HVhgabNzCR",
+   "type": "character",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3,
+    "dOB6TdSOn7NL3qrR": 3,
+    "msKLXJiqmQHmUr2w": 2,
+    "kaxNmrTY4GITw00i": 2,
+    "tyUFPzF1IOd3Zcnq": 2,
+    "HxN3GhOQ0xrPGdkk": 2
+   },
+   "name": "Nube-119"
+  },
+  {
+   "_id": "W28V8JkF49Xnt2rD",
+   "type": "companion",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3,
+    "dOB6TdSOn7NL3qrR": 1,
+    "msKLXJiqmQHmUr2w": 1,
+    "kaxNmrTY4GITw00i": 1,
+    "tyUFPzF1IOd3Zcnq": 1,
+    "HxN3GhOQ0xrPGdkk": 1
+   },
+   "name": "Nybe-120"
+  },
+  {
+   "_id": "JPdQQ1w6M4x3zJq8",
+   "type": "adversary",
+   "ownership": {
+    "default": 1,
+    "QALIE8jmoPXah1yb": 3,
+    "m3GUFdKrO3AOqCq2": 0,
+    "LKy6AzIYWDCads6K": 0,
+    "0KIbAAK9lWzqEzlW": 0,
+    "YL1DH9VUoQixkszx": 0
+   },
+   "name": "Pabe-121"
+  },
+  {
+   "_id": "Q70mJNFlYE7ugVb9",
+   "type": "adversary",
+   "ownership": {
+    "default": 2,
+    "QALIE8jmoPXah1yb": 3,
+    "m3GUFdKrO3AOqCq2": 0,
+    "LKy6AzIYWDCads6K": 0,
+    "0KIbAAK9lWzqEzlW": 0,
+    "YL1DH9VUoQixkszx": 0
+   },
+   "name": "Pebe-122"
+  },
+  {
+   "_id": "XhAxdTdHIWJ8QIqi",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Pibe-123"
+  },
+  {
+   "_id": "itWvZdbQx3cQmRHD",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Pibe-123"
+  },
+  {
+   "_id": "vHLuOVAeHy2wfj40",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Pobe-124"
+  },
+  {
+   "_id": "KhKI0nUUmbaq3ayS",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Pube-125"
+  },
+  {
+   "_id": "e7ZGQmGjcI1C78w5",
+   "type": "adversary",
+   "ownership": {
+    "default": 1,
+    "QALIE8jmoPXah1yb": 3,
+    "LKy6AzIYWDCads6K": 0,
+    "0KIbAAK9lWzqEzlW": 0,
+    "YL1DH9VUoQixkszx": 0
+   },
+   "name": "Pybe-126"
+  },
+  {
+   "_id": "MhOLWnrqDlfe1GNh",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Rabe-127"
+  },
+  {
+   "_id": "PKSXFuaIHUCoH63A",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Rebe-128"
+  },
+  {
+   "_id": "5tiuHZZ1hGxRiyzZ",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Ribe-129"
+  },
+  {
+   "_id": "rkL8dWB6TPVlm4iY",
+   "type": "adversary",
+   "ownership": {
+    "default": 2,
+    "QALIE8jmoPXah1yb": 3,
+    "m3GUFdKrO3AOqCq2": 0,
+    "LKy6AzIYWDCads6K": 0,
+    "0KIbAAK9lWzqEzlW": 0,
+    "YL1DH9VUoQixkszx": 0
+   },
+   "name": "Robe-130"
+  },
+  {
+   "_id": "k4PmkO613aHYMIKF",
+   "type": "character",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Rube-131"
+  },
+  {
+   "_id": "ko0GA7Sc6Udh68ST",
+   "type": "companion",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3,
+    "m3GUFdKrO3AOqCq2": 3,
+    "LKy6AzIYWDCads6K": 3,
+    "0KIbAAK9lWzqEzlW": 3,
+    "YL1DH9VUoQixkszx": 3
+   },
+   "name": "Rybe-132"
+  },
+  {
+   "_id": "jTlfiU33VMoos5NU",
+   "type": "companion",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3,
+    "m3GUFdKrO3AOqCq2": 3,
+    "LKy6AzIYWDCads6K": 3,
+    "0KIbAAK9lWzqEzlW": 3,
+    "YL1DH9VUoQixkszx": 3
+   },
+   "name": "Sabe-133"
+  },
+  {
+   "_id": "p8wJkVWOBRJTec8m",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Sebe-134"
+  },
+  {
+   "_id": "pOs9mPA2C3y0r5De",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Sebe-134"
+  },
+  {
+   "_id": "hsl0PWvS9XC3ak8R",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Sibe-135"
+  },
+  {
+   "_id": "dSYXPh61bInW5g4p",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Sobe-136"
+  },
+  {
+   "_id": "H70UXlXuZoYynx9U",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Sube-137"
+  },
+  {
+   "_id": "jnoCGnuKxgwe6DuZ",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Sube-137"
+  },
+  {
+   "_id": "ZkcC3F8ALpedAW09",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Sybe-138"
+  },
+  {
+   "_id": "VxeVo5ejAXAnGlPt",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Tabe-139"
+  },
+  {
+   "_id": "qbi1XvsV4qat3cWz",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Tebe-140"
+  },
+  {
+   "_id": "3aAS2Qm3R6cgaYfE",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Tibe-141"
+  },
+  {
+   "_id": "m84A05a4CKPYWlqi",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3,
+    "m3GUFdKrO3AOqCq2": 1,
+    "LKy6AzIYWDCads6K": 1,
+    "0KIbAAK9lWzqEzlW": 1,
+    "YL1DH9VUoQixkszx": 1
+   },
+   "name": "Tobe-142"
+  },
+  {
+   "_id": "Ifpr9z2vPKgVZNDG",
+   "type": "companion",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3,
+    "m3GUFdKrO3AOqCq2": 1,
+    "LKy6AzIYWDCads6K": 1,
+    "0KIbAAK9lWzqEzlW": 1,
+    "YL1DH9VUoQixkszx": 1
+   },
+   "name": "Tube-143"
+  },
+  {
+   "_id": "wHvnoAbAFz4aELvc",
+   "type": "adversary",
+   "ownership": {
+    "default": 1,
+    "QALIE8jmoPXah1yb": 3,
+    "m3GUFdKrO3AOqCq2": 0,
+    "LKy6AzIYWDCads6K": 0,
+    "0KIbAAK9lWzqEzlW": 0,
+    "YL1DH9VUoQixkszx": 0
+   },
+   "name": "Tybe-144"
+  },
+  {
+   "_id": "J0ZhUKgniIkJWU3P",
+   "type": "character",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3,
+    "bFpFJpN8Sr02oqa8": 2,
+    "n74OseDtmjhm6lRF": 2,
+    "82yxtt0rbJ72XJeA": 3,
+    "fCZVOz7SGzgxcrtZ": 2,
+    "YtrONu1n3HPJFEl3": 2
+   },
+   "name": "Vabe-145"
+  },
+  {
+   "_id": "tYcyTTdfZedwHMHP",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Vebe-146"
+  },
+  {
+   "_id": "KCCIGH2idEyPr1bb",
+   "type": "character",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3,
+    "7qWkhTOzEtc02TPs": 3
+   },
+   "name": "Vibe-147"
+  },
+  {
+   "_id": "o63nS0k3wHu6EgKP",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Vobe-148"
+  },
+  {
+   "_id": "GOwSLD8fjfnjKQFv",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Vube-149"
+  },
+  {
+   "_id": "MXXTxYiliW39gXE9",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Vybe-150"
+  },
+  {
+   "_id": "3oAmmmI5cZQfE4du",
+   "type": "character",
+   "ownership": {
+    "default": 0,
+    "L4cXn74yoVds8VOJ": 3,
+    "HxN3GhOQ0xrPGdkk": 3,
+    "msKLXJiqmQHmUr2w": 2,
+    "kaxNmrTY4GITw00i": 2,
+    "tyUFPzF1IOd3Zcnq": 2,
+    "dOB6TdSOn7NL3qrR": 2
+   },
+   "name": "Zabe-151"
+  },
+  {
+   "_id": "tlcT9ArV0NjKXXaT",
+   "type": "character",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Zebe-152"
+  },
+  {
+   "_id": "BF8pyGVu30st1z9p",
+   "type": "character",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Zibe-153"
+  },
+  {
+   "_id": "L8d8mSzgoeBCgiFR",
+   "type": "adversary",
+   "ownership": {
+    "default": 2,
+    "QALIE8jmoPXah1yb": 3,
+    "m3GUFdKrO3AOqCq2": 0,
+    "LKy6AzIYWDCads6K": 0,
+    "0KIbAAK9lWzqEzlW": 0,
+    "YL1DH9VUoQixkszx": 0
+   },
+   "name": "Zobe-154"
+  },
+  {
+   "_id": "n815bLbx8McNvnr4",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3,
+    "msKLXJiqmQHmUr2w": 2,
+    "kaxNmrTY4GITw00i": 2,
+    "tyUFPzF1IOd3Zcnq": 2,
+    "HxN3GhOQ0xrPGdkk": 2,
+    "dOB6TdSOn7NL3qrR": 2
+   },
+   "name": "Zube-155"
+  },
+  {
+   "_id": "BBZdOlrnPKr6JAfx",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Zybe-156"
+  },
+  {
+   "_id": "j0d4zN0anAuj4bJY",
+   "type": "adversary",
+   "ownership": {
+    "default": 1,
+    "QALIE8jmoPXah1yb": 3,
+    "m3GUFdKrO3AOqCq2": 0,
+    "LKy6AzIYWDCads6K": 0,
+    "0KIbAAK9lWzqEzlW": 0,
+    "YL1DH9VUoQixkszx": 0
+   },
+   "name": "Babi-157"
+  },
+  {
+   "_id": "zfEb01B9Wr8vuJdt",
+   "type": "character",
+   "ownership": {
+    "default": 0,
+    "L4cXn74yoVds8VOJ": 3,
+    "tyUFPzF1IOd3Zcnq": 3,
+    "msKLXJiqmQHmUr2w": 2,
+    "kaxNmrTY4GITw00i": 2,
+    "HxN3GhOQ0xrPGdkk": 2,
+    "dOB6TdSOn7NL3qrR": 2
+   },
+   "name": "Bebi-158"
+  },
+  {
+   "_id": "hEfr9582ojl72t5t",
+   "type": "adversary",
+   "ownership": {
+    "default": 1,
+    "QALIE8jmoPXah1yb": 3,
+    "msKLXJiqmQHmUr2w": 1,
+    "kaxNmrTY4GITw00i": 1,
+    "tyUFPzF1IOd3Zcnq": 1,
+    "HxN3GhOQ0xrPGdkk": 1,
+    "m3GUFdKrO3AOqCq2": 0,
+    "LKy6AzIYWDCads6K": 0,
+    "0KIbAAK9lWzqEzlW": 0,
+    "YL1DH9VUoQixkszx": 0
+   },
+   "name": "Bibi-159"
+  },
+  {
+   "_id": "3lMTZ3jhcW6I9cK8",
+   "type": "adversary",
+   "ownership": {
+    "default": 1,
+    "L4cXn74yoVds8VOJ": 3,
+    "m3GUFdKrO3AOqCq2": 0,
+    "LKy6AzIYWDCads6K": 0,
+    "0KIbAAK9lWzqEzlW": 0,
+    "YL1DH9VUoQixkszx": 0
+   },
+   "name": "Bobi-160"
+  },
+  {
+   "_id": "bADUKgY3GBrxnteb",
+   "type": "adversary",
+   "ownership": {
+    "default": 1,
+    "QALIE8jmoPXah1yb": 3,
+    "m3GUFdKrO3AOqCq2": 0,
+    "LKy6AzIYWDCads6K": 0,
+    "0KIbAAK9lWzqEzlW": 0,
+    "YL1DH9VUoQixkszx": 0
+   },
+   "name": "Bubi-161"
+  },
+  {
+   "_id": "oCrMUtrkPs2SKiJj",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Bybi-162"
+  },
+  {
+   "_id": "dPfu7QohZwTmTSnz",
+   "type": "companion",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Dabi-163"
+  },
+  {
+   "_id": "2YBlPhZpFoXKWBUP",
+   "type": "adversary",
+   "ownership": {
+    "default": 1,
+    "QALIE8jmoPXah1yb": 3,
+    "msKLXJiqmQHmUr2w": 2,
+    "kaxNmrTY4GITw00i": 2,
+    "tyUFPzF1IOd3Zcnq": 2,
+    "HxN3GhOQ0xrPGdkk": 2,
+    "m3GUFdKrO3AOqCq2": 0,
+    "LKy6AzIYWDCads6K": 0,
+    "0KIbAAK9lWzqEzlW": 0,
+    "YL1DH9VUoQixkszx": 0,
+    "dOB6TdSOn7NL3qrR": 2
+   },
+   "name": "Debi-164"
+  },
+  {
+   "_id": "DvanIpsSNIQd4uJv",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Dibi-165"
+  },
+  {
+   "_id": "VepRvkUJEMwGgrXM",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Dibi-165"
+  },
+  {
+   "_id": "YnObCleGjPT7yqEc",
+   "type": "adversary",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Dobi-166"
+  },
+  {
+   "_id": "eAAoQhCtpjkmBj7J",
+   "type": "environment",
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3,
+    "m3GUFdKrO3AOqCq2": 0,
+    "LKy6AzIYWDCads6K": 0,
+    "0KIbAAK9lWzqEzlW": 0,
+    "YL1DH9VUoQixkszx": 0,
+    "msKLXJiqmQHmUr2w": 2,
+    "kaxNmrTY4GITw00i": 2,
+    "tyUFPzF1IOd3Zcnq": 2,
+    "HxN3GhOQ0xrPGdkk": 2,
+    "dOB6TdSOn7NL3qrR": 2
+   },
+   "name": "Dubi-167"
+  }
+ ],
+ "messages": [
+  {
+   "_id": "2Qa9bUwMTyTHhaXb",
+   "timestamp": 1785951166077,
+   "author": "n74OseDtmjhm6lRF",
+   "type": "base",
+   "style": 0,
+   "blind": false,
+   "whisper": [],
+   "content": "[Wortlaut beim Anonymisieren entfernt]",
+   "speaker": {
+    "scene": null,
+    "actor": null,
+    "token": null
+   },
+   "system": {}
+  },
+  {
+   "_id": "j7hh2MwVxkgIiPHT",
+   "timestamp": 1785953629580,
+   "author": "QALIE8jmoPXah1yb",
+   "type": "abilityUse",
+   "style": 0,
+   "blind": false,
+   "whisper": [],
+   "content": "[Wortlaut beim Anonymisieren entfernt]",
+   "speaker": {
+    "scene": "Dm4AGrqofhRJIwg8",
+    "actor": "Nq6iCKzwEAAEdm0b",
+    "token": "b5zfQX4JrPZebQMr",
+    "alias": "Piba-045"
+   },
+   "system": {}
+  },
+  {
+   "_id": "W62rNRbigUSipXWp",
+   "timestamp": 1785953732123,
+   "author": "bFpFJpN8Sr02oqa8",
+   "type": "abilityUse",
+   "style": 0,
+   "blind": false,
+   "whisper": [],
+   "content": "[Wortlaut beim Anonymisieren entfernt]",
+   "speaker": {
+    "scene": null,
+    "actor": "Jkkhufrxqy6Hcx46",
+    "token": null
+   },
+   "system": {}
+  },
+  {
+   "_id": "aEMtSpdcJmIoS8Xa",
+   "timestamp": 1785953762012,
+   "author": "QALIE8jmoPXah1yb",
+   "type": "abilityUse",
+   "style": 0,
+   "blind": false,
+   "whisper": [],
+   "content": "[Wortlaut beim Anonymisieren entfernt]",
+   "speaker": {
+    "scene": null,
+    "actor": "ebXmIfmt6nHsGUBN",
+    "token": null
+   },
+   "system": {}
+  },
+  {
+   "_id": "gwTcAQw6d3mf2kVA",
+   "timestamp": 1785953770875,
+   "author": "QALIE8jmoPXah1yb",
+   "type": "dualityRoll",
+   "style": 0,
+   "blind": false,
+   "whisper": [],
+   "content": "",
+   "speaker": {
+    "scene": "Dm4AGrqofhRJIwg8",
+    "actor": "ebXmIfmt6nHsGUBN",
+    "token": "kgkzc9DTDtzo0beA",
+    "alias": "Roba-052"
+   },
+   "system": {},
+   "rolls": [
+    "{\"class\": \"DualityRoll\", \"formula\": \"1d12 + 1d12 + 0\", \"total\": 14, \"evaluated\": true, \"dice\": [], \"terms\": [{\"class\": \"HopeDie\", \"evaluated\": true, \"number\": 1, \"faces\": 12, \"modifiers\": [], \"results\": [{\"result\": 8, \"active\": true}]}, {\"class\": \"OperatorTerm\", \"evaluated\": true, \"operator\": \"+\"}, {\"class\": \"FearDie\", \"evaluated\": true, \"number\": 1, \"faces\": 12, \"modifiers\": [], \"results\": [{\"result\": 6, \"active\": true}]}, {\"class\": \"OperatorTerm\", \"evaluated\": true, \"operator\": \"+\"}, {\"class\": \"NumericTerm\", \"evaluated\": true, \"number\": 0}], \"options\": {\"title\": \"Necrotic Ray (1 Stress)\", \"roll\": {\"total\": 14, \"formula\": \"1d12 + 1d12 + 0\", \"type\": \"action\", \"isCritical\": false, \"modifierTotal\": 0, \"advantage\": {\"type\": 0}, \"dice\": [{\"dice\": \"d12\", \"total\": 8, \"formula\": \"1d12\", \"results\": [{\"result\": 8, \"active\": true}], \"rerolled\": {\"any\": false, \"rerolls\": []}}, {\"dice\": \"d12\", \"total\": 6, \"formula\": \"1d12\", \"results\": [{\"result\": 6, \"active\": true}], \"rerolled\": {\"any\": false, \"rerolls\": []}}], \"hope\": {\"dice\": \"d12\", \"value\": 8, \"rerolled\": {\"any\": false, \"rerolls\": []}}, \"fear\": {\"dice\": \"d12\", \"value\": 6, \"rerolled\": {\"any\": false, \"rerolls\": []}}, \"result\": {\"duality\": 1, \"total\": 14, \"label\": \"Hoffnung\"}}}}"
+   ]
+  },
+  {
+   "_id": "dF5GsWIygpHxiUU7",
+   "timestamp": 1785953789110,
+   "author": "QALIE8jmoPXah1yb",
+   "type": "base",
+   "style": 0,
+   "blind": false,
+   "whisper": [],
+   "content": "[Wortlaut beim Anonymisieren entfernt]",
+   "speaker": {
+    "scene": "Dm4AGrqofhRJIwg8",
+    "actor": "Nq6iCKzwEAAEdm0b",
+    "token": "b5zfQX4JrPZebQMr",
+    "alias": "Piba-045"
+   },
+   "system": {},
+   "rolls": [
+    "{\"class\": \"BaseRoll\", \"formula\": \"1d20\", \"total\": 19, \"evaluated\": true, \"dice\": [], \"terms\": [{\"class\": \"BaseDie\", \"evaluated\": true, \"number\": 1, \"faces\": 20, \"modifiers\": [], \"results\": [{\"result\": 19, \"active\": true}]}], \"options\": {}}"
+   ]
+  },
+  {
+   "_id": "AisKlyd8u9NVUtmX",
+   "timestamp": 1785954015076,
+   "author": "YtrONu1n3HPJFEl3",
+   "type": "dualityRoll",
+   "style": 0,
+   "blind": false,
+   "whisper": [],
+   "content": "",
+   "speaker": {
+    "scene": "Dm4AGrqofhRJIwg8",
+    "actor": "ddSmlTvmkYbW6Xxk",
+    "token": "Z8d7CAP71lTDa6Fd",
+    "alias": "Puba-047"
+   },
+   "system": {},
+   "rolls": [
+    "{\"class\": \"DualityRoll\", \"formula\": \"1d8 + 1d12 + 3 + 3\", \"total\": 19, \"evaluated\": true, \"dice\": [], \"terms\": [{\"class\": \"HopeDie\", \"evaluated\": true, \"number\": 1, \"faces\": 8, \"modifiers\": [], \"results\": [{\"result\": 1, \"active\": true}]}, {\"class\": \"OperatorTerm\", \"evaluated\": true, \"operator\": \"+\"}, {\"class\": \"FearDie\", \"evaluated\": true, \"number\": 1, \"faces\": 12, \"modifiers\": [], \"results\": [{\"result\": 12, \"active\": true}]}, {\"class\": \"OperatorTerm\", \"evaluated\": true, \"operator\": \"+\"}, {\"class\": \"NumericTerm\", \"evaluated\": true, \"number\": 3}, {\"class\": \"OperatorTerm\", \"evaluated\": true, \"operator\": \"+\"}, {\"class\": \"NumericTerm\", \"evaluated\": true, \"number\": 3}], \"options\": {\"title\": \"Buch von Norai - Fireball\", \"roll\": {\"total\": 19, \"formula\": \"1d8 + 1d12 + 3 + 3\", \"type\": \"action\", \"isCritical\": false, \"modifierTotal\": 6, \"advantage\": {\"type\": 0}, \"dice\": [{\"dice\": \"d8\", \"total\": 1, \"formula\": \"1d8\", \"results\": [{\"result\": 1, \"active\": true}], \"rerolled\": {\"any\": false, \"rerolls\": []}}, {\"dice\": \"d12\", \"total\": 12, \"formula\": \"1d12\", \"results\": [{\"result\": 12, \"active\": true}], \"rerolled\": {\"any\": false, \"rerolls\": []}}], \"hope\": {\"dice\": \"d8\", \"value\": 1, \"rerolled\": {\"any\": false, \"rerolls\": []}}, \"fear\": {\"dice\": \"d12\", \"value\": 12, \"rerolled\": {\"any\": false, \"rerolls\": []}}, \"result\": {\"duality\": -1, \"total\": 13, \"label\": \"Furcht\"}}}}"
+   ]
+  },
+  {
+   "_id": "nOAa7rhXMkpalFPH",
+   "timestamp": 1785954050367,
+   "author": "QALIE8jmoPXah1yb",
+   "type": "base",
+   "style": 0,
+   "blind": false,
+   "whisper": [],
+   "content": "[Wortlaut beim Anonymisieren entfernt]",
+   "speaker": {
+    "scene": "Dm4AGrqofhRJIwg8",
+    "actor": "itWvZdbQx3cQmRHD",
+    "token": "aGryvFJVqOwb4EEg",
+    "alias": "Pibe-123"
+   },
+   "system": {},
+   "rolls": [
+    "{\"class\": \"BaseRoll\", \"formula\": \"1d20\", \"total\": 13, \"evaluated\": true, \"dice\": [], \"terms\": [{\"class\": \"BaseDie\", \"evaluated\": true, \"number\": 1, \"faces\": 20, \"modifiers\": [], \"results\": [{\"result\": 13, \"active\": true}]}], \"options\": {}}"
+   ]
+  },
+  {
+   "_id": "2rmo8e2xC976I4eX",
+   "timestamp": 1785954187427,
+   "author": "QALIE8jmoPXah1yb",
+   "type": "adversaryRoll",
+   "style": 0,
+   "blind": false,
+   "whisper": [],
+   "content": "",
+   "speaker": {
+    "scene": "Dm4AGrqofhRJIwg8",
+    "actor": "BBZdOlrnPKr6JAfx",
+    "token": "jSb6udjxPFpfaBuh",
+    "alias": "Zybe-156"
+   },
+   "system": {},
+   "rolls": [
+    "{\"class\": \"D20Roll\", \"formula\": \"1d20 + 5\", \"total\": 21, \"evaluated\": true, \"dice\": [], \"terms\": [{\"class\": \"Die\", \"evaluated\": true, \"number\": 1, \"faces\": 20, \"modifiers\": [], \"results\": [{\"result\": 16, \"active\": true}]}, {\"class\": \"OperatorTerm\", \"evaluated\": true, \"operator\": \"+\"}, {\"class\": \"NumericTerm\", \"evaluated\": true, \"number\": 5}], \"options\": {\"title\": \"Void Bolt (2 targets, direct)\", \"roll\": {\"total\": 21, \"formula\": \"1d20 + 5\", \"type\": \"action\", \"isCritical\": false, \"modifierTotal\": 5, \"advantage\": {\"type\": 0}, \"dice\": [{\"dice\": \"d20\", \"total\": 16, \"formula\": \"1d20\", \"results\": [{\"result\": 16, \"active\": true}], \"rerolled\": {\"any\": false, \"rerolls\": []}}]}}}"
+   ]
+  },
+  {
+   "_id": "8EOgg0huacBzSG8r",
+   "timestamp": 1785954303693,
+   "author": "fCZVOz7SGzgxcrtZ",
+   "type": "adversaryRoll",
+   "style": 0,
+   "blind": false,
+   "whisper": [],
+   "content": "",
+   "speaker": {
+    "scene": "Dm4AGrqofhRJIwg8",
+    "actor": "IdabWSOgiAEte08h",
+    "token": "JwMGEjZcECwJKHrx",
+    "alias": "Meba-032"
+   },
+   "system": {},
+   "rolls": [
+    "{\"class\": \"DHRoll\", \"formula\": \"\", \"evaluated\": true, \"dice\": [], \"terms\": [], \"options\": {}}"
+   ]
+  },
+  {
+   "_id": "ftV76rmEiGVOTWXD",
+   "timestamp": 1785954442194,
+   "author": "fCZVOz7SGzgxcrtZ",
+   "type": "dualityRoll",
+   "style": 0,
+   "blind": false,
+   "whisper": [],
+   "content": "",
+   "speaker": {
+    "scene": "Dm4AGrqofhRJIwg8",
+    "actor": "IdabWSOgiAEte08h",
+    "token": "JwMGEjZcECwJKHrx",
+    "alias": "Meba-032"
+   },
+   "system": {},
+   "rolls": [
+    "{\"class\": \"DualityRoll\", \"formula\": \"1d12 + 1d12 + 2\", \"total\": 25, \"evaluated\": true, \"dice\": [], \"terms\": [{\"class\": \"HopeDie\", \"evaluated\": true, \"number\": 1, \"faces\": 12, \"modifiers\": [], \"results\": [{\"result\": 11, \"active\": true}]}, {\"class\": \"OperatorTerm\", \"evaluated\": true, \"operator\": \"+\"}, {\"class\": \"FearDie\", \"evaluated\": true, \"number\": 1, \"faces\": 12, \"modifiers\": [], \"results\": [{\"result\": 12, \"active\": true}]}, {\"class\": \"OperatorTerm\", \"evaluated\": true, \"operator\": \"+\"}, {\"class\": \"NumericTerm\", \"evaluated\": true, \"number\": 2}], \"options\": {\"title\": \"Eherne Chronik-Angriff\", \"roll\": {\"total\": 14, \"formula\": \"1d12 + 1d12 + 3 + 3\", \"type\": \"action\", \"isCritical\": false, \"modifierTotal\": 6, \"advantage\": {\"type\": 0}, \"dice\": [{\"dice\": \"d12\", \"total\": 2, \"formula\": \"1d12\", \"results\": [{\"result\": 2, \"active\": true}], \"rerolled\": {\"any\": false, \"rerolls\": []}}, {\"dice\": \"d12\", \"total\": 6, \"formula\": \"1d12\", \"results\": [{\"result\": 6, \"active\": true}], \"rerolled\": {\"any\": false, \"rerolls\": []}}], \"hope\": {\"dice\": \"d12\", \"value\": 2, \"rerolled\": {\"any\": false, \"rerolls\": []}}, \"fear\": {\"dice\": \"d12\", \"value\": 6, \"rerolled\": {\"any\": false, \"rerolls\": []}}, \"result\": {\"duality\": -1, \"total\": 8, \"label\": \"Furcht\"}}}}"
+   ]
+  },
+  {
+   "_id": "twpV8lYSEjkeaofM",
+   "timestamp": 1785954454228,
+   "author": "fCZVOz7SGzgxcrtZ",
+   "type": "abilityUse",
+   "style": 0,
+   "blind": false,
+   "whisper": [],
+   "content": "[Wortlaut beim Anonymisieren entfernt]",
+   "speaker": {
+    "scene": null,
+    "actor": "IdabWSOgiAEte08h",
+    "token": null
+   },
+   "system": {}
+  },
+  {
+   "_id": "Wpj6gFWlhCnUCjXb",
+   "timestamp": 1785954655526,
+   "author": "fCZVOz7SGzgxcrtZ",
+   "type": "base",
+   "style": 0,
+   "blind": false,
+   "whisper": [],
+   "content": "[Wortlaut beim Anonymisieren entfernt]",
+   "speaker": {
+    "scene": "Dm4AGrqofhRJIwg8",
+    "actor": "IdabWSOgiAEte08h",
+    "token": "JwMGEjZcECwJKHrx",
+    "alias": "Meba-032"
+   },
+   "system": {},
+   "rolls": [
+    "{\"class\": \"BaseRoll\", \"formula\": \"1d8\", \"total\": 5, \"evaluated\": true, \"dice\": [], \"terms\": [{\"class\": \"BaseDie\", \"evaluated\": true, \"number\": 1, \"faces\": 8, \"modifiers\": [], \"results\": [{\"result\": 5, \"active\": true}]}], \"options\": {}}"
+   ]
+  },
+  {
+   "_id": "CSErtqnRnOwiz2vI",
+   "timestamp": 1785954665863,
+   "author": "QALIE8jmoPXah1yb",
+   "type": "adversaryRoll",
+   "style": 0,
+   "blind": false,
+   "whisper": [],
+   "content": "",
+   "speaker": {
+    "scene": "Dm4AGrqofhRJIwg8",
+    "actor": "BBZdOlrnPKr6JAfx",
+    "token": "jSb6udjxPFpfaBuh",
+    "alias": "Zybe-156"
+   },
+   "system": {},
+   "rolls": [
+    "{\"class\": \"D20Roll\", \"formula\": \"1d20 + 5\", \"total\": 14, \"evaluated\": true, \"dice\": [], \"terms\": [{\"class\": \"Die\", \"evaluated\": true, \"number\": 1, \"faces\": 20, \"modifiers\": [], \"results\": [{\"result\": 9, \"active\": true}]}, {\"class\": \"OperatorTerm\", \"evaluated\": true, \"operator\": \"+\"}, {\"class\": \"NumericTerm\", \"evaluated\": true, \"number\": 5}], \"options\": {\"title\": \"Void Bolt (2 targets, direct)\", \"roll\": {\"total\": 14, \"formula\": \"1d20 + 5\", \"type\": \"action\", \"isCritical\": false, \"modifierTotal\": 5, \"advantage\": {\"type\": 0}, \"dice\": [{\"dice\": \"d20\", \"total\": 9, \"formula\": \"1d20\", \"results\": [{\"result\": 9, \"active\": true}], \"rerolled\": {\"any\": false, \"rerolls\": []}}]}}}"
+   ]
+  },
+  {
+   "_id": "fKRHReOYAXpIqhhM",
+   "timestamp": 1785954694280,
+   "author": "QALIE8jmoPXah1yb",
+   "type": "abilityUse",
+   "style": 0,
+   "blind": false,
+   "whisper": [],
+   "content": "[Wortlaut beim Anonymisieren entfernt]",
+   "speaker": {
+    "scene": "Dm4AGrqofhRJIwg8",
+    "actor": "itWvZdbQx3cQmRHD",
+    "token": "aGryvFJVqOwb4EEg",
+    "alias": "Pibe-123"
+   },
+   "system": {}
+  },
+  {
+   "_id": "bM0MWH2fnvG5kcSa",
+   "timestamp": 1785954708213,
+   "author": "QALIE8jmoPXah1yb",
+   "type": "adversaryRoll",
+   "style": 0,
+   "blind": false,
+   "whisper": [],
+   "content": "",
+   "speaker": {
+    "scene": "Dm4AGrqofhRJIwg8",
+    "actor": "BBZdOlrnPKr6JAfx",
+    "token": "jSb6udjxPFpfaBuh",
+    "alias": "Zybe-156"
+   },
+   "system": {},
+   "rolls": [
+    "{\"class\": \"D20Roll\", \"formula\": \"1d20 + 5\", \"total\": 22, \"evaluated\": true, \"dice\": [], \"terms\": [{\"class\": \"Die\", \"evaluated\": true, \"number\": 1, \"faces\": 20, \"modifiers\": [], \"results\": [{\"result\": 17, \"active\": true}]}, {\"class\": \"OperatorTerm\", \"evaluated\": true, \"operator\": \"+\"}, {\"class\": \"NumericTerm\", \"evaluated\": true, \"number\": 5}], \"options\": {\"title\": \"Void Bolt (2 targets, direct)\", \"roll\": {\"total\": 22, \"formula\": \"1d20 + 5\", \"type\": \"action\", \"isCritical\": false, \"modifierTotal\": 5, \"advantage\": {\"type\": 0}, \"dice\": [{\"dice\": \"d20\", \"total\": 17, \"formula\": \"1d20\", \"results\": [{\"result\": 17, \"active\": true}], \"rerolled\": {\"any\": false, \"rerolls\": []}}]}}}"
+   ]
+  },
+  {
+   "_id": "clqgi9VAMRzhD6L8",
+   "timestamp": 1785954806082,
+   "author": "QALIE8jmoPXah1yb",
+   "type": "abilityUse",
+   "style": 0,
+   "blind": false,
+   "whisper": [],
+   "content": "[Wortlaut beim Anonymisieren entfernt]",
+   "speaker": {
+    "scene": "Dm4AGrqofhRJIwg8",
+    "actor": "Jkkhufrxqy6Hcx46",
+    "token": "snxJewM5dug5Gy6R",
+    "alias": "Fabe-091"
+   },
+   "system": {}
+  },
+  {
+   "_id": "Mr7vFEa2TmeOZL5u",
+   "timestamp": 1785954865007,
+   "author": "bFpFJpN8Sr02oqa8",
+   "type": "dualityRoll",
+   "style": 0,
+   "blind": false,
+   "whisper": [],
+   "content": "",
+   "speaker": {
+    "scene": "Dm4AGrqofhRJIwg8",
+    "actor": "Jkkhufrxqy6Hcx46",
+    "token": "snxJewM5dug5Gy6R",
+    "alias": "Fabe-091"
+   },
+   "system": {},
+   "rolls": [
+    "{\"class\": \"DualityRoll\", \"formula\": \"1d8 + 1d12 + 1d6 + 1 + 3\", \"total\": 19, \"evaluated\": true, \"dice\": [], \"terms\": [{\"class\": \"HopeDie\", \"evaluated\": true, \"number\": 1, \"faces\": 8, \"modifiers\": [], \"results\": [{\"result\": 4, \"active\": true}]}, {\"class\": \"OperatorTerm\", \"evaluated\": true, \"operator\": \"+\"}, {\"class\": \"FearDie\", \"evaluated\": true, \"number\": 1, \"faces\": 12, \"modifiers\": [], \"results\": [{\"result\": 6, \"active\": true}]}, {\"class\": \"OperatorTerm\", \"evaluated\": true, \"operator\": \"+\"}, {\"class\": \"AdvantageDie\", \"evaluated\": true, \"number\": 1, \"faces\": 6, \"modifiers\": [], \"results\": [{\"result\": 5, \"active\": true}]}, {\"class\": \"OperatorTerm\", \"evaluated\": true, \"operator\": \"+\"}, {\"class\": \"NumericTerm\", \"evaluated\": true, \"number\": 1}, {\"class\": \"OperatorTerm\", \"evaluated\": true, \"operator\": \"+\"}, {\"class\": \"NumericTerm\", \"evaluated\": true, \"number\": 3}], \"options\": {\"title\": \"Wurf: Präsenz\", \"roll\": {\"total\": 19, \"formula\": \"1d8 + 1d12 + 1d6 + 1 + 3\", \"type\": \"action\", \"isCritical\": false, \"modifierTotal\": 4, \"advantage\": {\"type\": 1}, \"dice\": [{\"dice\": \"d8\", \"total\": 4, \"formula\": \"1d8\", \"results\": [{\"result\": 4, \"active\": true}], \"rerolled\": {\"any\": false, \"rerolls\": []}}, {\"dice\": \"d12\", \"total\": 6, \"formula\": \"1d12\", \"results\": [{\"result\": 6, \"active\": true}], \"rerolled\": {\"any\": false, \"rerolls\": []}}, {\"dice\": \"d6\", \"total\": 5, \"formula\": \"1d6\", \"results\": [{\"result\": 5, \"active\": true}], \"rerolled\": {\"any\": false, \"rerolls\": []}}], \"hope\": {\"dice\": \"d8\", \"value\": 4, \"rerolled\": {\"any\": false, \"rerolls\": []}}, \"fear\": {\"dice\": \"d12\", \"value\": 6, \"rerolled\": {\"any\": false, \"rerolls\": []}}, \"result\": {\"duality\": -1, \"total\": 10, \"label\": \"Furcht\"}}}}"
+   ]
+  },
+  {
+   "_id": "XHdiSPchVSuTbNoJ",
+   "timestamp": 1785954943590,
+   "author": "n74OseDtmjhm6lRF",
+   "type": "dualityRoll",
+   "style": 0,
+   "blind": false,
+   "whisper": [],
+   "content": "",
+   "speaker": {
+    "scene": "Dm4AGrqofhRJIwg8",
+    "actor": "6PKKKg577b0oZns7",
+    "token": "cwliUObE2AeUQZ4s",
+    "alias": "Gibe-099"
+   },
+   "system": {},
+   "rolls": [
+    "{\"class\": \"DualityRoll\", \"formula\": \"1d8 + 1d12 + 2\", \"total\": 14, \"evaluated\": true, \"dice\": [], \"terms\": [{\"class\": \"HopeDie\", \"evaluated\": true, \"number\": 1, \"faces\": 8, \"modifiers\": [], \"results\": [{\"result\": 2, \"active\": true}]}, {\"class\": \"OperatorTerm\", \"evaluated\": true, \"operator\": \"+\"}, {\"class\": \"FearDie\", \"evaluated\": true, \"number\": 1, \"faces\": 12, \"modifiers\": [], \"results\": [{\"result\": 10, \"active\": true}]}, {\"class\": \"OperatorTerm\", \"evaluated\": true, \"operator\": \"+\"}, {\"class\": \"NumericTerm\", \"evaluated\": true, \"number\": 2}], \"options\": {\"title\": \"Wurf: Instinkt\", \"roll\": {\"total\": 14, \"formula\": \"1d8 + 1d12 + 2\", \"type\": \"reaction\", \"isCritical\": false, \"modifierTotal\": 2, \"advantage\": {\"type\": 0}, \"dice\": [{\"dice\": \"d8\", \"total\": 2, \"formula\": \"1d8\", \"results\": [{\"result\": 2, \"active\": true}], \"rerolled\": {\"any\": false, \"rerolls\": []}}, {\"dice\": \"d12\", \"total\": 10, \"formula\": \"1d12\", \"results\": [{\"result\": 10, \"active\": true}], \"rerolled\": {\"any\": false, \"rerolls\": []}}], \"hope\": {\"dice\": \"d8\", \"value\": 2, \"rerolled\": {\"any\": false, \"rerolls\": []}}, \"fear\": {\"dice\": \"d12\", \"value\": 10, \"rerolled\": {\"any\": false, \"rerolls\": []}}, \"result\": {\"duality\": -1, \"total\": 12, \"label\": \"Furcht\"}}}}"
+   ]
+  },
+  {
+   "_id": "DTl9FmyqRPGKo5EO",
+   "timestamp": 1785954996215,
+   "author": "n74OseDtmjhm6lRF",
+   "type": "abilityUse",
+   "style": 0,
+   "blind": false,
+   "whisper": [],
+   "content": "[Wortlaut beim Anonymisieren entfernt]",
+   "speaker": {
+    "scene": "Dm4AGrqofhRJIwg8",
+    "actor": "6PKKKg577b0oZns7",
+    "token": "cwliUObE2AeUQZ4s",
+    "alias": "Gibe-099"
+   },
+   "system": {}
+  },
+  {
+   "_id": "9GVeq9zpkhmsW0I9",
+   "timestamp": 1785955045417,
+   "author": "n74OseDtmjhm6lRF",
+   "type": "abilityUse",
+   "style": 0,
+   "blind": false,
+   "whisper": [],
+   "content": "[Wortlaut beim Anonymisieren entfernt]",
+   "speaker": {
+    "scene": "Dm4AGrqofhRJIwg8",
+    "actor": "6PKKKg577b0oZns7",
+    "token": "cwliUObE2AeUQZ4s",
+    "alias": "Gibe-099"
+   },
+   "system": {}
+  },
+  {
+   "_id": "oVYNEBkBem0c7WQ6",
+   "timestamp": 1785955058415,
+   "author": "n74OseDtmjhm6lRF",
+   "type": "adversaryRoll",
+   "style": 0,
+   "blind": false,
+   "whisper": [],
+   "content": "",
+   "speaker": {
+    "scene": "Dm4AGrqofhRJIwg8",
+    "actor": "6PKKKg577b0oZns7",
+    "token": "cwliUObE2AeUQZ4s",
+    "alias": "Gibe-099"
+   },
+   "system": {},
+   "rolls": [
+    "{\"class\": \"DamageRoll\", \"formula\": \"\", \"evaluated\": true, \"dice\": [], \"terms\": [], \"options\": {\"title\": \"Heilende Hände - Heal Two Hit Points\"}}"
+   ]
+  },
+  {
+   "_id": "tsy0QykrZiwxIVTC",
+   "timestamp": 1785955106152,
+   "author": "n74OseDtmjhm6lRF",
+   "type": "dualityRoll",
+   "style": 0,
+   "blind": false,
+   "whisper": [],
+   "content": "",
+   "speaker": {
+    "scene": "Dm4AGrqofhRJIwg8",
+    "actor": "6PKKKg577b0oZns7",
+    "token": "cwliUObE2AeUQZ4s",
+    "alias": "Gibe-099"
+   },
+   "system": {},
+   "rolls": [
+    "{\"class\": \"DualityRoll\", \"formula\": \"1d8 + 1d12 + 1\", \"total\": 9, \"evaluated\": true, \"dice\": [], \"terms\": [{\"class\": \"HopeDie\", \"evaluated\": true, \"number\": 1, \"faces\": 8, \"modifiers\": [], \"results\": [{\"result\": 3, \"active\": true}]}, {\"class\": \"OperatorTerm\", \"evaluated\": true, \"operator\": \"+\"}, {\"class\": \"FearDie\", \"evaluated\": true, \"number\": 1, \"faces\": 12, \"modifiers\": [], \"results\": [{\"result\": 5, \"active\": true}]}, {\"class\": \"OperatorTerm\", \"evaluated\": true, \"operator\": \"+\"}, {\"class\": \"NumericTerm\", \"evaluated\": true, \"number\": 1}], \"options\": {\"title\": \"Wurf: Präsenz\", \"roll\": {\"total\": 9, \"formula\": \"1d8 + 1d12 + 1\", \"type\": \"reaction\", \"isCritical\": false, \"modifierTotal\": 1, \"advantage\": {\"type\": 0}, \"dice\": [{\"dice\": \"d8\", \"total\": 3, \"formula\": \"1d8\", \"results\": [{\"result\": 3, \"active\": true}], \"rerolled\": {\"any\": false, \"rerolls\": []}}, {\"dice\": \"d12\", \"total\": 5, \"formula\": \"1d12\", \"results\": [{\"result\": 5, \"active\": true}], \"rerolled\": {\"any\": false, \"rerolls\": []}}], \"hope\": {\"dice\": \"d8\", \"value\": 3, \"rerolled\": {\"any\": false, \"rerolls\": []}}, \"fear\": {\"dice\": \"d12\", \"value\": 5, \"rerolled\": {\"any\": false, \"rerolls\": []}}, \"result\": {\"duality\": -1, \"total\": 8, \"label\": \"Furcht\"}}}}"
+   ]
+  },
+  {
+   "_id": "T4mMcaV6zaD6qr7E",
+   "timestamp": 1785955178700,
+   "author": "n74OseDtmjhm6lRF",
+   "type": "dualityRoll",
+   "style": 0,
+   "blind": false,
+   "whisper": [],
+   "content": "",
+   "speaker": {
+    "scene": "Dm4AGrqofhRJIwg8",
+    "actor": "6PKKKg577b0oZns7",
+    "token": "cwliUObE2AeUQZ4s",
+    "alias": "Gibe-099"
+   },
+   "system": {},
+   "rolls": [
+    "{\"class\": \"DualityRoll\", \"formula\": \"1d8 + 1d12 + 3\", \"total\": 11, \"evaluated\": true, \"dice\": [], \"terms\": [{\"class\": \"HopeDie\", \"evaluated\": true, \"number\": 1, \"faces\": 8, \"modifiers\": [], \"results\": [{\"result\": 3, \"active\": true}]}, {\"class\": \"OperatorTerm\", \"evaluated\": true, \"operator\": \"+\"}, {\"class\": \"FearDie\", \"evaluated\": true, \"number\": 1, \"faces\": 12, \"modifiers\": [], \"results\": [{\"result\": 5, \"active\": true}]}, {\"class\": \"OperatorTerm\", \"evaluated\": true, \"operator\": \"+\"}, {\"class\": \"NumericTerm\", \"evaluated\": true, \"number\": 3}], \"options\": {\"title\": \"Heilende Hände - Cast\", \"roll\": {\"total\": 11, \"formula\": \"1d8 + 1d12 + 3\", \"type\": \"action\", \"isCritical\": false, \"modifierTotal\": 3, \"advantage\": {\"type\": 0}, \"dice\": [{\"dice\": \"d8\", \"total\": 3, \"formula\": \"1d8\", \"results\": [{\"result\": 3, \"active\": true}], \"rerolled\": {\"any\": false, \"rerolls\": []}}, {\"dice\": \"d12\", \"total\": 5, \"formula\": \"1d12\", \"results\": [{\"result\": 5, \"active\": true}], \"rerolled\": {\"any\": false, \"rerolls\": []}}], \"hope\": {\"dice\": \"d8\", \"value\": 3, \"rerolled\": {\"any\": false, \"rerolls\": []}}, \"fear\": {\"dice\": \"d12\", \"value\": 5, \"rerolled\": {\"any\": false, \"rerolls\": []}}, \"result\": {\"duality\": -1, \"total\": 8, \"label\": \"Furcht\"}}}}"
+   ]
+  },
+  {
+   "_id": "4D3pEjbcmBqzLvcz",
+   "timestamp": 1785955287163,
+   "author": "QALIE8jmoPXah1yb",
+   "type": "adversaryRoll",
+   "style": 0,
+   "blind": false,
+   "whisper": [],
+   "content": "",
+   "speaker": {
+    "scene": "Dm4AGrqofhRJIwg8",
+    "actor": "BBZdOlrnPKr6JAfx",
+    "token": "jSb6udjxPFpfaBuh",
+    "alias": "Zybe-156"
+   },
+   "system": {},
+   "rolls": [
+    "{\"class\": \"D20Roll\", \"formula\": \"1d20 + 5\", \"total\": 15, \"evaluated\": true, \"dice\": [], \"terms\": [{\"class\": \"Die\", \"evaluated\": true, \"number\": 1, \"faces\": 20, \"modifiers\": [], \"results\": [{\"result\": 10, \"active\": true}]}, {\"class\": \"OperatorTerm\", \"evaluated\": true, \"operator\": \"+\"}, {\"class\": \"NumericTerm\", \"evaluated\": true, \"number\": 5}], \"options\": {\"title\": \"Void Bolt (2 targets, direct)\", \"roll\": {\"total\": 15, \"formula\": \"1d20 + 5\", \"type\": \"action\", \"isCritical\": false, \"modifierTotal\": 5, \"advantage\": {\"type\": 0}, \"dice\": [{\"dice\": \"d20\", \"total\": 10, \"formula\": \"1d20\", \"results\": [{\"result\": 10, \"active\": true}], \"rerolled\": {\"any\": false, \"rerolls\": []}}]}}}"
+   ]
+  },
+  {
+   "_id": "1KyK5DQEFNkwCkpR",
+   "timestamp": 1785955293842,
+   "author": "QALIE8jmoPXah1yb",
+   "type": "base",
+   "style": 0,
+   "blind": false,
+   "whisper": [],
+   "content": "[Wortlaut beim Anonymisieren entfernt]",
+   "speaker": {
+    "scene": "Dm4AGrqofhRJIwg8",
+    "actor": "BBZdOlrnPKr6JAfx",
+    "token": "jSb6udjxPFpfaBuh",
+    "alias": "Zybe-156"
+   },
+   "system": {},
+   "rolls": [
+    "{\"class\": \"BaseRoll\", \"formula\": \"1d20\", \"total\": 16, \"evaluated\": true, \"dice\": [], \"terms\": [{\"class\": \"BaseDie\", \"evaluated\": true, \"number\": 1, \"faces\": 20, \"modifiers\": [], \"results\": [{\"result\": 16, \"active\": true}]}], \"options\": {}}"
+   ]
+  },
+  {
+   "_id": "blohzDgQgprZQ4Sr",
+   "timestamp": 1785955440363,
+   "author": "fCZVOz7SGzgxcrtZ",
+   "type": "dualityRoll",
+   "style": 0,
+   "blind": false,
+   "whisper": [],
+   "content": "",
+   "speaker": {
+    "scene": "Dm4AGrqofhRJIwg8",
+    "actor": "IdabWSOgiAEte08h",
+    "token": "JwMGEjZcECwJKHrx",
+    "alias": "Meba-032"
+   },
+   "system": {},
+   "rolls": [
+    "{\"class\": \"DualityRoll\", \"formula\": \"1d12 + 1d12 + 3\", \"total\": 13, \"evaluated\": true, \"dice\": [], \"terms\": [{\"class\": \"HopeDie\", \"evaluated\": true, \"number\": 1, \"faces\": 12, \"modifiers\": [], \"results\": [{\"result\": 1, \"active\": true}]}, {\"class\": \"OperatorTerm\", \"evaluated\": true, \"operator\": \"+\"}, {\"class\": \"FearDie\", \"evaluated\": true, \"number\": 1, \"faces\": 12, \"modifiers\": [], \"results\": [{\"result\": 9, \"active\": true}]}, {\"class\": \"OperatorTerm\", \"evaluated\": true, \"operator\": \"+\"}, {\"class\": \"NumericTerm\", \"evaluated\": true, \"number\": 3}], \"options\": {\"title\": \"Eherne Chronik-Angriff\", \"roll\": {\"total\": 13, \"formula\": \"1d12 + 1d12 + 3\", \"type\": \"action\", \"isCritical\": false, \"modifierTotal\": 3, \"advantage\": {\"type\": 0}, \"dice\": [{\"dice\": \"d12\", \"total\": 1, \"formula\": \"1d12\", \"results\": [{\"result\": 1, \"active\": true}], \"rerolled\": {\"any\": false, \"rerolls\": []}}, {\"dice\": \"d12\", \"total\": 9, \"formula\": \"1d12\", \"results\": [{\"result\": 9, \"active\": true}], \"rerolled\": {\"any\": false, \"rerolls\": []}}], \"hope\": {\"dice\": \"d12\", \"value\": 1, \"rerolled\": {\"any\": false, \"rerolls\": []}}, \"fear\": {\"dice\": \"d12\", \"value\": 9, \"rerolled\": {\"any\": false, \"rerolls\": []}}, \"result\": {\"duality\": -1, \"total\": 10, \"label\": \"Furcht\"}}}}"
+   ]
+  },
+  {
+   "_id": "Pj11m36NOnKzyxkG",
+   "timestamp": 1785955493020,
+   "author": "QALIE8jmoPXah1yb",
+   "type": "adversaryRoll",
+   "style": 0,
+   "blind": false,
+   "whisper": [],
+   "content": "",
+   "speaker": {
+    "scene": "Dm4AGrqofhRJIwg8",
+    "actor": "BBZdOlrnPKr6JAfx",
+    "token": "jSb6udjxPFpfaBuh",
+    "alias": "Zybe-156"
+   },
+   "system": {},
+   "rolls": [
+    "{\"class\": \"D20Roll\", \"formula\": \"1d20 + 5\", \"total\": 7, \"evaluated\": true, \"dice\": [], \"terms\": [{\"class\": \"Die\", \"evaluated\": true, \"number\": 1, \"faces\": 20, \"modifiers\": [], \"results\": [{\"result\": 2, \"active\": true}]}, {\"class\": \"OperatorTerm\", \"evaluated\": true, \"operator\": \"+\"}, {\"class\": \"NumericTerm\", \"evaluated\": true, \"number\": 5}], \"options\": {\"title\": \"Void Bolt (2 targets, direct)\", \"roll\": {\"total\": 7, \"formula\": \"1d20 + 5\", \"type\": \"action\", \"isCritical\": false, \"modifierTotal\": 5, \"advantage\": {\"type\": 0}, \"dice\": [{\"dice\": \"d20\", \"total\": 2, \"formula\": \"1d20\", \"results\": [{\"result\": 2, \"active\": true}], \"rerolled\": {\"any\": false, \"rerolls\": []}}]}}}"
+   ]
+  },
+  {
+   "_id": "celOvN36IQz8Fegd",
+   "timestamp": 1785955510000,
+   "author": "QALIE8jmoPXah1yb",
+   "type": "adversaryRoll",
+   "style": 0,
+   "blind": false,
+   "whisper": [],
+   "content": "",
+   "speaker": {
+    "scene": "Dm4AGrqofhRJIwg8",
+    "actor": "BBZdOlrnPKr6JAfx",
+    "token": "jSb6udjxPFpfaBuh",
+    "alias": "Zybe-156"
+   },
+   "system": {},
+   "rolls": [
+    "{\"class\": \"D20Roll\", \"formula\": \"1d20 + 5\", \"total\": 14, \"evaluated\": true, \"dice\": [], \"terms\": [{\"class\": \"Die\", \"evaluated\": true, \"number\": 1, \"faces\": 20, \"modifiers\": [], \"results\": [{\"result\": 9, \"active\": true}]}, {\"class\": \"OperatorTerm\", \"evaluated\": true, \"operator\": \"+\"}, {\"class\": \"NumericTerm\", \"evaluated\": true, \"number\": 5}], \"options\": {\"title\": \"Void Bolt (2 targets, direct)\", \"roll\": {\"total\": 14, \"formula\": \"1d20 + 5\", \"type\": \"action\", \"isCritical\": false, \"modifierTotal\": 5, \"advantage\": {\"type\": 0}, \"dice\": [{\"dice\": \"d20\", \"total\": 9, \"formula\": \"1d20\", \"results\": [{\"result\": 9, \"active\": true}], \"rerolled\": {\"any\": false, \"rerolls\": []}}]}}}"
+   ]
+  },
+  {
+   "_id": "PDxy7mCZElhHxFAw",
+   "timestamp": 1785955710909,
+   "author": "YtrONu1n3HPJFEl3",
+   "type": "dualityRoll",
+   "style": 0,
+   "blind": false,
+   "whisper": [],
+   "content": "",
+   "speaker": {
+    "scene": "Dm4AGrqofhRJIwg8",
+    "actor": "ddSmlTvmkYbW6Xxk",
+    "token": "Z8d7CAP71lTDa6Fd",
+    "alias": "Puba-047"
+   },
+   "system": {},
+   "rolls": [
+    "{\"class\": \"DualityRoll\", \"formula\": \"1d8 + 1d12 + 3 + 3\", \"total\": 26, \"evaluated\": true, \"dice\": [], \"terms\": [{\"class\": \"HopeDie\", \"evaluated\": true, \"number\": 1, \"faces\": 8, \"modifiers\": [], \"results\": [{\"result\": 8, \"active\": true}]}, {\"class\": \"OperatorTerm\", \"evaluated\": true, \"operator\": \"+\"}, {\"class\": \"FearDie\", \"evaluated\": true, \"number\": 1, \"faces\": 12, \"modifiers\": [], \"results\": [{\"result\": 12, \"active\": true}]}, {\"class\": \"OperatorTerm\", \"evaluated\": true, \"operator\": \"+\"}, {\"class\": \"NumericTerm\", \"evaluated\": true, \"number\": 3}, {\"class\": \"OperatorTerm\", \"evaluated\": true, \"operator\": \"+\"}, {\"class\": \"NumericTerm\", \"evaluated\": true, \"number\": 3}], \"options\": {\"title\": \"Buch von Norai - Fireball\", \"roll\": {\"total\": 26, \"formula\": \"1d8 + 1d12 + 3 + 3\", \"type\": \"action\", \"isCritical\": false, \"modifierTotal\": 6, \"advantage\": {\"type\": 0}, \"dice\": [{\"dice\": \"d8\", \"total\": 8, \"formula\": \"1d8\", \"results\": [{\"result\": 8, \"active\": true}], \"rerolled\": {\"any\": false, \"rerolls\": []}}, {\"dice\": \"d12\", \"total\": 12, \"formula\": \"1d12\", \"results\": [{\"result\": 12, \"active\": true}], \"rerolled\": {\"any\": false, \"rerolls\": []}}], \"hope\": {\"dice\": \"d8\", \"value\": 8, \"rerolled\": {\"any\": false, \"rerolls\": []}}, \"fear\": {\"dice\": \"d12\", \"value\": 12, \"rerolled\": {\"any\": false, \"rerolls\": []}}, \"result\": {\"duality\": -1, \"total\": 20, \"label\": \"Furcht\"}}}}"
+   ]
+  },
+  {
+   "_id": "mQTcptMJCIVksXx1",
+   "timestamp": 1785955731982,
+   "author": "QALIE8jmoPXah1yb",
+   "type": "base",
+   "style": 0,
+   "blind": false,
+   "whisper": [],
+   "content": "[Wortlaut beim Anonymisieren entfernt]",
+   "speaker": {
+    "scene": "Dm4AGrqofhRJIwg8",
+    "actor": "BBZdOlrnPKr6JAfx",
+    "token": "jSb6udjxPFpfaBuh",
+    "alias": "Zybe-156"
+   },
+   "system": {},
+   "rolls": [
+    "{\"class\": \"BaseRoll\", \"formula\": \"1d20\", \"total\": 15, \"evaluated\": true, \"dice\": [], \"terms\": [{\"class\": \"BaseDie\", \"evaluated\": true, \"number\": 1, \"faces\": 20, \"modifiers\": [], \"results\": [{\"result\": 15, \"active\": true}]}], \"options\": {}}"
+   ]
+  },
+  {
+   "_id": "EhXPm40NLpfPBVzo",
+   "timestamp": 1785955795924,
+   "author": "QALIE8jmoPXah1yb",
+   "type": "adversaryRoll",
+   "style": 0,
+   "blind": false,
+   "whisper": [],
+   "content": "",
+   "speaker": {
+    "scene": "Dm4AGrqofhRJIwg8",
+    "actor": "BBZdOlrnPKr6JAfx",
+    "token": "jSb6udjxPFpfaBuh",
+    "alias": "Zybe-156"
+   },
+   "system": {},
+   "rolls": [
+    "{\"class\": \"D20Roll\", \"formula\": \"1d20 + 5\", \"total\": 24, \"evaluated\": true, \"dice\": [], \"terms\": [{\"class\": \"Die\", \"evaluated\": true, \"number\": 1, \"faces\": 20, \"modifiers\": [], \"results\": [{\"result\": 19, \"active\": true}]}, {\"class\": \"OperatorTerm\", \"evaluated\": true, \"operator\": \"+\"}, {\"class\": \"NumericTerm\", \"evaluated\": true, \"number\": 5}], \"options\": {\"title\": \"Void Bolt (2 targets, direct)\", \"roll\": {\"total\": 24, \"formula\": \"1d20 + 5\", \"type\": \"action\", \"isCritical\": false, \"modifierTotal\": 5, \"advantage\": {\"type\": 0}, \"dice\": [{\"dice\": \"d20\", \"total\": 19, \"formula\": \"1d20\", \"results\": [{\"result\": 19, \"active\": true}], \"rerolled\": {\"any\": false, \"rerolls\": []}}]}}}"
+   ]
+  },
+  {
+   "_id": "XhRRULbDi4dR027q",
+   "timestamp": 1785955832652,
+   "author": "QALIE8jmoPXah1yb",
+   "type": "adversaryRoll",
+   "style": 0,
+   "blind": false,
+   "whisper": [],
+   "content": "",
+   "speaker": {
+    "scene": "Dm4AGrqofhRJIwg8",
+    "actor": "BBZdOlrnPKr6JAfx",
+    "token": "jSb6udjxPFpfaBuh",
+    "alias": "Zybe-156"
+   },
+   "system": {},
+   "rolls": [
+    "{\"class\": \"D20Roll\", \"formula\": \"1d20 + 5\", \"total\": 7, \"evaluated\": true, \"dice\": [], \"terms\": [{\"class\": \"Die\", \"evaluated\": true, \"number\": 1, \"faces\": 20, \"modifiers\": [], \"results\": [{\"result\": 2, \"active\": true}]}, {\"class\": \"OperatorTerm\", \"evaluated\": true, \"operator\": \"+\"}, {\"class\": \"NumericTerm\", \"evaluated\": true, \"number\": 5}], \"options\": {\"title\": \"Void Bolt (2 targets, direct)\", \"roll\": {\"total\": 7, \"formula\": \"1d20 + 5\", \"type\": \"action\", \"isCritical\": false, \"modifierTotal\": 5, \"advantage\": {\"type\": 0}, \"dice\": [{\"dice\": \"d20\", \"total\": 2, \"formula\": \"1d20\", \"results\": [{\"result\": 2, \"active\": true}], \"rerolled\": {\"any\": false, \"rerolls\": []}}]}}}"
+   ]
+  },
+  {
+   "_id": "5ej3za7mquodLnXq",
+   "timestamp": 1785955955856,
+   "author": "n74OseDtmjhm6lRF",
+   "type": "dualityRoll",
+   "style": 0,
+   "blind": false,
+   "whisper": [],
+   "content": "",
+   "speaker": {
+    "scene": "Dm4AGrqofhRJIwg8",
+    "actor": "6PKKKg577b0oZns7",
+    "token": "cwliUObE2AeUQZ4s",
+    "alias": "Gibe-099"
+   },
+   "system": {},
+   "rolls": [
+    "{\"class\": \"DualityRoll\", \"formula\": \"1d8 + 1d12 + 3\", \"total\": 16, \"evaluated\": true, \"dice\": [], \"terms\": [{\"class\": \"HopeDie\", \"evaluated\": true, \"number\": 1, \"faces\": 8, \"modifiers\": [], \"results\": [{\"result\": 4, \"active\": true}]}, {\"class\": \"OperatorTerm\", \"evaluated\": true, \"operator\": \"+\"}, {\"class\": \"FearDie\", \"evaluated\": true, \"number\": 1, \"faces\": 12, \"modifiers\": [], \"results\": [{\"result\": 9, \"active\": true}]}, {\"class\": \"OperatorTerm\", \"evaluated\": true, \"operator\": \"+\"}, {\"class\": \"NumericTerm\", \"evaluated\": true, \"number\": 3}], \"options\": {\"title\": \"mysterious Greatstaff-Angriff\", \"roll\": {\"total\": 16, \"formula\": \"1d8 + 1d12 + 3\", \"type\": \"action\", \"isCritical\": false, \"modifierTotal\": 3, \"advantage\": {\"type\": 0}, \"dice\": [{\"dice\": \"d8\", \"total\": 4, \"formula\": \"1d8\", \"results\": [{\"result\": 4, \"active\": true}], \"rerolled\": {\"any\": false, \"rerolls\": []}}, {\"dice\": \"d12\", \"total\": 9, \"formula\": \"1d12\", \"results\": [{\"result\": 9, \"active\": true}], \"rerolled\": {\"any\": false, \"rerolls\": []}}], \"hope\": {\"dice\": \"d8\", \"value\": 4, \"rerolled\": {\"any\": false, \"rerolls\": []}}, \"fear\": {\"dice\": \"d12\", \"value\": 9, \"rerolled\": {\"any\": false, \"rerolls\": []}}, \"result\": {\"duality\": -1, \"total\": 13, \"label\": \"Furcht\"}}}}"
+   ]
+  },
+  {
+   "_id": "0qgSmOU2Gd2dvFWs",
+   "timestamp": 1785956076346,
+   "author": "QALIE8jmoPXah1yb",
+   "type": "adversaryRoll",
+   "style": 0,
+   "blind": false,
+   "whisper": [],
+   "content": "",
+   "speaker": {
+    "scene": "Dm4AGrqofhRJIwg8",
+    "actor": "BBZdOlrnPKr6JAfx",
+    "token": "jSb6udjxPFpfaBuh",
+    "alias": "Zybe-156"
+   },
+   "system": {},
+   "rolls": [
+    "{\"class\": \"D20Roll\", \"formula\": \"1d20 + 5\", \"total\": 9, \"evaluated\": true, \"dice\": [], \"terms\": [{\"class\": \"Die\", \"evaluated\": true, \"number\": 1, \"faces\": 20, \"modifiers\": [], \"results\": [{\"result\": 4, \"active\": true}]}, {\"class\": \"OperatorTerm\", \"evaluated\": true, \"operator\": \"+\"}, {\"class\": \"NumericTerm\", \"evaluated\": true, \"number\": 5}], \"options\": {\"title\": \"Void Bolt (2 targets, direct)\", \"roll\": {\"total\": 9, \"formula\": \"1d20 + 5\", \"type\": \"action\", \"isCritical\": false, \"modifierTotal\": 5, \"advantage\": {\"type\": 0}, \"dice\": [{\"dice\": \"d20\", \"total\": 4, \"formula\": \"1d20\", \"results\": [{\"result\": 4, \"active\": true}], \"rerolled\": {\"any\": false, \"rerolls\": []}}]}}}"
+   ]
+  },
+  {
+   "_id": "sSkeGGh0r6WtswpF",
+   "timestamp": 1785956083646,
+   "author": "QALIE8jmoPXah1yb",
+   "type": "adversaryRoll",
+   "style": 0,
+   "blind": false,
+   "whisper": [],
+   "content": "",
+   "speaker": {
+    "scene": "Dm4AGrqofhRJIwg8",
+    "actor": "BBZdOlrnPKr6JAfx",
+    "token": "jSb6udjxPFpfaBuh",
+    "alias": "Zybe-156"
+   },
+   "system": {},
+   "rolls": [
+    "{\"class\": \"D20Roll\", \"formula\": \"1d20 + 5\", \"total\": 17, \"evaluated\": true, \"dice\": [], \"terms\": [{\"class\": \"Die\", \"evaluated\": true, \"number\": 1, \"faces\": 20, \"modifiers\": [], \"results\": [{\"result\": 12, \"active\": true}]}, {\"class\": \"OperatorTerm\", \"evaluated\": true, \"operator\": \"+\"}, {\"class\": \"NumericTerm\", \"evaluated\": true, \"number\": 5}], \"options\": {\"title\": \"Void Bolt (2 targets, direct)\", \"roll\": {\"total\": 17, \"formula\": \"1d20 + 5\", \"type\": \"action\", \"isCritical\": false, \"modifierTotal\": 5, \"advantage\": {\"type\": 0}, \"dice\": [{\"dice\": \"d20\", \"total\": 12, \"formula\": \"1d20\", \"results\": [{\"result\": 12, \"active\": true}], \"rerolled\": {\"any\": false, \"rerolls\": []}}]}}}"
+   ]
+  },
+  {
+   "_id": "3EsNbN8Cy7BniQ1J",
+   "timestamp": 1785956124132,
+   "author": "QALIE8jmoPXah1yb",
+   "type": "adversaryRoll",
+   "style": 0,
+   "blind": false,
+   "whisper": [],
+   "content": "",
+   "speaker": {
+    "scene": "Dm4AGrqofhRJIwg8",
+    "actor": "itWvZdbQx3cQmRHD",
+    "token": "aGryvFJVqOwb4EEg",
+    "alias": "Pibe-123"
+   },
+   "system": {},
+   "rolls": [
+    "{\"class\": \"D20Roll\", \"formula\": \"1d20 + 0\", \"total\": 13, \"evaluated\": true, \"dice\": [], \"terms\": [{\"class\": \"Die\", \"evaluated\": true, \"number\": 1, \"faces\": 20, \"modifiers\": [], \"results\": [{\"result\": 13, \"active\": true}]}, {\"class\": \"OperatorTerm\", \"evaluated\": true, \"operator\": \"+\"}, {\"class\": \"NumericTerm\", \"evaluated\": true, \"number\": 0}], \"options\": {\"title\": \"Fangs\", \"roll\": {\"total\": 13, \"formula\": \"1d20 + 0\", \"type\": \"action\", \"isCritical\": false, \"modifierTotal\": 0, \"advantage\": {\"type\": 0}, \"dice\": [{\"dice\": \"d20\", \"total\": 13, \"formula\": \"1d20\", \"results\": [{\"result\": 13, \"active\": true}], \"rerolled\": {\"any\": false, \"rerolls\": []}}]}}}"
+   ]
+  },
+  {
+   "_id": "1v986YRaCcO6EGnz",
+   "timestamp": 1785956124168,
+   "author": "QALIE8jmoPXah1yb",
+   "type": "abilityUse",
+   "style": 0,
+   "blind": false,
+   "whisper": [],
+   "content": "[Wortlaut beim Anonymisieren entfernt]",
+   "speaker": {
+    "scene": null,
+    "actor": "itWvZdbQx3cQmRHD",
+    "token": null
+   },
+   "system": {}
+  },
+  {
+   "_id": "F4gqQK1KBrsf5JDt",
+   "timestamp": 1785956293285,
+   "author": "bFpFJpN8Sr02oqa8",
+   "type": "dualityRoll",
+   "style": 0,
+   "blind": false,
+   "whisper": [],
+   "content": "",
+   "speaker": {
+    "scene": "Dm4AGrqofhRJIwg8",
+    "actor": "Jkkhufrxqy6Hcx46",
+    "token": "snxJewM5dug5Gy6R",
+    "alias": "Fabe-091"
+   },
+   "system": {},
+   "rolls": [
+    "{\"class\": \"DualityRoll\", \"formula\": \"1d8 + 1d12 + 3\", \"total\": 15, \"evaluated\": true, \"dice\": [], \"terms\": [{\"class\": \"HopeDie\", \"evaluated\": true, \"number\": 1, \"faces\": 8, \"modifiers\": [], \"results\": [{\"result\": 7, \"active\": true}]}, {\"class\": \"OperatorTerm\", \"evaluated\": true, \"operator\": \"+\"}, {\"class\": \"FearDie\", \"evaluated\": true, \"number\": 1, \"faces\": 12, \"modifiers\": [], \"results\": [{\"result\": 5, \"active\": true}]}, {\"class\": \"OperatorTerm\", \"evaluated\": true, \"operator\": \"+\"}, {\"class\": \"NumericTerm\", \"evaluated\": true, \"number\": 3}], \"options\": {\"title\": \"Vergoldetes Falchion-Angriff\", \"roll\": {\"total\": 15, \"formula\": \"1d8 + 1d12 + 3\", \"type\": \"action\", \"isCritical\": false, \"modifierTotal\": 3, \"advantage\": {\"type\": 0}, \"dice\": [{\"dice\": \"d8\", \"total\": 7, \"formula\": \"1d8\", \"results\": [{\"result\": 7, \"active\": true}], \"rerolled\": {\"any\": false, \"rerolls\": []}}, {\"dice\": \"d12\", \"total\": 5, \"formula\": \"1d12\", \"results\": [{\"result\": 5, \"active\": true}], \"rerolled\": {\"any\": false, \"rerolls\": []}}], \"hope\": {\"dice\": \"d8\", \"value\": 7, \"rerolled\": {\"any\": false, \"rerolls\": []}}, \"fear\": {\"dice\": \"d12\", \"value\": 5, \"rerolled\": {\"any\": false, \"rerolls\": []}}, \"result\": {\"duality\": 1, \"total\": 12, \"label\": \"Hoffnung\"}}}}"
+   ]
+  },
+  {
+   "_id": "ZI6KVeLxYFL8GaTN",
+   "timestamp": 1785956332006,
+   "author": "QALIE8jmoPXah1yb",
+   "type": "adversaryRoll",
+   "style": 0,
+   "blind": false,
+   "whisper": [],
+   "content": "",
+   "speaker": {
+    "scene": "Dm4AGrqofhRJIwg8",
+    "actor": "BBZdOlrnPKr6JAfx",
+    "token": "jSb6udjxPFpfaBuh",
+    "alias": "Zybe-156"
+   },
+   "system": {},
+   "rolls": [
+    "{\"class\": \"D20Roll\", \"formula\": \"1d20 + 5\", \"total\": 21, \"evaluated\": true, \"dice\": [], \"terms\": [{\"class\": \"Die\", \"evaluated\": true, \"number\": 1, \"faces\": 20, \"modifiers\": [], \"results\": [{\"result\": 16, \"active\": true}]}, {\"class\": \"OperatorTerm\", \"evaluated\": true, \"operator\": \"+\"}, {\"class\": \"NumericTerm\", \"evaluated\": true, \"number\": 5}], \"options\": {\"title\": \"Void Bolt (2 targets, direct)\", \"roll\": {\"total\": 21, \"formula\": \"1d20 + 5\", \"type\": \"action\", \"isCritical\": false, \"modifierTotal\": 5, \"advantage\": {\"type\": 0}, \"dice\": [{\"dice\": \"d20\", \"total\": 16, \"formula\": \"1d20\", \"results\": [{\"result\": 16, \"active\": true}], \"rerolled\": {\"any\": false, \"rerolls\": []}}]}}}"
+   ]
+  },
+  {
+   "_id": "znUEFZlZm0AnzTbS",
+   "timestamp": 1785956383809,
+   "author": "n74OseDtmjhm6lRF",
+   "type": "dualityRoll",
+   "style": 0,
+   "blind": false,
+   "whisper": [],
+   "content": "",
+   "speaker": {
+    "scene": "Dm4AGrqofhRJIwg8",
+    "actor": "6PKKKg577b0oZns7",
+    "token": "cwliUObE2AeUQZ4s",
+    "alias": "Gibe-099"
+   },
+   "system": {},
+   "rolls": [
+    "{\"class\": \"DualityRoll\", \"formula\": \"1d8 + 1d12 + 3\", \"total\": 7, \"evaluated\": true, \"dice\": [], \"terms\": [{\"class\": \"HopeDie\", \"evaluated\": true, \"number\": 1, \"faces\": 8, \"modifiers\": [], \"results\": [{\"result\": 2, \"active\": true}]}, {\"class\": \"OperatorTerm\", \"evaluated\": true, \"operator\": \"+\"}, {\"class\": \"FearDie\", \"evaluated\": true, \"number\": 1, \"faces\": 12, \"modifiers\": [], \"results\": [{\"result\": 2, \"active\": true}]}, {\"class\": \"OperatorTerm\", \"evaluated\": true, \"operator\": \"+\"}, {\"class\": \"NumericTerm\", \"evaluated\": true, \"number\": 3}], \"options\": {\"title\": \"mysterious Greatstaff-Angriff\", \"roll\": {\"total\": 7, \"formula\": \"1d8 + 1d12 + 3\", \"type\": \"action\", \"isCritical\": true, \"modifierTotal\": 3, \"advantage\": {\"type\": 0}, \"dice\": [{\"dice\": \"d8\", \"total\": 2, \"formula\": \"1d8\", \"results\": [{\"result\": 2, \"active\": true}], \"rerolled\": {\"any\": false, \"rerolls\": []}}, {\"dice\": \"d12\", \"total\": 2, \"formula\": \"1d12\", \"results\": [{\"result\": 2, \"active\": true}], \"rerolled\": {\"any\": false, \"rerolls\": []}}], \"hope\": {\"dice\": \"d8\", \"value\": 2, \"rerolled\": {\"any\": false, \"rerolls\": []}}, \"fear\": {\"dice\": \"d12\", \"value\": 2, \"rerolled\": {\"any\": false, \"rerolls\": []}}, \"result\": {\"duality\": 0, \"total\": 4, \"label\": \"KriRubi-209er Erfolg\"}}}}"
+   ]
+  },
+  {
+   "_id": "RNnx4mxuEakocLEo",
+   "timestamp": 1785956427767,
+   "author": "YtrONu1n3HPJFEl3",
+   "type": "abilityUse",
+   "style": 0,
+   "blind": false,
+   "whisper": [],
+   "content": "[Wortlaut beim Anonymisieren entfernt]",
+   "speaker": {
+    "scene": "Dm4AGrqofhRJIwg8",
+    "actor": "ddSmlTvmkYbW6Xxk",
+    "token": "Z8d7CAP71lTDa6Fd",
+    "alias": "Puba-047"
+   },
+   "system": {}
+  },
+  {
+   "_id": "76IF6yL3Iw7m72jK",
+   "timestamp": 1785956763054,
+   "author": "QALIE8jmoPXah1yb",
+   "type": "abilityUse",
+   "style": 0,
+   "blind": false,
+   "whisper": [],
+   "content": "[Wortlaut beim Anonymisieren entfernt]",
+   "speaker": {
+    "scene": "Dm4AGrqofhRJIwg8",
+    "actor": "ddSmlTvmkYbW6Xxk",
+    "token": "Z8d7CAP71lTDa6Fd",
+    "alias": "Puba-047"
+   },
+   "system": {}
+  },
+  {
+   "_id": "5Zu2qIqCUQawAya0",
+   "timestamp": 1785957052688,
+   "author": "bFpFJpN8Sr02oqa8",
+   "type": "dualityRoll",
+   "style": 0,
+   "blind": false,
+   "whisper": [],
+   "content": "",
+   "speaker": {
+    "scene": "Dm4AGrqofhRJIwg8",
+    "actor": "Jkkhufrxqy6Hcx46",
+    "token": "snxJewM5dug5Gy6R",
+    "alias": "Fabe-091"
+   },
+   "system": {},
+   "rolls": [
+    "{\"class\": \"DualityRoll\", \"formula\": \"1d12 + 1d12 + 3 + 3\", \"total\": 21, \"evaluated\": true, \"dice\": [], \"terms\": [{\"class\": \"HopeDie\", \"evaluated\": true, \"number\": 1, \"faces\": 12, \"modifiers\": [], \"results\": [{\"result\": 3, \"active\": true}]}, {\"class\": \"OperatorTerm\", \"evaluated\": true, \"operator\": \"+\"}, {\"class\": \"FearDie\", \"evaluated\": true, \"number\": 1, \"faces\": 12, \"modifiers\": [], \"results\": [{\"result\": 12, \"active\": true}]}, {\"class\": \"OperatorTerm\", \"evaluated\": true, \"operator\": \"+\"}, {\"class\": \"NumericTerm\", \"evaluated\": true, \"number\": 3}, {\"class\": \"OperatorTerm\", \"evaluated\": true, \"operator\": \"+\"}, {\"class\": \"NumericTerm\", \"evaluated\": true, \"number\": 3}], \"options\": {\"title\": \"Wurf: Stärke\", \"roll\": {\"total\": 21, \"formula\": \"1d12 + 1d12 + 3 + 3\", \"type\": \"action\", \"isCritical\": false, \"modifierTotal\": 6, \"advantage\": {\"type\": 0}, \"dice\": [{\"dice\": \"d12\", \"total\": 3, \"formula\": \"1d12\", \"results\": [{\"result\": 3, \"active\": true}], \"rerolled\": {\"any\": false, \"rerolls\": []}}, {\"dice\": \"d12\", \"total\": 12, \"formula\": \"1d12\", \"results\": [{\"result\": 12, \"active\": true}], \"rerolled\": {\"any\": false, \"rerolls\": []}}], \"hope\": {\"dice\": \"d12\", \"value\": 3, \"rerolled\": {\"any\": false, \"rerolls\": []}}, \"fear\": {\"dice\": \"d12\", \"value\": 12, \"rerolled\": {\"any\": false, \"rerolls\": []}}, \"result\": {\"duality\": -1, \"total\": 15, \"label\": \"Furcht\"}}}}"
+   ]
+  },
+  {
+   "_id": "BDIz6CjehvIzBbuk",
+   "timestamp": 1785957138286,
+   "author": "fCZVOz7SGzgxcrtZ",
+   "type": "abilityUse",
+   "style": 0,
+   "blind": false,
+   "whisper": [],
+   "content": "[Wortlaut beim Anonymisieren entfernt]",
+   "speaker": {
+    "scene": null,
+    "actor": "IdabWSOgiAEte08h",
+    "token": null
+   },
+   "system": {}
+  },
+  {
+   "_id": "SJcf2DLFsJ2aeHsj",
+   "timestamp": 1785957312521,
+   "author": "QALIE8jmoPXah1yb",
+   "type": "abilityUse",
+   "style": 0,
+   "blind": false,
+   "whisper": [],
+   "content": "[Wortlaut beim Anonymisieren entfernt]",
+   "speaker": {
+    "scene": "Dm4AGrqofhRJIwg8",
+    "actor": "Nq6iCKzwEAAEdm0b",
+    "token": "b5zfQX4JrPZebQMr",
+    "alias": "Piba-045"
+   },
+   "system": {}
+  },
+  {
+   "_id": "63WeMRagAhmEfefu",
+   "timestamp": 1785957328722,
+   "author": "fCZVOz7SGzgxcrtZ",
+   "type": "dualityRoll",
+   "style": 0,
+   "blind": false,
+   "whisper": [],
+   "content": "",
+   "speaker": {
+    "scene": "Dm4AGrqofhRJIwg8",
+    "actor": "IdabWSOgiAEte08h",
+    "token": "JwMGEjZcECwJKHrx",
+    "alias": "Meba-032"
+   },
+   "system": {},
+   "rolls": [
+    "{\"class\": \"DualityRoll\", \"formula\": \"1d8 + 1d12 + 1d6 + 1d6 + 3\", \"total\": 26, \"evaluated\": true, \"dice\": [], \"terms\": [{\"class\": \"HopeDie\", \"evaluated\": true, \"number\": 1, \"faces\": 8, \"modifiers\": [], \"results\": [{\"result\": 5, \"active\": true}]}, {\"class\": \"OperatorTerm\", \"evaluated\": true, \"operator\": \"+\"}, {\"class\": \"FearDie\", \"evaluated\": true, \"number\": 1, \"faces\": 12, \"modifiers\": [], \"results\": [{\"result\": 11, \"active\": true}]}, {\"class\": \"OperatorTerm\", \"evaluated\": true, \"operator\": \"+\"}, {\"class\": \"AdvantageDie\", \"evaluated\": true, \"number\": 1, \"faces\": 6, \"modifiers\": [], \"results\": [{\"result\": 2, \"active\": true}]}, {\"class\": \"OperatorTerm\", \"evaluated\": true, \"operator\": \"+\"}, {\"class\": \"Die\", \"evaluated\": true, \"number\": 1, \"faces\": 6, \"modifiers\": [], \"results\": [{\"result\": 5, \"active\": true}]}, {\"class\": \"OperatorTerm\", \"evaluated\": true, \"operator\": \"+\"}, {\"class\": \"NumericTerm\", \"evaluated\": true, \"number\": 3}], \"options\": {\"title\": \"Wurf: Präsenz\", \"roll\": {\"total\": 26, \"formula\": \"1d8 + 1d12 + 1d6 + 1d6 + 3\", \"type\": \"action\", \"isCritical\": false, \"modifierTotal\": 3, \"advantage\": {\"type\": 1}, \"dice\": [{\"dice\": \"d8\", \"total\": 5, \"formula\": \"1d8\", \"results\": [{\"result\": 5, \"active\": true}], \"rerolled\": {\"any\": false, \"rerolls\": []}}, {\"dice\": \"d12\", \"total\": 11, \"formula\": \"1d12\", \"results\": [{\"result\": 11, \"active\": true}], \"rerolled\": {\"any\": false, \"rerolls\": []}}, {\"dice\": \"d6\", \"total\": 2, \"formula\": \"1d6\", \"results\": [{\"result\": 2, \"active\": true}], \"rerolled\": {\"any\": false, \"rerolls\": []}}, {\"dice\": \"d6\", \"total\": 5, \"formula\": \"1d6\", \"results\": [{\"result\": 5, \"active\": true}], \"rerolled\": {\"any\": false, \"rerolls\": []}}], \"hope\": {\"dice\": \"d8\", \"value\": 5, \"rerolled\": {\"any\": false, \"rerolls\": []}}, \"fear\": {\"dice\": \"d12\", \"value\": 11, \"rerolled\": {\"any\": false, \"rerolls\": []}}, \"result\": {\"duality\": -1, \"total\": 16, \"label\": \"Furcht\"}}}}"
+   ]
+  },
+  {
+   "_id": "H3uzaT27mxAMenq4",
+   "timestamp": 1785957333324,
+   "author": "YtrONu1n3HPJFEl3",
+   "type": "dualityRoll",
+   "style": 0,
+   "blind": false,
+   "whisper": [],
+   "content": "",
+   "speaker": {
+    "scene": "Dm4AGrqofhRJIwg8",
+    "actor": "ddSmlTvmkYbW6Xxk",
+    "token": "Z8d7CAP71lTDa6Fd",
+    "alias": "Puba-047"
+   },
+   "system": {},
+   "rolls": [
+    "{\"class\": \"DualityRoll\", \"formula\": \"1d8 + 1d12 + 1d6 + 1d6 + 3\", \"total\": 28, \"evaluated\": true, \"dice\": [], \"terms\": [{\"class\": \"HopeDie\", \"evaluated\": true, \"number\": 1, \"faces\": 8, \"modifiers\": [], \"results\": [{\"result\": 4, \"active\": true}]}, {\"class\": \"OperatorTerm\", \"evaluated\": true, \"operator\": \"+\"}, {\"class\": \"FearDie\", \"evaluated\": true, \"number\": 1, \"faces\": 12, \"modifiers\": [], \"results\": [{\"result\": 12, \"active\": true}]}, {\"class\": \"OperatorTerm\", \"evaluated\": true, \"operator\": \"+\"}, {\"class\": \"AdvantageDie\", \"evaluated\": true, \"number\": 1, \"faces\": 6, \"modifiers\": [], \"results\": [{\"result\": 6, \"active\": true}]}, {\"class\": \"OperatorTerm\", \"evaluated\": true, \"operator\": \"+\"}, {\"class\": \"Die\", \"evaluated\": true, \"number\": 1, \"faces\": 6, \"modifiers\": [], \"results\": [{\"result\": 3, \"active\": true}]}, {\"class\": \"OperatorTerm\", \"evaluated\": true, \"operator\": \"+\"}, {\"class\": \"NumericTerm\", \"evaluated\": true, \"number\": 3}], \"options\": {\"title\": \"Buch von Norai - Fireball\", \"roll\": {\"total\": 28, \"formula\": \"1d8 + 1d12 + 1d6 + 1d6 + 3\", \"type\": \"action\", \"isCritical\": false, \"modifierTotal\": 3, \"advantage\": {\"type\": 1}, \"dice\": [{\"dice\": \"d8\", \"total\": 4, \"formula\": \"1d8\", \"results\": [{\"result\": 4, \"active\": true}], \"rerolled\": {\"any\": false, \"rerolls\": []}}, {\"dice\": \"d12\", \"total\": 12, \"formula\": \"1d12\", \"results\": [{\"result\": 12, \"active\": true}], \"rerolled\": {\"any\": false, \"rerolls\": []}}, {\"dice\": \"d6\", \"total\": 6, \"formula\": \"1d6\", \"results\": [{\"result\": 6, \"active\": true}], \"rerolled\": {\"any\": false, \"rerolls\": []}}, {\"dice\": \"d6\", \"total\": 3, \"formula\": \"1d6\", \"results\": [{\"result\": 3, \"active\": true}], \"rerolled\": {\"any\": false, \"rerolls\": []}}], \"hope\": {\"dice\": \"d8\", \"value\": 4, \"rerolled\": {\"any\": false, \"rerolls\": []}}, \"fear\": {\"dice\": \"d12\", \"value\": 12, \"rerolled\": {\"any\": false, \"rerolls\": []}}, \"result\": {\"duality\": -1, \"total\": 16, \"label\": \"Furcht\"}}}}"
+   ]
+  },
+  {
+   "_id": "t95SxUN8BZtx7HNz",
+   "timestamp": 1785957798725,
+   "author": "YtrONu1n3HPJFEl3",
+   "type": "dualityRoll",
+   "style": 0,
+   "blind": false,
+   "whisper": [],
+   "content": "",
+   "speaker": {
+    "scene": "Dm4AGrqofhRJIwg8",
+    "actor": "ddSmlTvmkYbW6Xxk",
+    "token": "Z8d7CAP71lTDa6Fd",
+    "alias": "Puba-047"
+   },
+   "system": {},
+   "rolls": [
+    "{\"class\": \"DualityRoll\", \"formula\": \"1d8 + 1d12 + 3\", \"total\": 16, \"evaluated\": true, \"dice\": [], \"terms\": [{\"class\": \"HopeDie\", \"evaluated\": true, \"number\": 1, \"faces\": 8, \"modifiers\": [], \"results\": [{\"result\": 4, \"active\": true}]}, {\"class\": \"OperatorTerm\", \"evaluated\": true, \"operator\": \"+\"}, {\"class\": \"FearDie\", \"evaluated\": true, \"number\": 1, \"faces\": 12, \"modifiers\": [], \"results\": [{\"result\": 9, \"active\": true}]}, {\"class\": \"OperatorTerm\", \"evaluated\": true, \"operator\": \"+\"}, {\"class\": \"NumericTerm\", \"evaluated\": true, \"number\": 3}], \"options\": {\"title\": \"Buch von Vagras - Reveal\", \"roll\": {\"total\": 16, \"formula\": \"1d8 + 1d12 + 3\", \"type\": \"action\", \"isCritical\": false, \"modifierTotal\": 3, \"advantage\": {\"type\": 0}, \"dice\": [{\"dice\": \"d8\", \"total\": 4, \"formula\": \"1d8\", \"results\": [{\"result\": 4, \"active\": true}], \"rerolled\": {\"any\": false, \"rerolls\": []}}, {\"dice\": \"d12\", \"total\": 9, \"formula\": \"1d12\", \"results\": [{\"result\": 9, \"active\": true}], \"rerolled\": {\"any\": false, \"rerolls\": []}}], \"hope\": {\"dice\": \"d8\", \"value\": 4, \"rerolled\": {\"any\": false, \"rerolls\": []}}, \"fear\": {\"dice\": \"d12\", \"value\": 9, \"rerolled\": {\"any\": false, \"rerolls\": []}}, \"result\": {\"duality\": -1, \"total\": 13, \"label\": \"Furcht\"}}}}"
+   ]
+  },
+  {
+   "_id": "YyLUPYTO7OTQIZpB",
+   "timestamp": 1785957819728,
+   "author": "QALIE8jmoPXah1yb",
+   "type": "base",
+   "style": 0,
+   "blind": false,
+   "whisper": [
+    "QALIE8jmoPXah1yb"
+   ],
+   "content": "[Wortlaut beim Anonymisieren entfernt]",
+   "speaker": {
+    "scene": null,
+    "actor": null,
+    "token": null
+   },
+   "system": {}
+  },
+  {
+   "_id": "ITdDzO01JJrBNb5v",
+   "timestamp": 1785957819743,
+   "author": "QALIE8jmoPXah1yb",
+   "type": "base",
+   "style": 0,
+   "blind": false,
+   "whisper": [],
+   "content": "[Wortlaut beim Anonymisieren entfernt]",
+   "speaker": {
+    "scene": null,
+    "actor": null,
+    "token": null
+   },
+   "system": {}
+  },
+  {
+   "_id": "KI6WSJYClvaLqj10",
+   "timestamp": 1785957857961,
+   "author": "QALIE8jmoPXah1yb",
+   "type": "base",
+   "style": 0,
+   "blind": false,
+   "whisper": [
+    "QALIE8jmoPXah1yb"
+   ],
+   "content": "[Wortlaut beim Anonymisieren entfernt]",
+   "speaker": {
+    "scene": null,
+    "actor": null,
+    "token": null
+   },
+   "system": {}
+  },
+  {
+   "_id": "L5YBTbq7heAYeWuY",
+   "timestamp": 1785957857978,
+   "author": "QALIE8jmoPXah1yb",
+   "type": "base",
+   "style": 0,
+   "blind": false,
+   "whisper": [],
+   "content": "[Wortlaut beim Anonymisieren entfernt]",
+   "speaker": {
+    "scene": null,
+    "actor": null,
+    "token": null
+   },
+   "system": {}
+  },
+  {
+   "_id": "HO1iwljJnGrZUC6T",
+   "timestamp": 1785958156873,
+   "author": "n74OseDtmjhm6lRF",
+   "type": "dualityRoll",
+   "style": 0,
+   "blind": false,
+   "whisper": [],
+   "content": "",
+   "speaker": {
+    "scene": "Dm4AGrqofhRJIwg8",
+    "actor": "6PKKKg577b0oZns7",
+    "token": "cwliUObE2AeUQZ4s",
+    "alias": "Gibe-099"
+   },
+   "system": {},
+   "rolls": [
+    "{\"class\": \"DualityRoll\", \"formula\": \"1d12 + 1d12 + 2\", \"total\": 16, \"evaluated\": true, \"dice\": [], \"terms\": [{\"class\": \"HopeDie\", \"evaluated\": true, \"number\": 1, \"faces\": 12, \"modifiers\": [], \"results\": [{\"result\": 11, \"active\": true}]}, {\"class\": \"OperatorTerm\", \"evaluated\": true, \"operator\": \"+\"}, {\"class\": \"FearDie\", \"evaluated\": true, \"number\": 1, \"faces\": 12, \"modifiers\": [], \"results\": [{\"result\": 3, \"active\": true}]}, {\"class\": \"OperatorTerm\", \"evaluated\": true, \"operator\": \"+\"}, {\"class\": \"NumericTerm\", \"evaluated\": true, \"number\": 2}], \"options\": {\"title\": \"Wurf: Instinkt\", \"roll\": {\"total\": 16, \"formula\": \"1d12 + 1d12 + 2\", \"type\": \"reaction\", \"isCritical\": false, \"modifierTotal\": 2, \"advantage\": {\"type\": 0}, \"dice\": [{\"dice\": \"d12\", \"total\": 11, \"formula\": \"1d12\", \"results\": [{\"result\": 11, \"active\": true}], \"rerolled\": {\"any\": false, \"rerolls\": []}}, {\"dice\": \"d12\", \"total\": 3, \"formula\": \"1d12\", \"results\": [{\"result\": 3, \"active\": true}], \"rerolled\": {\"any\": false, \"rerolls\": []}}], \"hope\": {\"dice\": \"d12\", \"value\": 11, \"rerolled\": {\"any\": false, \"rerolls\": []}}, \"fear\": {\"dice\": \"d12\", \"value\": 3, \"rerolled\": {\"any\": false, \"rerolls\": []}}, \"result\": {\"duality\": 1, \"total\": 14, \"label\": \"Hoffnung\"}}}}"
+   ]
+  },
+  {
+   "_id": "ZTujk9fi71dJVfFZ",
+   "timestamp": 1785960569003,
+   "author": "fCZVOz7SGzgxcrtZ",
+   "type": "dualityRoll",
+   "style": 0,
+   "blind": false,
+   "whisper": [],
+   "content": "",
+   "speaker": {
+    "scene": "Dm4AGrqofhRJIwg8",
+    "actor": "IdabWSOgiAEte08h",
+    "token": "JwMGEjZcECwJKHrx",
+    "alias": "Meba-032"
+   },
+   "system": {},
+   "rolls": [
+    "{\"class\": \"DualityRoll\", \"formula\": \"1d8 + 1d12 + 1\", \"total\": 13, \"evaluated\": true, \"dice\": [], \"terms\": [{\"class\": \"HopeDie\", \"evaluated\": true, \"number\": 1, \"faces\": 8, \"modifiers\": [], \"results\": [{\"result\": 3, \"active\": true}]}, {\"class\": \"OperatorTerm\", \"evaluated\": true, \"operator\": \"+\"}, {\"class\": \"FearDie\", \"evaluated\": true, \"number\": 1, \"faces\": 12, \"modifiers\": [], \"results\": [{\"result\": 9, \"active\": true}]}, {\"class\": \"OperatorTerm\", \"evaluated\": true, \"operator\": \"+\"}, {\"class\": \"NumericTerm\", \"evaluated\": true, \"number\": 1}], \"options\": {\"title\": \"Wurf: Wissen\", \"roll\": {\"total\": 12, \"formula\": \"1d8 + 1d12 + 2\", \"type\": \"action\", \"isCritical\": false, \"modifierTotal\": 2, \"advantage\": {\"type\": 0}, \"dice\": [{\"dice\": \"d8\", \"total\": 3, \"formula\": \"1d8\", \"results\": [{\"result\": 3, \"active\": true}], \"rerolled\": {\"any\": false, \"rerolls\": []}}, {\"dice\": \"d12\", \"total\": 7, \"formula\": \"1d12\", \"results\": [{\"result\": 7, \"active\": true}], \"rerolled\": {\"any\": false, \"rerolls\": []}}], \"hope\": {\"dice\": \"d8\", \"value\": 3, \"rerolled\": {\"any\": false, \"rerolls\": []}}, \"fear\": {\"dice\": \"d12\", \"value\": 7, \"rerolled\": {\"any\": false, \"rerolls\": []}}, \"result\": {\"duality\": -1, \"total\": 10, \"label\": \"Furcht\"}}}}"
+   ]
+  },
+  {
+   "_id": "E17AGT1NkvIKafBG",
+   "timestamp": 1785960589069,
+   "author": "YtrONu1n3HPJFEl3",
+   "type": "base",
+   "style": 0,
+   "blind": false,
+   "whisper": [],
+   "content": "[Wortlaut beim Anonymisieren entfernt]",
+   "speaker": {
+    "scene": "Dm4AGrqofhRJIwg8",
+    "actor": "ddSmlTvmkYbW6Xxk",
+    "token": "Z8d7CAP71lTDa6Fd",
+    "alias": "Puba-047"
+   },
+   "system": {}
+  },
+  {
+   "_id": "zBKRJYykGZWQLSDR",
+   "timestamp": 1785960812609,
+   "author": "fCZVOz7SGzgxcrtZ",
+   "type": "adversaryRoll",
+   "style": 0,
+   "blind": false,
+   "whisper": [],
+   "content": "",
+   "speaker": {
+    "scene": "Dm4AGrqofhRJIwg8",
+    "actor": "IdabWSOgiAEte08h",
+    "token": "JwMGEjZcECwJKHrx",
+    "alias": "Meba-032"
+   },
+   "system": {},
+   "rolls": [
+    "{\"class\": \"DamageRoll\", \"formula\": \"\", \"evaluated\": true, \"dice\": [], \"terms\": [], \"options\": {\"title\": \"Mitreißende Rede - Talk to your allies!\"}}"
+   ]
+  },
+  {
+   "_id": "luxakroJoOj5nywg",
+   "timestamp": 1785961201194,
+   "author": "fCZVOz7SGzgxcrtZ",
+   "type": "dualityRoll",
+   "style": 0,
+   "blind": false,
+   "whisper": [],
+   "content": "",
+   "speaker": {
+    "scene": "Dm4AGrqofhRJIwg8",
+    "actor": "IdabWSOgiAEte08h",
+    "token": "JwMGEjZcECwJKHrx",
+    "alias": "Meba-032"
+   },
+   "system": {},
+   "rolls": [
+    "{\"class\": \"DualityRoll\", \"formula\": \"1d8 + 1d12 + 3\", \"total\": 19, \"evaluated\": true, \"dice\": [], \"terms\": [{\"class\": \"HopeDie\", \"evaluated\": true, \"number\": 1, \"faces\": 8, \"modifiers\": [], \"results\": [{\"result\": 5, \"active\": true}]}, {\"class\": \"OperatorTerm\", \"evaluated\": true, \"operator\": \"+\"}, {\"class\": \"FearDie\", \"evaluated\": true, \"number\": 1, \"faces\": 12, \"modifiers\": [], \"results\": [{\"result\": 11, \"active\": true}]}, {\"class\": \"OperatorTerm\", \"evaluated\": true, \"operator\": \"+\"}, {\"class\": \"NumericTerm\", \"evaluated\": true, \"number\": 3}], \"options\": {\"title\": \"Wurf: Präsenz\", \"roll\": {\"total\": 19, \"formula\": \"1d8 + 1d12 + 3\", \"type\": \"action\", \"isCritical\": false, \"modifierTotal\": 3, \"advantage\": {\"type\": 0}, \"dice\": [{\"dice\": \"d8\", \"total\": 5, \"formula\": \"1d8\", \"results\": [{\"result\": 5, \"active\": true}], \"rerolled\": {\"any\": false, \"rerolls\": []}}, {\"dice\": \"d12\", \"total\": 11, \"formula\": \"1d12\", \"results\": [{\"result\": 11, \"active\": true}], \"rerolled\": {\"any\": false, \"rerolls\": []}}], \"hope\": {\"dice\": \"d8\", \"value\": 5, \"rerolled\": {\"any\": false, \"rerolls\": []}}, \"fear\": {\"dice\": \"d12\", \"value\": 11, \"rerolled\": {\"any\": false, \"rerolls\": []}}, \"result\": {\"duality\": -1, \"total\": 16, \"label\": \"Furcht\"}}}}"
+   ]
+  },
+  {
+   "_id": "ya8ICb4yZXGpSdLK",
+   "timestamp": 1785961560890,
+   "author": "fCZVOz7SGzgxcrtZ",
+   "type": "dualityRoll",
+   "style": 0,
+   "blind": false,
+   "whisper": [],
+   "content": "",
+   "speaker": {
+    "scene": "2sxZxTx9OCmmuNcS",
+    "actor": "IdabWSOgiAEte08h",
+    "token": null,
+    "alias": "Meba-032"
+   },
+   "system": {},
+   "rolls": [
+    "{\"class\": \"DualityRoll\", \"formula\": \"1d8 + 1d12 + 3\", \"total\": 18, \"evaluated\": true, \"dice\": [], \"terms\": [{\"class\": \"HopeDie\", \"evaluated\": true, \"number\": 1, \"faces\": 8, \"modifiers\": [], \"results\": [{\"result\": 3, \"active\": true}]}, {\"class\": \"OperatorTerm\", \"evaluated\": true, \"operator\": \"+\"}, {\"class\": \"FearDie\", \"evaluated\": true, \"number\": 1, \"faces\": 12, \"modifiers\": [], \"results\": [{\"result\": 12, \"active\": true}]}, {\"class\": \"OperatorTerm\", \"evaluated\": true, \"operator\": \"+\"}, {\"class\": \"NumericTerm\", \"evaluated\": true, \"number\": 3}], \"options\": {\"title\": \"Wurf: Präsenz\", \"roll\": {\"total\": 18, \"formula\": \"1d8 + 1d12 + 3\", \"type\": \"action\", \"isCritical\": false, \"modifierTotal\": 3, \"advantage\": {\"type\": 0}, \"dice\": [{\"dice\": \"d8\", \"total\": 3, \"formula\": \"1d8\", \"results\": [{\"result\": 3, \"active\": true}], \"rerolled\": {\"any\": false, \"rerolls\": []}}, {\"dice\": \"d12\", \"total\": 12, \"formula\": \"1d12\", \"results\": [{\"result\": 12, \"active\": true}], \"rerolled\": {\"any\": false, \"rerolls\": []}}], \"hope\": {\"dice\": \"d8\", \"value\": 3, \"rerolled\": {\"any\": false, \"rerolls\": []}}, \"fear\": {\"dice\": \"d12\", \"value\": 12, \"rerolled\": {\"any\": false, \"rerolls\": []}}, \"result\": {\"duality\": -1, \"total\": 15, \"label\": \"Furcht\"}}}}"
+   ]
+  }
+ ],
+ "scenes": [
+  {
+   "_id": "gCij74nh8pBRdPIx",
+   "active": false,
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Dybi-168",
+   "navName": ""
+  },
+  {
+   "_id": "bVoPeYKl8o3BeUb2",
+   "active": false,
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Fabi-169",
+   "navName": ""
+  },
+  {
+   "_id": "n0ppbT4OGvJo7nIm",
+   "active": false,
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Febi-170",
+   "navName": "Febi-170"
+  },
+  {
+   "_id": "bizHnq7xkUYx0qqw",
+   "active": false,
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Fibi-171",
+   "navName": "Febi-170"
+  },
+  {
+   "_id": "U1fehF6XudwaZqd3",
+   "active": false,
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Fobi-172",
+   "navName": ""
+  },
+  {
+   "_id": "3Ikrawk3tQ7KjA2J",
+   "active": false,
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Fubi-173",
+   "navName": ""
+  },
+  {
+   "_id": "ojk08ogh14rOlgWH",
+   "active": false,
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Fybi-174",
+   "navName": "Gabi-175"
+  },
+  {
+   "_id": "nFUhfERwKQDjX5fZ",
+   "active": false,
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Gebi-176",
+   "navName": ""
+  },
+  {
+   "_id": "KmnNT3umZZEWPxN5",
+   "active": false,
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Gibi-177",
+   "navName": ""
+  },
+  {
+   "_id": "yqrO8V9SplOJ4cbs",
+   "active": false,
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Peba-044",
+   "navName": ""
+  },
+  {
+   "_id": "PVhUSk61agWnRHfz",
+   "active": false,
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Gobi-178",
+   "navName": ""
+  },
+  {
+   "_id": "8HVndHd4ku7e0jc0",
+   "active": false,
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Gubi-179",
+   "navName": ""
+  },
+  {
+   "_id": "nwWKO6LgCnMosDj8",
+   "active": false,
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3,
+    "m3GUFdKrO3AOqCq2": 2,
+    "LKy6AzIYWDCads6K": 2,
+    "0KIbAAK9lWzqEzlW": 2,
+    "YL1DH9VUoQixkszx": 2
+   },
+   "name": "Gybi-180",
+   "navName": "Gybi-180"
+  },
+  {
+   "_id": "dWGWRWEuF682BR8c",
+   "active": false,
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3,
+    "m3GUFdKrO3AOqCq2": 2,
+    "LKy6AzIYWDCads6K": 2,
+    "0KIbAAK9lWzqEzlW": 2,
+    "YL1DH9VUoQixkszx": 2
+   },
+   "name": "Kabi-181",
+   "navName": ""
+  },
+  {
+   "_id": "5nNX5y6hiunZJbmw",
+   "active": false,
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3,
+    "m3GUFdKrO3AOqCq2": 0,
+    "LKy6AzIYWDCads6K": 0,
+    "0KIbAAK9lWzqEzlW": 0,
+    "YL1DH9VUoQixkszx": 0
+   },
+   "name": "Kebi-182",
+   "navName": ""
+  },
+  {
+   "_id": "luTY5wjOS2MUkYDE",
+   "active": false,
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Kibi-183",
+   "navName": ""
+  },
+  {
+   "_id": "jyLCcImwxVjE46Fm",
+   "active": false,
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Kobi-184",
+   "navName": ""
+  },
+  {
+   "_id": "sneUFXlPokhFaLjl",
+   "active": false,
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3,
+    "m3GUFdKrO3AOqCq2": 1
+   },
+   "name": "Kubi-185",
+   "navName": ""
+  },
+  {
+   "_id": "CjgMYHPw3bVdeRcD",
+   "active": false,
+   "ownership": {
+    "default": 2,
+    "QALIE8jmoPXah1yb": 3,
+    "m3GUFdKrO3AOqCq2": 0,
+    "LKy6AzIYWDCads6K": 0,
+    "0KIbAAK9lWzqEzlW": 0,
+    "YL1DH9VUoQixkszx": 0
+   },
+   "name": "Kybi-186",
+   "navName": "Kybi-186"
+  },
+  {
+   "_id": "uyzO2Ip6FpIdljrj",
+   "active": false,
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3,
+    "m3GUFdKrO3AOqCq2": 2,
+    "LKy6AzIYWDCads6K": 2,
+    "0KIbAAK9lWzqEzlW": 2,
+    "YL1DH9VUoQixkszx": 2
+   },
+   "name": "Kybi-186",
+   "navName": "Kybi-186"
+  },
+  {
+   "_id": "nFc6COwIBC597IZN",
+   "active": false,
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Mabi-187",
+   "navName": ""
+  },
+  {
+   "_id": "hFV45RYTPmzWj6u8",
+   "active": false,
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3,
+    "m3GUFdKrO3AOqCq2": 2,
+    "LKy6AzIYWDCads6K": 2,
+    "0KIbAAK9lWzqEzlW": 2,
+    "YL1DH9VUoQixkszx": 2
+   },
+   "name": "Mebi-188",
+   "navName": ""
+  },
+  {
+   "_id": "jhYvB6Fzsea7MsxP",
+   "active": false,
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Mibi-189",
+   "navName": ""
+  },
+  {
+   "_id": "zpXrtEUtVWMEaKKj",
+   "active": false,
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Mubi-191",
+   "navName": ""
+  },
+  {
+   "_id": "kyqKV01a60qX1ozY",
+   "active": false,
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Mybi-192",
+   "navName": ""
+  },
+  {
+   "_id": "VDfWytQH6YFIqT4q",
+   "active": false,
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Nabi-193",
+   "navName": ""
+  },
+  {
+   "_id": "OsvWMaUf9KEVrcDg",
+   "active": false,
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Nebi-194",
+   "navName": ""
+  },
+  {
+   "_id": "isMlqdVV4tFlzrLR",
+   "active": false,
+   "ownership": {
+    "default": 2,
+    "QALIE8jmoPXah1yb": 3,
+    "m3GUFdKrO3AOqCq2": 0,
+    "LKy6AzIYWDCads6K": 0,
+    "0KIbAAK9lWzqEzlW": 0,
+    "YL1DH9VUoQixkszx": 0
+   },
+   "name": "Nibi-195",
+   "navName": ""
+  },
+  {
+   "_id": "JVnleZHlomLd4I9L",
+   "active": false,
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3,
+    "m3GUFdKrO3AOqCq2": 2,
+    "LKy6AzIYWDCads6K": 2,
+    "0KIbAAK9lWzqEzlW": 2,
+    "YL1DH9VUoQixkszx": 2
+   },
+   "name": "Nobi-196",
+   "navName": ""
+  },
+  {
+   "_id": "Kr9bCcYRcd09WgH7",
+   "active": false,
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Nubi-197",
+   "navName": ""
+  },
+  {
+   "_id": "zk6gk70AMz3vc9sQ",
+   "active": false,
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Nybi-198",
+   "navName": ""
+  },
+  {
+   "_id": "o7Yda2jz5NFrUgKy",
+   "active": false,
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Pabi-199",
+   "navName": ""
+  },
+  {
+   "_id": "j73zZlvlU7EJDff0",
+   "active": false,
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Pebi-200",
+   "navName": ""
+  },
+  {
+   "_id": "A6a2JFt0ClfLuUaG",
+   "active": false,
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Pibi-201",
+   "navName": ""
+  },
+  {
+   "_id": "iOGggQ1DNwbwtvvk",
+   "active": false,
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Pobi-202",
+   "navName": ""
+  },
+  {
+   "_id": "9izdUVR7XqWpKXDx",
+   "active": false,
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Pubi-203",
+   "navName": ""
+  },
+  {
+   "_id": "tIKBFRVtKn5Y1IWm",
+   "active": false,
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Pybi-204",
+   "navName": ""
+  },
+  {
+   "_id": "CO9fdw9knb4tjoho",
+   "active": false,
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3,
+    "m3GUFdKrO3AOqCq2": 0,
+    "LKy6AzIYWDCads6K": 0,
+    "0KIbAAK9lWzqEzlW": 0,
+    "YL1DH9VUoQixkszx": 0,
+    "msKLXJiqmQHmUr2w": 2,
+    "kaxNmrTY4GITw00i": 2,
+    "tyUFPzF1IOd3Zcnq": 2,
+    "HxN3GhOQ0xrPGdkk": 2
+   },
+   "name": "Rabi-205",
+   "navName": "Rabi-205"
+  },
+  {
+   "_id": "Sxl6PK9eI4RV2oK6",
+   "active": false,
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3,
+    "m3GUFdKrO3AOqCq2": 0,
+    "LKy6AzIYWDCads6K": 0,
+    "0KIbAAK9lWzqEzlW": 0,
+    "YL1DH9VUoQixkszx": 0
+   },
+   "name": "Rebi-206",
+   "navName": "Rebi-206"
+  },
+  {
+   "_id": "L3I9P23Mje211bar",
+   "active": false,
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3,
+    "m3GUFdKrO3AOqCq2": 0,
+    "LKy6AzIYWDCads6K": 0,
+    "0KIbAAK9lWzqEzlW": 0,
+    "YL1DH9VUoQixkszx": 0,
+    "n74OseDtmjhm6lRF": 0,
+    "bFpFJpN8Sr02oqa8": 0,
+    "82yxtt0rbJ72XJeA": 0,
+    "fCZVOz7SGzgxcrtZ": 0,
+    "YtrONu1n3HPJFEl3": 0,
+    "msKLXJiqmQHmUr2w": 2,
+    "kaxNmrTY4GITw00i": 2,
+    "tyUFPzF1IOd3Zcnq": 2,
+    "HxN3GhOQ0xrPGdkk": 2,
+    "dOB6TdSOn7NL3qrR": 2
+   },
+   "name": "Ribi-207",
+   "navName": "Gybi-180"
+  },
+  {
+   "_id": "WD3nHw7Hrf8kNS5D",
+   "active": false,
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3,
+    "msKLXJiqmQHmUr2w": 2,
+    "kaxNmrTY4GITw00i": 2,
+    "tyUFPzF1IOd3Zcnq": 2,
+    "HxN3GhOQ0xrPGdkk": 2,
+    "bFpFJpN8Sr02oqa8": 0,
+    "n74OseDtmjhm6lRF": 0,
+    "82yxtt0rbJ72XJeA": 0,
+    "fCZVOz7SGzgxcrtZ": 0,
+    "YtrONu1n3HPJFEl3": 0
+   },
+   "name": "Robi-208",
+   "navName": "Rubi-209"
+  },
+  {
+   "_id": "2sxZxTx9OCmmuNcS",
+   "active": true,
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3,
+    "m3GUFdKrO3AOqCq2": 0,
+    "LKy6AzIYWDCads6K": 0,
+    "0KIbAAK9lWzqEzlW": 0,
+    "YL1DH9VUoQixkszx": 0,
+    "n74OseDtmjhm6lRF": 2,
+    "bFpFJpN8Sr02oqa8": 2,
+    "82yxtt0rbJ72XJeA": 2,
+    "fCZVOz7SGzgxcrtZ": 2,
+    "YtrONu1n3HPJFEl3": 2,
+    "msKLXJiqmQHmUr2w": 0,
+    "kaxNmrTY4GITw00i": 0,
+    "tyUFPzF1IOd3Zcnq": 0,
+    "HxN3GhOQ0xrPGdkk": 0,
+    "dOB6TdSOn7NL3qrR": 0
+   },
+   "name": "Rybi-210",
+   "navName": "Gybi-180"
+  },
+  {
+   "_id": "bjdAbafyScoCaNI1",
+   "active": false,
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3,
+    "msKLXJiqmQHmUr2w": 0,
+    "kaxNmrTY4GITw00i": 0,
+    "tyUFPzF1IOd3Zcnq": 0,
+    "HxN3GhOQ0xrPGdkk": 0,
+    "bFpFJpN8Sr02oqa8": 2,
+    "n74OseDtmjhm6lRF": 2,
+    "82yxtt0rbJ72XJeA": 2,
+    "fCZVOz7SGzgxcrtZ": 2,
+    "YtrONu1n3HPJFEl3": 2
+   },
+   "name": "Sabi-211",
+   "navName": "Rubi-209"
+  },
+  {
+   "_id": "ZsXcWjEM7gtvNCts",
+   "active": false,
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Sebi-212",
+   "navName": "Sebi-212"
+  },
+  {
+   "_id": "Dm4AGrqofhRJIwg8",
+   "active": false,
+   "ownership": {
+    "default": 0,
+    "QALIE8jmoPXah1yb": 3
+   },
+   "name": "Sibi-213",
+   "navName": "Sebi-212"
+  }
+ ]
+}

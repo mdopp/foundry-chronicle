@@ -375,6 +375,38 @@ def test_ein_ownership_schluessel_ist_keine_freie_zeichenkette(roh):
     assert anonym.pruefe(ergebnis, ersatz.gefahren) == []
 
 
+def test_ein_eigener_feldname_ist_kein_fund(roh):
+    """Am echten Abzug brach der Lauf an ``world.<Schlüssel>`` ab — an unserem eigenen Wort.
+
+    Eine Figur hieß wie ein Stück eines Feldnamens aus diesem Skript. Der Schlüssel steht
+    aber in keiner Eingabe: er kommt aus dem Bauplan. Ein Abbruch, den niemand beheben
+    kann, ohne die Ausgabe von Hand anzufassen, ist schlimmer als kein Abbruch.
+    """
+    roh["actors"][1]["name"] = "Core Sentinel"
+    ersatz = anonym.Ersatz(roh)
+    # Die Falle ist wirklich gestellt: »core« steckt in ``coreVersion``.
+    assert "Core" in ersatz.gefahren
+    assert "core" in "coreVersion".casefold()
+    assert "coreVersion" in anonym.EIGENE_SCHLUESSEL
+
+    ergebnis = anonym.anonymisiere(roh, ersatz)
+    assert "coreVersion" in ergebnis["world"]
+    assert anonym.pruefe(ergebnis, ersatz.gefahren) == []
+
+
+def test_ein_system_block_ohne_wurf_bleibt_als_leerer_block_stehen(roh):
+    """Der Befund aus #242 in der Fixture: ``system`` da, ``system.roll`` nicht.
+
+    Fiele der leere Block weg, sähe eine anonymisierte Welt aus, als hätte sie gar keine
+    Regelwerksdaten — und der Unterschied, an dem ``read_roll`` abzweigt, wäre nicht mehr
+    zu sehen.
+    """
+    roh["messages"][0]["system"] = {"title": "Necrotic Ray", "hasRoll": True}
+    ergebnis = sauber(roh)
+    assert ergebnis["messages"][0]["system"] == {}
+    assert ergebnis["messages"][1]["system"] == {"roll": {"title": "Verborgen", "total": 20}}
+
+
 def test_die_pruefung_liest_auch_schluessel(roh, tmp_path, monkeypatch, capsys):
     """Der zweite Halt: fiele die Schlüsselfilterung weg, hielte der Zaun trotzdem.
 
