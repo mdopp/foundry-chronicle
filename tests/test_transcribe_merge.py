@@ -11,7 +11,7 @@ import pytest
 from conftest import runde
 
 from chronicle import consent, db, notes, people, recordings
-from chronicle.compose.composer import NOTIZEN_TITEL, TRANSKRIPT_TITEL, Notiz, compose
+from chronicle.compose.composer import TRANSKRIPT_TITEL, Notiz, compose
 from chronicle.compose.service import material
 from chronicle.config import Config
 from chronicle.transcribe import merge, service
