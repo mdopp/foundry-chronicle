@@ -165,6 +165,11 @@ class FakeInteraction:
         self.user = wer
         self.channel = kanal
 
+    async def edit_original_response(self, *, content=None, view=None, **rest):
+        # Nach einem Aufschub geht die Änderung nicht mehr über ``response.edit_message``,
+        # sondern hier entlang — dieselbe Nachricht, derselbe Eintrag in der Liste.
+        self.response.bearbeitet.append({"content": content, "view": view})
+
 
 class FakeCtx:
     def __init__(self, *, guild_id=GILDE, gilde=None, autor=LEITUNG):
@@ -1732,6 +1737,55 @@ def test_die_sitzung_wird_neben_der_ereignisschleife_geloescht(konfiguration, bo
     assert threading.get_ident() not in faeden
 
 
+def test_der_sitzungsloeschknopf_antwortet_bevor_er_loescht(konfiguration, bot, monkeypatch):
+    """Dieselbe Form wie am Löschknopf der ganzen Runde und derselbe Grund (#282):
+    Tondateien und Zeilen einer langen Sitzung dauern länger als drei Sekunden."""
+    unsere = runden.anlegen(konfiguration.database_path, GILDENAME, guild_id=GILDE)
+    ids = fuellen(konfiguration, unsere, "alpha")
+    stand = []
+    echt = chronik.sitzung_geloescht
+
+    ctx = sitzungsbefehl(bot, FakeCtx(gilde=FakeGilde()))
+    klick = sitzung_waehlen(ctx, ids["sitzung"])
+    knopf = klick.response.bearbeitet[-1]["view"].items[0]
+    zweiter = FakeInteraction()
+
+    def merken(config, runde, marke):
+        stand.append(zweiter.response.aufgeschoben)
+        return echt(config, runde, marke)
+
+    monkeypatch.setattr(chronik, "sitzung_geloescht", merken)
+
+    asyncio.run(knopf.callback(zweiter))
+
+    assert stand == [True]
+    assert zweiter.response.bearbeitet[-1]["view"] is None
+    assert not ids["spur"].exists()
+
+
+def test_eine_ausnahme_am_sitzungsloeschknopf_erreicht_den_klickenden(
+    konfiguration, bot, monkeypatch
+):
+    """Auch hier bleibt sonst nur »Diese Interaktion ist fehlgeschlagen« stehen — über
+    der Frage, ob der Abend jetzt fort ist."""
+    unsere = runden.anlegen(konfiguration.database_path, GILDENAME, guild_id=GILDE)
+    ids = fuellen(konfiguration, unsere, "alpha")
+    ctx = sitzungsbefehl(bot, FakeCtx(gilde=FakeGilde()))
+    klick = sitzung_waehlen(ctx, ids["sitzung"])
+    knopf = klick.response.bearbeitet[-1]["view"].items[0]
+
+    def stolpert(*_args, **_rest):
+        raise RuntimeError("Die Platte hakt")
+
+    monkeypatch.setattr(chronik, "sitzung_geloescht", stolpert)
+    zweiter = FakeInteraction()
+
+    asyncio.run(knopf.callback(zweiter))
+
+    (gesagt,) = zweiter.response.gesendet
+    assert gateway.UNERWARTET.format(typ="RuntimeError") in gesagt["text"]
+
+
 def test_die_ruhende_runde_loescht_keine_einzelne_sitzung(konfiguration, bot):
     """Sie ist verabschiedet und wartet auf ihre Frist. Wer sie ganz loswerden will, hat
     dafür `/chronicle delete` — dort ist eine ruhende ausdrücklich zugelassen."""
@@ -1822,6 +1876,52 @@ def test_die_loeschung_sagt_im_log_wer_sie_wollte(konfiguration, bot, caplog):
 
     assert LEITUNG.display_name in caplog.text
     assert str(LEITUNG.id) in caplog.text
+
+
+def test_der_loeschknopf_antwortet_bevor_er_loescht(konfiguration, bot, monkeypatch):
+    """#282: die Löschung sprengt Discords Drei-Sekunden-Fenster.
+
+    Danach ist der Interaktions-Token tot, die Antwort wird abgelehnt — und wer geklickt
+    hat, sieht »Diese Interaktion ist fehlgeschlagen« und erfährt nicht, ob die Kampagne
+    jetzt fort ist. Also erst aufschieben, dann arbeiten.
+    """
+    runden.anlegen(konfiguration.database_path, GILDENAME, guild_id=GILDE)
+    ctx = loeschbefehl(bot, FakeCtx(gilde=FakeGilde()))
+    ja, _nein = ctx.ansichten[0].items
+    klick = FakeInteraction()
+    stand = []
+    echt = einrichten.geloescht
+
+    def merken(config, runde, **rest):
+        stand.append(klick.response.aufgeschoben)
+        return echt(config, runde, **rest)
+
+    monkeypatch.setattr(einrichten, "geloescht", merken)
+
+    asyncio.run(ja.callback(klick))
+
+    assert stand == [True]
+    assert klick.response.bearbeitet[-1]["view"] is None
+    assert klick.response.bearbeitet[-1]["content"] == einrichten.LOESCHEN_FERTIG
+
+
+def test_eine_ausnahme_am_loeschknopf_erreicht_den_klickenden(konfiguration, bot, monkeypatch):
+    """Der Rückfallweg starb mit dem Token: ``edit_message`` warf, danach warf auch der
+    Ersatzweg auf demselben toten Token. Nach dem Aufschub kommt er als Nachreichung an."""
+    runden.anlegen(konfiguration.database_path, GILDENAME, guild_id=GILDE)
+    ctx = loeschbefehl(bot, FakeCtx(gilde=FakeGilde()))
+    ja, _nein = ctx.ansichten[0].items
+
+    def stolpert(*_args, **_rest):
+        raise RuntimeError("Die Platte hakt")
+
+    monkeypatch.setattr(einrichten, "geloescht", stolpert)
+    klick = FakeInteraction()
+
+    asyncio.run(ja.callback(klick))
+
+    (gesagt,) = klick.response.gesendet
+    assert gateway.UNERWARTET.format(typ="RuntimeError") in gesagt["text"]
 
 
 def test_ein_alter_knopf_loescht_die_frische_runde_nicht(konfiguration, bot):

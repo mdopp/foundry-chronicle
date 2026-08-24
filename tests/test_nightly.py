@@ -434,11 +434,58 @@ def test_eine_leere_sitzung_bekommt_keine_chronik(stelle):
     assert schritte[nightly.CHRONIK]["text"] == nightly.NICHTS_ZU_SCHREIBEN
 
 
+def test_die_nacht_meldet_sich_hinterher_zurueck(stelle, monkeypatch):
+    """#281: die Kette erzeugt dieselben Registervorschläge wie ``/session done``.
+
+    Wer danach fragt, weiß diese Datei nicht — sie reicht nur durch, wenn ein Weg zurück
+    mitgegeben wurde.
+    """
+    monkeypatch.setattr(kette, "compose_session", lambda *a, **k: None)
+    mit_notiz(stelle)
+    gemeldet = []
+
+    nightly.lauf(stelle, runde(stelle), danach=gemeldet.append)
+
+    assert [eine.id for eine in gemeldet] == [runde(stelle).id]
+
+
+def test_eine_gescheiterte_nachfrage_macht_die_nacht_nicht_rot(stelle, monkeypatch, caplog):
+    """Die Nacht ist gelaufen und ihre Karte geschrieben — die Nachfrage ist ein Angebot."""
+    monkeypatch.setattr(kette, "compose_session", lambda *a, **k: None)
+    mit_notiz(stelle)
+
+    def stolpert(_runde):
+        raise RuntimeError("Discord schweigt")
+
+    with caplog.at_level(logging.ERROR):
+        ergebnis = nightly.lauf(stelle, runde(stelle), danach=stolpert)
+
+    assert [s["name"] for s in json.loads(ergebnis)] == [
+        nightly.DIKTAT,
+        nightly.TRANSKRIPT,
+        nightly.ABGLEICH,
+        nightly.CHRONIK,
+    ]
+    assert "Nachfrage" in caplog.text
+
+
+def test_der_zurueckweg_haengt_am_faden_und_kommt_bei_jeder_nacht_an(stelle, monkeypatch):
+    """Der Blick auf die Uhr reicht ihn bis in den Lauf durch — sonst bliebe er am Faden
+    hängen und die Nacht meldete sich nie."""
+    gemeldet = []
+    monkeypatch.setattr(nightly, "lauf", lambda config, eine, **rest: str(rest.get("danach")))
+    nightly.tick(stelle, jetzt=uhr(4), danach=gemeldet.append)
+
+    warte_bis(lambda: jobs.latest(runde(stelle), jobs.NACHTLAUF).result is not None)
+
+    assert jobs.latest(runde(stelle), jobs.NACHTLAUF).result != "None"
+
+
 # --- Der Zeitplan -------------------------------------------------------------------
 
 
 def test_zur_angesetzten_zeit_beginnt_die_nacht(stelle, monkeypatch):
-    monkeypatch.setattr(nightly, "lauf", lambda config, eine: "durch")
+    monkeypatch.setattr(nightly, "lauf", lambda config, eine, **rest: "durch")
 
     angestossen = nightly.tick(stelle, jetzt=uhr(4))
 
@@ -447,24 +494,24 @@ def test_zur_angesetzten_zeit_beginnt_die_nacht(stelle, monkeypatch):
 
 
 def test_vor_der_angesetzten_zeit_passiert_nichts(stelle, monkeypatch):
-    monkeypatch.setattr(nightly, "lauf", lambda config, eine: "durch")
+    monkeypatch.setattr(nightly, "lauf", lambda config, eine, **rest: "durch")
     assert nightly.tick(stelle, jetzt=uhr(3, 59)) is None
     assert jobs.latest(runde(stelle), jobs.NACHTLAUF) is None
 
 
 def test_eine_verpasste_nacht_wird_nicht_nachgeholt(stelle, monkeypatch):
-    monkeypatch.setattr(nightly, "lauf", lambda config, eine: "durch")
+    monkeypatch.setattr(nightly, "lauf", lambda config, eine, **rest: "durch")
     assert nightly.tick(stelle, jetzt=uhr(10)) is None
     assert jobs.latest(runde(stelle), jobs.NACHTLAUF) is None
 
 
 def test_wer_kurz_nach_der_zeit_einschaltet_bekommt_seine_nacht_noch(stelle, monkeypatch):
-    monkeypatch.setattr(nightly, "lauf", lambda config, eine: "durch")
+    monkeypatch.setattr(nightly, "lauf", lambda config, eine, **rest: "durch")
     assert nightly.tick(stelle, jetzt=uhr(4, 30)) is not None
 
 
 def test_in_derselben_nacht_wird_nicht_zweimal_gestartet(stelle, monkeypatch):
-    monkeypatch.setattr(nightly, "lauf", lambda config, eine: "durch")
+    monkeypatch.setattr(nightly, "lauf", lambda config, eine, **rest: "durch")
     erster = nightly.tick(stelle, jetzt=uhr(4))
     assert warte_bis(lambda: jobs.latest(runde(stelle), jobs.NACHTLAUF).fertig)
 
@@ -473,7 +520,7 @@ def test_in_derselben_nacht_wird_nicht_zweimal_gestartet(stelle, monkeypatch):
 
 
 def test_in_der_naechsten_nacht_laeuft_es_wieder(stelle, monkeypatch):
-    monkeypatch.setattr(nightly, "lauf", lambda config, eine: "durch")
+    monkeypatch.setattr(nightly, "lauf", lambda config, eine, **rest: "durch")
     erster = nightly.tick(stelle, jetzt=uhr(4))
     assert warte_bis(lambda: jobs.latest(runde(stelle), jobs.NACHTLAUF).fertig)
 
@@ -486,7 +533,7 @@ def test_in_der_naechsten_nacht_laeuft_es_wieder(stelle, monkeypatch):
 
 
 def test_solange_ein_anderer_lauf_laeuft_beginnt_die_nacht_nicht(stelle, monkeypatch):
-    monkeypatch.setattr(nightly, "lauf", lambda config, eine: "durch")
+    monkeypatch.setattr(nightly, "lauf", lambda config, eine, **rest: "durch")
     sitzung_id = mit_notiz(stelle)
     laufender_job(stelle.database_path, jobs.CHRONIK, sitzung_id)
 
@@ -498,7 +545,7 @@ def test_bei_gleicher_uhrzeit_bekommt_auch_die_zweite_runde_ihre_nacht(stelle, m
     """#180: dauert die Nacht der ersten Runde länger als das Fenster, fiel die zweite
     heraus — und weil die Reihenfolge an der Id hing, jede Nacht dieselbe."""
     tor = threading.Event()
-    monkeypatch.setattr(nightly, "lauf", lambda config, eine: haltend(tor))
+    monkeypatch.setattr(nightly, "lauf", lambda config, eine, **rest: haltend(tor))
     erste = runde(stelle)
     zweite = runden.anlegen(stelle.database_path, "Runde B", guild_id="2202")
 
@@ -517,7 +564,7 @@ def test_bei_gleicher_uhrzeit_bekommt_auch_die_zweite_runde_ihre_nacht(stelle, m
 
 def test_wer_noch_nie_eine_nacht_hatte_ist_zuerst_dran(stelle, monkeypatch):
     """Sonst gewinnt bei gleicher Uhrzeit immer die kleinere Id."""
-    monkeypatch.setattr(nightly, "lauf", lambda config, eine: "durch")
+    monkeypatch.setattr(nightly, "lauf", lambda config, eine, **rest: "durch")
     abgelegter_lauf(stelle, [], started="2026-08-05T02:00:00+00:00")
     zweite = runden.anlegen(stelle.database_path, "Runde B", guild_id="2202")
 
@@ -528,14 +575,14 @@ def test_wer_noch_nie_eine_nacht_hatte_ist_zuerst_dran(stelle, monkeypatch):
 
 def test_ohne_vormerkung_bleibt_eine_verpasste_nacht_verpasst(stelle, monkeypatch):
     """Die Gegenprobe zur Vormerkung: war niemand da, wird nichts nachgeholt."""
-    monkeypatch.setattr(nightly, "lauf", lambda config, eine: "durch")
+    monkeypatch.setattr(nightly, "lauf", lambda config, eine, **rest: "durch")
     runden.anlegen(stelle.database_path, "Runde B", guild_id="2202")
 
     assert nightly.tick(stelle, jetzt=uhr(6)) is None
 
 
 def test_die_gespeicherte_uhrzeit_bestimmt_den_zeitpunkt(stelle, monkeypatch):
-    monkeypatch.setattr(nightly, "lauf", lambda config, eine: "durch")
+    monkeypatch.setattr(nightly, "lauf", lambda config, eine, **rest: "durch")
     settings.save_nightly_time(runde(stelle), "23:30")
 
     assert nightly.tick(stelle, jetzt=uhr(4)) is None
@@ -545,7 +592,7 @@ def test_die_gespeicherte_uhrzeit_bestimmt_den_zeitpunkt(stelle, monkeypatch):
 def test_eine_verabschiedete_runde_bekommt_keine_nacht_mehr(stelle, monkeypatch):
     """Dieser Faden sähe den Rauswurf sonst nie — er verschriftete dreißig Tage lang
     weiter, was eine Gruppe längst widerrufen hat."""
-    monkeypatch.setattr(nightly, "lauf", lambda config, eine: "durch")
+    monkeypatch.setattr(nightly, "lauf", lambda config, eine, **rest: "durch")
     unsere = runden.anlegen(stelle.database_path, "Der Krumme Ast", guild_id="1101")
     lebenszyklus.sperren(stelle.database_path, "1101")
 
@@ -605,14 +652,14 @@ def test_das_lebenszeichen_kommt_nicht_bei_jedem_blick(stelle, monkeypatch, capl
 
 def test_die_uhrzeit_meint_die_zone_der_runde_und_nicht_die_des_prozesses(stelle, monkeypatch):
     """Der Container läuft auf der Box in UTC — 04:00 Berlin ist dort 02:00."""
-    monkeypatch.setattr(nightly, "lauf", lambda config, eine: "durch")
+    monkeypatch.setattr(nightly, "lauf", lambda config, eine, **rest: "durch")
 
     assert nightly.tick(stelle, jetzt=datetime(2026, 8, 6, 2, 0, tzinfo=UTC)) is not None
 
 
 def test_um_vier_uhr_utc_ist_die_sommernacht_laengst_vorbei(stelle, monkeypatch):
     """Genau der gemeldete Fehler: 04:00 UTC sind 06:00 in Berlin, zwei Stunden zu spät."""
-    monkeypatch.setattr(nightly, "lauf", lambda config, eine: "durch")
+    monkeypatch.setattr(nightly, "lauf", lambda config, eine, **rest: "durch")
 
     assert nightly.tick(stelle, jetzt=datetime(2026, 8, 6, 4, 0, tzinfo=UTC)) is None
 
@@ -628,7 +675,7 @@ def test_ueber_die_sommerzeitgrenze_bleibt_04_00_dieselbe_wanduhrzeit():
 
 def test_zwei_runden_duerfen_in_verschiedenen_zonen_liegen(stelle, monkeypatch):
     """Der Grund gegen ein festes TZ im Pod: eine Instanz trägt beide."""
-    monkeypatch.setattr(nightly, "lauf", lambda config, eine: "durch")
+    monkeypatch.setattr(nightly, "lauf", lambda config, eine, **rest: "durch")
     settings.save_nightly_zone(runde(stelle), "Pacific/Auckland")
 
     assert nightly.tick(stelle, jetzt=datetime(2026, 8, 6, 2, 0, tzinfo=UTC)) is None

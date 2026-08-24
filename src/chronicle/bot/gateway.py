@@ -26,7 +26,8 @@ from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 
-from chronicle import consent, lebenszyklus, mitlauf, nightly, recordings
+from chronicle import consent, lebenszyklus, mitlauf, nightly, recordings, settings
+from chronicle import runde as runden
 from chronicle.bot import (
     BotFehler,
     BotHaelt,
@@ -1321,6 +1322,80 @@ async def _register_nachfragen(config: Config, runde, ziel) -> None:
         logger.exception("Die Nachfrage zum Register kam nicht durch")
 
 
+def _zustellkanal(config: Config, bot, runde):
+    """Der Kanal aus ``/chronicle setup`` — dorthin, wo auch der Rückblick landet.
+
+    Zwei Formen, wie in ``chronicle.discord.rueckblick``: ``setup`` schreibt die Id des
+    gewählten Kanals, ältere Runden und die Umgebung tragen seinen Namen. Gesucht wird in
+    der Gilde **dieser** Runde; »chronik« heißt in jeder zweiten Gilde ein Kanal.
+    """
+    gewaehlt = (settings.effective(config, runde).discord_recap_channel or "").strip().lstrip("#")
+    if not gewaehlt or not runde.guild_id:
+        return None
+    gilde = bot.get_guild(int(runde.guild_id))
+    if gilde is None:
+        return None
+    for kanal in getattr(gilde, "text_channels", ()):
+        if str(kanal.id) == gewaehlt or kanal.name == gewaehlt:
+            return kanal
+    return None
+
+
+async def _nachtvorschlaege_anbieten(config: Config, bot, runde) -> None:
+    kanal = _zustellkanal(config, bot, runde)
+    if kanal is None:
+        logger.warning(
+            "Kein Zustellkanal in Runde %s — die Vorschläge der Nacht bleiben liegen.", runde.id
+        )
+        return
+    await _register_nachfragen(config, runde, kanal)
+
+
+def _nachtmelder(config: Config, bot) -> Callable[[Runde], None]:
+    """Was der Nachtlauf schreibt, fragt der Bot auch nach (#281).
+
+    Der Nachtlauf geht dieselbe Kette wie ``/session done`` und erzeugt damit dieselben
+    Registervorschläge — nur endete sein Weg in der Datenbank: die Zeile »N Vorschläge
+    warten« stand im Nachtbericht und ging nirgends nach Discord. Ein reiner Notizabend
+    erzeugte so Vorschläge, nach denen niemand je gefragt wurde. Gefragt wird deshalb
+    hier, im Zustellkanal aus dem Setup.
+
+    Der Faden des Nachtlaufs darf die Ereignisschleife nicht selbst anfassen; hängt der
+    Bot gerade nicht am Gateway, bleibt es beim Eintrag in der Datenbank, und der nächste
+    Anlass holt die Frage nach.
+    """
+
+    def danach(runde: Runde) -> None:
+        schleife = getattr(bot, "loop", None)
+        if schleife is None or not getattr(schleife, "is_running", bool)():
+            logger.warning("Ohne laufende Schleife bleibt die Nachfrage zum Register liegen.")
+            return
+        _anstossen(_nachtvorschlaege_anbieten(config, bot, runde), schleife)
+
+    return danach
+
+
+async def _vorschlaege_wieder_anschliessen(config: Config, bot) -> None:
+    """Die Knöpfe von gestern hören nach einem Neustart wieder zu (#281).
+
+    py-cord verliert mit dem Prozess jede Ansicht: die Nachricht steht weiter im Kanal,
+    aber ihre Knöpfe laufen ins Leere, und einen Befehl, der die Liste zurückholte, gibt
+    es seit #272 nicht mehr. Angemeldet wird die **vorderste** Seite der offenen
+    Vorschläge — genau die, die auf der Nachricht steht: jede Entscheidung schreibt
+    ``erinnern.offen`` neu hinein, also zeigt die lebende Nachricht immer sie.
+    """
+    for eine in runden.alle(config.database_path):
+        if eine.gesperrt:
+            continue
+        try:
+            ansicht = _registeransicht(config, eine, erinnern.offen(eine))
+        except Exception:  # noqa: BLE001
+            logger.exception("Die offenen Vorschläge der Runde %s blieben ohne Knöpfe", eine.id)
+            continue
+        if ansicht is not None:
+            bot.add_view(ansicht)
+
+
 def _dieselbe(config: Config, interaction, runde):
     """Die Runde, gegen die diese Ansicht gebaut wurde — sofern sie es noch ist.
 
@@ -1991,12 +2066,17 @@ def _loeschansicht(config: Config, runde):
         if gemeint is None:
             await interaction.response.edit_message(content=einrichten.LOESCHEN_VERALTET, view=None)
             return
-        # Dateien und Zeilen einer großen Runde: das dauert und gehört nicht auf die
-        # Ereignisschleife — solange sie rechnet, antwortet der Bot niemandem.
+        # Erst antworten, dann arbeiten (#282). Dateien und Zeilen einer großen Runde
+        # dauern länger als Discords drei Sekunden; danach ist der Token tot, und dann
+        # kommt weder die Meldung noch die Fehlermeldung an — ausgerechnet bei der einen
+        # Handlung ohne Rücknahme. Dass die Arbeit daneben nicht auf die Ereignisschleife
+        # gehört, ist die zweite, davon unabhängige Vorsicht: solange sie rechnet,
+        # antwortet der Bot niemandem.
+        await interaction.response.defer()
         meldung = await asyncio.to_thread(
             einrichten.geloescht, config, gemeint, veranlasst_von=_veranlasser(wer)
         )
-        await interaction.response.edit_message(content=meldung, view=None)
+        await _abschliessend(interaction, meldung)
 
     @_geklickt
     async def verworfen(interaction) -> None:
@@ -2040,10 +2120,13 @@ def _sitzungsloeschansicht(config: Config, runde, marke: str):
         gemeint = await _noch_dieselbe(config, interaction, runde)
         if gemeint is None:
             return
-        # Tondateien und Zeilen einer langen Sitzung: das dauert und gehört nicht auf die
-        # Ereignisschleife — solange sie rechnet, antwortet der Bot niemandem.
+        # Erst antworten, dann arbeiten — dieselbe Begründung wie am Löschknopf der
+        # ganzen Runde (#282): Tondateien und Zeilen einer langen Sitzung sprengen
+        # Discords Drei-Sekunden-Fenster, und mit dem Token stirbt auch die Auskunft,
+        # ob die Sitzung nun fort ist. Die Ereignisschleife bleibt daneben frei.
+        await interaction.response.defer()
         meldung = await asyncio.to_thread(chronik.sitzung_geloescht, config, gemeint, marke)
-        await interaction.response.edit_message(content=meldung, view=None)
+        await _abschliessend(interaction, meldung)
 
     @_geklickt
     async def verworfen(interaction) -> None:
@@ -2140,6 +2223,19 @@ async def _ersetzen(interaction, antwort: erinnern.Antwort, view) -> None:
     )
 
 
+async def _abschliessend(interaction, text: str) -> None:
+    """Die Nachricht, in der der Knopf steckt — vor wie nach einem ``defer``.
+
+    Nach dem Aufschub ist die erste Antwort vergeben, und Discord weist ``edit_message``
+    dann ab. Geändert wird dieselbe Nachricht, nur über den anderen Weg; die Ansicht
+    verschwindet in beiden Fällen, weil die Handlung getan ist.
+    """
+    if interaction.response.is_done():
+        await interaction.edit_original_response(content=text, view=None)
+        return
+    await interaction.response.edit_message(content=text, view=None)
+
+
 def _geklickt(arbeit):
     """Auch ein Knopf antwortet immer — sonst bleibt »denkt nach …« stehen."""
 
@@ -2191,7 +2287,13 @@ def _registeransicht(config: Config, runde, stand: erinnern.Offen):
 
     class Registeransicht(discord.ui.View):
         def __init__(self) -> None:
-            super().__init__(timeout=erinnern.FRIST)
+            # Ohne Frist, und das ist der Punkt (#281). Eine Ansicht mit Frist hört nach
+            # einer Viertelstunde auf zuzuhören, während ihre Knöpfe sichtbar und
+            # anklickbar stehenbleiben — und der Befehl, der die Liste zurückholte, ist
+            # mit #272 entfallen. Jeder Knopf trägt eine feste ``custom_id``; damit ist
+            # die Ansicht *persistent* und ``_vorschlaege_wieder_anschliessen`` kann sie
+            # nach einem Neustart wieder an dieselbe Nachricht anschließen.
+            super().__init__(timeout=None)
             for zeile, eintrag in enumerate(stand.eintraege):
                 self.add_item(schild(eintrag, zeile))
                 for art, schrift in erinnern.ENTSCHEIDUNGEN:
@@ -2834,6 +2936,9 @@ def baue(config: Config):
         # und die Übernahme sagt sich selbst — zwei Sätze zum selben Anlass wären einer zu
         # viel.
         await _begruessung_nachholen(config, bot)
+        # Und die Knöpfe, die vor dem Neustart im Kanal standen, hören wieder zu: sie
+        # überleben die Nachricht, nicht aber den Prozess.
+        await _vorschlaege_wieder_anschliessen(config, bot)
         # Der Prozess läuft ohnehin durch — er ist damit der zuverlässigste Ort, die in
         # der Ansage zugesagte Frist einzuhalten, auch wenn der nächtliche Stapel steht.
         # Ein beendeter Faden ist nicht ``None``: ohne ``_erledigt`` bliebe eine Zusage
@@ -2910,7 +3015,7 @@ def run(config: Config) -> None:
     # in ihr: ``nightly.starten`` gibt einen eigenen Faden, und der Lauf selbst bekommt in
     # ``jobs.start`` noch einen. Auf der Ereignisschleife bliebe während einer Verschriftung
     # der Herzschlag zu Discord aus, und der Bot fiele mitten in der Nacht vom Gateway.
-    nightly.starten(config)
+    nightly.starten(config, danach=_nachtmelder(config, bot))
     # Dasselbe Muster, dieselbe Begründung, nur tagsüber: der Mitlauf verschriftet die
     # Häppchen, während die Sitzung noch läuft (#269). Mitten in der Sitzung wöge der
     # Abfall vom Gateway schwerer als nachts — dort schneidet dieser Prozess gerade mit.

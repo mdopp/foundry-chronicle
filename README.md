@@ -350,7 +350,11 @@ der Testwelt läuft, kommt das Fenster erst gar nicht. Solange sie läuft, gilt:
 Registervorschläge kommen nach dem Lauf als Nachfrage in den Kanal des Abends, mit den
 Knöpfen darunter; wer den Sprachkanal betritt und in Foundry noch niemandem gehört, wird
 im Zwiegespräch gefragt. Beides hatte bis [#272](../../issues/272) einen eigenen Befehl —
-und am 2026-08-18 warteten zwölf Vorschläge, weil niemand ihn kannte.
+und am 2026-08-18 warteten zwölf Vorschläge, weil niemand ihn kannte. Diese Knöpfe laufen
+seit [#281](../../issues/281) **nicht mehr ab**: sie tragen eine feste Kennung, und nach
+einem Neustart schließt der Bot sie wieder an die Nachricht an, die im Kanal steht. Auch
+der Nachtlauf schreibt seine Vorschläge nicht mehr nur in die Datenbank — er fragt im
+Zustellkanal aus `/chronicle setup` nach, dort, wo auch der Rückblick landet.
 
 **Nachträgliches Erfassen geht.** Eine bearbeitete Nachricht ändert **ihre** Notiz, auch
 Wochen später und auch dann, wenn längst ein anderer Abend läuft — sie bleibt bei der

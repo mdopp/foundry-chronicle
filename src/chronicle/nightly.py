@@ -36,6 +36,7 @@ import json
 import logging
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -51,6 +52,10 @@ from chronicle.runde import Runde
 from chronicle.transcribe.service import run_queue
 
 logger = logging.getLogger(__name__)
+
+# Was der Faden nach einer gelaufenen Nacht ruft, um die Runde zu erreichen. Wer das ist,
+# entscheidet der Aufrufer — diese Datei kennt Discord nicht.
+Meldung = Callable[[Runde], None]
 
 DIKTAT = "diktat"
 TRANSKRIPT = "transkript"
@@ -237,18 +242,32 @@ def _chronik(config: Config, runde: Runde) -> Schritt:
     return Schritt(CHRONIK, " ".join(meldungen), gelungen=gelungen)
 
 
-def lauf(config: Config, runde: Runde) -> str:
-    """Die Kette in ihrer Reihenfolge; jeder Schritt meldet für seine eigene Karte."""
+def lauf(config: Config, runde: Runde, *, danach: Meldung | None = None) -> str:
+    """Die Kette in ihrer Reihenfolge; jeder Schritt meldet für seine eigene Karte.
+
+    ``danach`` ist der Weg zurück nach Discord (#281): diese Kette erzeugt dieselben
+    Registervorschläge wie ``/session done``, und die warteten bis dahin auf eine Frage,
+    die niemand stellte. Wer sie stellt, weiß diese Datei nicht — sie kennt Discord
+    nicht und soll es nicht kennen.
+    """
     schritte = (
         _sammeln(DIKTAT, lambda: _diktat(config, runde)),
         _sammeln(TRANSKRIPT, lambda: _transkript(config, runde)),
         _sammeln(ABGLEICH, lambda: _abgleich(config, runde)),
         _sammeln(CHRONIK, lambda: _chronik(config, runde)),
     )
-    return json.dumps(
+    ergebnis = json.dumps(
         [{"name": s.name, "text": s.text, "gelungen": s.gelungen} for s in schritte],
         ensure_ascii=False,
     )
+    if danach is not None:
+        try:
+            danach(runde)
+        # Die Nacht ist gelaufen und ihre Karte geschrieben; dass die Nachfrage nicht
+        # hinauskam, macht daraus keinen gescheiterten Lauf.
+        except Exception:  # noqa: BLE001
+            logger.exception("Die Nachfrage nach dem Nachtlauf kam nicht heraus")
+    return ergebnis
 
 
 def _ortszeit(zeitstempel: str, zone: str) -> datetime:
@@ -340,7 +359,9 @@ def _naechste(config: Config, jetzt: datetime) -> list[tuple[Runde, datetime, da
 
 
 @runden.instanzweit
-def tick(config: Config, *, jetzt: datetime | None = None) -> jobs.Job | None:
+def tick(
+    config: Config, *, jetzt: datetime | None = None, danach: Meldung | None = None
+) -> jobs.Job | None:
     """Ein Blick auf die Uhr — der Test dreht sie von Hand weiter.
 
     Jede Runde hat ihre eigene Uhrzeit und ihren eigenen Lauf; die Maschine bleibt eine.
@@ -354,7 +375,7 @@ def tick(config: Config, *, jetzt: datetime | None = None) -> jobs.Job | None:
         if not jobs.running(eine):
             logger.info("Nachtlauf der Runde %s beginnt", eine.name)
             angestossen = jobs.start(
-                config, eine, jobs.NACHTLAUF, lambda dran=eine: lauf(config, dran)
+                config, eine, jobs.NACHTLAUF, lambda dran=eine: lauf(config, dran, danach=danach)
             )
             if angestossen is not None:
                 _vorgemerkt.pop(eine.id, None)
@@ -364,7 +385,13 @@ def tick(config: Config, *, jetzt: datetime | None = None) -> jobs.Job | None:
 
 
 @runden.instanzweit
-def betreiben(config: Config, *, schlafen=time.sleep, weiter=lambda: True) -> None:
+def betreiben(
+    config: Config,
+    *,
+    schlafen=time.sleep,
+    weiter=lambda: True,
+    danach: Meldung | None = None,
+) -> None:
     """Der Blick auf die Uhr, immer wieder — und dazwischen ein Lebenszeichen.
 
     Ein Blick, der nichts fällig findet, schreibt nichts. Außerhalb des Nachtfensters sahen
@@ -387,7 +414,7 @@ def betreiben(config: Config, *, schlafen=time.sleep, weiter=lambda: True) -> No
             logger.info(WACH, blicke)
         blicke += 1
         try:
-            tick(config)
+            tick(config, danach=danach)
         # Ein Fehler beim Blick auf die Uhr darf den Faden nicht beenden — sonst liefe
         # der Dienst weiter und nachts nie wieder etwas.
         except Exception as fehler:  # noqa: BLE001
@@ -396,7 +423,13 @@ def betreiben(config: Config, *, schlafen=time.sleep, weiter=lambda: True) -> No
 
 
 @runden.instanzweit
-def starten(config: Config) -> threading.Thread:
-    faden = threading.Thread(target=betreiben, args=(config,), daemon=True, name="nachtlauf")
+def starten(config: Config, *, danach: Meldung | None = None) -> threading.Thread:
+    faden = threading.Thread(
+        target=betreiben,
+        args=(config,),
+        kwargs={"danach": danach},
+        daemon=True,
+        name="nachtlauf",
+    )
     faden.start()
     return faden
