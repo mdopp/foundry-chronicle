@@ -17,7 +17,13 @@ from datetime import UTC, datetime
 from chronicle import db, lebenszyklus, settings
 from chronicle.compose import client
 from chronicle.compose.client import TextModel
-from chronicle.compose.composer import Composition, SceneMaterial, SessionMaterial, compose
+from chronicle.compose.composer import (
+    Composition,
+    Notiz,
+    SceneMaterial,
+    SessionMaterial,
+    compose,
+)
 from chronicle.compose.nacherzaehlung import (
     Abschnitt,
     ErzaehlStoff,
@@ -28,6 +34,7 @@ from chronicle.compose.recap import Recap, RecapMaterial, recap
 from chronicle.config import Config
 from chronicle.foundry import store
 from chronicle.runde import Runde
+from chronicle.transcribe.merge import TRANSKRIPT
 
 KIND = "chronik"
 RUECKBLICK = "rueckblick"
@@ -66,7 +73,7 @@ def material(scope: db.Scope, session_id: int) -> SessionMaterial | None:
         (scope.runde_id, session_id),
     ).fetchall()
     notizen = scope.execute(
-        "SELECT n.scene_id, n.text FROM note n JOIN scene c ON n.scene_id = c.id "
+        "SELECT n.scene_id, n.text, n.origin FROM note n JOIN scene c ON n.scene_id = c.id "
         "WHERE n.runde_id = ? AND c.session_id = ? ORDER BY n.id",
         (scope.runde_id, session_id),
     ).fetchall()
@@ -78,9 +85,14 @@ def material(scope: db.Scope, session_id: int) -> SessionMaterial | None:
         (scope.runde_id, session_id),
     ).fetchall()
 
-    je_szene_notizen: dict[int, list[str]] = {}
+    je_szene_notizen: dict[int, list[Notiz]] = {}
     for zeile in notizen:
-        je_szene_notizen.setdefault(zeile["scene_id"], []).append(zeile["text"])
+        # Nur die Herkunft aus den Spuren heißt »verschriftet«. Ein eingelesenes
+        # Notizdokument trägt ebenfalls ein ``origin``, ist aber geschriebenes Wort —
+        # es käme unter der Aufnahme-Überschrift als Fehlauskunft heraus.
+        je_szene_notizen.setdefault(zeile["scene_id"], []).append(
+            Notiz(text=zeile["text"], verschriftet=zeile["origin"] == TRANSKRIPT)
+        )
     je_szene_fakten: dict[int, list] = {}
     for zeile in fakten:
         je_szene_fakten.setdefault(zeile["scene_id"], []).append(store.message(zeile))

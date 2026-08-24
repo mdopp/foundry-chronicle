@@ -15,6 +15,7 @@ from conftest import runde as erste_runde
 
 from chronicle import db, dokument, notes, search
 from chronicle.compose import service as compose_service
+from chronicle.compose.composer import Notiz
 from chronicle.config import Config
 from chronicle.transcribe import merge
 
@@ -361,7 +362,9 @@ def test_das_eingelesene_geht_in_die_chronik_ein(unsere):
         "Der Regen und der Wirt",
         "Das Gespräch am Kamin",
     ]
-    assert stoff.scenes[0].notes == (REGEN,)
+    # Eingelesenes ist geschriebenes Wort: es trägt zwar eine Herkunft, gilt aber nicht
+    # als verschriftet und steht deshalb unter der gewöhnlichen Notizen-Überschrift.
+    assert stoff.scenes[0].notes == (Notiz(REGEN, verschriftet=False),)
 
 
 def test_das_eingelesene_ist_ueber_die_suche_zu_finden(unsere):
