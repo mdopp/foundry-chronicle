@@ -26,17 +26,28 @@ import re
 from datetime import datetime, timedelta
 
 import pytest
-from conftest import runde
+from conftest import deutsche_runde, runde
 
 from chronicle import consent, db, notes, people, recordings
 from chronicle import runde as runden
-from chronicle.compose.composer import BELEG_TITEL, NOTIZEN_TITEL, VERBINDUNG_TITEL, VERWORFEN
+from chronicle import sprache as sprachen
 from chronicle.compose.service import compose_session
 from chronicle.config import Config
 from chronicle.foundry import store
 from chronicle.foundry.world import project
 from chronicle.transcribe import merge
 from chronicle.transcribe import service as transcribe
+
+# Das Material dieser Datei ist deutsch; seit #268 folgt der Text der Sprache seiner Runde
+# (Vorgabe Englisch). Geprüft wird hier deshalb gegen die deutschen Texte.
+_CHRONIK = sprachen.chronik(sprachen.DEUTSCH)
+_RUECKBLICK = sprachen.rueckblick(sprachen.DEUTSCH)
+_ERZAEHLUNG = sprachen.erzaehlung(sprachen.DEUTSCH)
+
+BELEG_TITEL = _CHRONIK.beleg_titel
+NOTIZEN_TITEL = _CHRONIK.notizen_titel
+VERBINDUNG_TITEL = _CHRONIK.verbindung_titel
+VERWORFEN = _CHRONIK.verworfen
 
 STAND = "2026-08-11T21:00:00+00:00"
 
@@ -305,7 +316,10 @@ class Mitschreiber:
 
 @pytest.fixture
 def config(tmp_path):
-    return Config(data_dir=tmp_path / "daten", recordings_dir=tmp_path / "aufnahmen")
+    gewaehlt = Config(data_dir=tmp_path / "daten", recordings_dir=tmp_path / "aufnahmen")
+    # Die Runde dieser Kette spricht deutsch — Spuren, Notizen und Chronik (#268).
+    deutsche_runde(gewaehlt)
+    return gewaehlt
 
 
 def angesagt(gastgeber, *mitglieder, guild_id="g-erste"):

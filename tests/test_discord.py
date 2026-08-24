@@ -327,7 +327,7 @@ def test_eine_sprachnachricht_landet_in_derselben_warteschlange(config, sitzung_
     ]
     spur = config.recordings_dir / warteschlange[0].filename
     assert spur.read_bytes() == DIKTAT
-    assert "wartet auf den Stapel" in meldungen[0]
+    assert "queued for the batch" in meldungen[0]
 
 
 class Erkenner:
@@ -335,7 +335,7 @@ class Erkenner:
 
     name = "erfundenes-modell"
 
-    def transcribe(self, audio_path, *, hotwords=()):
+    def transcribe(self, audio_path, *, hotwords=(), sprache="en"):
         yield Segment(start=0.0, end=2.0, text=f" {GESPROCHEN}")
 
 
@@ -393,7 +393,7 @@ def test_ein_zu_grosser_anhang_wird_verstaendlich_abgewiesen(config, sitzung_id)
 
     meldungen = leeren(config, api)
 
-    assert "größer als" in meldungen[0]
+    assert "larger than" in meldungen[0]
     assert api.abrufe == []
     assert recordings.pending(runde(config)) == ()
     assert api.reaktionen == [("100", service.WARNUNG)]
@@ -440,7 +440,7 @@ def test_was_weder_audio_noch_text_ist_wird_sichtbar_uebersprungen(config, sitzu
 
     meldungen = leeren(config, api)
 
-    assert "weder Audio noch Text" in meldungen[0]
+    assert "neither audio nor text" in meldungen[0]
     assert api.reaktionen == [("100", service.WARNUNG)]
     assert api.antworten == []
     assert api.abrufe == []

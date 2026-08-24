@@ -48,10 +48,10 @@ from chronicle.runde import Runde
 
 logger = logging.getLogger(__name__)
 
-AUFRUF = "Aufruf: python -m chronicle.bot.namen <runden-id> [<sitzungs-id>]"
-UNBEKANNTE_RUNDE = "Runde {gewaehlt} gibt es hier nicht."
-OHNE_TOKEN = "Ohne Bot-Token lässt sich niemand nachschlagen."
-BERICHT = "{zeilen} Zeilen benannt, {offen} Kennungen blieben ohne Namen."
+AUFRUF = "Usage: python -m chronicle.bot.namen <round-id> [<session-id>]"
+UNBEKANNTE_RUNDE = "There is no round {gewaehlt} here."
+OHNE_TOKEN = "Without a bot token nobody can be looked up."
+BERICHT = "{zeilen} rows named, {offen} ids stayed without a name."
 
 # Wer die Namen holt: zu einer Handvoll Kennungen die gefundenen Anzeigenamen. Was fehlt,
 # fehlt — der Aufrufer erfindet nichts.

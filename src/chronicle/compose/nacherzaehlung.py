@@ -38,52 +38,13 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 
+from chronicle import sprache as sprachen
 from chronicle.compose.client import ModelError, TextModel
-from chronicle.compose.composer import NICHT_ERREICHBAR, eigene_ueberschrift, numbers
+from chronicle.compose.composer import eigene_ueberschrift, numbers
 
 logger = logging.getLogger(__name__)
 
-ERZAEHLT_TITEL = "### Nacherzählt — vom Sprachmodell, nicht belegt"
-REGISTER_TITEL = "### Belegt aus dem Register"
-LUECKE_TITEL = "### Lücke — kein bestätigter Registereintrag"
-
-LUECKE = (
-    "_Zu dieser Sitzung führt das Register nichts Bestätigtes. Die Lücke bleibt stehen: "
-    "erzählt wird hier nichts, und überbrückt wird sie auch nicht._"
-)
-
-VERWORFEN = (
-    "_Verworfen: der Absatz nannte eine Zahl, die weder in der Chronik dieser Sitzung noch "
-    "in ihren Registereinträgen vorkommt._"
-)
-
-VERWORFEN_UEBERSCHRIFT = (
-    "_Verworfen: der Absatz machte eine eigene Überschrift auf. Welche Zeile belegt ist und "
-    "welche gedeutet, sagen hier die Überschriften — die setzt niemand außer dieser Stufe._"
-)
-
-OHNE_MODELL = (
-    "Noch kein Modell gewählt — der Bereich wurde aufgereiht statt erzählt. "
-    "Ein Modell hinterlegt der Betreiber dieser Box."
-)
-
 REGISTER_ZEILE = "{label} »{name}« — {satz}"
-
-SYSTEM = (
-    "Du erzählst einer Tisch-Rollenspiel-Runde nach, was über mehrere Abende geschah. Du "
-    "ordnest und verknüpfst, du erfindest nichts.\n"
-    "- Höchstens fünf Sätze, zusammenhängend, in der Vergangenheitsform.\n"
-    "- Nenne keine Ziffer und keine Zahl.\n"
-    "- Nimm ausschließlich die genannten Einträge auf. Erfinde keine Figur, keinen Ort, "
-    "keinen Faden, kein Ereignis und keinen Wurf.\n"
-    "- Ist die Vorlage dünn, schreibe entsprechend wenig; eine Lücke füllst du nicht.\n"
-    "- Antworte mit dem Absatz selbst, ohne Überschrift und ohne Vorrede."
-)
-
-AUFTRAG = "Erzähle diese Sitzung nach."
-
-STAND_ZEILE = "Stand bisher:"
-REGISTER_VORLAGE = "Das Register führt zu dieser Sitzung:"
 
 
 @dataclass(frozen=True)
@@ -120,57 +81,60 @@ class Nacherzaehlung:
     session_count: int = 0
     prose_count: int = 0
     gap_count: int = 0
+    inhaltssprache: str = sprachen.DEFAULT
 
     @property
     def message(self) -> str:
-        umfang = f"Nacherzählung über {self.session_count} Sitzungen"
+        texte = sprachen.erzaehlung(self.inhaltssprache)
+        umfang = texte.umfang.format(sitzungen=self.session_count)
         satz = (
-            f"{umfang}. {self.reason}"
+            texte.geordnet.format(umfang=umfang, grund=self.reason)
             if self.reason is not None
-            else f"{umfang} — {self.prose_count} davon erzählt."
+            else texte.fertig.format(umfang=umfang, prosa=self.prose_count)
         )
         if not self.gap_count:
             return satz
-        mehr = "n" if self.gap_count > 1 else ""
-        return f"{satz} {self.gap_count} Lücke{mehr} benannt, nicht gefüllt."
+        vorlage = texte.luecken if self.gap_count == 1 else texte.luecken_mehrere
+        return f"{satz} {vorlage.format(anzahl=self.gap_count)}"
 
 
 def _liste(zeilen: tuple[str, ...]) -> str:
     return "\n".join(f"- {zeile}" for zeile in zeilen)
 
 
-def _kopfzeile(abschnitt: Abschnitt) -> str:
-    titel = f"## Sitzung vom {abschnitt.played_on}"
+def _kopfzeile(abschnitt: Abschnitt, texte: sprachen.Erzaehltexte) -> str:
+    titel = texte.sitzung.format(datum=abschnitt.played_on)
     return f"{titel}: {abschnitt.title}" if abschnitt.title else titel
 
 
-def _prompt(stand: str, abschnitt: Abschnitt) -> str:
+def _prompt(stand: str, abschnitt: Abschnitt, texte: sprachen.Erzaehltexte) -> str:
     teile = []
     if stand:
-        teile.append(f"{STAND_ZEILE}\n{stand}")
-    teile.append(_kopfzeile(abschnitt).lstrip("# "))
-    teile.append(f"{REGISTER_VORLAGE}\n{_liste(abschnitt.entries)}")
-    teile.append(AUFTRAG)
+        teile.append(f"{texte.stand_zeile}\n{stand}")
+    teile.append(_kopfzeile(abschnitt, texte).lstrip("# "))
+    teile.append(f"{texte.register_vorlage}\n{_liste(abschnitt.entries)}")
+    teile.append(texte.auftrag)
     return "\n\n".join(teile)
 
 
-def _kopf(stoff: ErzaehlStoff, name: str | None, grund: str | None) -> str:
-    titel = f"# Nacherzählung — von der Sitzung vom {stoff.von} bis zur Sitzung vom {stoff.bis}"
-    if grund is None:
-        stand = (
-            f"_Erzählt vom Sprachmodell `{name}` entlang des Registers. Belegt ist nur, was "
-            "unter »Belegt aus dem Register« steht; die Absätze darüber sind gedeutet. "
-            "Sitzungen ohne bestätigten Eintrag stehen als Lücke da._"
-        )
-    else:
-        stand = f"_{grund}_"
+def _kopf(
+    stoff: ErzaehlStoff, name: str | None, grund: str | None, texte: sprachen.Erzaehltexte
+) -> str:
+    titel = texte.kopf.format(von=stoff.von, bis=stoff.bis)
+    stand = texte.stand.format(name=name) if grund is None else f"_{grund}_"
     return f"{titel}\n\n{stand}"
 
 
-def nacherzaehlen(stoff: ErzaehlStoff, model: TextModel | None = None) -> Nacherzaehlung:
+def nacherzaehlen(
+    stoff: ErzaehlStoff,
+    model: TextModel | None = None,
+    *,
+    inhaltssprache: str = sprachen.DEFAULT,
+) -> Nacherzaehlung:
+    texte = sprachen.erzaehlung(inhaltssprache)
     schreiber = model
     name = None if model is None else model.name
-    grund = None if model is not None else OHNE_MODELL
+    grund = None if model is not None else texte.ohne_modell
     stand = ""
     erzaehlt = 0
     luecken = 0
@@ -179,24 +143,26 @@ def nacherzaehlen(stoff: ErzaehlStoff, model: TextModel | None = None) -> Nacher
     for abschnitt in stoff.abschnitte:
         # Je Sitzung neu: eine Zahl vom ersten Abend belegt nichts am zehnten. Und das
         # Register zählt mit — es ist die Vorlage, aus der das Modell schöpfen soll.
-        belegt = numbers("\n".join((abschnitt.chronicle, *abschnitt.entries)))
-        teile = [_kopfzeile(abschnitt)]
+        belegt = numbers("\n".join((abschnitt.chronicle, *abschnitt.entries)), inhaltssprache)
+        teile = [_kopfzeile(abschnitt, texte)]
 
         if not abschnitt.entries:
             luecken += 1
-            teile.append(f"{LUECKE_TITEL}\n{LUECKE}")
+            teile.append(f"{texte.luecke_titel}\n{texte.luecke}")
             bloecke.append("\n\n".join(teile))
             continue
 
         if schreiber is not None:
             try:
-                absatz = schreiber.write(system=SYSTEM, prompt=_prompt(stand, abschnitt)).strip()
+                absatz = schreiber.write(
+                    system=texte.system, prompt=_prompt(stand, abschnitt, texte)
+                ).strip()
             except ModelError as fehler:
-                grund = NICHT_ERREICHBAR
+                grund = texte.nicht_erreichbar
                 logger.warning("Nacherzählung läuft ohne Modell weiter: %s", fehler)
                 schreiber = None
             else:
-                unbelegt = numbers(absatz) - belegt
+                unbelegt = numbers(absatz, inhaltssprache) - belegt
                 if unbelegt:
                     # Die unbelegten Zahlen bleiben im Log: im Text wären sie genau die
                     # erfundene Zahl, gegen die diese Stufe gebaut ist.
@@ -205,22 +171,22 @@ def nacherzaehlen(stoff: ErzaehlStoff, model: TextModel | None = None) -> Nacher
                         abschnitt.session_id,
                         sorted(unbelegt),
                     )
-                    teile.append(f"{ERZAEHLT_TITEL}\n{VERWORFEN}")
+                    teile.append(f"{texte.erzaehlt_titel}\n{texte.verworfen}")
                 elif eigene_ueberschrift(absatz):
                     logger.warning(
                         "Sitzung %s: Absatz verworfen, er machte eine eigene Überschrift auf",
                         abschnitt.session_id,
                     )
-                    teile.append(f"{ERZAEHLT_TITEL}\n{VERWORFEN_UEBERSCHRIFT}")
+                    teile.append(f"{texte.erzaehlt_titel}\n{texte.verworfen_ueberschrift}")
                 else:
-                    teile.append(f"{ERZAEHLT_TITEL}\n{absatz}")
+                    teile.append(f"{texte.erzaehlt_titel}\n{absatz}")
                     stand = absatz
                     erzaehlt += 1
 
-        teile.append(f"{REGISTER_TITEL}\n{_liste(abschnitt.entries)}")
+        teile.append(f"{texte.register_titel}\n{_liste(abschnitt.entries)}")
         bloecke.append("\n\n".join(teile))
 
-    kopf = _kopf(stoff, name, grund)
+    kopf = _kopf(stoff, name, grund, texte)
     return Nacherzaehlung(
         text="\n\n".join([kopf, *bloecke]) + "\n",
         von=stoff.von,
@@ -230,4 +196,5 @@ def nacherzaehlen(stoff: ErzaehlStoff, model: TextModel | None = None) -> Nacher
         session_count=len(stoff.abschnitte),
         prose_count=erzaehlt,
         gap_count=luecken,
+        inhaltssprache=sprachen.zurechtgelegt(inhaltssprache),
     )

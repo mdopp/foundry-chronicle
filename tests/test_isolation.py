@@ -47,6 +47,7 @@ from chronicle import (
     zugang,
 )
 from chronicle import runde as runden
+from chronicle import sprache as sprachen
 from chronicle.bot import chronik as bot_chronik
 from chronicle.bot import einrichten as bot_einrichten
 from chronicle.bot import erinnern
@@ -372,6 +373,7 @@ ABFRAGEN = {
     "settings.is_set": lambda c, r, i: settings.is_set(c, r, "foundry_url"),
     "settings.nightly_time": lambda c, r, i: settings.nightly_time(r),
     "settings.nightly_zone": lambda c, r, i: settings.nightly_zone(r),
+    "settings.sprache": lambda c, r, i: settings.sprache(r),
     "settings.foundry_quelle": lambda c, r, i: settings.foundry_quelle(r),
     "settings.nightly_at": lambda c, r, i: settings.nightly_at("04:00"),
     "service.current": lambda c, r, i: foundry_service.current(c, r),
@@ -492,6 +494,7 @@ SCHREIBER = frozenset(
         "settings.save",
         "settings.save_nightly_time",
         "settings.save_nightly_zone",
+        "settings.save_sprache",
         "settings.save_foundry_quelle",
         "settings.save_foundry_url",
         "service.sync",
@@ -1127,7 +1130,13 @@ def test_die_bedienstellen_in_discord_treffen_nur_ihre_eigene_runde(zwei_runden)
     config, a, b, _ids = zwei_runden
     bot_einrichten.einrichten(config, "gilde-b", MARKE[2], zone="Pacific/Auckland")
     bot_einrichten.quelle_setzen(b, settings.TESTWELT)
+    # Die Inhaltssprache steht daneben und gehört in dieselbe Reihe: an ihr hängt die
+    # hörbare Einwilligungs-Ansage, und eine verwechselte Runde läse einer fremden Gruppe
+    # die Zusage in einer Sprache vor, die sie nie gewählt hat (#268).
+    bot_einrichten.sprache_setzen(b, sprachen.DEUTSCH)
 
+    assert settings.sprache(a) == sprachen.DEFAULT
+    assert settings.sprache(b) == sprachen.DEUTSCH
     assert settings.nightly_zone(a) == settings.DEFAULT_NIGHTLY_ZONE
     assert settings.nightly_zone(b) == "Pacific/Auckland"
     assert settings.foundry_quelle(a) == settings.SERVER

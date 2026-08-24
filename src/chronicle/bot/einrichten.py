@@ -29,6 +29,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from chronicle import db, lebenszyklus, settings
+from chronicle import sprache as sprachen
 from chronicle.config import Config
 from chronicle.foundry import store
 from chronicle.runde import Runde
@@ -39,139 +40,121 @@ from chronicle.runde import Runde
 # eine Gruppe, die zurückkommt: eine Runde entscheidet sonst über ihre Sitzungsprotokolle,
 # ohne zu wissen, worüber sie entscheidet.
 OFFENLEGUNG = (
-    "**Damit ihr es wisst: ich laufe auf einem Rechner, der jemand anderem gehört.** Wer "
-    "ihn betreibt, kommt an alles heran, was ihr hier ablegt — eure Notizen, das "
-    "Gesprochene, eure Chroniken. Ich verspreche euch keine Vertraulichkeit, die ich "
-    "nicht halten kann. Wenn das für eure Runde nicht in Ordnung ist, werft mich wieder "
-    "hinaus."
+    "**So you know: I run on a machine that belongs to somebody else.** Whoever operates "
+    "it can reach everything you file here — your notes, what was spoken, your chronicles. "
+    "I promise you no confidentiality I cannot keep. If that is not acceptable for your "
+    "group, throw me out again."
 )
 
 WILLKOMMEN = (
-    "Hallo. Ich schreibe eure Sitzungen mit: aus euren Notizen, aus dem, was im "
-    "Sprachkanal gesprochen wird, und aus den Würfen in eurem Foundry mache ich eine "
-    "lesbare Chronik.\n"
+    "Hello. I write your sessions down: out of your notes, out of what is spoken in the "
+    "voice channel, and out of the rolls in your Foundry I make a readable chronicle.\n"
     "\n"
     f"{OFFENLEGUNG}\n"
     "\n"
-    "So fangt ihr an: **`/chronicle setup`** — dort tragt ihr ein, wo euer Foundry steht, unter "
-    "welchem Namen ich mich dort anmelde und in welchen Kanal ich die fertige Chronik "
-    "lege. Danach beginnt `/session start` die erste Sitzung, und `/session help` zeigt "
-    "den Rest. Was von euch hier liegt, könnt ihr jederzeit selbst löschen: "
-    "`/chronicle delete`."
+    "This is how you start: **`/chronicle setup`** — there you enter where your Foundry "
+    "lives, under which account I log in there, in which channel I file the finished "
+    "chronicle, and in which language the content is written. After that `/session start` "
+    "begins the first session, and `/session help` shows the rest. Whatever of yours lies "
+    "here you can delete yourselves at any time: `/chronicle delete`."
 )
 
 WILLKOMMEN_ZURUECK = (
-    "Da bin ich wieder. Die Runde »{name}« ist noch vollständig da — alles, was ihr "
-    "geschrieben habt, steht wieder bereit, und `/session start` beginnt die nächste "
-    "Sitzung.\n"
+    "Here I am again. The round “{name}” is still complete — everything you wrote stands "
+    "ready again, and `/session start` begins the next session.\n"
     "\n"
     f"{OFFENLEGUNG}"
 )
 
-RUNDE_OHNE_NAMEN = "Neue Runde"
+RUNDE_OHNE_NAMEN = "New round"
 
 NUR_IM_SERVER = (
-    "Das geht nur auf dem Server, für den ich schreiben soll — hier im Zwiegespräch weiß "
-    "ich nicht, welche Runde du meinst."
+    "This only works on the server I am supposed to write for — here in a direct message "
+    "I do not know which round you mean."
 )
 
 # Die beiden Absagen an ein Mitglied ohne Recht. Sie sagen den Grund, nicht bloß »nein«:
 # hinter beiden steht eine Gefahr, die man kennen sollte, auch wenn man sie nicht auslösen
 # darf.
 NUR_VERWALTUNG = (
-    "Einrichten darf, wer diesen Server verwaltet. Hier steht, wo euer Foundry läuft — und "
-    "dorthin zeige ich später das Passwort eurer Spielleitung vor. Bitte jemanden mit dem "
-    "Recht »Server verwalten«, das zu tun."
+    "Setting up is for whoever manages this server. This is where your Foundry lives — and "
+    "that is where I later present your game master's password. Please ask somebody with "
+    "the “Manage Server” permission to do it."
 )
 
 NUR_ADMIN = (
-    "Löschen darf, wer diesen Server als Administrator führt. Es gibt keine Sicherung, aus "
-    "der ich eine Chronik zurückhole; deshalb liegt das nicht bei jedem Mitglied."
+    "Deleting is for whoever runs this server as an administrator. There is no backup I "
+    "can restore a chronicle from; that is why this is not open to every member."
 )
 
 # -- Einrichten -------------------------------------------------------------------------
 
-SETUP_TITEL = "Runde einrichten"
+SETUP_TITEL = "Set up the round"
 
-FELD_ADRESSE = "Adresse eures Foundry"
-FELD_BENUTZER = "Foundry-Konto, mit dessen Augen ich sehe"
-FELD_UHRZEIT = "Uhrzeit des nächtlichen Laufs"
+FELD_ADRESSE = "Address of your Foundry"
+FELD_BENUTZER = "Foundry account I see through"
+FELD_UHRZEIT = "Time of the nightly run"
 # Die Zone steht neben der Uhrzeit und nicht woanders: sie sagt nichts für sich, sondern
 # nur, welche Uhr das Feld darüber meint. Wer 04:00 einträgt, entscheidet in demselben
 # Atemzug, wessen vier Uhr gemeint ist — getrennte Bedienstellen hießen, dass beides
 # auseinanderlaufen kann, ohne dass es jemand merkt.
-FELD_ZONE = "Zeitzone, in der diese Uhrzeit gilt"
+FELD_ZONE = "Time zone this time refers to"
 
-HINWEIS_ADRESSE = "z. B. https://foundry.example"
+HINWEIS_ADRESSE = "e.g. https://foundry.example"
 # Discord lässt 45 Zeichen für die Beschriftung und 100 für den Hinweis; der ganze Satz
 # passt in keins von beidem und steht deshalb als AUGEN in der Antwort.
-HINWEIS_BENUTZER = (
-    "am besten ein Spielerkonto — sonst sehe ich auch, was ihr noch nicht gespielt habt"
-)
-HINWEIS_UHRZEIT = "leer lassen für 04:00"
-HINWEIS_ZONE = "z. B. Europe/Berlin — leer lassen für Europe/Berlin"
+HINWEIS_BENUTZER = "best a player account — otherwise I also see what you have not played yet"
+HINWEIS_UHRZEIT = "leave empty for 04:00"
+HINWEIS_ZONE = "e.g. Europe/Berlin — leave empty for Europe/Berlin"
 
 # Die Wahl, die niemand trifft und die trotzdem alles prägt (#78): der Zugang trägt die
 # Rechte genau eines Kontos, und was es nicht sieht, kommt in keine Chronik.
 AUGEN = (
-    "Mit welchem Konto ich mich anmelde, entscheidet, was ich von eurer Welt sehe: ein "
-    "Spielerkonto zeigt mir, was die Runde erlebt hat — ein Konto der Spielleitung auch "
-    "ungespielte Handlungsstränge, verdeckte NSCs und Fallen. Nehmt das Spielerkonto; am "
-    "saubersten ein eigenes Foundry-Konto »Chronik« mit denselben Rechten.\n"
+    "Which account I log in with decides what I see of your world: a player account shows "
+    "me what the group has lived through — a game master account also shows unplayed plot "
+    "lines, hidden NPCs and traps. Take the player account; cleanest is a Foundry account "
+    "of its own called “Chronicle” with the same permissions.\n"
     "\n"
-    "**»Mit denselben Rechten« ist Handarbeit.** Foundry vergibt die Sicht auf eine Figur "
-    "**je Figur**, in deren Besitzrechten; ein frisch angelegtes Konto steht in keiner und "
-    "sieht deshalb **weniger als jedes Spielerkonto**. Tragt es bei den Figuren der Runde "
-    "ein — mindestens als Beobachter, denn »eingeschränkt« zeigt mir nur den Namen. Wie "
-    "das im Einzelnen geht, steht in `docs/foundry-zugriff.md`."
+    "**“With the same permissions” is handwork.** Foundry grants sight of a character "
+    "**per character**, in its ownership settings; a freshly created account stands in "
+    "none of them and therefore sees **less than any player account**. Enter it on the "
+    "group's characters — at least as observer, because “limited” shows me only the name. "
+    "How that works in detail is in `docs/foundry-zugriff.md`."
 )
 
 # Ein leeres Feld heißt hier dasselbe wie überall sonst: unverändert. Sonst löschte ein
 # zweiter Aufruf, der nur den Kanal ändern soll, die Adresse gleich mit.
-LEER_BLEIBT = "Was du leer lässt, bleibt, wie es war."
+LEER_BLEIBT = "Whatever you leave empty stays as it was."
 
 KEIN_PASSWORT = (
-    "Nach dem Passwort frage ich hier nicht. Es kommt am Ende der Sitzung, wird einmal "
-    "benutzt und danach vergessen — abgelegt wird es nirgends."
+    "I do not ask for the password here. It comes at the end of the session, is used once "
+    "and forgotten afterwards — it is stored nowhere."
 )
 
-EINGERICHTET = "Die Runde »{name}« steht."
-UEBERNOMMEN = "Die Runde »{name}« ist aktualisiert."
+EINGERICHTET = "The round “{name}” stands."
+UEBERNOMMEN = "The round “{name}” is updated."
 
-KANAL_FRAGE = "Und wohin mit der fertigen Chronik?"
-KANAL_WAEHLEN = "Kanal für die Chronik"
-KANAL_GESETZT = "Die Chronik kommt künftig nach {kanal}."
-KANAL_KEINER = "Kein Kanal — dann lege ich die Chronik im Kanal der Sitzung ab."
-KANAL_OHNE = "keiner — im Kanal der Sitzung ablegen"
+KANAL_FRAGE = "And where does the finished chronicle go?"
+KANAL_WAEHLEN = "Channel for the chronicle"
+KANAL_GESETZT = "The chronicle will go to {kanal} from now on."
+KANAL_KEINER = "No channel — then I file the chronicle in the session's channel."
+KANAL_OHNE = "none — file it in the session's channel"
 
-# -- Woher die Zahlen kommen ------------------------------------------------------------
+# -- In welcher Sprache der Inhalt entsteht ----------------------------------------------
 
-# Kein Feld im Fenster, sondern ein Menü — und das aus einem inhaltlichen Grund, nicht aus
-# Platzmangel: ein getipptes »testwelt« wäre die eine Eingabe, deren Vertipper still
-# durchgeht (``save_foundry_quelle`` lässt einen unbekannten Wert stehen) und deren
-# richtige Schreibweise eine Chronik voller erfundener Zahlen bedeutet. Ein Menü kennt nur
-# zwei Antworten, zeigt die geltende an und schreibt die Folge an die Wahl.
-QUELLE_FRAGE = "Und woher nehme ich die Zahlen?"
-QUELLE_WAEHLEN = "Quelle der Spieldaten"
-QUELLE_SERVER = "Euer Foundry-Server"
-QUELLE_TESTWELT = "Eingebaute Testwelt — erfundene Zahlen"
-QUELLE_GESETZT_SERVER = (
-    "Die Zahlen kommen künftig aus eurem Foundry. Konten, Figuren und Szenen holt der "
-    "nächste Abgleich frisch."
-)
-
-# Gesagt wird, was geschah, und nur wenn es geschah: Konten, Figuren und Szenen sind
-# Spiegel und werden ersetzt, Chat-Nachrichten nicht — die bleiben liegen, bis jemand sie
-# herausnimmt. Das tut das Zurückschalten selbst, statt es dem nächsten Abgleich zu
-# versprechen: der kommt vielleicht nie, und bis dahin stünden erfundene Würfe als Beleg
-# in einer Chronik dieser Runde.
-TESTWELT_GERAEUMT = "Die erfundenen Würfe der Testwelt habe ich aus dem Archiv genommen — {anzahl}."
-EINE_NACHRICHT = "eine Chat-Nachricht"
-MEHRERE_NACHRICHTEN = "{anzahl} Chat-Nachrichten"
-QUELLE_GESETZT_TESTWELT = (
-    "Ich nehme künftig die eingebaute Testwelt. **Was dann in euren Chroniken steht, ist "
-    "erfunden** — kein Wurf daraus hat je an eurem Tisch stattgefunden, und der Abgleich "
-    "redet mit keinem Server mehr. Zurück geht es hier genauso."
+# Wieder ein Menü und kein Feld, und diesmal wiegt der Grund schwerer als bei der Quelle:
+# an dieser Wahl hängt die hörbare Einwilligungs-Ansage. Ein getipptes »deutsch« ginge als
+# unbekannter Wert zurück, und wer die Absage überliest, spielt den Abend mit einer Ansage,
+# die am Tisch niemand versteht. Ein Menü kennt nur die Sprachen, für die es Texte gibt.
+SPRACHE_FRAGE = "And in which language is the content written?"
+SPRACHE_WAEHLEN = "Language of the content"
+SPRACHE_GESETZT = (
+    "Content is written in **{sprache}** from now on: the audible announcement in the voice "
+    "channel, the transcription of the recordings, and the chronicle and recap the language "
+    "model writes. My own replies stay English.\n"
+    "The announcement is the one that matters — it is what makes recording lawful, and it "
+    "only does that if the people present understand it. Check it once with "
+    "`/session check` before the next evening."
 )
 
 # Der Wert, mit dem ein Auswahlmenü »keiner« sagt — leer darf eine Option nicht sein.
@@ -185,16 +168,14 @@ KANAL_GRENZE = 25
 # Gilde jeder beschreibbare Kanal, hätte die Gruppe die Offenlegung nie gelesen. Dann
 # bleibt die Runde still, und das wird gesagt statt verschwiegen.
 STILL_GEBLIEBEN = (
-    "Die Offenlegung konnte ich hier in keinen Kanal schreiben — deshalb bleibt die Runde "
-    "still. Gib mir Schreibrecht in diesem Kanal und ruf `/chronicle setup` noch einmal auf."
+    "I could not write the disclosure into any channel here — so the round stays silent. "
+    "Give me write permission in this channel and call `/chronicle setup` again."
 )
 
-FEHLT = (
-    "Es fehlt noch: {was}. Ruf `/chronicle setup` noch einmal auf, wenn du es nachtragen willst."
-)
-STEHT_BEREIT = "Weiter geht es mit `/session start` — das legt die erste Sitzung an."
+FEHLT = "Still missing: {was}. Call `/chronicle setup` again when you want to add it."
+STEHT_BEREIT = "Carry on with `/session start` — that creates the first session."
 
-UHRZEIT_UNLESBAR = "Mit »{wert}« kann ich nichts anfangen — ich bleibe bei {uhrzeit} Uhr."
+UHRZEIT_UNLESBAR = "I cannot make sense of “{wert}” — I am staying with {uhrzeit}."
 
 # Eine Adresse, die sich nicht zerlegen lässt, wird **abgewiesen** und nicht zurechtgebogen:
 # ein stillschweigend vorangestelltes »http://« erriete das Schema eines fremden Servers,
@@ -202,10 +183,10 @@ UHRZEIT_UNLESBAR = "Mit »{wert}« kann ich nichts anfangen — ich bleibe bei {
 # Anmeldebildschirms kopiert hat. Beides endete wie #243 — eine Runde spielt einen Abend
 # lang, und es kommt kein einziger Wurf an, ohne dass irgendwo etwas dazu steht.
 ADRESSE_UNBRAUCHBAR = (
-    "Mit »{wert}« als Adresse kann ich nichts anfangen — ich habe sie **nicht** "
-    "übernommen. Gemeint ist die Wurzel eures Foundry mit Schema und Port und ohne alles "
-    "dahinter, z. B. https://foundry.example:30000 — nicht die Zeile aus dem Browser, "
-    "solange dort ein Anmeldebildschirm oder eine Welt offen steht."
+    "I cannot make sense of “{wert}” as an address — I have **not** taken it. What is "
+    "meant is the root of your Foundry with scheme and port and nothing after it, e.g. "
+    "https://foundry.example:30000 — not the line from the browser while a login screen or "
+    "a world is open there."
 )
 
 # Eine unbekannte Zone wird **abgewiesen**, nicht stillschweigend übernommen: gespeichert
@@ -213,8 +194,8 @@ ADRESSE_UNBRAUCHBAR = (
 # zurück, und der nächtliche Lauf liefe fortan zu einer anderen Stunde als der, die in der
 # Einstellung steht. Ein Tippfehler verschöbe damit stumm die ganze Nacht.
 ZONE_UNBEKANNT = (
-    "»{wert}« kenne ich als Zeitzone nicht — ich bleibe bei {zone}. Gemeint ist ein Name "
-    "aus der Zonendatenbank, z. B. Europe/Berlin oder America/New_York."
+    "I do not know “{wert}” as a time zone — I am staying with {zone}. What is meant is a "
+    "name from the zone database, e.g. Europe/Berlin or America/New_York."
 )
 
 # Discord nimmt in einem Feld des Fensters bis zu 4000 Zeichen an, lässt in der Antwort
@@ -224,46 +205,77 @@ ZONE_UNBEKANNT = (
 ECHO_GRENZE = 60
 ECHO_GEKUERZT = "…"
 
+# -- Woher die Zahlen kommen ------------------------------------------------------------
+
+# Kein Feld im Fenster, sondern ein Menü — und das aus einem inhaltlichen Grund, nicht aus
+# Platzmangel: ein getipptes »testwelt« wäre die eine Eingabe, deren Vertipper still
+# durchgeht (``save_foundry_quelle`` lässt einen unbekannten Wert stehen) und deren
+# richtige Schreibweise eine Chronik voller erfundener Zahlen bedeutet. Ein Menü kennt nur
+# zwei Antworten, zeigt die geltende an und schreibt die Folge an die Wahl.
+QUELLE_FRAGE = "And where do I take the numbers from?"
+QUELLE_WAEHLEN = "Source of the game data"
+QUELLE_SERVER = "Your Foundry server"
+QUELLE_TESTWELT = "Built-in test world — invented numbers"
+QUELLE_GESETZT_SERVER = (
+    "The numbers will come from your Foundry from now on. Accounts, characters and scenes "
+    "are fetched fresh by the next sync."
+)
+
+# Gesagt wird, was geschah, und nur wenn es geschah: Konten, Figuren und Szenen sind
+# Spiegel und werden ersetzt, Chat-Nachrichten nicht — die bleiben liegen, bis jemand sie
+# herausnimmt. Das tut das Zurückschalten selbst, statt es dem nächsten Abgleich zu
+# versprechen: der kommt vielleicht nie, und bis dahin stünden erfundene Würfe als Beleg
+# in einer Chronik dieser Runde.
+TESTWELT_GERAEUMT = "I have taken the test world's invented rolls out of the archive — {anzahl}."
+EINE_NACHRICHT = "one chat message"
+MEHRERE_NACHRICHTEN = "{anzahl} chat messages"
+QUELLE_GESETZT_TESTWELT = (
+    "I will take the built-in test world from now on. **What then stands in your chronicles "
+    "is invented** — no roll from it ever happened at your table, and the sync talks to no "
+    "server any more. Going back works the same way here."
+)
+
 # -- Verabschieden ----------------------------------------------------------------------
 
 LOESCHEN_FRAGE = (
-    "**Das verschwindet, endgültig und sofort:**\n"
-    "• alle Sitzungen dieser Runde mit ihren Szenen und Notizen\n"
-    "• alle Diktate und Aufnahmen aus dem Sprachkanal — auch die Tondateien\n"
-    "• alle daraus geschriebenen Texte: Chroniken und Rückblicke\n"
-    "• das Register mit Figuren, Orten und Handlungsfäden\n"
-    "• wer von euch welche Foundry-Figur spielt\n"
-    "• die Nachweise über die Ansagen im Sprachkanal\n"
-    "• die Zahlen, die ich aus eurem Foundry geholt habe\n"
+    "**This disappears, finally and immediately:**\n"
+    "• every session of this round with its scenes and notes\n"
+    "• every dictation and recording from the voice channel — the audio files too\n"
+    "• every text written from them: chronicles and recaps\n"
+    "• the register with characters, places and plot threads\n"
+    "• who among you plays which Foundry character\n"
+    "• the records of the announcements in the voice channel\n"
+    "• the numbers I fetched from your Foundry\n"
     "\n"
-    "**Das bleibt:** was ich euch schon zugestellt habe — Chroniken und Rückblicke in "
-    "euren Kanälen und Threads — liegt weiter in Discord; dorthin reicht mein Löschen "
-    "nicht. Mit den Nachweisen geht also der Beleg, dass im Sprachkanal angesagt wurde, "
-    "während das daraus Geschriebene bei euch stehen bleibt. Wer den Beleg braucht, holt "
-    "ihn sich vorher.\n"
+    "**This stays:** what I have already delivered to you — chronicles and recaps in your "
+    "channels and threads — remains in Discord; my deleting does not reach there. So the "
+    "proof that an announcement was made in the voice channel goes with the records, while "
+    "what was written from it stays with you. Whoever needs the proof fetches it "
+    "beforehand.\n"
     "\n"
-    "Es gibt keine Sicherung, aus der ich das zurückhole. Was ihr behalten wollt, ladet "
-    "vorher herunter."
+    "There is no backup I can restore this from. Download beforehand whatever you want to "
+    "keep."
 )
 
-LOESCHEN_JA = "Ja, alles löschen"
-LOESCHEN_NEIN = "Abbrechen"
+LOESCHEN_JA = "Yes, delete everything"
+LOESCHEN_NEIN = "Cancel"
 
-LOESCHEN_FERTIG = "Fort. Von dieser Runde liegt hier nichts mehr."
-LOESCHEN_ABGEBROCHEN = "Nichts gelöscht. Es bleibt alles, wie es war."
+LOESCHEN_FERTIG = "Gone. Nothing of this round is left here."
+LOESCHEN_ABGEBROCHEN = "Nothing deleted. Everything stays as it was."
 
 # Ein Knopf lebt eine Viertelstunde; in der Zeit kann die Runde gelöscht und die Kennung
 # neu vergeben worden sein. Dann wird nicht gelöscht, sondern gefragt.
 LOESCHEN_VERALTET = (
-    "Diese Frage ist von vorhin, und seither hat sich hier etwas geändert. Ich habe nichts "
-    "gelöscht — ruf `/chronicle delete` noch einmal auf, wenn du es immer noch willst."
+    "This question is from earlier, and something has changed here since. I have deleted "
+    "nothing — call `/chronicle delete` again if you still want it."
 )
 
 # Was beim Rauswurf passiert — gesagt wird es vorher, in der Einladung und beim Löschen,
 # denn danach ist der Bot nicht mehr da, um es zu sagen.
 ABSCHIED = (
-    "Wirft ihr mich hinaus, ist die Runde sofort still und nach {tage} Tagen gelöscht. "
-    "Holt ihr mich vorher zurück, ist alles wieder da; danach ist es fort."
+    "If you throw me out, the round falls silent immediately and is deleted after {tage} "
+    "days. If you bring me back before that, everything is there again; after that it is "
+    "gone."
 )
 
 
@@ -322,7 +334,7 @@ def _zone(runde: Runde, wert: str) -> str:
 
 def _offen(config: Config, runde: Runde) -> str:
     fehlend = settings.effective(config, runde).missing_foundry_fields
-    return FEHLT.format(was=" und ".join(fehlend)) if fehlend else STEHT_BEREIT
+    return FEHLT.format(was=" and ".join(fehlend)) if fehlend else STEHT_BEREIT
 
 
 def einrichten(
@@ -388,6 +400,30 @@ def kanal_setzen(runde: Runde, kanal_id: str) -> str:
         return KANAL_KEINER
     settings.save(runde, {"discord_recap_channel": kanal_id})
     return KANAL_GESETZT.format(kanal=f"<#{kanal_id}>")
+
+
+def sprachwahl(runde: Runde) -> tuple[tuple[str, str, bool], ...]:
+    """Beschriftung, Wert und ob vorgewählt — je Sprache eine Zeile, die geltende angehakt.
+
+    Die Sprachen stehen in ihrer eigenen Schreibweise da (»Deutsch«, nicht »German«): wer
+    sie sucht, sucht nach dem Wort, das er selbst benutzt.
+    """
+    gewaehlt = settings.sprache(runde)
+    return tuple(
+        (sprachen.NAMEN[kennung], kennung, kennung == gewaehlt) for kennung in sprachen.SPRACHEN
+    )
+
+
+def sprache_setzen(runde: Runde, wert: str) -> str:
+    """Die Sprache der Inhalte — was daran hängt, steht in der Antwort.
+
+    Genannt wird die Ansage zuerst und nicht zuletzt: sie ist der Teil, an dem §201 StGB
+    hängt, und sie läuft beim nächsten `/session start` ungefragt los. Wer hier umstellt,
+    soll das gelesen haben, bevor eine Runde davor sitzt.
+    """
+    settings.save_sprache(runde, wert)
+    gewaehlt = settings.sprache(runde)
+    return SPRACHE_GESETZT.format(sprache=sprachen.NAMEN[gewaehlt])
 
 
 def quellenwahl(runde: Runde) -> tuple[tuple[str, str, bool], ...]:

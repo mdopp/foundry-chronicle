@@ -24,67 +24,22 @@ import logging
 import re
 from dataclasses import dataclass
 
+from chronicle import sprache as sprachen
 from chronicle.compose.client import ModelError, TextModel
-from chronicle.compose.composer import (
-    BELEG_TITEL,
-    NICHT_ERREICHBAR,
-    ZITAT_REGEL,
-    eigene_ueberschrift,
-    numbers,
-    zitat,
-)
+from chronicle.compose.composer import eigene_ueberschrift, numbers, zitat
 
 logger = logging.getLogger(__name__)
 
 SZENE = re.compile(r"^## +(\S.*)$")
 UEBERSCHRIFT = re.compile(r"^#{1,6} +\S")
 
-HERGANG_TITEL = "### Was bisher geschah — vom Sprachmodell, nicht belegt"
-FAEDEN_TITEL = "### Offene Fäden — Deutung des Modells, keine Fakten"
-CHRONIK_TITEL = "### Belegt aus der Chronik"
+MAX_FAEDEN = sprachen.MAX_FAEDEN
 
-SZENEN_ZEILE = "Die Szenen dieser Sitzung:"
-FAKTEN_ZEILE = "Aus dem Foundry-Chat-Log, unverändert:"
-
-OHNE_MODELL = (
-    "Noch kein Modell gewählt — der Rückblick wurde geordnet statt erzählt. "
-    "Ein Modell hinterlegt der Betreiber dieser Box."
-)
-
-VERWORFEN = "_Verworfen: der Absatz nannte eine Zahl, die in der Chronik nicht vorkommt._"
-VERWORFEN_UEBERSCHRIFT = (
-    "_Verworfen: der Absatz machte eine eigene Überschrift auf. Welche Zeile belegt ist und "
-    "welche gedeutet, sagen hier die Überschriften — die setzt niemand außer dieser Stufe._"
-)
-KEIN_FADEN = "_Das Modell hat keinen offenen Faden benannt._"
-LEER = "_Die Chronik nennt weder Szene noch Foundry-Fakt._"
-
-MAX_FAEDEN = 5
-
-SYSTEM_HERGANG = (
-    "Du fasst für eine Tisch-Rollenspiel-Runde zusammen, was zuletzt geschah; gelesen "
-    "wird das unmittelbar vor der nächsten Sitzung. Du ordnest und verknüpfst, du "
-    "erfindest nichts.\n"
-    f"{ZITAT_REGEL}\n"
-    "- Zehn bis fünfzehn Sätze, zusammenhängend, in der Vergangenheitsform.\n"
-    "- Nenne keine Ziffer und keine Zahl. Die Zahlen stehen belegt unter dem Rückblick.\n"
-    "- Erfinde keine Ereignisse, Namen, Orte, Würfe oder Ergebnisse.\n"
-    "- Ist die Vorlage dünn, schreibe entsprechend wenig.\n"
-    "- Antworte mit dem Text selbst, ohne Überschrift und ohne Vorrede."
-)
-
-SYSTEM_FAEDEN = (
-    "Du benennst die offenen Fäden einer Tisch-Rollenspiel-Runde: was begonnen und nicht "
-    "zu Ende gebracht wurde. Du deutest nur, was in der Vorlage steht.\n"
-    f"{ZITAT_REGEL}\n"
-    f"- Höchstens {MAX_FAEDEN} Punkte, je einer pro Zeile, jede Zeile beginnt mit '- '.\n"
-    "- Nenne keine Ziffer und keine Zahl.\n"
-    "- Erfinde keinen Faden. Gibt die Vorlage keinen her, antworte mit: keine\n"
-    "- Antworte mit den Punkten selbst, ohne Überschrift und ohne Vorrede."
-)
-
-AUFTRAG_HERGANG = "Schreibe den Rückblick auf diese Sitzung."
-AUFTRAG_FAEDEN = "Nenne die offenen Fäden dieser Sitzung."
+# Woran ``digest`` den Belegblock einer Chronik erkennt — in **jeder** Sprache. Eine Runde
+# darf umstellen, und dann liegt eine deutsche Chronik unter einem englischen Rückblick;
+# nur die eigene Überschrift zu kennen hieße, ihre belegten Fakten zu übersehen und den
+# Rückblick still ohne sie zu schreiben.
+BELEG_TITEL = tuple(texte.beleg_titel for texte in sprachen.CHRONIK.values())
 
 
 @dataclass(frozen=True)
@@ -104,13 +59,15 @@ class Recap:
     scene_count: int = 0
     fact_count: int = 0
     thread_count: int = 0
+    inhaltssprache: str = sprachen.DEFAULT
 
     @property
     def message(self) -> str:
-        umfang = f"{self.scene_count} Szenen, {self.fact_count} Foundry-Fakten"
+        texte = sprachen.rueckblick(self.inhaltssprache)
+        umfang = texte.umfang.format(szenen=self.scene_count, fakten=self.fact_count)
         if self.reason is None:
-            return f"Rückblick aus {umfang} — {self.thread_count} Fäden als Deutung markiert."
-        return f"Rückblick aus {umfang}. {self.reason}"
+            return texte.fertig.format(umfang=umfang, faeden=self.thread_count)
+        return texte.geordnet.format(umfang=umfang, grund=self.reason)
 
 
 def digest(chronik: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
@@ -124,7 +81,7 @@ def digest(chronik: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
         if kopf is not None:
             szenen.append(kopf.group(1))
         if UEBERSCHRIFT.match(zeile):
-            im_beleg = zeile == BELEG_TITEL
+            im_beleg = zeile in BELEG_TITEL
             continue
         if im_beleg and zeile.startswith("- "):
             fakten.append(zeile[2:].strip())
@@ -135,7 +92,7 @@ def _liste(zeilen: tuple[str, ...]) -> str:
     return "\n".join(f"- {zeile}" for zeile in zeilen)
 
 
-def _prompt(material: RecapMaterial, auftrag: str) -> str:
+def _prompt(material: RecapMaterial, auftrag: str, texte: sprachen.Rueckblicktexte) -> str:
     """Die Chronik zwischen den Marken, der Auftrag außerhalb.
 
     Die Chronik trägt unter »Notizen« wörtliches Tischgespräch — dasselbe fremde Wort,
@@ -144,11 +101,8 @@ def _prompt(material: RecapMaterial, auftrag: str) -> str:
     """
     teile = []
     if material.previous:
-        teile.append(
-            "Rückblicke der vorigen Sitzungen, jüngster zuerst:\n\n"
-            + "\n\n".join(material.previous)
-        )
-    teile.append(f"Chronik der Sitzung vom {material.played_on}:\n\n{material.chronicle.strip()}")
+        teile.append(texte.vorige.format(texte="\n\n".join(material.previous)))
+    teile.append(texte.vorlage.format(datum=material.played_on, chronik=material.chronicle.strip()))
     return zitat("\n\n".join(teile)) + f"\n\n{auftrag}"
 
 
@@ -158,42 +112,52 @@ def _faeden(text: str) -> tuple[str, ...]:
     return tuple(punkt for punkt in punkte if punkt)[:MAX_FAEDEN]
 
 
-def _geprueft(absatz: str, belegt: set[str]) -> tuple[str, str]:
+def _geprueft(
+    absatz: str, belegt: set[str], texte: sprachen.Rueckblicktexte, inhaltssprache: str
+) -> tuple[str, str]:
     """Der Absatz — oder nichts und die Zeile, die dem Leser sagt, warum er fehlt."""
-    unbelegt = numbers(absatz) - belegt
+    unbelegt = numbers(absatz, inhaltssprache) - belegt
     if unbelegt:
         logger.warning("Rückblick: Absatz verworfen, unbelegte Zahlen %s", sorted(unbelegt))
-        return "", VERWORFEN
+        return "", texte.verworfen
     if eigene_ueberschrift(absatz):
         logger.warning("Rückblick: Absatz verworfen, er machte eine eigene Überschrift auf")
-        return "", VERWORFEN_UEBERSCHRIFT
+        return "", texte.verworfen_ueberschrift
     return absatz, ""
 
 
-def _kopf(material: RecapMaterial, name: str | None, grund: str | None) -> str:
-    titel = f"# Rückblick — Sitzung vom {material.played_on}"
+def _kopf(
+    material: RecapMaterial,
+    name: str | None,
+    grund: str | None,
+    texte: sprachen.Rueckblicktexte,
+) -> str:
+    titel = texte.kopf.format(datum=material.played_on)
     if material.title:
         titel += f": {material.title}"
     if grund is None:
-        quelle = "der Chronik dieser Sitzung"
-        if material.previous:
-            quelle += " und den vorigen Rückblicken"
-        stand = (
-            f"_Verdichtet aus {quelle} vom Sprachmodell `{name}`. Erzähltes ist gedeutet; "
-            "belegt ist nur, was unter »Belegt aus der Chronik« steht._"
-        )
+        quelle = texte.quelle_mit_vorigen if material.previous else texte.quelle
+        stand = texte.stand.format(quelle=quelle, name=name)
     else:
         stand = f"_{grund}_"
     return f"{titel}\n\n{stand}"
 
 
-def recap(material: RecapMaterial, model: TextModel | None = None) -> Recap:
+def recap(
+    material: RecapMaterial,
+    model: TextModel | None = None,
+    *,
+    inhaltssprache: str = sprachen.DEFAULT,
+) -> Recap:
+    texte = sprachen.rueckblick(inhaltssprache)
     szenen, fakten = digest(material.chronicle)
     # Auch die Zahlen der vorigen Rückblicke gelten als belegt: sie haben diese Schranke
     # bereits gegen ihre eigene Chronik passiert.
-    belegt = numbers(material.chronicle) | numbers("\n".join(material.previous))
+    belegt = numbers(material.chronicle, inhaltssprache) | numbers(
+        "\n".join(material.previous), inhaltssprache
+    )
     name = None if model is None else model.name
-    grund = None if model is not None else OHNE_MODELL
+    grund = None if model is not None else texte.ohne_modell
     hergang = ""
     hergang_grund = ""
     faeden: tuple[str, ...] = ()
@@ -202,38 +166,40 @@ def recap(material: RecapMaterial, model: TextModel | None = None) -> Recap:
     if model is not None:
         try:
             roher_hergang = model.write(
-                system=SYSTEM_HERGANG, prompt=_prompt(material, AUFTRAG_HERGANG)
+                system=texte.system_hergang,
+                prompt=_prompt(material, texte.auftrag_hergang, texte),
             )
             rohe_faeden = model.write(
-                system=SYSTEM_FAEDEN, prompt=_prompt(material, AUFTRAG_FAEDEN)
+                system=texte.system_faeden,
+                prompt=_prompt(material, texte.auftrag_faeden, texte),
             )
         except ModelError as fehler:
-            grund = NICHT_ERREICHBAR
+            grund = sprachen.chronik(inhaltssprache).nicht_erreichbar
             logger.warning("Rückblick bleibt bei der geordneten Fassung: %s", fehler)
         else:
-            hergang, hergang_grund = _geprueft(roher_hergang.strip(), belegt)
-            geprueft, faeden_grund = _geprueft(rohe_faeden.strip(), belegt)
+            hergang, hergang_grund = _geprueft(roher_hergang.strip(), belegt, texte, inhaltssprache)
+            geprueft, faeden_grund = _geprueft(rohe_faeden.strip(), belegt, texte, inhaltssprache)
             faeden = _faeden(geprueft)
 
-    bloecke = [_kopf(material, name, grund)]
+    bloecke = [_kopf(material, name, grund, texte)]
     if hergang:
-        bloecke.append(f"{HERGANG_TITEL}\n{hergang}")
+        bloecke.append(f"{texte.hergang_titel}\n{hergang}")
     elif hergang_grund:
-        bloecke.append(f"{HERGANG_TITEL}\n{hergang_grund}")
+        bloecke.append(f"{texte.hergang_titel}\n{hergang_grund}")
     if faeden:
-        bloecke.append(f"{FAEDEN_TITEL}\n{_liste(faeden)}")
+        bloecke.append(f"{texte.faeden_titel}\n{_liste(faeden)}")
     elif faeden_grund:
-        bloecke.append(f"{FAEDEN_TITEL}\n{faeden_grund}")
+        bloecke.append(f"{texte.faeden_titel}\n{faeden_grund}")
     elif grund is None:
-        bloecke.append(f"{FAEDEN_TITEL}\n{KEIN_FADEN}")
+        bloecke.append(f"{texte.faeden_titel}\n{texte.kein_faden}")
 
-    beleg = [CHRONIK_TITEL]
+    beleg = [texte.chronik_titel]
     if szenen:
-        beleg.append(f"{SZENEN_ZEILE}\n{_liste(szenen)}")
+        beleg.append(f"{texte.szenen_zeile}\n{_liste(szenen)}")
     if fakten:
-        beleg.append(f"{FAKTEN_ZEILE}\n{_liste(fakten)}")
+        beleg.append(f"{texte.fakten_zeile}\n{_liste(fakten)}")
     if not szenen and not fakten:
-        beleg.append(LEER)
+        beleg.append(texte.leer)
     bloecke.append("\n\n".join(beleg))
 
     return Recap(
@@ -243,4 +209,5 @@ def recap(material: RecapMaterial, model: TextModel | None = None) -> Recap:
         scene_count=len(szenen),
         fact_count=len(fakten),
         thread_count=len(faeden),
+        inhaltssprache=sprachen.zurechtgelegt(inhaltssprache),
     )

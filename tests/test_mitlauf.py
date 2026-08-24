@@ -33,7 +33,7 @@ class Erkenner:
     def __init__(self):
         self.gerufen = []
 
-    def transcribe(self, audio_path, *, hotwords=()):
+    def transcribe(self, audio_path, *, hotwords=(), sprache="en"):
         self.gerufen.append(audio_path.name)
         yield Segment(start=0.0, end=2.5, text=" Da unten steht eine Tür.")
 
@@ -119,7 +119,7 @@ def test_der_mitlauf_sagt_der_runde_nichts(config, sitzung_id, monkeypatch, capl
     assert caplog.messages == []
     assert "Mira" not in caplog.text
     # Gesagt wird es trotzdem — an der Zeile, wo es die Runde nachschlagen kann.
-    assert "Segmente" in recordings.get(runde(config), aufnahme.id).detail
+    assert "segments" in recordings.get(runde(config), aufnahme.id).detail
 
 
 # --- Der Erkenner verträgt keine Gleichzeitigkeit -------------------------------------
@@ -146,7 +146,7 @@ def test_nie_zwei_anfragen_zugleich_gegen_den_erkenner(config, sitzung_id, monke
     drin = 0
 
     class Zaehlend(Erkenner):
-        def transcribe(self, audio_path, *, hotwords=()):
+        def transcribe(self, audio_path, *, hotwords=(), sprache="en"):
             nonlocal drin
             angemeldet.wait(GRENZE)
             with schloss:
@@ -188,7 +188,7 @@ def test_die_verschriftung_liegt_nicht_auf_der_ereignisschleife(config, sitzung_
     freigabe = threading.Event()
 
     class Langsam(Erkenner):
-        def transcribe(self, audio_path, *, hotwords=()):
+        def transcribe(self, audio_path, *, hotwords=(), sprache="en"):
             im_erkenner.set()
             freigabe.wait(GRENZE)
             yield from super().transcribe(audio_path, hotwords=hotwords)
@@ -255,7 +255,7 @@ def test_ein_gescheitertes_haeppchen_haelt_die_schlange_nicht_an(config, sitzung
     """Ein HTTP 500 gilt einer Datei, nicht dem Abend — die übrigen laufen weiter."""
 
     class Launisch(Erkenner):
-        def transcribe(self, audio_path, *, hotwords=()):
+        def transcribe(self, audio_path, *, hotwords=(), sprache="en"):
             if "mitte" in audio_path.name:
                 raise TranscriberError("abgewiesen: HTTP 500")
             yield from super().transcribe(audio_path, hotwords=hotwords)
@@ -280,7 +280,7 @@ def test_der_mitlauf_wiederholt_nichts_sondern_laesst_es_der_nacht(config, sitzu
     aufnahme = einreihen(config, sitzung_id, "mira-1.wav")
 
     class Kaputt(Erkenner):
-        def transcribe(self, audio_path, *, hotwords=()):
+        def transcribe(self, audio_path, *, hotwords=(), sprache="en"):
             raise TranscriberError("abgewiesen: HTTP 500")
             yield  # pragma: no cover
 
@@ -319,7 +319,7 @@ def test_der_mitlauf_setzt_die_frist_nicht_durch(config, sitzung_id, monkeypatch
 
     (meldung,) = service.run_queue(config, runde(config))
 
-    assert "gelöscht" in meldung
+    assert "deleted" in meldung
     assert list(config.recordings_dir.iterdir()) == []
 
 

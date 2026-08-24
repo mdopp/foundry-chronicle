@@ -32,10 +32,10 @@ REGISTER = "register"
 # die anderen entstanden sind.
 LABELS = {
     REGISTER: "Register",
-    NOTIZ: "Notizen",
-    KIND: "Chronik",
-    RUECKBLICK: "Rückblick",
-    TRANSKRIPT: "Transkripte",
+    NOTIZ: "Notes",
+    KIND: "Chronicle",
+    RUECKBLICK: "Recap",
+    TRANSKRIPT: "Transcripts",
 }
 
 TREFFER = 50

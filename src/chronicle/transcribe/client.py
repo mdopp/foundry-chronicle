@@ -44,6 +44,7 @@ from typing import Protocol
 
 import requests
 
+from chronicle import sprache as sprachen
 from chronicle.config import DEFAULT_WHISPER_URL, Config
 
 logger = logging.getLogger(__name__)
@@ -54,7 +55,11 @@ TRANSCRIBE_PATH = "/transcribe"
 # sein Modell nicht, und wir behaupten keins.
 NAME = "solaris-whisper-batch"
 
-SPRACHE = "de"
+# Der Sprachcode reist mit der **Spur** und steht nicht mehr fest im Client (#268): der
+# Erkenner ist instanzweit, die Sprache gehört der Runde. Deutsche Rede englisch zu
+# verschriften ergibt Unsinn, und umgekehrt genauso — das ist der ganze Grund, warum der
+# Inhalt der Einstellung folgt und nicht der Bedienoberfläche.
+SPRACHE = sprachen.WHISPER[sprachen.DEFAULT]
 
 # Stapelbetrieb: die Antwort kommt erst, wenn die ganze Datei durch ist. Auf der Karte
 # ist eine Vier-Stunden-Spur ~10 min (mdopp/solarisbay#1161); eine Stunde Frist lässt
@@ -66,28 +71,30 @@ DEFAULT_TIMEOUT = 3600.0
 NICHT_BEREIT = 503
 
 NICHT_ERREICHBAR = (
-    "Der Spracherkenner {url} ist nicht erreichbar ({grund}) — die Spur bleibt liegen "
-    "und wird verschriftet, sobald er wieder da ist. Ohne ihn entsteht keine Chronik "
-    "aus dieser Sitzung; einen Rückfall auf die CPU gibt es seit #216 nicht mehr."
+    "The speech recogniser {url} cannot be reached ({grund}) — the track stays put and "
+    "will be transcribed as soon as it is back. Without it no chronicle comes out of this "
+    "session; a fallback to the CPU has not existed since #216."
 )
 
-ABGEWIESEN = "Der Spracherkenner {url} hat die Spur abgewiesen: HTTP {code}."
+ABGEWIESEN = "The speech recogniser {url} rejected the track: HTTP {code}."
 
 # Mit Grund, wenn die Antwort einen nennt. Ohne diesen Halbsatz kostete #248 Stunden:
 # der Dienst schrieb »ValueError: The maximum decoding length must be > 0« in den Rumpf,
 # und die Meldung warf ihn weg. Der Text geht in den Stand der Aufnahme und in die
 # Meldung an die Runde; ins Log des Betreibers kommt weiterhin nur die Fehlerart.
-ABGEWIESEN_MIT_GRUND = "Der Spracherkenner {url} hat die Spur abgewiesen: HTTP {code} — {grund}"
+ABGEWIESEN_MIT_GRUND = "The speech recogniser {url} rejected the track: HTTP {code} — {grund}"
 
 # Fremder Text, also gekürzt und einzeilig: eine HTML-Fehlerseite soll die Statuszeile
 # der Runde nicht fluten.
 GRUND_MAX = 200
 
-KEINE_SEGMENTE = "Der Spracherkenner {url} hat keine Segmente geliefert."
+KEINE_SEGMENTE = "The speech recogniser {url} returned no segments."
 
 # Der Pfad einer Spur trägt den Anzeigenamen des Sprechers (#194, #199) — er steht
 # deshalb nicht in dieser Meldung, obwohl sie von einem Pfad handelt.
-AUSSERHALB = "Diese Spur liegt nicht im Aufnahmeverzeichnis — der Spracherkenner liest nur dort."
+AUSSERHALB = (
+    "This track is not in the recordings directory — the speech recogniser reads only there."
+)
 
 
 @dataclass(frozen=True)
@@ -114,7 +121,7 @@ class SpeechModel(Protocol):
     def name(self) -> str: ...
 
     def transcribe(
-        self, audio_path: Path, *, hotwords: Sequence[str] = ()
+        self, audio_path: Path, *, hotwords: Sequence[str] = (), sprache: str = SPRACHE
     ) -> Iterator[Segment]: ...
 
 
@@ -165,13 +172,15 @@ class WhisperBatch:
         except ValueError:
             raise TranscriberError(AUSSERHALB) from None
 
-    def transcribe(self, audio_path: Path, *, hotwords: Sequence[str] = ()) -> Iterator[Segment]:
+    def transcribe(
+        self, audio_path: Path, *, hotwords: Sequence[str] = (), sprache: str = SPRACHE
+    ) -> Iterator[Segment]:
         pfad = self._name_im_verzeichnis(audio_path)
         logger.info("Spracherkenner %s auf %s", NAME, self._base)
         try:
             antwort = self._http.post(
                 self._base + TRANSCRIBE_PATH,
-                json={"path": pfad, "language": SPRACHE, "hotwords": list(hotwords)},
+                json={"path": pfad, "language": sprache, "hotwords": list(hotwords)},
                 timeout=self._timeout,
             )
         except requests.RequestException as fehler:
@@ -200,7 +209,7 @@ class WhisperBatch:
             rumpf = antwort.json()
         except ValueError:
             raise TranscriberUnreachable(
-                NICHT_ERREICHBAR.format(url=self._ziel, grund="kein JSON")
+                NICHT_ERREICHBAR.format(url=self._ziel, grund="no JSON")
             ) from None
         teile = rumpf.get("segments") if isinstance(rumpf, Mapping) else None
         if not isinstance(teile, list):

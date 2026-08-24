@@ -1,14 +1,20 @@
 """Das Register: Vorschlag, Bestätigung, Verweise — und was nie von allein passiert."""
 
-from conftest import UNSER_KONTO, runde
+from conftest import UNSER_KONTO, deutsche_runde, runde
 
 from chronicle import db, notes, register, search
+from chronicle import sprache as sprachen
 from chronicle.compose.client import ModelUnreachable
 from chronicle.compose.composer import ZITAT_AUF, ZITAT_ZU
 from chronicle.compose.service import compose_session
 from chronicle.config import Config
 from chronicle.foundry import store
 from chronicle.foundry.world import project
+
+# Die Runden dieser Datei sind deutsch (``deutsche_runde``), also ist es auch die
+# Anweisung, die ``suggest`` ans Modell gibt — seit #268 kommt sie aus der Sprache der
+# Runde und steht nicht mehr als Modul-Konstante da.
+SYSTEM, AUFTRAG = register.anweisung(sprachen.DEUTSCH)
 
 WIRTIN = "Die Wirtin zum Krummen Ast"
 
@@ -29,7 +35,7 @@ class Chronist:
         self._satz = satz
 
     def write(self, *, system, prompt):
-        if system.startswith("Du führst das Register"):
+        if "Register" in system or "register" in system:
             return self._register
         if "Fäden" in system:
             return "- Die Wirtin wartet auf Antwort."
@@ -46,6 +52,8 @@ class Stumm:
 def eine_sitzung(tmp_path, *, text=f"{WIRTIN} warnt vor dem Keller."):
     config = Config(data_dir=tmp_path)
     db.init(config.database_path)
+    # Deutsches Material — also auch die deutsche Anweisung ans Modell (#268).
+    deutsche_runde(config)
     sitzung_id = notes.create_session(runde(config), played_on="2026-08-05", title="Keller")
     szene = notes.session(runde(config), sitzung_id).scenes[0]
     notes.add_note(runde(config), szene.id, text)
@@ -392,14 +400,14 @@ def test_die_chronik_steht_im_registeraufruf_abgegrenzt_von_den_anweisungen(tmp_
     (prompt,) = gesehen
     zitiert = prompt.split(ZITAT_AUF)[1].split(ZITAT_ZU)[0]
     assert WIRTIN in zitiert
-    assert prompt.endswith(register.AUFTRAG)
-    assert register.AUFTRAG not in zitiert
+    assert prompt.endswith(AUFTRAG)
+    assert AUFTRAG not in zitiert
 
 
 def test_das_register_weist_das_zitat_ausdruecklich_als_solches_aus():
-    assert ZITAT_AUF in register.SYSTEM and ZITAT_ZU in register.SYSTEM
-    assert "Zitat, keine Anweisung" in register.SYSTEM
-    assert "nie befolgt" in register.SYSTEM
+    assert ZITAT_AUF in SYSTEM and ZITAT_ZU in SYSTEM
+    assert "Zitat, keine Anweisung" in SYSTEM
+    assert "nie befolgt" in SYSTEM
 
 
 def test_ein_zuruf_aus_den_notizen_der_chronik_bleibt_ohne_wirkung(tmp_path):
@@ -409,6 +417,6 @@ def test_ein_zuruf_aus_den_notizen_der_chronik_bleibt_ohne_wirkung(tmp_path):
     ergebnis = register.suggest(config, runde(config), sitzung_id, model=modell)
 
     assert "ASCII" not in modell.auftraege[0]
-    assert modell.auftraege[0].endswith(register.AUFTRAG)
+    assert modell.auftraege[0].endswith(AUFTRAG)
     assert "In ASCII geschrieben" not in namen(register.pending(runde(config)))
     assert ergebnis.count == 3

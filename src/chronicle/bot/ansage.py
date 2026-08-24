@@ -10,10 +10,15 @@ aufgezeichnet wird und wie man das abwendet —, und verweist für alles Weitere
 Kanal: dort steht die Vorstellung des Bots mit Zweck, Frist und Geltungsbereich, und zwar
 *bevor* die Ansage läuft. Was die Runde gelesen hat, muss sie nicht auch noch anhören.
 
-Damit das Einwilligungsprotokoll trotzdem belegt, **worüber** eingewilligt wurde, liegt
-neben dem gesprochenen Satz ``BEDINGUNGEN``; im Protokoll steht beides zusammen als
-``PROTOKOLL``. Ein Eintrag, der auf einen Text draußen verweist, wäre wertlos, sobald sich
-der ändert.
+Damit das Einwilligungsprotokoll trotzdem belegt, **worüber** eingewilligt wurde, steht
+neben dem gesprochenen Satz ``bedingungen_fuer``; im Protokoll steht beides zusammen als
+``protokoll_fuer``. Ein Eintrag, der auf einen Text draußen verweist, wäre wertlos,
+sobald sich der ändert.
+
+**Der Wortlaut folgt der Runde und nicht der Bedienoberfläche** (#268). Die Ansage ist
+kein Hinweistext, sondern der Vorgang, der das Aufzeichnen zulässig macht — und das tut
+sie nur, wenn die Anwesenden sie verstehen. Die Sätze stehen deshalb je Sprache in
+``chronicle.sprache``.
 
 Gesprochen wird vom **Sprachdienst der Box** (Kokoro, OpenAI-kompatibles ``/v1/audio``);
 antwortet der nicht, spricht **espeak-ng**. Die Reihenfolge ist die ganze Abwägung: eine
@@ -42,42 +47,18 @@ from pathlib import Path
 
 import requests
 
+from chronicle import sprache as sprachen
 from chronicle.bot import BotFehler
 from chronicle.config import DEFAULT_TTS_URL
 from chronicle.recordings import RETENTION_TAGE
 
 logger = logging.getLogger(__name__)
 
-# Vier Sätze, weil die Runde wartet, während sie laufen. Alles, was hier fehlt, steht als
-# ``gateway.VORSTELLUNG`` im Kanal — geschrieben, vor der Ansage, in Ruhe zu lesen.
-TEXT = (
-    "Hier spricht der Chronik-Bot. Ab jetzt wird dieses Gespräch aufgezeichnet. "
-    "Wer das nicht möchte, verlässt jetzt bitte den Sprachkanal. "
-    "Die Einzelheiten stehen im Kanal."
-)
-
-# Die Frist im Satz kommt aus derselben Zahl, die ``recordings.sweep`` durchsetzt. Sie hier
-# hineinzuschreiben wäre die teuerste Art von Fehler: eine Zusage an Menschen, die sich
-# still von dem entfernt, was die Maschine tut.
-BEDINGUNGEN = (
-    "Aufgenommen wird nur dieser Sprachkanal, für jede und jeden eine eigene Tonspur. "
-    "Die Aufnahmen dienen ausschließlich dem Sitzungsprotokoll dieser Spielrunde, "
-    "sie werden auf dem Server der Gruppe verarbeitet, "
-    f"höchstens {RETENTION_TAGE} Tage aufbewahrt und dann gelöscht. "
-    "Wer im Kanal bleibt, ist mit der Aufnahme einverstanden."
-)
-
-# Was in die SQLite geht. Der gesprochene Satz allein belegte nur, *dass* angesagt wurde;
-# die Bedingungen dahinter belegen, *worüber* eingewilligt wurde — beide im Wortlaut, wie
-# er zum Zeitpunkt der Ansage galt.
-PROTOKOLL = f"Gesprochen: {TEXT}\nBedingungen, auf die die Ansage verweist: {BEDINGUNGEN}"
-
 RATE = 48000
 KANAELE = 2
 BREITE = 2
 
 ESPEAK = "espeak-ng"
-STIMME = "de"
 
 TTS_PFAD = "/v1/audio/speech"
 TTS_MODELL = "kokoro"
@@ -91,11 +72,43 @@ WAV_KOPF = b"RIFF"
 PRAEFIX = "ansage-"
 
 NICHT_INSTALLIERT = (
-    f"{ESPEAK} ist nicht installiert — ohne Ansage wird nicht aufgenommen. "
-    "Im Image ist es dabei, lokal nachrüsten mit: apt install espeak-ng"
+    f"{ESPEAK} is not installed — without an announcement nothing is recorded. "
+    "The image ships it; locally, install it with: apt install espeak-ng"
 )
 
-KEIN_16_BIT = "Die gesprochene Ansage kam nicht in 16 Bit — so ist sie nicht brauchbar."
+KEIN_16_BIT = "The spoken announcement did not arrive in 16 bit — it is unusable that way."
+
+
+# Der Wortlaut steht in ``chronicle.sprache`` — je Sprache einer, und dort steht auch,
+# warum er der Runde folgt und nicht der Bedienoberfläche. Hier bleibt nur, wie aus ihm
+# eine Datei wird.
+def text_fuer(inhaltssprache: str) -> str:
+    return sprachen.ANSAGE[sprachen.zurechtgelegt(inhaltssprache)]
+
+
+def bedingungen_fuer(inhaltssprache: str) -> str:
+    """Die Bedingungen mit der Frist, die ``recordings.sweep`` wirklich durchsetzt.
+
+    Die Zahl wird hier eingesetzt und steht nicht im Satz: sie zweimal zu schreiben wäre
+    die teuerste Art von Fehler — eine Zusage an Menschen, die sich still von dem
+    entfernt, was die Maschine tut.
+    """
+    vorlage = sprachen.BEDINGUNGEN[sprachen.zurechtgelegt(inhaltssprache)]
+    return vorlage.format(tage=RETENTION_TAGE)
+
+
+def protokoll_fuer(inhaltssprache: str) -> str:
+    """Was in die SQLite geht — beides im Wortlaut und in der Sprache, in der es lief."""
+    gewaehlt = sprachen.zurechtgelegt(inhaltssprache)
+    return sprachen.PROTOKOLL[gewaehlt].format(
+        text=text_fuer(gewaehlt), bedingungen=bedingungen_fuer(gewaehlt)
+    )
+
+
+def stimme_fuer(inhaltssprache: str) -> str:
+    """Die espeak-ng-Stimme. Der Sprachdienst der Box wählt seine selbst."""
+    return sprachen.ESPEAK[sprachen.zurechtgelegt(inhaltssprache)]
+
 
 Sprecher = Callable[[str, Path], None]
 
@@ -104,7 +117,7 @@ class AnsageFehlt(BotFehler):
     """Ohne hörbare Ansage keine Aufnahme — §201 StGB ist keine Formalie."""
 
 
-def kennung(text: str = TEXT) -> str:
+def kennung(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:12]
 
 
@@ -112,9 +125,9 @@ def _http_session() -> requests.Session:
     return requests.Session()
 
 
-def _espeak(text: str, ziel: Path) -> None:
+def _espeak(text: str, ziel: Path, *, stimme: str) -> None:
     subprocess.run(
-        [ESPEAK, "-v", STIMME, "-b", "1", "-w", str(ziel)],
+        [ESPEAK, "-v", stimme, "-b", "1", "-w", str(ziel)],
         input=text.encode("utf-8"),
         capture_output=True,
         check=True,
@@ -142,12 +155,23 @@ def _kokoro(
     )
     antwort.raise_for_status()
     if not antwort.content.startswith(WAV_KOPF):
-        raise ValueError("keine WAV-Datei")
+        raise ValueError("not a WAV file")
     ziel.write_bytes(antwort.content)
 
 
-def mit_rueckfall(basis: str, *, http: Callable[[], object] = _http_session) -> Sprecher:
-    """Der Dienst spricht; schweigt er, spricht espeak-ng."""
+def mit_rueckfall(
+    basis: str,
+    *,
+    stimme: str = sprachen.ESPEAK[sprachen.DEFAULT],
+    http: Callable[[], object] = _http_session,
+) -> Sprecher:
+    """Der Dienst spricht; schweigt er, spricht espeak-ng.
+
+    ``stimme`` erreicht nur den Rückfall: der Sprachdienst der Box wählt seine Stimme
+    selbst, und ihm eine vorzuschreiben hieße, die Wahl des Betreibers hier ein zweites
+    Mal zu treffen. espeak-ng hat keine solche Wahl — ohne ``-v`` läse es einen
+    deutschen Satz mit englischer Aussprache vor, und die Ansage muss verstanden werden.
+    """
 
     def sprich(text: str, ziel: Path) -> None:
         try:
@@ -159,7 +183,7 @@ def mit_rueckfall(basis: str, *, http: Callable[[], object] = _http_session) -> 
                 type(fehler).__name__,
                 ESPEAK,
             )
-            _espeak(text, ziel)
+            _espeak(text, ziel, stimme=stimme)
 
     return sprich
 
@@ -201,20 +225,32 @@ def _umwandeln(quelle: Path, ziel: Path) -> None:
 def datei(
     recordings_dir: Path,
     *,
-    text: str = TEXT,
+    inhaltssprache: str = sprachen.DEFAULT,
+    text: str | None = None,
     sprecher: Sprecher | None = None,
     tts_url: str | None = None,
 ) -> Path:
-    """Der Pfad der gesprochenen Ansage; erzeugt sie beim ersten Mal."""
+    """Der Pfad der gesprochenen Ansage; erzeugt sie beim ersten Mal.
+
+    Der Dateiname trägt den Fingerabdruck des **Wortlauts**, nicht die Sprachkennung —
+    damit liegen die Ansagen zweier Sprachen von selbst nebeneinander, und eine geänderte
+    Formulierung bekommt zwangsläufig eine neue Datei. Zwei Runden derselben Sprache
+    teilen sie sich; darin steht nichts, was einer von beiden gehörte.
+    """
+    gesagt = text_fuer(inhaltssprache) if text is None else text
     recordings_dir.mkdir(parents=True, exist_ok=True)
-    ziel = recordings_dir / f"{PRAEFIX}{kennung(text)}.wav"
+    ziel = recordings_dir / f"{PRAEFIX}{kennung(gesagt)}.wav"
     if ziel.is_file():
         return ziel
-    spricht = mit_rueckfall(tts_url or DEFAULT_TTS_URL) if sprecher is None else sprecher
+    spricht = (
+        mit_rueckfall(tts_url or DEFAULT_TTS_URL, stimme=stimme_fuer(inhaltssprache))
+        if sprecher is None
+        else sprecher
+    )
     with tempfile.TemporaryDirectory() as ordner:
         roh = Path(ordner) / "roh.wav"
         try:
-            spricht(text, roh)
+            spricht(gesagt, roh)
         except (OSError, subprocess.CalledProcessError) as fehler:
             raise AnsageFehlt(NICHT_INSTALLIERT) from fehler
         _umwandeln(roh, ziel)

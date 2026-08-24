@@ -44,8 +44,9 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from chronicle import db, lebenszyklus, recordings
+from chronicle import db, lebenszyklus, recordings, settings
 from chronicle import runde as runden
+from chronicle import sprache as sprachen
 from chronicle.config import Config
 from chronicle.runde import Runde
 from chronicle.transcribe import vocabulary
@@ -85,9 +86,9 @@ MINDESTDAUER = 0.3
 # übersprungen« liest sich sonst wie »Aufnahme kaputt«, und wer das nachts im Kanal liest,
 # sucht am nächsten Tag nach einer Stunde Ton, die es nie gab.
 UEBERSPRUNGEN = (
-    "Spur »{source}«: nur {sekunden} Sekunden Ton — darin steckt keine Äußerung, deshalb "
-    "wird sie nicht verschriftet. Verlorengegangen ist nichts, und die übrigen Spuren der "
-    "Sitzung sind davon unberührt."
+    "Track “{source}”: only {sekunden} seconds of audio — there is no utterance in it, so "
+    "it is not transcribed. Nothing was lost, and the session's other tracks are "
+    "untouched by it."
 )
 
 # **Der Erkenner verträgt keine Gleichzeitigkeit.** Gemessen am 2026-08-22: vier Anfragen
@@ -138,9 +139,9 @@ class Transcript:
         if self.uebersprungen:
             return UEBERSPRUNGEN.format(source=self.source, sekunden=f"{self.audio_seconds:.2f}")
         return (
-            f"Spur »{self.source}«: {self.segment_count} Segmente bis "
-            f"{zeitmarke(self.audio_seconds)}, erkannt mit {self.model_name}, "
-            f"{self.vocabulary_names} Namen vorgespannt."
+            f"Track “{self.source}”: {self.segment_count} segments up to "
+            f"{zeitmarke(self.audio_seconds)}, recognised with {self.model_name}, "
+            f"{self.vocabulary_names} names primed."
         )
 
 
@@ -344,7 +345,16 @@ def transcribe_session(
         logger.info("%s: Spur beginnt, %s Namen vorgegeben", marke, len(eigennamen))
         segmente = segment_rows(
             _ohne_papagei(
-                _mit_fortschritt(erkenner.transcribe(audio_path, hotwords=eigennamen), marke),
+                _mit_fortschritt(
+                    erkenner.transcribe(
+                        audio_path,
+                        hotwords=eigennamen,
+                        # Die Sprache der Runde und nicht die des Erkenners: er ist
+                        # instanzweit zwischengespeichert, sie gehört der Gruppe (#268).
+                        sprache=sprachen.WHISPER[settings.sprache(runde)],
+                    ),
+                    marke,
+                ),
                 eigennamen,
                 marke,
             ),
@@ -501,7 +511,7 @@ def _eine_spur(
     """Meldung, ob es gelang, und ob der Lauf stumm blieb — Letzteres bleibt ungesagt."""
     pfad = recording_path(config, aufnahme.filename)
     if not pfad.is_file():
-        return f"Spur »{aufnahme.source}«: {pfad} liegt nicht mehr da.", False, False
+        return f"Track “{aufnahme.source}”: {pfad} is no longer there.", False, False
     try:
         transkript = transcribe_session(
             config,

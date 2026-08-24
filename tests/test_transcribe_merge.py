@@ -11,10 +11,26 @@ import pytest
 from conftest import runde
 
 from chronicle import consent, db, notes, people, recordings
-from chronicle.compose.composer import TRANSKRIPT_TITEL, Notiz, compose
+from chronicle import sprache as sprachen
+from chronicle.compose import composer as _composer
+from chronicle.compose.composer import Notiz
 from chronicle.compose.service import material
 from chronicle.config import Config
 from chronicle.transcribe import merge, service
+
+# Das Material dieser Datei ist deutsch; seit #268 folgt der Text der Sprache seiner Runde
+# (Vorgabe Englisch). Geprüft wird hier deshalb gegen die deutschen Texte.
+_CHRONIK = sprachen.chronik(sprachen.DEUTSCH)
+_RUECKBLICK = sprachen.rueckblick(sprachen.DEUTSCH)
+_ERZAEHLUNG = sprachen.erzaehlung(sprachen.DEUTSCH)
+
+NOTIZEN_TITEL = _CHRONIK.notizen_titel
+TRANSKRIPT_TITEL = _CHRONIK.transkript_titel
+
+
+def compose(material, model=None):
+    return _composer.compose(material, model, inhaltssprache=sprachen.DEUTSCH)
+
 
 STAND = "2026-08-06T20:00:00+00:00"
 
@@ -452,7 +468,7 @@ def test_eine_zeitmarke_wird_gelesen(eingabe, erwartet):
 
 @pytest.mark.parametrize("eingabe", ["gleich", "1:2:3:4", "12,5"])
 def test_eine_unlesbare_marke_wird_gesagt_und_nicht_geraten(eingabe):
-    with pytest.raises(ValueError, match="keine Zeitmarke"):
+    with pytest.raises(ValueError, match="not a timestamp"):
         merge.marke_ms(eingabe)
 
 

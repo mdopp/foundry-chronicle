@@ -28,6 +28,7 @@ from urllib.parse import urlsplit
 from zoneinfo import available_timezones
 
 from chronicle import db
+from chronicle import sprache as sprachen
 from chronicle.config import DEFAULT_OLLAMA_URL, Config
 from chronicle.runde import Runde
 
@@ -57,6 +58,16 @@ DEFAULT_NIGHTLY_ZONE = "Europe/Berlin"
 # Aus der Zonendatenbank des Systems, einmal beim Import. Was hier nicht drinsteht, wird
 # nicht gespeichert — ein aus dem Formular kommender Name geht so nie an ``ZoneInfo``.
 ZONEN: tuple[str, ...] = tuple(sorted(available_timezones()))
+
+# In welcher Sprache der **Inhalt** entsteht (#268). Die Bedienung ist fest englisch; das
+# hier betrifft die hörbare Ansage, die Verschriftung und was das Sprachmodell schreibt.
+# Wie ``nightly_zone`` und aus demselben Grund eine **Liste**: ein unbekannter Wert wird
+# abgewiesen und nicht stillschweigend übernommen. Gespeichert würde er sonst, gelesen aber
+# nicht — ``sprache`` fiele auf die Vorgabe zurück, und die Runde bekäme eine Ansage in
+# einer anderen Sprache als der, die in der Einstellung steht. Bei der Zeitzone verschöbe
+# ein Tippfehler stumm die Nacht; hier läse er einer deutschen Runde die Einwilligung auf
+# Englisch vor.
+SPRACHE_KEY = "content_language"
 
 # Woher die Spieldaten kommen. Auch das gehört der Runde und nicht der Umgebung: die eine
 # Gruppe spielt auf ihrem Server, die andere probiert die Instanz erst einmal aus. Steht
@@ -174,6 +185,20 @@ def save_nightly_zone(runde: Runde, value: str) -> bool:
     return True
 
 
+def sprache(runde: Runde) -> str:
+    """Die Sprache der Inhalte dieser Runde — ein unbekannter Wert ist die Vorgabe."""
+    return sprachen.zurechtgelegt(_lesen(runde, SPRACHE_KEY))
+
+
+def save_sprache(runde: Runde, value: str) -> bool:
+    """Speichert die Sprache; eine unbekannte lässt die bisherige stehen."""
+    gewaehlt = value.strip()
+    if not sprachen.gueltig(gewaehlt):
+        return False
+    save(runde, {SPRACHE_KEY: gewaehlt})
+    return True
+
+
 def foundry_quelle(runde: Runde) -> str:
     """Echter Server oder eingebaute Testwelt — ein unbekannter Wert ist der Server."""
     wert = _lesen(runde, QUELLE_KEY)
@@ -226,7 +251,7 @@ def save(runde: Runde, values: Mapping[str, str | None]) -> None:
     die beiden Ollama-Werte: sie kommen seit #230 aus der Umgebung, und ein Aufrufer, der
     sie hier mitschickt, soll sie nicht durch die Hintertür in die Datei schreiben.
     """
-    erlaubt = (*RUNDEN_KEYS, NIGHTLY_KEY, NIGHTLY_ZONE_KEY, QUELLE_KEY)
+    erlaubt = (*RUNDEN_KEYS, NIGHTLY_KEY, NIGHTLY_ZONE_KEY, QUELLE_KEY, SPRACHE_KEY)
     scope = db.scoped(runde)
     try:
         with scope:

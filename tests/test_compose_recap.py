@@ -2,36 +2,48 @@
 
 import random
 
+from chronicle import sprache as sprachen
+from chronicle.compose import composer as _composer
+from chronicle.compose import recap as _recap
 from chronicle.compose.client import ModelUnreachable
-from chronicle.compose.composer import (
-    BELEG_TITEL,
-    NICHT_ERREICHBAR,
-    NOTIZEN_TITEL,
-    VERBINDUNG_TITEL,
-    ZITAT_AUF,
-    ZITAT_ZU,
-    SceneMaterial,
-    SessionMaterial,
-    compose,
-    numbers,
-)
-from chronicle.compose.recap import (
-    AUFTRAG_FAEDEN,
-    AUFTRAG_HERGANG,
-    CHRONIK_TITEL,
-    FAEDEN_TITEL,
-    HERGANG_TITEL,
-    KEIN_FADEN,
-    MAX_FAEDEN,
-    OHNE_MODELL,
-    SYSTEM_FAEDEN,
-    SYSTEM_HERGANG,
-    VERWORFEN,
-    VERWORFEN_UEBERSCHRIFT,
-    RecapMaterial,
-    digest,
-    recap,
-)
+from chronicle.compose.composer import ZITAT_AUF, ZITAT_ZU, SceneMaterial, SessionMaterial
+from chronicle.compose.recap import MAX_FAEDEN, RecapMaterial, digest
+
+# Das Material dieser Datei ist deutsch; seit #268 folgt der Text der Sprache seiner Runde
+# (Vorgabe Englisch). Geprüft wird hier deshalb gegen die deutschen Texte.
+_CHRONIK = sprachen.chronik(sprachen.DEUTSCH)
+_RUECKBLICK = sprachen.rueckblick(sprachen.DEUTSCH)
+_ERZAEHLUNG = sprachen.erzaehlung(sprachen.DEUTSCH)
+
+BELEG_TITEL = _CHRONIK.beleg_titel
+NICHT_ERREICHBAR = _CHRONIK.nicht_erreichbar
+NOTIZEN_TITEL = _CHRONIK.notizen_titel
+VERBINDUNG_TITEL = _CHRONIK.verbindung_titel
+
+CHRONIK_TITEL = _RUECKBLICK.chronik_titel
+FAEDEN_TITEL = _RUECKBLICK.faeden_titel
+HERGANG_TITEL = _RUECKBLICK.hergang_titel
+KEIN_FADEN = _RUECKBLICK.kein_faden
+OHNE_MODELL = _RUECKBLICK.ohne_modell
+VERWORFEN = _RUECKBLICK.verworfen
+VERWORFEN_UEBERSCHRIFT = _RUECKBLICK.verworfen_ueberschrift
+AUFTRAG_HERGANG = _RUECKBLICK.auftrag_hergang
+AUFTRAG_FAEDEN = _RUECKBLICK.auftrag_faeden
+SYSTEM_HERGANG = _RUECKBLICK.system_hergang
+SYSTEM_FAEDEN = _RUECKBLICK.system_faeden
+
+
+def compose(material, model=None):
+    return _composer.compose(material, model, inhaltssprache=sprachen.DEUTSCH)
+
+
+def numbers(text):
+    return _composer.numbers(text, sprachen.DEUTSCH)
+
+
+def recap(material, model=None):
+    return _recap.recap(material, model, inhaltssprache=sprachen.DEUTSCH)
+
 
 WURF = "Brok Eisenfaust — Knowledge Roll: Summe 7 · Formel 1d12 + 1d12 + 3 · Modifikator 3"
 

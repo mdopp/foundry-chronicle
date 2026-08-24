@@ -30,9 +30,10 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from chronicle import db, settings
+from chronicle import sprache as sprachen
 from chronicle.compose import client
 from chronicle.compose.client import ModelError, TextModel
-from chronicle.compose.composer import ZITAT_REGEL, numbers, zitat
+from chronicle.compose.composer import numbers, zitat
 from chronicle.compose.nacherzaehlung import REGISTER_ZEILE
 from chronicle.compose.service import KIND as CHRONIK
 from chronicle.config import Config
@@ -46,8 +47,10 @@ FADEN = "faden"
 
 ARTEN = (FIGUR, ORT, FADEN)
 
-LABELS = {FIGUR: "Figuren", ORT: "Orte", FADEN: "Handlungsfäden"}
-EINZAHL = {FIGUR: "Figur", ORT: "Ort", FADEN: "Handlungsfaden"}
+# Beschriftungen der Bedienoberfläche und deshalb englisch (#268); die **Schlüssel**
+# daneben stehen so in der Datenbank und werden aus der Modellantwort zurückgelesen.
+LABELS = {FIGUR: "Characters", ORT: "Places", FADEN: "Plot threads"}
+EINZAHL = {FIGUR: "Character", ORT: "Place", FADEN: "Plot thread"}
 
 VORSCHLAG = "vorschlag"
 BESTAETIGT = "bestaetigt"
@@ -70,31 +73,32 @@ MAX_VORSCHLAEGE = 12
 
 TRENNER = "|"
 
-OHNE_CHRONIK = "Ohne Chronik gibt es fürs Register nichts vorzuschlagen."
+OHNE_CHRONIK = "Without a chronicle there is nothing to suggest for the register."
 OHNE_MODELL = (
-    "Noch kein Modell gewählt — das Register bekam keinen Vorschlag. "
-    "Ein Modell hinterlegt der Betreiber dieser Box."
+    "No model chosen yet — the register got no suggestion. "
+    "A model is set up by whoever runs this box."
 )
 NICHT_ERREICHBAR = (
-    "Das Sprachmodell war nicht erreichbar — das Register bekam keinen Vorschlag; "
-    "beim nächsten Lauf wird es erneut versucht."
+    "The language model could not be reached — the register got no suggestion; "
+    "the next run tries again."
 )
-NICHTS_NEUES = "Das Register bekam keinen neuen Vorschlag."
+NICHTS_NEUES = "The register got no new suggestion."
 
-SYSTEM = (
-    "Du führst das Register einer Tisch-Rollenspiel-Runde: Figuren, Orte, "
-    "Handlungsfäden. Du benennst nur, was in der Vorlage steht, und erfindest nichts.\n"
-    f"{ZITAT_REGEL}\n"
-    f"- Höchstens {MAX_VORSCHLAEGE} Zeilen, je ein Eintrag pro Zeile.\n"
-    f"- Jede Zeile genau so: art {TRENNER} Name {TRENNER} ein Satz.\n"
-    f"- Die Art ist {FIGUR}, {ORT} oder {FADEN}.\n"
-    "- Der Satz ist kurz und nennt keine Ziffer und keine Zahl.\n"
-    "- Erfinde keine Figur, keinen Ort und keinen Faden.\n"
-    "- Gibt die Vorlage nichts her, antworte mit: keine\n"
-    "- Antworte mit den Zeilen selbst, ohne Überschrift und ohne Vorrede."
-)
 
-AUFTRAG = "Nenne die Registereinträge dieser Sitzung."
+def anweisung(inhaltssprache: str) -> tuple[str, str]:
+    """System und Auftrag in der Sprache der Runde — die Arten bleiben Bezeichner.
+
+    Die Vorschläge sind **Inhalt**: Namen aus dem Spiel und ein Satz dazu, und sie stehen
+    später neben der Chronik. Sie folgen deshalb derselben Einstellung wie diese (#268).
+    """
+    texte = sprachen.register(inhaltssprache)
+    return (
+        texte.system.format(
+            grenze=MAX_VORSCHLAEGE, trenner=TRENNER, figur=FIGUR, ort=ORT, faden=FADEN
+        ),
+        texte.auftrag,
+    )
+
 
 SZENENTEXT = (
     "SELECT c.id AS scene_id, n.text AS text FROM scene c "
@@ -181,8 +185,8 @@ class Suggested:
         if not self.count:
             return NICHTS_NEUES
         if self.count == 1:
-            return "1 Vorschlag fürs Register wartet auf Bestätigung."
-        return f"{self.count} Vorschläge fürs Register warten auf Bestätigung."
+            return "1 register suggestion is waiting for confirmation."
+        return f"{self.count} register suggestions are waiting for confirmation."
 
 
 def _now() -> str:
@@ -212,12 +216,18 @@ def parse(text: str) -> tuple[Candidate, ...]:
     return tuple(gefunden[:MAX_VORSCHLAEGE])
 
 
-def _belegt(kandidaten: tuple[Candidate, ...], chronik: str) -> tuple[Candidate, ...]:
-    """Dieselbe Zahlenschranke wie in der Komposition, nur auf den gespeicherten Satz."""
-    belegt = numbers(chronik)
+def _belegt(
+    kandidaten: tuple[Candidate, ...], chronik: str, inhaltssprache: str = sprachen.DEFAULT
+) -> tuple[Candidate, ...]:
+    """Dieselbe Zahlenschranke wie in der Komposition, nur auf den gespeicherten Satz.
+
+    Und in derselben Sprache: gegen die falschen Zahlwörter geprüft ließe sie ein
+    ausgeschriebenes »seventeen« als unbelegt durchgehen oder als belegt stehen.
+    """
+    belegt = numbers(chronik, inhaltssprache)
     gehalten = []
     for kandidat in kandidaten:
-        unbelegt = numbers(f"{kandidat.name} {kandidat.description}") - belegt
+        unbelegt = numbers(f"{kandidat.name} {kandidat.description}", inhaltssprache) - belegt
         if unbelegt:
             logger.warning(
                 "Register: Vorschlag %r verworfen, unbelegte Zahlen %s",
@@ -319,15 +329,17 @@ def suggest(
         if schreiber is None:
             return Suggested(reason=OHNE_MODELL)
         try:
+            inhaltssprache = settings.sprache(runde)
+            system, auftrag = anweisung(inhaltssprache)
             # Die Chronik trägt wörtliches Tischgespräch — sie geht als Zitat hinein, der
             # Auftrag steht außerhalb der Marken.
             antwort = schreiber.write(
-                system=SYSTEM, prompt=zitat(chronik.strip()) + f"\n\n{AUFTRAG}"
+                system=system, prompt=zitat(chronik.strip()) + f"\n\n{auftrag}"
             )
         except ModelError as fehler:
             logger.warning("Register bleibt ohne neuen Vorschlag: %s", fehler)
             return Suggested(reason=NICHT_ERREICHBAR)
-        kandidaten = _belegt(parse(antwort), chronik)
+        kandidaten = _belegt(parse(antwort), chronik, inhaltssprache)
         return Suggested(count=_ablegen(scope, session_id, kandidaten))
     finally:
         scope.close()

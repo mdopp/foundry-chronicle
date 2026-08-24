@@ -50,6 +50,7 @@ from chronicle import (
     settings,
 )
 from chronicle import runde as runden
+from chronicle import sprache as sprachen
 from chronicle.bot import (
     BotFehler,
     BotHaelt,
@@ -105,11 +106,11 @@ def _mono_wav(ziel, rate: int, wert: int) -> None:
         datei.writeframes(array("h", [wert, -wert] * (rate // 2)).tobytes())
 
 
-def spricht(text: str, ziel: Path) -> None:
+def spricht(text: str, ziel: Path, **rest) -> None:
     _mono_wav(str(ziel), ESPEAK_RATE, ESPEAK_WERT)
 
 
-def verweigert(text: str, ziel: Path) -> None:
+def verweigert(text: str, ziel: Path, **rest) -> None:
     raise AssertionError("espeak-ng hätte hier nicht sprechen dürfen")
 
 
@@ -268,30 +269,71 @@ class FakeStimme:
 # -- Die Ansage ------------------------------------------------------------------------
 
 
-def test_die_gesprochene_ansage_sagt_das_tragende_und_bleibt_kurz():
+# Was in **jeder** Sprache in der Ansage stehen muss. Sie trägt §201 StGB und tut das nur,
+# wenn die Anwesenden sie verstehen — eine Sprache ohne diese Sätze wäre keine Ansage (#268).
+TRAGENDE_ANSAGE = {
+    sprachen.DEUTSCH: ("Ab jetzt wird dieses Gespräch aufgezeichnet", "verlässt", "Sprachkanal"),
+    sprachen.ENGLISCH: ("this conversation is being recorded", "leave", "voice channel"),
+}
+
+TRAGENDE_BEDINGUNGEN = {
+    sprachen.DEUTSCH: ("Sitzungsprotokoll", "Server der Gruppe", "einverstanden", "Tonspur"),
+    sprachen.ENGLISCH: ("session log", "group's own server", "you agree", "audio track"),
+}
+
+FRIST_IM_SATZ = {sprachen.DEUTSCH: "Tage", sprachen.ENGLISCH: "days"}
+
+
+@pytest.mark.parametrize("inhaltssprache", sprachen.SPRACHEN)
+def test_die_gesprochene_ansage_sagt_das_tragende_und_bleibt_kurz(inhaltssprache):
     """Ab jetzt wird aufgezeichnet, so kommt man raus — der Rest steht im Kanal.
 
     Die Länge ist hier kein Geschmack: die Runde wartet, während die Ansage läuft, und
     den ausführlichen Text hat sie als ``gateway.VORSTELLUNG`` schon vor sich.
+
+    Geprüft wird **jede** Sprache: eine, die den tragenden Satz nicht sagt, wäre keine
+    Einwilligung, sondern ein Hinweis.
     """
-    for satzteil in ("Ab jetzt wird dieses Gespräch aufgezeichnet", "verlässt", "Sprachkanal"):
-        assert satzteil in ansage.TEXT
-    assert "im Kanal" in ansage.TEXT
-    assert len(ansage.TEXT.split()) <= 30
+    gesagt = ansage.text_fuer(inhaltssprache)
+    for satzteil in TRAGENDE_ANSAGE[inhaltssprache]:
+        assert satzteil in gesagt
+    assert "channel" in gesagt or "Kanal" in gesagt
+    assert len(gesagt.split()) <= 35
 
 
-def test_das_protokoll_belegt_worueber_eingewilligt_wurde():
+@pytest.mark.parametrize("inhaltssprache", sprachen.SPRACHEN)
+def test_das_protokoll_belegt_worueber_eingewilligt_wurde(inhaltssprache):
     """Der kurze Satz belegt *dass*, die Bedingungen daneben belegen *worüber*."""
-    assert ansage.TEXT in ansage.PROTOKOLL
-    assert ansage.BEDINGUNGEN in ansage.PROTOKOLL
-    for satzteil in ("Sitzungsprotokoll", "Server der Gruppe", "einverstanden", "Tonspur"):
-        assert satzteil in ansage.PROTOKOLL
+    protokoll = ansage.protokoll_fuer(inhaltssprache)
+    assert ansage.text_fuer(inhaltssprache) in protokoll
+    assert ansage.bedingungen_fuer(inhaltssprache) in protokoll
+    for satzteil in TRAGENDE_BEDINGUNGEN[inhaltssprache]:
+        assert satzteil in protokoll
 
 
-def test_die_zugesagte_frist_ist_die_frist_aus_dem_code():
+@pytest.mark.parametrize("inhaltssprache", sprachen.SPRACHEN)
+def test_die_zugesagte_frist_ist_die_frist_aus_dem_code(inhaltssprache):
     # Der Satz darf sich nicht von dem entfernen, was ``recordings.sweep`` durchsetzt.
-    assert f"{recordings.RETENTION_TAGE} Tage" in ansage.PROTOKOLL
-    assert "aufbewahrt und dann gelöscht" in ansage.PROTOKOLL
+    protokoll = ansage.protokoll_fuer(inhaltssprache)
+    assert f"{recordings.RETENTION_TAGE} {FRIST_IM_SATZ[inhaltssprache]}" in protokoll
+
+
+def test_die_ansage_einer_runde_folgt_ihrer_einstellung(konfiguration):
+    """Die eine Entscheidung, für die es die Einstellung gibt (#268)."""
+    unsere = unsere_runde(konfiguration)
+    assert ansage.text_fuer(settings.sprache(unsere)) == ansage.text_fuer(sprachen.ENGLISCH)
+    settings.save_sprache(unsere, sprachen.DEUTSCH)
+    assert ansage.text_fuer(settings.sprache(unsere)) == ansage.text_fuer(sprachen.DEUTSCH)
+    # Und die Datei dazu ist eine andere: der Fingerabdruck hängt am Wortlaut.
+    assert ansage.kennung(ansage.text_fuer(sprachen.DEUTSCH)) != ansage.kennung(
+        ansage.text_fuer(sprachen.ENGLISCH)
+    )
+
+
+def test_die_espeak_stimme_folgt_der_sprache():
+    """Ohne ``-v`` läse espeak-ng den deutschen Satz mit englischer Aussprache vor."""
+    assert ansage.stimme_fuer(sprachen.DEUTSCH) != ansage.stimme_fuer(sprachen.ENGLISCH)
+    assert ansage.stimme_fuer("kli-ngo-nisch") == ansage.stimme_fuer(sprachen.DEFAULT)
 
 
 def test_die_frist_wird_beim_start_und_danach_taeglich_geprueft(konfiguration, sitzung_id):
@@ -322,8 +364,8 @@ def test_die_ansage_wird_einmal_erzeugt_und_danach_wiederverwendet(tmp_path):
     zweite = ansage.datei(tmp_path, sprecher=zaehlend)
 
     assert erste == zweite
-    assert laeufe == [ansage.TEXT]
-    assert ansage.kennung() in erste.name
+    assert laeufe == [ansage.text_fuer(sprachen.DEFAULT)]
+    assert ansage.kennung(ansage.text_fuer(sprachen.DEFAULT)) in erste.name
 
 
 def test_ein_anderer_wortlaut_ergibt_eine_andere_datei(tmp_path):
@@ -349,7 +391,7 @@ def test_die_ansage_kommt_vom_sprachdienst_der_box(tmp_path, monkeypatch):
 
     (aufruf,) = dienst.aufrufe
     assert aufruf.url == TTS_BASIS + ansage.TTS_PFAD
-    assert aufruf.json["input"] == ansage.TEXT
+    assert aufruf.json["input"] == ansage.text_fuer(sprachen.DEFAULT)
     assert aufruf.timeout == ansage.TTS_TIMEOUT
     assert _erster_wert(ziel) == KOKORO_WERT
 
@@ -500,7 +542,7 @@ def test_das_einwilligungsprotokoll_haelt_kanal_wortlaut_und_anwesende(
         KANAL.id,
         KANAL.name,
     )
-    assert eintrag.text == ansage.PROTOKOLL
+    assert eintrag.text == ansage.protokoll_fuer(sprachen.DEFAULT)
     assert eintrag.announced_at
     assert [(wer.id, wer.name) for wer in eintrag.members] == [
         (MIRA.id, MIRA.name),
@@ -509,7 +551,13 @@ def test_das_einwilligungsprotokoll_haelt_kanal_wortlaut_und_anwesende(
 
 
 def test_vor_der_ansage_wird_keine_spur_geschrieben(konfiguration, sitzung_id):
-    aufnahme = Aufnahme(konfiguration, unsere_runde(konfiguration), sitzung_id, KANAL)
+    aufnahme = Aufnahme(
+        konfiguration,
+        unsere_runde(konfiguration),
+        sitzung_id,
+        KANAL,
+        inhaltssprache=sprachen.DEFAULT,
+    )
 
     with pytest.raises(NichtAngesagt):
         aufnahme.schreiben(MIRA, stille(10))
@@ -662,7 +710,7 @@ def test_der_nachzuegler_hoert_die_ansage_noch_einmal(konfiguration, sitzung_id,
     assert erste.kind == consent.ANSAGE
     assert spaet.kind == consent.NACHZUEGLER
     assert [wer.name for wer in spaet.members] == [SPAET.name]
-    assert spaet.text == ansage.PROTOKOLL
+    assert spaet.text == ansage.protokoll_fuer(sprachen.DEFAULT)
 
 
 def test_eine_ansage_die_woanders_lief_belegt_keine_einwilligung(
@@ -722,7 +770,7 @@ def test_stoppen_beendet_den_mitschnitt_trennt_und_reiht_ein(
     assert stimme.ablauf == ["ansage", "mitschnitt", "mitschnitt-ende", "getrennt"]
     assert not aufnahme.laeuft
     assert len(recordings.pending(unsere_runde(konfiguration))) == 1
-    assert "wartet auf den Stapel" in meldungen[0]
+    assert "queued for the batch" in meldungen[0]
 
 
 # Wer im Sprachkanal saß, ohne dem Bot je begegnet zu sein: py-cord reicht dann ein
@@ -787,7 +835,7 @@ def test_ein_gescheitertes_nachschlagen_haelt_den_abschluss_nicht_auf(
 
     meldungen = asyncio.run(recorder.stoppen(stimme, aufnahme))
 
-    assert "wartet auf den Stapel" in meldungen[0]
+    assert "queued for the batch" in meldungen[0]
     assert [spur.discord_name for spur in recordings.pending(unsere_runde(konfiguration))] == [None]
 
 
@@ -858,7 +906,7 @@ def test_der_zweite_anlauf_holt_die_liegengebliebene_spur_nach(
         "Mira",
     ]
     assert len(meldungen) == 3
-    assert all("wartet auf den Stapel" in meldung for meldung in meldungen)
+    assert all("queued for the batch" in meldung for meldung in meldungen)
 
 
 def test_eine_stumme_spur_laesst_den_zweiten_anlauf_nicht_auflaufen(
@@ -963,7 +1011,7 @@ def test_der_zweite_anlauf_holt_die_nicht_geschlossene_spur_nach(
         "Mira",
     ]
     assert len(meldungen) == 3
-    assert all("wartet auf den Stapel" in meldung for meldung in meldungen)
+    assert all("queued for the batch" in meldung for meldung in meldungen)
 
 
 @pytest.fixture
@@ -1111,7 +1159,7 @@ class Inselerkenner:
 
     name = "inselerkenner"
 
-    def transcribe(self, audio_path, *, hotwords=()):
+    def transcribe(self, audio_path, *, hotwords=(), sprache="en"):
         with wave.open(str(audio_path), "rb") as datei:
             rate = datei.getframerate()
             werte = array("h", datei.readframes(datei.getnframes()))[:: ansage.KANAELE]
@@ -1352,7 +1400,7 @@ def test_die_frist_meldet_je_sitzung_und_nicht_je_haeppchen(
 
     assert meldungen == (
         recordings.NACH_FRIST.format(
-            sitzung=sitzung_id, was="6 Aufnahmen", tage=recordings.RETENTION_TAGE
+            sitzung=sitzung_id, was="6 recordings", tage=recordings.RETENTION_TAGE
         ),
     )
     assert list(konfiguration.recordings_dir.glob("sitzung*")) == []
@@ -1438,7 +1486,7 @@ def test_die_einwilligung_ueberlebt_das_loeschen_ihrer_sitzung(
         verbindung.close()
 
     assert zeile["session_id"] is None
-    assert zeile["text"] == ansage.PROTOKOLL
+    assert zeile["text"] == ansage.protokoll_fuer(sprachen.DEFAULT)
     assert anwesend == 2
 
 
@@ -2406,14 +2454,14 @@ def test_die_vorstellung_steht_im_kanal_bevor_die_ansage_laeuft(
 
 
 def test_die_vorstellung_sagt_frist_und_befehle_aus_einer_quelle():
-    assert f"{recordings.RETENTION_TAGE} Tagen" in gateway.VORSTELLUNG
+    assert f"{recordings.RETENTION_TAGE} days" in gateway.VORSTELLUNG
     # Ein Text, zwei Anlässe: die Liste steht nicht zweimal da.
     assert gateway.BEFEHLE in gateway.VORSTELLUNG
     assert gateway.BEFEHLE in gateway.HILFE
     # Und der Ausweg ebenso wenig — er trägt rechtlich, also gibt es ihn genau einmal.
     assert gateway.AUSWEG in gateway.VORSTELLUNG
     assert gateway.AUSWEG in gateway.HILFE
-    for satzteil in ("hörbare Ansage", "Bis dahin ist Zeit"):
+    for satzteil in ("audible announcement", "Until then there is time"):
         assert satzteil in gateway.VORSTELLUNG
 
 
@@ -2501,7 +2549,7 @@ def test_die_ruhende_runde_nimmt_nichts_mehr_auf(konfiguration, sitzung_id, ohne
     asyncio.run(befehl(bot, "start")(ctx))
 
     (antwort,) = ctx.antworten
-    assert "Diese Runde ruht" in antwort
+    assert "This round is resting" in antwort
     assert runde.kanal.verbindung is None
 
 
@@ -2768,7 +2816,7 @@ def test_ein_gescheiterter_start_nimmt_die_vorstellung_dort_zurueck_wo_sie_steht
     widerruf = gesagt[-1]
     assert "".join(gesagt[:-1]) == gateway.VORSTELLUNG
     assert widerruf == gateway.WIDERRUF.format(grund=grund)
-    assert "ich schneide nicht mit" in widerruf
+    assert "I am not recording" in widerruf
     assert not runde.kanal.verbindung.schneidet
     assert runde.kanal.verbindung.getrennt
     assert der_lauf(bot, konfiguration).aufnahme is None
@@ -2818,7 +2866,7 @@ def test_ohne_zugestellte_vorstellung_wird_gar_nicht_erst_angesagt(
     assert runde.kanal.verbindung.getrennt
     assert der_lauf(bot, konfiguration).aufnahme is None
     assert consent.for_session(unsere_runde(konfiguration), sitzung_id) == ()
-    assert ctx.antworten[0].startswith("Das hat nicht geklappt:")
+    assert ctx.antworten[0].startswith("That did not work:")
     # Im Kanal steht nichts — auch kein Widerruf. Versucht wird er trotzdem: dieser Kanal
     # weist jede Nachricht ab, also verfällt er ins Log statt vor einer leeren Wand zu
     # stehen. Wo nur ein Teil scheitert, kommt er an — der Test darunter fährt das.
@@ -2868,7 +2916,7 @@ def test_die_halb_zugestellte_vorstellung_wird_auch_zurueckgenommen(
     assert runde.kanal.verbindung.getrennt
     assert der_lauf(bot, konfiguration).aufnahme is None
     assert consent.for_session(unsere_runde(konfiguration), sitzung_id) == ()
-    assert ctx.antworten[0].startswith("Das hat nicht geklappt:")
+    assert ctx.antworten[0].startswith("That did not work:")
 
 
 def test_ein_stolperndes_trennen_nimmt_den_widerruf_nicht_mit(
@@ -2900,7 +2948,7 @@ def test_ein_stolperndes_trennen_nimmt_den_widerruf_nicht_mit(
     assert not runde.kanal.verbindung.getrennt
     assert not runde.kanal.verbindung.schneidet
     assert der_lauf(bot, konfiguration).aufnahme is None
-    assert ctx.antworten[0].startswith("Das hat nicht geklappt:")
+    assert ctx.antworten[0].startswith("That did not work:")
 
 
 def _stolpert_beim_trennen(kanal, monkeypatch):
@@ -3048,7 +3096,7 @@ def test_die_senke_schreibt_je_sprecher_eine_spur(konfiguration, sitzung_id, ohn
         spur.filename.split("-")[-1] for spur in recordings.pending(unsere_runde(konfiguration))
     }
     assert spuren == {"Mira.wav", "Brok.wav"}
-    assert "wartet auf den Stapel" in ctx.antworten[0]
+    assert "queued for the batch" in ctx.antworten[0]
 
 
 def test_was_nach_dem_hinauswurf_ankommt_faellt_weg_und_nicht_in_ein_haeppchen(
@@ -3115,10 +3163,10 @@ def test_der_empfangstest_nennt_pakete_und_spuren(
     asyncio.run(befehl(bot, "check")(ctx))
 
     (antwort,) = ctx.antworten
-    assert "Pakete: 3" in antwort
-    assert "Spuren: 2" in antwort
-    assert f"• {MIRA.name}: {2 * len(PAKET)} Bytes" in antwort
-    assert f"• {BROK.name}: {len(PAKET)} Bytes" in antwort
+    assert "Packets: 3" in antwort
+    assert "Tracks: 2" in antwort
+    assert f"• {MIRA.name}: {2 * len(PAKET)} bytes" in antwort
+    assert f"• {BROK.name}: {len(PAKET)} bytes" in antwort
     assert recorder.PROBE_TRAEGT in antwort
     # Der Bericht nennt Anzeigenamen — er geht ephemer an den, der ihn ausgelöst hat.
     assert ctx.ephemer == [True]
@@ -3165,7 +3213,7 @@ def test_ein_empfang_der_von_selbst_aufhoert_faellt_nicht_gruen_aus(
     asyncio.run(befehl(bot, "check")(ctx))
 
     (antwort,) = ctx.antworten
-    assert "Pakete: 1" in antwort
+    assert "Packets: 1" in antwort
     assert recorder.PROBE_ABGEBROCHEN.format(dauer=recorder.PROBE_DAUER) in antwort
     assert recorder.PROBE_TRAEGT not in antwort
     assert recorder.PROBE_STILL.format(dauer=recorder.PROBE_DAUER) not in antwort
@@ -3187,7 +3235,7 @@ def test_ein_abbruch_ohne_paket_wird_nicht_der_stille_angelastet(
     asyncio.run(befehl(bot, "check")(ctx))
 
     (antwort,) = ctx.antworten
-    assert "Pakete: 0" in antwort
+    assert "Packets: 0" in antwort
     assert recorder.PROBE_ABGEBROCHEN.format(dauer=recorder.PROBE_DAUER) in antwort
     assert recorder.PROBE_STILL.format(dauer=recorder.PROBE_DAUER) not in antwort
 
@@ -3201,9 +3249,9 @@ def test_ohne_ein_einziges_paket_faellt_das_urteil_nicht_gruen_aus(
     asyncio.run(befehl(bot, "check")(ctx))
 
     (antwort,) = ctx.antworten
-    assert "Pakete: 0" in antwort
-    assert "Spuren: 0" in antwort
-    assert "kein einziges Paket" in antwort
+    assert "Packets: 0" in antwort
+    assert "Tracks: 0" in antwort
+    assert "Not a single packet" in antwort
     assert recorder.PROBE_TRAEGT not in antwort
 
 
@@ -3250,7 +3298,7 @@ def test_auch_die_gescheiterte_probe_laesst_keine_spur_liegen(
 
     asyncio.run(befehl(bot, "check")(ctx))
 
-    assert ctx.antworten[0].startswith("Das hat nicht geklappt:")
+    assert ctx.antworten[0].startswith("That did not work:")
     assert probespuren(konfiguration) == []
     assert list(recordings.pending(unsere_runde(konfiguration))) == []
 
@@ -3266,7 +3314,7 @@ def test_der_empfangstest_sagt_hoerbar_an_und_protokolliert_die_einwilligung(
     assert len(runde.kanal.verbindung.gespielt) == 1
     (eintrag,) = consent.for_session(unsere_runde(konfiguration), sitzung_id)
     assert eintrag.kind == consent.ANSAGE
-    assert eintrag.text == ansage.PROTOKOLL
+    assert eintrag.text == ansage.protokoll_fuer(sprachen.DEFAULT)
     assert {wer.name for wer in eintrag.members} == {MIRA.name, BROK.name}
     # Und der Ausweg stand im Kanal, bevor die Ansage lief: die Null ist der Beleg.
     gesagt = [text for text, _ in runde.kanal.geschrieben]
@@ -3333,7 +3381,7 @@ def test_eine_unloeschbare_probespur_wird_beim_namen_genannt(
     )
     assert [spur.geloescht for spur in spuren] == [False]
     assert MIRA.name in text
-    assert "ließen sich aber nicht löschen" in text
+    assert "could not be deleted" in text
     assert recorder.PROBE_AUFGERAEUMT.format(dauer=1) not in text
     assert MIRA.name not in caplog.text
 
@@ -3393,7 +3441,7 @@ def test_die_ruhende_runde_wird_auch_nicht_geprueft(
 
     asyncio.run(befehl(bot, "check")(ctx))
 
-    assert "Diese Runde ruht" in ctx.antworten[0]
+    assert "This round is resting" in ctx.antworten[0]
     assert runde.kanal.verbindung is None
     assert consent.for_session(unsere_runde(konfiguration), sitzung_id) == ()
 
@@ -3573,7 +3621,7 @@ def test_ist_niemand_mehr_da_hoert_der_bot_von_selbst_auf(
     assert spur.filename.endswith("Mira.wav")
     (gesagt,) = kanal.geschrieben
     assert gesagt.startswith(gateway.LEER_BEENDET)
-    assert "wartet auf den Stapel" in gesagt
+    assert "queued for the batch" in gesagt
 
 
 def test_das_ende_im_leeren_kanal_steht_ohne_kanalnamen_im_log(
@@ -3686,11 +3734,11 @@ def test_der_abrisssatz_stimmt_bei_einem_teil_wie_bei_vielen():
     geteilt wird ab zwei Stücken, und meistens sind es genau zwei.
     """
     einer = gateway._abrisssatz(1, 2)
-    assert "1 von 2 Teilen kam durch, 1 fehlt." in einer
-    assert "kamen" not in einer and "fehlen" not in einer
+    assert "only 1 of 2 parts got through, 1 is missing" in einer
+    assert " are missing" not in einer
 
     mehrere = gateway._abrisssatz(2, 5)
-    assert "2 von 5 Teilen kamen durch, 3 fehlen." in mehrere
+    assert "only 2 of 5 parts got through, 3 are missing" in mehrere
 
 
 def test_scheitert_schon_das_erste_stueck_bleibt_es_beim_alles_oder_nichts(caplog):
@@ -3863,7 +3911,7 @@ def test_der_satz_ans_alleinsein_zeigt_den_widerspruch_und_traegt_keinen_namen()
     # Und die Hilfe sagt es vorab — die Vorstellung nicht, denn sie ist ohnehin der längste
     # Text des Bots. Geprüft wird der Satz und nicht »allein im Sprachkanal«: das steht auch
     # im Punkt zu ``/session pause`` und meint dort die Gegenlage, den leeren Kanal.
-    hinweis = "Bleibt eine Person allein im Sprachkanal zurück, schneide ich weiter mit"
+    hinweis = "If one person is left alone in the voice channel, I carry on recording"
     assert hinweis in gateway.HILFE
     assert hinweis not in gateway.BEFEHLE
     assert hinweis not in gateway.VORSTELLUNG
@@ -4267,7 +4315,7 @@ def test_wer_allein_widerspricht_beendet_damit_den_mitschnitt(
 
     assert not runde.kanal.verbindung.schneidet
     assert runde.kanal.verbindung.getrennt
-    assert "wartet auf den Stapel" in ctx.antworten[0]
+    assert "queued for the batch" in ctx.antworten[0]
 
 
 def test_wer_in_der_frist_wiederkommt_findet_seine_aufnahme_vor(
@@ -4524,7 +4572,7 @@ def test_wer_verschoben_wird_hoert_auf_und_sagt_warum(
     assert spur.filename.endswith("Mira.wav")
     (gesagt,) = kanal.geschrieben
     assert gesagt.startswith(gateway.VERSCHOBEN.format(kanal=runde.kanal.name))
-    assert "wartet auf den Stapel" in gesagt
+    assert "queued for the batch" in gesagt
 
 
 def test_der_start_im_falschen_kanal_laesst_keinen_lauf_zurueck(
@@ -4781,7 +4829,13 @@ def test_die_meldung_vieler_spuren_kommt_geteilt_statt_gar_nicht(
     bot = gateway.baue(konfiguration)
     kanal = FakeTextkanal()
     bot.kanaele[SITZUNGSKANAL] = kanal
-    aufnahme = Aufnahme(konfiguration, unsere_runde(konfiguration), sitzung_im_kanal, KANAL)
+    aufnahme = Aufnahme(
+        konfiguration,
+        unsere_runde(konfiguration),
+        sitzung_im_kanal,
+        KANAL,
+        inhaltssprache=sprachen.DEFAULT,
+    )
     lauf = gateway._Lauf()
     lauf.aufnahme = aufnahme
     meldungen = tuple(
@@ -4830,7 +4884,13 @@ def test_das_langsamere_netz_meldet_kein_zweites_ende(konfiguration, sitzung_im_
     bot = gateway.baue(konfiguration)
     kanal = FakeTextkanal()
     bot.kanaele[SITZUNGSKANAL] = kanal
-    aufnahme = Aufnahme(konfiguration, unsere_runde(konfiguration), sitzung_im_kanal, KANAL)
+    aufnahme = Aufnahme(
+        konfiguration,
+        unsere_runde(konfiguration),
+        sitzung_im_kanal,
+        KANAL,
+        inhaltssprache=sprachen.DEFAULT,
+    )
 
     asyncio.run(gateway._beenden_und_sagen(bot, gateway._Lauf(), aufnahme, "beendet", "kaputt"))
 
@@ -4989,7 +5049,7 @@ def test_ein_zweites_aufnahme_stop_holt_die_liegengebliebene_spur_nach(
 
     erster, zweiter = asyncio.run(ablauf())
 
-    assert erster.antworten[0].startswith("Das hat nicht geklappt")
+    assert erster.antworten[0].startswith("That did not work")
     assert BROK.name in erster.antworten[0]
     assert gateway.LAEUFT_NICHT not in zweiter.antworten
     assert not any(antwort.startswith("Das hat nicht geklappt") for antwort in zweiter.antworten)
@@ -5053,9 +5113,9 @@ def test_ein_stolpernder_befehl_antwortet_trotzdem(
     asyncio.run(befehl(bot, "start")(ctx))
 
     (antwort,) = ctx.antworten
-    assert antwort.startswith("Das hat nicht geklappt:")
+    assert antwort.startswith("That did not work:")
     assert "RuntimeError" in antwort
-    assert "Was du tun kannst" in antwort
+    assert "What you can do" in antwort
     # Und der Bot hängt nicht stumm im Kanal herum.
     assert runde.kanal.verbindung.getrennt
 
@@ -5070,7 +5130,13 @@ def test_die_hilfe_erklaert_die_bedienung(konfiguration, runde):
     # `/session check` zwei Nachrichten, und keins der Stücke darf dabei wegfallen.
     ganz = "".join(ctx.antworten)
     assert ganz == gateway.HILFE
-    for satzteil in ("/session start", "/session pause", "/session check", "Ansage", "verlässt"):
+    for satzteil in (
+        "/session start",
+        "/session pause",
+        "/session check",
+        "announcement",
+        "leaves",
+    ):
         assert satzteil in ganz
     # Der Ausweg kommt zuerst — er trägt rechtlich und darf nicht in Stück zwei rutschen.
     assert gateway.AUSWEG in ctx.antworten[0]
@@ -5097,7 +5163,12 @@ def test_die_bestaetigung_sagt_das_wichtigste(konfiguration, sitzung_id, ohne_es
     asyncio.run(befehl(bot, "start")(ctx))
 
     (antwort,) = ctx.antworten
-    for satzteil in ("Ansage", "eigene Spur", "verlässt den Sprachkanal", "/session pause"):
+    for satzteil in (
+        "announcement",
+        "one track per speaker",
+        "leave the voice channel",
+        "/session pause",
+    ):
         assert satzteil in antwort
 
 
@@ -5807,7 +5878,13 @@ class LeererReader:
 
 
 def echte_senke(konfiguration, sitzung_id, stimme=None):
-    aufnahme = Aufnahme(konfiguration, unsere_runde(konfiguration), sitzung_id, KANAL)
+    aufnahme = Aufnahme(
+        konfiguration,
+        unsere_runde(konfiguration),
+        sitzung_id,
+        KANAL,
+        inhaltssprache=sprachen.DEFAULT,
+    )
     aufnahme.ansage_protokollieren((MIRA,))
     return aufnahme, gateway._senke(stimme or FakeStimme(), aufnahme)
 

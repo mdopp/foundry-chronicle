@@ -431,7 +431,7 @@ def test_ein_unerreichbares_discord_verschiebt_die_zustellung_ohne_token(config,
 
     zustellung = deliver(config, gastgeber, sitzung_id, client=DiscordClient(config, http=Weg))
 
-    assert "nicht zugestellt" in zustellung.meldung
+    assert "not delivered" in zustellung.meldung
     assert zustellung.gescheitert
     assert TOKEN not in zustellung.meldung
     assert zugestellt_am(gastgeber, sitzung_id) is None

@@ -46,6 +46,7 @@ from chronicle import (
     zugang,
 )
 from chronicle import runde as runden
+from chronicle import sprache as sprachen
 from chronicle.bot import BotFehler
 from chronicle.config import Config
 from chronicle.foundry import service as foundry
@@ -60,150 +61,149 @@ logger = logging.getLogger(__name__)
 # nach einem Befehl, den es für ihn gar nicht gibt — ein Rat, den der Empfänger nicht
 # befolgen kann, ist schlimmer als keiner.
 KEINE_RUNDE = (
-    "Für diesen Server ist noch keine Runde eingerichtet — ich lege hier nichts ab und "
-    "erfinde auch keine. **Jemand mit »Server verwalten«** muss einmal `/chronicle setup` "
-    "aufrufen; danach funktioniert alles andere."
+    "No round is set up for this server yet — I file nothing here and I invent nothing "
+    "either. **Somebody with “Manage Server”** has to call `/chronicle setup` once; after "
+    "that everything else works."
 )
 
 # Die Runde ist noch da, sie schweigt nur. Das zu sagen ist wichtiger, als es zu erklären:
 # wer den Bot zurückholt, bekommt alles zurück — bis zum genannten Tag.
 GESPERRT = (
-    "Diese Runde ruht, seit ich von diesem Server geflogen bin. Bis zum {datum} liegt "
-    "alles noch da: lade mich wieder ein, dann geht es weiter, wo ihr aufgehört habt. "
-    "Danach ist es gelöscht."
+    "This round is resting since I was removed from this server. Everything is still there "
+    "until {datum}: invite me back and it carries on where you left off. After that it is "
+    "deleted."
 )
 
 # Was ein Klick sagt, dessen Ansicht eine Runde meint, die es so nicht mehr gibt. Getan
 # wird dann nichts: die Kennung darunter kann inzwischen einer fremden Gilde gehören.
 VERALTET = (
-    "Diese Ansicht ist von vorhin, und seither hat sich hier etwas geändert. Ich habe "
-    "nichts geändert — ruf den Befehl noch einmal auf."
+    "This view is from earlier, and something has changed here since. I have changed "
+    "nothing — call the command again."
 )
 
 NUR_IN_DER_SITZUNG = (
-    "Das geht nur, solange hier eine Sitzung läuft. `/session start` beginnt eine — "
-    "danach zählt in diesem Kanal alles Getippte."
+    "This only works while a session is running here. `/session start` begins one — after "
+    "that everything typed in this channel counts."
 )
 
 # Die Grenze, die vorher der Thread von selbst zog: zwei Sitzungen nebeneinander hätten
 # zwei Ziele für dieselbe getippte Zeile, und der Mitschnitt hinge an der falschen (#271).
 SITZUNG_LAEUFT_SCHON = (
-    "Hier läuft schon eine Sitzung — zwei nebeneinander gibt es nicht, sonst wüsste "
-    "niemand, in welche das Getippte gehört. `/session done` schließt die laufende ab, "
-    "danach beginnt `/session start` die nächste."
+    "A session is already running here — there are no two side by side, otherwise nobody "
+    "would know which one the typing belongs to. `/session done` closes the running one, "
+    "then `/session start` begins the next."
 )
 
 # Was der Abschluss sagt, wenn wirklich keine Sitzung offen ist. Nur dann ist der Rat zu
 # `/session start` richtig: steht eine, legte er eine zweite an, und die Aufnahmen der
 # ersten blieben liegen (#156).
 KEINE_SITZUNG = (
-    "Hier läuft gerade keine Sitzung, ich habe also nichts abzuschließen. "
-    "`/session start` beginnt eine."
+    "No session is running here right now, so I have nothing to close. `/session start` begins one."
 )
 
 ANGELEGT = (
-    "Die Sitzung läuft. Ab jetzt hier schreiben: **jede Nachricht wird eine Notiz**, eine "
-    "Sprachnachricht oder eine Audiodatei wird ein Diktat. `/session scene <Name>` beginnt die "
-    "nächste Szene, `/session done` schließt die Sitzung ab — und wenn der Sprachkanal "
-    "leer wird, mache ich das von selbst. Wer eine Nachricht ändert oder löscht, ändert "
-    "oder löscht damit auch die Notiz."
+    "The session is running. Write here from now on: **every message becomes a note**, a "
+    "voice message or an audio file becomes a dictation. `/session scene <name>` begins the "
+    "next scene, `/session done` closes the session — and when the voice channel goes "
+    "empty, I do that by myself. Whoever edits or deletes a message edits or deletes the "
+    "note with it."
 )
 
-SITZUNG_STEHT = "Die Sitzung steht — ab jetzt zählt hier alles Getippte."
+SITZUNG_STEHT = "The session stands — from now on everything typed here counts."
 
 # Die Sitzung steht, nur die Ansage im Kanal kam nicht durch. Das muss anders klingen als
 # ein Fehlschlag: »noch einmal versuchen« legte hier eine zweite an — und niemand außer
 # dem Aufrufer weiß, dass jede Zeile jetzt eine Notiz wird.
 STUMM_ANGELEGT = (
-    "Die Sitzung steht — meine Ansage in diesem Kanal ist aber nicht angekommen. Ruf "
-    "`/session start` **nicht** noch einmal auf; sag der Runde bitte selbst, dass ab "
-    "jetzt jede Nachricht hier eine Notiz wird."
+    "The session stands — but my announcement in this channel did not arrive. Do **not** "
+    "call `/session start` again; please tell the group yourself that every message here "
+    "becomes a note from now on."
 )
 
-SZENE = "Neue Szene »{name}«. Was ab jetzt geschrieben wird, gehört dazu."
-SZENE_OHNE_NAMEN = "Neue Szene. Was ab jetzt geschrieben wird, gehört dazu."
+SZENE = "New scene “{name}”. Whatever is written from now on belongs to it."
+SZENE_OHNE_NAMEN = "New scene. Whatever is written from now on belongs to it."
 
 # Seit #269 nimmt der Mitlauf sie meist binnen einer Minute; spätestens der Abschluss holt
 # sie. Zugesagt wird trotzdem nur das Spätestens: was der Mitlauf gerade schafft, hängt an
 # einem Nachbardienst, und ein Versprechen auf die Minute wäre eines, das wir hier nicht
 # halten können.
 DIKTAT = (
-    "Aufnahme angekommen — verschriftet wird sie im Hintergrund, spätestens wenn du "
-    "`/session done` gibst."
+    "Recording received — it is transcribed in the background, at the latest when you give "
+    "`/session done`."
 )
 
-ZU_GROSS = "»{name}« ist größer als {grenze} MB und bleibt liegen."
+ZU_GROSS = "“{name}” is larger than {grenze} MB and stays where it is."
 
 # Kein Fehlschlag der Sitzung, sondern ein misslungener Anhang: die Meldung sagt beides,
 # sonst sucht die Runde am nächsten Tag nach einer Aufnahme, die es nie gab.
 LEER = (
-    "»{name}« kam ohne Ton an — null Bytes. Ich reihe sie nicht ein; schick sie einfach "
-    "noch einmal. An der Sitzung fehlt sonst nichts."
+    "“{name}” arrived without audio — zero bytes. I am not queueing it; just send it again. "
+    "Nothing else is missing from the session."
 )
 
 # Eine Markdown-Datei im Thread ist weder Notiz noch Diktat. Sie fiel bis #169 still
 # durch — und Stille ist hier das Schlechteste: die Runde hält den Altbestand für abgelegt.
 DOKUMENT_IM_THREAD = (
-    "»{name}« sieht nach Notizen aus und nicht nach einer Aufnahme — daraus mache ich "
-    "nichts. Was in die Chronik soll, tippt ihr hier hinein, solange die Sitzung läuft."
+    "“{name}” looks like notes and not like a recording — I make nothing out of it. "
+    "Whatever is meant for the chronicle you type in here while the session runs."
 )
 
 DOKUMENT_KEINE_DATEI = (
-    "»{name}« lese ich nicht: ich nehme Notizen als Markdown- oder Textdatei ({endungen})."
+    "I do not read “{name}”: I take notes as a Markdown or text file ({endungen})."
 )
 
-DOKUMENT_ZU_GROSS = "»{name}« ist größer als {grenze} MB — so viel Text lese ich nicht ein."
+DOKUMENT_ZU_GROSS = "“{name}” is larger than {grenze} MB — I do not read in that much text."
 
-DOKUMENT_UNLESBAR = (
-    "»{name}« ist kein Text, den ich lesen kann — erwartet wird UTF-8. Angelegt habe ich nichts."
-)
+DOKUMENT_UNLESBAR = "“{name}” is not text I can read — UTF-8 is expected. I have created nothing."
 
 # Kein Fehlschlag, sondern die häufigste Ursache: die Abende stehen ohne Datum da. Der
 # Satz nennt die beiden Schreibweisen, die sicher gelesen werden — geraten wird keine.
 DOKUMENT_OHNE_ABENDE = (
-    "In »{name}« finde ich keinen Abend. Eine Sitzung erkenne ich an einer Überschrift mit "
-    "Datum — `## 12.03.2026` oder `## 2026-03-12`. Angelegt habe ich nichts."
+    "I find no evening in “{name}”. I recognise a session by a heading with a date — "
+    "`## 12.03.2026` or `## 2026-03-12`. I have created nothing."
 )
 
-DOKUMENT_VORSCHAU = "**Aus »{name}« würde ich {sitzungen} anlegen:**"
+DOKUMENT_VORSCHAU = "**Out of “{name}” I would create {sitzungen}:**"
 
 DOKUMENT_ABEND = "• **{datum}**{titel} — {szenen}"
 
 DOKUMENT_OHNE_DATUM = (
-    "Ohne Datum in der Überschrift und deshalb ausgelassen: {liste}. Trag dort eines nach "
-    "und schick die Datei noch einmal — raten tue ich es nicht."
+    "Without a date in the heading and therefore skipped: {liste}. Add one there and send "
+    "the file again — I do not guess it."
 )
 
 # Ein Abend ohne einen einzigen Satz wird nicht angelegt (#172). Der Satz sagt beides: was
 # ausgelassen wurde und wie es hereinkäme — sonst hielte die Runde den Abschnitt für abgelegt.
 DOKUMENT_OHNE_TEXT = (
-    "Ohne einen Satz darunter und deshalb ausgelassen: {liste}. Eine Sitzung, die nichts "
-    "trägt, lege ich nicht an — schreib etwas darunter und schick die Datei noch einmal."
+    "Without a single sentence below it and therefore skipped: {liste}. I do not create a "
+    "session that carries nothing — write something below it and send the file again."
 )
 
 # Der Nachsatz allein trüge die Antwort nicht: »eine Sitzung erkenne ich an einem Datum«
 # wäre hier falsch, das Datum steht ja da.
-DOKUMENT_NUR_OHNE_TEXT = "In »{name}« steht unter keinem Abend ein Satz. Angelegt habe ich nichts."
-
-DOKUMENT_SCHON_DA = "Das steht schon da und bleibt, wie es ist: {liste}."
-
-DOKUMENT_FRAGE = "Soll ich das so anlegen? Bis du bestätigst, ist nichts geschrieben."
-
-DOKUMENT_JA = "Ja, anlegen"
-DOKUMENT_NEIN = "Abbrechen"
-
-DOKUMENT_ANGELEGT = (
-    "{sitzungen} angelegt. Sie stehen ab jetzt in der Chronik und `/chronicle search` findet, was "
-    "darin vorkommt."
+DOKUMENT_NUR_OHNE_TEXT = (
+    "In “{name}” there is no sentence under any evening. I have created nothing."
 )
 
-DOKUMENT_ABGEBROCHEN = "Gut, ich habe nichts angelegt."
+DOKUMENT_SCHON_DA = "This is already there and stays as it is: {liste}."
+
+DOKUMENT_FRAGE = "Shall I create it like this? Until you confirm, nothing is written."
+
+DOKUMENT_JA = "Yes, create"
+DOKUMENT_NEIN = "Cancel"
+
+DOKUMENT_ANGELEGT = (
+    "{sitzungen} created. They are in the chronicle from now on and `/chronicle search` "
+    "finds what appears in them."
+)
+
+DOKUMENT_ABGEBROCHEN = "Fine, I have created nothing."
 
 # Der zweite Klick auf denselben Knopf, oder die zweite Vorschau desselben Dokuments: die
 # Abende stehen schon, und ein »angelegt« darunter wäre die Zusage, dass sie zweimal da sind.
 DOKUMENT_NICHTS_NEU = (
-    "Diese Abende stehen schon in der Chronik — angelegt habe ich nichts. Doppelt steht "
-    "dadurch nichts da."
+    "These evenings are already in the chronicle — I have created nothing. Nothing is there "
+    "twice because of it."
 )
 
 # -- Eine einzelne Sitzung wieder loswerden ----------------------------------------------
@@ -218,168 +218,163 @@ DOKUMENT_NICHTS_NEU = (
 SITZUNG_ZUR_WAHL = 25
 
 SITZUNG_KEINE = (
-    "Hier ist noch keine Sitzung geschrieben — zu löschen gibt es nichts. "
-    "`/session start` beginnt die erste."
+    "No session is written here yet — there is nothing to delete. `/session start` begins "
+    "the first one."
 )
 
 SITZUNG_WAHL = (
-    "**Eine einzelne Sitzung löschen.** Wähl unten aus, welche; ich zeige dann, was an ihr "
-    "hängt, und frage noch einmal nach. Bis dahin ist nichts gelöscht.{rest}"
+    "**Delete a single session.** Choose below which one; I then show what hangs on it and "
+    "ask once more. Until then nothing is deleted.{rest}"
 )
 
-SITZUNG_WAHL_GEKUERZT = (
-    " Zur Wahl stehen die {anzahl} jüngsten — mehr zeigt Discord in einem Menü nicht."
-)
+SITZUNG_WAHL_GEKUERZT = " The {anzahl} most recent are on offer — Discord shows no more in a menu."
 
-SITZUNG_WAEHLEN = "Welche Sitzung soll fort?"
+SITZUNG_WAEHLEN = "Which session should go?"
 
 SITZUNG_FRAGE = (
-    "**»{sitzung}« verschwindet, endgültig und sofort:**\n"
+    "**“{sitzung}” disappears, finally and immediately:**\n"
     "{liste}\n"
-    "**Das bleibt:** die übrigen Sitzungen dieser Runde und das Register — und der "
-    "Nachweis, dass im Sprachkanal angesagt wurde. Der belegt etwas über Menschen, und "
-    "diese Runde gibt es weiter; wer ihn nicht mehr will, löscht die ganze Runde. Was ich "
-    "euch schon zugestellt habe, liegt ohnehin in Discord, dorthin reicht mein Löschen "
-    "nicht.\n"
-    "Es gibt keine Sicherung, aus der ich das zurückhole. Was ihr behalten wollt, ladet "
-    "vorher herunter."
+    "**This stays:** the other sessions of this round and the register — and the record "
+    "that an announcement was made in the voice channel. That records something about "
+    "people, and this round continues to exist; whoever no longer wants it deletes the "
+    "whole round. What I have already delivered to you lies in Discord anyway, my deleting "
+    "does not reach there.\n"
+    "There is no backup I can restore this from. Download beforehand whatever you want to "
+    "keep."
 )
 
-SITZUNG_ZEILE_NOTIZEN = "• {szenen} mit {notizen}"
-SITZUNG_ZEILE_TON = "• {spuren} — davon noch hier: {dateien}, auch die gehen"
-SITZUNG_ZEILE_OHNE_TON = "• {spuren} — Tondateien liegen dazu keine mehr"
+SITZUNG_ZEILE_NOTIZEN = "• {szenen} with {notizen}"
+SITZUNG_ZEILE_TON = "• {spuren} — still here of them: {dateien}, those go too"
+SITZUNG_ZEILE_OHNE_TON = "• {spuren} — no audio files are left for them"
 # Eine Datei ohne Zeile: der Mitschnitt läuft noch oder ist abgestürzt, eingereiht wird
 # erst am Ende. Ohne diese Zeile nennte die Frage weniger, als danach geschieht.
-SITZUNG_ZEILE_NUR_TON = "• Noch ohne Eintrag: {dateien} — auch die gehen"
-SITZUNG_ZEILE_VERSCHRIFTET = "• {transkripte} aus diesen Spuren"
-SITZUNG_ZEILE_GESCHRIEBEN = "• {protokolle} daraus: Chronik und Rückblick"
+SITZUNG_ZEILE_NUR_TON = "• Not yet queued: {dateien} — those go too"
+SITZUNG_ZEILE_VERSCHRIFTET = "• {transkripte} from these tracks"
+SITZUNG_ZEILE_GESCHRIEBEN = "• {protokolle} written from them: chronicle and recap"
 
-SITZUNG_JA = "Ja, diese Sitzung löschen"
-SITZUNG_NEIN = "Abbrechen"
+SITZUNG_JA = "Yes, delete this session"
+SITZUNG_NEIN = "Cancel"
 
-SITZUNG_FERTIG = "»{sitzung}« ist fort, mit allem, was daran hing.{ton}"
-SITZUNG_FERTIG_TON = " Von der Platte gelöscht: {dateien}."
+SITZUNG_FERTIG = "“{sitzung}” is gone, with everything that hung on it.{ton}"
+SITZUNG_FERTIG_TON = " Deleted from disk: {dateien}."
 SITZUNG_FERTIG_REST = (
-    " Nicht gelöscht: {dateien}. Was blieb, liegt weiter hier — der Grund steht im Log des Bots."
+    " Not deleted: {dateien}. What remained is still here — the reason is in the bot log."
 )
-SITZUNG_ABGEBROCHEN = "Nichts gelöscht. Es bleibt alles, wie es war."
+SITZUNG_ABGEBROCHEN = "Nothing deleted. Everything stays as it was."
 
 # Der Knopf lebt eine Viertelstunde. In der Zeit kann dieselbe Sitzung schon gelöscht sein
 # — von einer zweiten Ansicht oder von jemand anderem.
 SITZUNG_SCHON_FORT = (
-    "Diese Sitzung gibt es nicht mehr; gelöscht habe ich gerade nichts. "
-    "`/chronicle sitzung-loeschen` zeigt, was noch da ist."
+    "This session no longer exists; I have just deleted nothing. "
+    "`/chronicle sitzung-loeschen` shows what is still there."
 )
 
 NICHT_ABGELEGT = (
-    "Das konnte ich nicht ablegen: {grund} Schreib es noch einmal — bleibt es dabei, "
-    "steht der Grund im Log des Bots."
+    "I could not file this: {grund} Write it again — if it stays that way, the reason is in "
+    "the bot log."
 )
 
 # Eine Bildunterschrift zu löschen ist ein Rücknehmen — und die Nachricht steht danach
 # weiter im Thread, mit ihrem Anhang. Ohne diesen Satz sähe niemand, dass darunter etwas
 # fortgenommen wurde (#184).
 NOTIZ_FORT = (
-    "Der Text ist aus der Nachricht heraus, damit ist auch die Notiz fort. Der Anhang "
-    "bleibt, wo er ist."
+    "The text is out of the message, so the note is gone too. The attachment stays where it is."
 )
 
 # Nachgetragener Text an einer Nachricht, die nie eine Notiz hatte. Die Szene ist die
 # ihres Zeitpunkts und nicht die von gerade eben — das zu sagen erspart die Suche danach.
 NOTIZ_NACHGETRAGEN = (
-    "Der nachgetragene Text ist jetzt eine Notiz — in der Szene, in die die Nachricht "
-    "gehört, nicht in der letzten."
+    "The added text is a note now — in the scene the message belongs to, not in the last one."
 )
 
 # Die Chronik ist ein Abzug, kein Spiegel: sie steht, wie sie geschrieben wurde. Eine
 # Notiz zu ändern, ohne das zu sagen, ließe beide auseinanderlaufen, ohne dass es jemand
 # sieht — genau das Gedächtnis, gegen das die Zusage im Thread steht.
 CHRONIK_STEHT_SCHON = (
-    "Die Chronik dieser Sitzung steht allerdings schon, mit dem alten Stand. "
-    "`/session done` schreibt sie neu."
+    "This session's chronicle already stands, though, with the old state. `/session done` "
+    "writes it anew."
 )
 
 # Dieselbe Lage an einer älteren Sitzung: ``/session done`` meint immer die zuletzt
 # angelegte, wäre hier also kein Ausweg, sondern ein falscher.
 CHRONIK_STEHT_SCHON_ALT = (
-    "Die Chronik dieser Sitzung steht allerdings schon, mit dem alten Stand — und sie "
-    "wird davon nicht neu geschrieben."
+    "This session's chronicle already stands, though, with the old state — and it is not "
+    "rewritten because of this."
 )
 
 FERTIG = (
-    "Die Zahlen aus Foundry holen, die Aufnahmen verschriften, die Chronik schreiben — das "
-    "dauert seine Zeit; ich melde mich hier, wenn sie steht."
+    "Fetching the numbers from Foundry, transcribing the recordings, writing the chronicle "
+    "— that takes its time; I will report here when it stands."
 )
 
 # Welche Sitzung gemeint ist und wo ihre Chronik erscheint, gehört seit #156 in die
 # Antwort: abgeschlossen wird auch aus dem Sprachkanal, und dort sieht man beides nicht.
-SCHLIESST = "Ich schließe **{sitzung}** ab — die Chronik kommt in {kanal}."
+SCHLIESST = "I am closing **{sitzung}** — the chronicle goes to {kanal}."
 
 # Sitzungen aus der Weboberfläche haben keinen Kanal. Das ist kein Fehlschlag: die
 # Chronik entsteht trotzdem, sie wird nur nirgends angehängt.
 SCHLIESST_OHNE_KANAL = (
-    "Ich schließe **{sitzung}** ab — einen Kanal hat sie nicht, die Chronik wird also nur abgelegt."
+    "I am closing **{sitzung}** — it has no channel, so the chronicle is only filed."
 )
 
-LAEUFT_SCHON = "Ich bin schon dabei — ich melde mich hier, wenn die Chronik steht."
+LAEUFT_SCHON = "I am already at it — I will report here when the chronicle stands."
 
 # Der Bereich wird über **Sitzungen** benannt, nicht über einen Faden und nicht über eine
 # Figur: von welchem Abend bis zu welchem. Ein Datum genügt, ein Anfang davon auch.
 OHNE_SITZUNGEN = (
-    "Hier ist noch keine Sitzung geschrieben — nachzuerzählen gibt es nichts. "
-    "`/session start` beginnt die erste."
+    "No session is written here yet — there is nothing to retell. `/session start` begins "
+    "the first one."
 )
 
 BEREICH_UNBEKANNT = (
-    "»{wert}« passt zu keiner Sitzung. Ich kenne welche vom {erste} bis zum {letzte} — "
-    "nimm ein Datum daraus oder lass das Feld leer, dann nehme ich den Rand."
+    "“{wert}” matches no session. I know some from {erste} to {letzte} — take a date from "
+    "that, or leave the field empty and I take the edge."
 )
 
 ERZAEHLT = (
-    "Ich erzähle die Sitzungen vom {von} bis zum {bis} nach — Sitzung für Sitzung, entlang "
-    "des Registers. Das dauert seine Zeit; die Datei kommt hier in den Kanal."
+    "I am retelling the sessions from {von} to {bis} — session by session, along the "
+    "register. That takes its time; the file comes here into the channel."
 )
 
-ERZAEHLT_SCHON = "Ich erzähle schon nach — die Datei kommt hier in den Kanal."
+ERZAEHLT_SCHON = "I am already retelling — the file comes here into the channel."
 
-ABGLEICH_TITEL = "Zahlen aus Foundry holen"
+ABGLEICH_TITEL = "Fetch the numbers from Foundry"
 
 ABGLEICH = (
-    "Ich hole die Zahlen aus eurem Foundry. Das dauert einen Moment — ich melde mich hier, "
-    "wenn ich durch bin."
+    "I am fetching the numbers from your Foundry. That takes a moment — I will report here "
+    "when I am through."
 )
 
-ABGLEICH_LAEUFT_SCHON = "Ich hole schon — ich melde mich hier, wenn ich durch bin."
+ABGLEICH_LAEUFT_SCHON = "I am already fetching — I will report here when I am through."
 
-PASSWORT_TITEL = "Sitzung abschließen"
-PASSWORT_FELD = "Passwort für Foundry"
-PASSWORT_HINWEIS = "Nur für diesen einen Abgleich — es wird nirgends gespeichert."
+PASSWORT_TITEL = "Close the session"
+PASSWORT_FELD = "Password for Foundry"
+PASSWORT_HINWEIS = "For this one sync only — it is stored nowhere."
 
-START_TITEL = "Sitzung beginnen"
-START_FELD = "Passwort für Foundry — freiwillig"
-START_HINWEIS = "Leer lassen geht: dann eben ohne die Zahlen."
+START_TITEL = "Begin the session"
+START_FELD = "Password for Foundry — optional"
+START_HINWEIS = "Leaving it empty is fine: then without the numbers."
 
 MIT_FOUNDRY = (
-    "Das Passwort liegt bis zum Abschluss bereit — gespeichert wird es nirgends, und "
-    "`/session done` fragt nicht noch einmal. Ab jetzt stelle ich hier ein, was in eurem "
-    "Foundry **offen** gewürfelt wird, während ihr spielt. Geflüstertes und Verdecktes "
-    "nicht: hier liest die ganze Gruppe mit."
+    "The password stands ready until the session is closed — it is stored nowhere, and "
+    "`/session done` will not ask again. From now on I post here whatever is rolled "
+    "**openly** in your Foundry while you play. Not whispers and not hidden rolls: the "
+    "whole group reads along here."
 )
 
 OHNE_FOUNDRY = (
-    "Ohne Foundry-Passwort: die Sitzung läuft, nur die Zahlen fehlen. Die Würfe kommen "
-    "dann erst beim Abschluss dazu, und `/session done` fragt noch einmal danach."
+    "Without a Foundry password: the session runs, only the numbers are missing. The rolls "
+    "then join in at closing time, and `/session done` will ask for it once more."
 )
 
 KEIN_FOUNDRY = (
-    "Nach dem Foundry-Passwort frage ich nicht: für diese Runde ist gerade kein "
-    "Foundry-Server im Spiel. `/chronicle setup` trägt Adresse und Benutzer ein, wenn doch einer "
-    "dazukommt."
+    "I am not asking for the Foundry password: there is no Foundry server in play for this "
+    "round right now. `/chronicle setup` enters address and account if one does join later."
 )
 
 # Der Platzhalter des Abschlussfensters, wenn ein anderes Mitglied etwas hinterlegt hat.
 # Discord kürzt Platzhalter bei 100 Zeichen — deshalb der kurze Satz.
-FREMDES_HINWEIS = "Es liegt eines von jemand anderem bereit — es gilt deines."
+FREMDES_HINWEIS = "Somebody else's is ready — yours is the one that counts."
 
 # Wie oft der Strom nach Foundry sieht. Zwei Minuten sind eine Betriebsentscheidung und
 # keine technische: jeder Blick ist ein vollständiger Handschlag — anmelden, Welt holen,
@@ -395,18 +390,14 @@ STROM_ABSTAND = 120.0
 # Tisch. Der Rest der Zeile ist Abschrift — kein Wort davon ist ergänzt.
 EREIGNIS = "🎲 {zeile}"
 
-WURF = "Wurf"
-KRITISCH = "kritisch"
-
 AUSFALL = (
-    "Ich komme gerade nicht an euer Foundry: {grund} Ich versuche es still weiter und "
-    "sage erst wieder etwas, wenn es zurück ist — was in der Zwischenzeit fällt, hole ich "
-    "dann nach."
+    "I cannot reach your Foundry right now: {grund} I keep trying quietly and will only say "
+    "something again when it is back — whatever falls in the meantime I fetch afterwards."
 )
 
-WIEDER_DA = "Euer Foundry ist wieder da."
+WIEDER_DA = "Your Foundry is back."
 
-STROM_ENDET = "Ich sehe von hier an nicht mehr nach Foundry: {grund}"
+STROM_ENDET = "From here on I stop looking at Foundry: {grund}"
 
 
 class ChronikFehler(BotFehler):
@@ -635,7 +626,7 @@ def letzte_sitzung(runde: Runde) -> int | None:
 
 def sitzungsname(sitzung: notes.Session) -> str:
     """Wie eine Sitzung in einer Antwort heißt — ihr Titel, sonst ihr Abend."""
-    return (sitzung.title or "").strip() or f"Sitzung vom {sitzung.played_on}"
+    return (sitzung.title or "").strip() or f"Session of {sitzung.played_on}"
 
 
 def abschlussmeldung(runde: Runde, session_id: int) -> str:
@@ -806,14 +797,14 @@ async def aufnehmen(
 
 
 def _anzahl(wieviele: int, einzahl: str, mehrzahl: str) -> str:
-    """``jobs.mehrzahl`` hängt ein ``n`` an — das trägt »Szene«, aber nicht »Sitzung«."""
+    """Ein gezähltes Ding. Englisch hängt meist ein ``s`` an — aber nicht immer."""
     return f"{wieviele} {einzahl if wieviele == 1 else mehrzahl}"
 
 
 def _szenenzahl(abend: dokument.Abend) -> str:
     # Auch ein Abend ohne eigene Überschriften bekommt eine Szene — die, die mit der
     # Sitzung entsteht und seinen Text trägt.
-    return _anzahl(max(len(abend.szenen), 1), "Szene", "Szenen")
+    return _anzahl(max(len(abend.szenen), 1), "scene", "scenes")
 
 
 def _abendzeile(abend: dokument.Abend) -> str:
@@ -857,12 +848,12 @@ async def dokument_vorschau(runde: Runde, datei: Notizdatei) -> Vorschau:
     if aufteilung.ohne_datum:
         nachsatz.append(
             DOKUMENT_OHNE_DATUM.format(
-                liste=", ".join(f"»{kopf}«" for kopf in aufteilung.ohne_datum)
+                liste=", ".join(f"“{kopf}”" for kopf in aufteilung.ohne_datum)
             )
         )
     if aufteilung.ohne_text:
         nachsatz.append(
-            DOKUMENT_OHNE_TEXT.format(liste=", ".join(f"»{kopf}«" for kopf in aufteilung.ohne_text))
+            DOKUMENT_OHNE_TEXT.format(liste=", ".join(f"“{kopf}”" for kopf in aufteilung.ohne_text))
         )
     if schon:
         nachsatz.append(DOKUMENT_SCHON_DA.format(liste=_abendliste(schon)))
@@ -871,7 +862,7 @@ async def dokument_vorschau(runde: Runde, datei: Notizdatei) -> Vorschau:
         anfang = DOKUMENT_NUR_OHNE_TEXT if leer else DOKUMENT_OHNE_ABENDE
         return Vorschau(" ".join((anfang.format(name=datei.filename), *nachsatz)))
     kopf = DOKUMENT_VORSCHAU.format(
-        name=datei.filename, sitzungen=_anzahl(len(frisch), "Sitzung", "Sitzungen")
+        name=datei.filename, sitzungen=_anzahl(len(frisch), "session", "sessions")
     )
     zeilen = "\n".join(_abendzeile(abend) for abend in frisch)
     return Vorschau("\n".join((kopf, zeilen, " ".join((*nachsatz, DOKUMENT_FRAGE)))), frisch)
@@ -893,13 +884,13 @@ def dokument_anlegen(runde: Runde, abende: Sequence[dokument.Abend]) -> str:
     logger.info("Notizdokument eingelesen: %s Sitzungen angelegt.", angelegt)
     if not angelegt:
         return DOKUMENT_NICHTS_NEU
-    return DOKUMENT_ANGELEGT.format(sitzungen=_anzahl(angelegt, "Sitzung", "Sitzungen"))
+    return DOKUMENT_ANGELEGT.format(sitzungen=_anzahl(angelegt, "session", "sessions"))
 
 
 def _wahlschrift(sitzung: notes.Session) -> str:
     """Wie eine Sitzung im Menü steht: ihr Abend, und ihr Titel, wenn sie einen hat."""
     titel = (sitzung.title or "").strip()
-    return f"{sitzung.played_on} — {titel}" if titel else f"Sitzung vom {sitzung.played_on}"
+    return f"{sitzung.played_on} — {titel}" if titel else f"Session of {sitzung.played_on}"
 
 
 def sitzungswahl(runde: Runde) -> Sitzungswahl:
@@ -938,13 +929,13 @@ def _sitzungszeilen(umfang: notes.Contents) -> str:
     """
     zeilen = [
         SITZUNG_ZEILE_NOTIZEN.format(
-            szenen=_anzahl(umfang.session.scene_count, "Szene", "Szenen"),
-            notizen=_anzahl(umfang.session.note_count, "Notiz", "Notizen"),
+            szenen=_anzahl(umfang.session.scene_count, "scene", "scenes"),
+            notizen=_anzahl(umfang.session.note_count, "note", "notes"),
         )
     ]
-    dateien = _anzahl(umfang.audio, "Tondatei", "Tondateien")
+    dateien = _anzahl(umfang.audio, "audio file", "audio files")
     if umfang.recordings:
-        spuren = _anzahl(umfang.recordings, "Aufnahme", "Aufnahmen")
+        spuren = _anzahl(umfang.recordings, "recording", "recordings")
         zeilen.append(
             SITZUNG_ZEILE_TON.format(spuren=spuren, dateien=dateien)
             if umfang.audio
@@ -955,13 +946,13 @@ def _sitzungszeilen(umfang: notes.Contents) -> str:
     if umfang.transcripts:
         zeilen.append(
             SITZUNG_ZEILE_VERSCHRIFTET.format(
-                transkripte=_anzahl(umfang.transcripts, "Verschriftung", "Verschriftungen")
+                transkripte=_anzahl(umfang.transcripts, "transcript", "transcripts")
             )
         )
     if umfang.protocols:
         zeilen.append(
             SITZUNG_ZEILE_GESCHRIEBEN.format(
-                protokolle=_anzahl(umfang.protocols, "geschriebener Text", "geschriebene Texte")
+                protokolle=_anzahl(umfang.protocols, "written text", "written texts")
             )
         )
     return "\n".join(zeilen)
@@ -996,10 +987,10 @@ def sitzung_geloescht(config: Config, runde: Runde, marke: str) -> str:
     )
     ton = ""
     if umfang.audio:
-        ton += SITZUNG_FERTIG_TON.format(dateien=_anzahl(umfang.audio, "Tondatei", "Tondateien"))
+        ton += SITZUNG_FERTIG_TON.format(dateien=_anzahl(umfang.audio, "audio file", "audio files"))
     if umfang.geblieben:
         ton += SITZUNG_FERTIG_REST.format(
-            dateien=_anzahl(umfang.geblieben, "Tondatei", "Tondateien")
+            dateien=_anzahl(umfang.geblieben, "audio file", "audio files")
         )
     return SITZUNG_FERTIG.format(sitzung=sitzungsname(umfang.session), ton=ton)
 
@@ -1060,19 +1051,25 @@ def notiz_entfernen(runde: Runde, message_id: str) -> bool:
     return notes.remove_note(runde, message_id)
 
 
-def _wurfzeile(nachricht: ChatMessage) -> str:
+def _wurfzeile(nachricht: ChatMessage, inhaltssprache: str) -> str:
     """Ein Wurf, wie er im Chat-Log steht — abgeschrieben, nicht gerechnet.
 
     Was Foundry nicht mitliefert, steht auch nicht da: ohne Summe keine Summe, ohne Titel
     das Wort »Wurf«. Eine Zeile, die eine fehlende Zahl freundlich ergänzt, wäre genau die
     Erfindung, gegen die dieser ganze Weg gebaut ist.
+
+    Die beiden eigenen Wörter folgen der Inhaltssprache und nicht der Bedienoberfläche:
+    diese Zeile steht im Kanal des Abends und geht als Fakt in dieselbe Chronik ein.
     """
+    texte = sprachen.chronik(inhaltssprache)
     wurf = nachricht.roll
-    kopf = wurf.title or WURF
+    kopf = wurf.title or texte.wurf
     if wurf.total is not None:
         kopf = f"{kopf}: **{wurf.total}**"
     wuerfel = ", ".join(f"{einzeln.name} {einzeln.value}" for einzeln in wurf.dice)
-    zeile = " · ".join(teil for teil in (kopf, wuerfel, KRITISCH if wurf.critical else "") if teil)
+    zeile = " · ".join(
+        teil for teil in (kopf, wuerfel, texte.kritisch if wurf.critical else "") if teil
+    )
     wer = nachricht.speaker_alias
     return EREIGNIS.format(zeile=f"**{wer}** — {zeile}" if wer else zeile)
 
@@ -1120,7 +1117,8 @@ def ereignisse_abholen(config: Config, strom: Strom) -> Meldung:
         return Meldung(weiter=False)
     for nachricht in ergebnis.neu:
         notes.link_foundry_message(gemeint, szene, nachricht.id)
-    vorlauf.extend(_wurfzeile(nachricht) for nachricht in ergebnis.neu)
+    inhaltssprache = settings.sprache(gemeint)
+    vorlauf.extend(_wurfzeile(nachricht, inhaltssprache) for nachricht in ergebnis.neu)
     return Meldung(text="\n".join(vorlauf))
 
 

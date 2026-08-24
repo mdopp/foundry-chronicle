@@ -761,7 +761,7 @@ def test_was_nicht_abgelegt_werden_konnte_bekommt_trotzdem_eine_antwort(stelle, 
     nachricht = melden(bot, FakeNachricht(7005, "Wir steigen hinab.", kanal=kanal.id))
 
     (antwort,) = nachricht.antworten
-    assert antwort.startswith("Das konnte ich nicht ablegen:")
+    assert antwort.startswith("I could not file this:")
     assert "RuntimeError" in antwort
 
 
@@ -1195,7 +1195,7 @@ def abschluss_fahren(bot, unsere, kanal, *, passwort=PASSWORT):
 def erwartete_meldung(unsere, kanal):
     """Was der Abschluss antwortet — samt Namen der Sitzung und Verweis auf ihren Kanal."""
     sitzung = notes.session(unsere, sitzung_von(unsere, kanal))
-    name = sitzung.title or f"Sitzung vom {sitzung.played_on}"
+    name = sitzung.title or f"Session of {sitzung.played_on}"
     kopf = chronik.SCHLIESST.format(sitzung=name, kanal=f"<#{kanal.id}>")
     return f"{kopf} {chronik.FERTIG}"
 
@@ -1385,7 +1385,7 @@ def test_auch_mit_gemerktem_passwort_endet_die_aufnahme_vor_dem_lauf(
     assert mitschnitt.kanal.verbindung.getrennt
     assert [spur.filename.split("-")[-1] for spur in recordings.pending(unsere)] == ["Mira.wav"]
     (antwort,) = ctx.antworten
-    assert "wartet auf den Stapel" in antwort and chronik.FERTIG in antwort
+    assert "queued for the batch" in antwort and chronik.FERTIG in antwort
 
 
 def test_ein_altes_passwortfenster_zeigt_das_passwort_keiner_fremden_runde(
@@ -1446,7 +1446,7 @@ def test_ein_gescheiterter_lauf_meldet_sich_trotzdem_im_kanal(stelle, bot, monke
 
     abschluss_fahren(bot, unsere, kanal)
 
-    assert kanal.gesendet[-1].startswith("Der Lauf ist nicht durchgekommen:")
+    assert kanal.gesendet[-1].startswith("The run did not get through:")
     assert "Ollama war aus" in kanal.gesendet[-1]
 
 
@@ -1479,7 +1479,7 @@ def test_fertig_beendet_die_laufende_aufnahme_und_reiht_die_spuren_ein(
     assert not mitschnitt.kanal.verbindung.schneidet
     assert [spur.filename.split("-")[-1] for spur in recordings.pending(unsere)] == ["Mira.wav"]
     (antwort,) = interaktion.followup.gesendet
-    assert "wartet auf den Stapel" in antwort and chronik.FERTIG in antwort
+    assert "queued for the batch" in antwort and chronik.FERTIG in antwort
     sitzung_id = sitzung_von(unsere, kanal)
     assert jobs.latest(unsere, jobs.CHRONIK, sitzung_id).result == STEHT
 
@@ -1629,7 +1629,7 @@ def test_ein_stolpernder_abschluss_antwortet_trotzdem(stelle, bot, monkeypatch):
     _ctx2, interaktion = abschluss_fahren(bot, unsere, kanal)
 
     (antwort,) = interaktion.followup.gesendet
-    assert antwort.startswith("Das hat nicht geklappt:")
+    assert antwort.startswith("That did not work:")
     assert "RuntimeError" in antwort
 
 
@@ -1786,7 +1786,7 @@ def test_die_ruhende_runde_gleicht_nichts_mehr_ab(stelle, bot):
     ctx, _interaktion = abgleich_fahren(bot, unsere)
 
     (antwort,) = ctx.antworten
-    assert "Diese Runde ruht" in antwort
+    assert "This round is resting" in antwort
     assert ctx.modale == []
     assert jobs.latest(unsere, jobs.ABGLEICH) is None
 
@@ -1849,7 +1849,7 @@ def test_keine_systemsprache_in_dem_was_der_bot_sagt():
 
 def test_die_ansage_der_sitzung_sagt_was_zu_tun_ist(stelle, bot):
     _ctx, kanal = sitzung_starten(bot)
-    for satzteil in ("jede Nachricht", "/session scene", "/session done", "Sprachnachricht"):
+    for satzteil in ("every message", "/session scene", "/session done", "voice message"):
         assert satzteil in kanal.gesendet[0]
 
 
@@ -2234,7 +2234,7 @@ def test_ein_ausfall_wird_einmal_gesagt_und_dann_still_weiter_versucht(stelle, b
     erste = blick(gestellt)
     zweite = blick(gestellt)
 
-    assert erste.text.startswith("Ich komme gerade nicht an euer Foundry")
+    assert erste.text.startswith("I cannot reach your Foundry")
     assert erste.weiter
     assert zweite.text == "" and zweite.weiter
 
@@ -2260,7 +2260,7 @@ def test_ohne_passwort_endet_der_strom_mit_einem_satz(stelle, bot, monkeypatch):
     ende = blick(gestellt)
 
     assert not ende.weiter
-    assert ende.text.startswith("Ich sehe von hier an nicht mehr nach Foundry")
+    assert ende.text.startswith("From here on I stop looking at Foundry")
     assert gestellt.foundry.blicke == 0
 
 

@@ -201,7 +201,7 @@ def compose_session(
         gewaehlt = (
             model if model is not None else client.from_config(settings.effective(config, runde))
         )
-        ergebnis = compose(stoff, gewaehlt)
+        ergebnis = compose(stoff, gewaehlt, inhaltssprache=settings.sprache(runde))
         save(scope, session_id, ergebnis.text, _now())
         return ergebnis
     finally:
@@ -234,7 +234,7 @@ def erzaehlen(
         gewaehlt = (
             model if model is not None else client.from_config(settings.effective(config, runde))
         )
-        return nacherzaehlen(stoff, gewaehlt)
+        return nacherzaehlen(stoff, gewaehlt, inhaltssprache=settings.sprache(runde))
     finally:
         scope.close()
 
@@ -253,7 +253,7 @@ def recap_session(
         gewaehlt = (
             model if model is not None else client.from_config(settings.effective(config, runde))
         )
-        ergebnis = recap(stoff, gewaehlt)
+        ergebnis = recap(stoff, gewaehlt, inhaltssprache=settings.sprache(runde))
         save(scope, session_id, ergebnis.text, _now(), kind=RUECKBLICK)
         return ergebnis
     finally:

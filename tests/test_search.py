@@ -1,4 +1,4 @@
-from conftest import runde
+from conftest import deutsche_runde, runde
 
 from chronicle import db, notes, search
 from chronicle.compose.service import KIND, RUECKBLICK, compose_session, recap_session
@@ -22,6 +22,9 @@ class Chronist:
 def eine_sitzung(tmp_path, *, text=NOTIZ_TEXT):
     config = Config(data_dir=tmp_path)
     db.init(config.database_path)
+    # Deutsches Material, also deutsche Inhaltssprache — sonst schriebe die Chronik
+    # englische Überschriften über deutsche Notizen (#268).
+    deutsche_runde(config)
     sitzung_id = notes.create_session(runde(config), played_on="2026-08-05", title="Keller")
     szene = notes.session(runde(config), sitzung_id).scenes[0]
     notes.add_note(runde(config), szene.id, text)

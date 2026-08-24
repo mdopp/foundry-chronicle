@@ -47,7 +47,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Protocol
 
-from chronicle import consent, lebenszyklus, notes, recordings
+from chronicle import consent, lebenszyklus, notes, recordings, settings
 from chronicle.bot import BotFehler, ansage, namen
 from chronicle.config import Config
 from chronicle.dateiname import sicherer_dateiname
@@ -55,42 +55,41 @@ from chronicle.runde import Runde
 
 logger = logging.getLogger(__name__)
 
-OHNE_SITZUNG = "Noch keine Sitzung angelegt — leg eine an, dann schneide ich mit."
+OHNE_SITZUNG = "No session started yet — start one and I will record."
 FREMDE_RUNDE = (
-    "Dieser Sprachkanal gehört zu einem anderen Server als die Runde, für die ich "
-    "schreiben soll — hier nehme ich nichts auf."
+    "This voice channel belongs to a different server than the round I am supposed to "
+    "write for — I record nothing here."
 )
-NICHT_ANGESAGT = "Es wurde noch nichts angesagt — ohne Ansage wird nichts geschrieben."
+NICHT_ANGESAGT = "Nothing has been announced yet — without an announcement nothing is written."
 
 # Die Ansage lief, aber nicht dort, wo sie gemeint war. Wer im Ursprungskanal saß, hat
 # nichts gehört; wer im neuen sitzt, wurde nie gefragt. Ein Eintrag daraus behauptete eine
 # Zustimmung, die niemand geben konnte — also entsteht keiner und es wird nicht gestartet.
 VERSCHOBEN_BEIM_START = (
-    "Während der Ansage hat mich jemand in einen anderen Sprachkanal gezogen — gehört hat "
-    "sie damit niemand, der gemeint war. Ich habe nichts protokolliert und schneide nicht "
-    "mit. Gebt `/session start` noch einmal, in dem Kanal, in dem aufgenommen werden soll."
+    "Someone dragged me into another voice channel while the announcement was playing — "
+    "so nobody it was meant for heard it. I logged nothing and I am not recording. Give "
+    "`/session start` again, in the channel that is meant to be recorded."
 )
 GESTARTET = (
-    "Die Ansage ist durch, ich schneide jetzt mit — je Sprecherin und Sprecher eine "
-    "eigene Spur. Wer nicht aufgezeichnet werden möchte, verlässt den Sprachkanal; "
-    "außerhalb nehme ich nichts auf. Beendet wird mit `/session pause`, und "
-    "`/session help` sagt den Rest."
+    "The announcement is through, I am recording now — one track per speaker. If you do "
+    "not want to be recorded, leave the voice channel; outside it I record nothing. "
+    "`/session pause` stops it, and `/session help` says the rest."
 )
-NICHTS_GESPROCHEN = "Es hat niemand gesprochen — keine Spur abgelegt."
+NICHTS_GESPROCHEN = "Nobody spoke — no track filed."
 
 # Eine Zeile je Sprecher und nicht je Häppchen: vier Stunden mit fünf Sprechern sind seit
 # #269 rund 240 Dateien, und 240 Zeilen im Kanal sagen weniger als fünf.
-EINGEREIHT = "Spur »{spur}« → Sitzung {sitzung}, wartet auf den Stapel."
+EINGEREIHT = "Track “{spur}” → session {sitzung}, queued for the batch."
 EINGEREIHT_HAEPPCHEN = (
-    "Spur »{spur}« in {anzahl} Häppchen → Sitzung {sitzung}, wartet auf den Stapel."
+    "Track “{spur}” in {anzahl} chunks → session {sitzung}, queued for the batch."
 )
 
 # Eine Spur ohne Zeile in der Warteschlange ist für jeden Aufräumweg unsichtbar: sie wird
 # weder verschriftet noch nach der zugesagten Frist gelöscht. Deshalb wird gesagt, welche
 # es traf — eine Stimme, die nur im Log fehlt, fehlt niemandem auf.
 NICHT_EINGEREIHT = (
-    "Diese Spuren sind nicht eingereiht: {spuren}. Sie liegen noch da — bitte einmal "
-    "`/session pause` geben, das holt genau sie nach; die übrigen sind schon durch."
+    "These tracks were not queued: {spuren}. They are still there — please give "
+    "`/session pause` once, that picks up exactly those; the rest are already through."
 )
 
 # Eine Aufnahme läuft Stunden; in der Zeit kann ihre Runde gelöscht und ihre Kennung an
@@ -98,17 +97,17 @@ NICHT_EINGEREIHT = (
 # Einwilligungsprotokolle mit den Anzeigenamen dieser Gruppe und ihre Tonspuren — in der
 # Kampagne einer anderen. Deshalb wird vor jedem Schreiben nachgesehen.
 RUNDE_FORT = (
-    "Die Runde, für die ich mitgeschnitten habe, gibt es nicht mehr — die Spuren sind "
-    "gelöscht, und abgelegt wurde nichts."
+    "The round I was recording for no longer exists — the tracks are deleted, and "
+    "nothing was filed."
 )
 
 # Hier bleiben die Namen weg, anders als bei NICHT_EINGEREIHT: die Runde ist fort, ihre
 # Kennung kann längst an eine fremde Gilde vergeben sein — die Anzeigenamen dieser Gruppe
 # gingen dann an eine andere.
 RUNDE_FORT_REST = (
-    "Die Runde, für die ich mitgeschnitten habe, gibt es nicht mehr — abgelegt wurde "
-    "nichts. Einige Spuren ließen sich aber nicht löschen und liegen noch da; bitte "
-    "einmal `/session pause` geben, das versucht es erneut."
+    "The round I was recording for no longer exists — nothing was filed. Some tracks "
+    "could not be deleted, though, and are still lying there; please give "
+    "`/session pause` once, that tries again."
 )
 
 
@@ -120,13 +119,13 @@ RUNDE_FORT_REST = (
 # Aufrufer wartet in Discords »denkt nach …« und bekommt danach seine Antwort.
 PROBE_DAUER = 10
 
-PROBE_KOPF = "**Empfangstest in #{kanal} — {dauer} Sekunden gelauscht**"
-PROBE_ZAHLEN = "Pakete: {pakete} · Spuren: {spuren}"
-PROBE_SPUR = "• {name}: {bytes} Bytes"
+PROBE_KOPF = "**Reception check in #{kanal} — listened for {dauer} seconds**"
+PROBE_ZAHLEN = "Packets: {pakete} · Tracks: {spuren}"
+PROBE_SPUR = "• {name}: {bytes} bytes"
 
 PROBE_TRAEGT = (
-    "**Der Empfang trägt.** Der Ton kommt an, lässt sich dekodieren und landet je Sprecher "
-    "in einer eigenen Spur — `/session start` schneidet hier wirklich mit."
+    "**Reception holds.** The audio arrives, decodes, and lands in one track per speaker "
+    "— `/session start` really does record here."
 )
 
 # Der Fall, für den es diesen Befehl gibt: der Empfänger hört in seinem eigenen Faden auf
@@ -136,9 +135,9 @@ PROBE_TRAEGT = (
 # mehr gereicht, und ohne Zusatzargumente ruft py-cord ihn gar nicht erst auf. Was hier
 # steht, ist deshalb das, was wir wirklich wissen — dass aufgehört wurde, nicht warum.
 PROBE_ABGEBROCHEN = (
-    "**Es kommt nichts Lesbares an.** Der Mitschnitt hat von selbst aufgehört, bevor die "
-    "{dauer} Sekunden um waren; was danach gesprochen wurde, stünde in keiner Spur. Den "
-    "Grund nennt py-cord uns nicht — er steht im Log des Bots."
+    "**Nothing readable is arriving.** The recording stopped by itself before the "
+    "{dauer} seconds were up; anything spoken after that would be in no track. py-cord "
+    "does not tell us why — the reason is in the bot log."
 )
 
 # Keine Null an dieser Stelle: auf dem festgenagelten Stand fängt py-cord einen
@@ -146,27 +145,26 @@ PROBE_ABGEBROCHEN = (
 # Gezählt wird dabei nichts, was hier ankäme — eine »0« hieße also nicht »nichts verloren«,
 # sondern nur »wir sehen es nicht«.
 PROBE_RAHMENVERLUST = (
-    "Verlorene Rahmen zählt dieser Test nicht mit: py-cord fängt einen Dekodierfehler an "
-    "Ort und Stelle ab und füllt die Lücke — ein Schlüsselwechsel kostet dann Millisekunden "
-    "statt der ganzen Aufnahme. Sichtbar wird das allein als Warnung im Log des Bots."
+    "This check does not count lost frames: py-cord catches a decoding error on the spot "
+    "and fills the gap — a key change then costs milliseconds instead of the whole "
+    "recording. That shows up only as a warning in the bot log."
 )
 
 PROBE_STILL = (
-    "**Es kam kein einziges Paket an.** Entweder hat in den {dauer} Sekunden niemand "
-    "gesprochen — dann noch einmal, und dabei reden —, oder Discord schickt keinen Ton "
-    "hierher."
+    "**Not a single packet arrived.** Either nobody spoke during the {dauer} seconds — "
+    "then try again and talk while you do — or Discord is sending no audio here."
 )
 
 PROBE_AUFGERAEUMT = (
-    "Die Probespuren sind gelöscht, eingereiht wurde nichts, und in die Chronik geht davon "
-    "nichts. Protokolliert ist allein die Ansage — dass hier {dauer} Sekunden aufgezeichnet "
-    "wurde, bleibt nachweisbar."
+    "The test tracks are deleted, nothing was queued, and none of it goes into the "
+    "chronicle. Only the announcement is logged — that {dauer} seconds were recorded here "
+    "stays provable."
 )
 
 PROBE_AUFGERAEUMT_REST = (
-    "Eingereiht wurde nichts, und in die Chronik geht davon nichts. Diese Probespuren "
-    "ließen sich aber nicht löschen: {spuren}. Sie liegen noch im Aufnahmeordner und "
-    "gehören dort nicht hin — der Grund steht im Log des Bots."
+    "Nothing was queued, and none of it goes into the chronicle. These test tracks could "
+    "not be deleted, though: {spuren}. They are still in the recordings folder and do not "
+    "belong there — the reason is in the bot log."
 )
 
 
@@ -319,10 +317,24 @@ def _spurname(sprecher: consent.Member) -> str:
 
 
 class Aufnahme:
-    def __init__(self, config: Config, runde: Runde, session_id: int, kanal: Kanal) -> None:
+    def __init__(
+        self,
+        config: Config,
+        runde: Runde,
+        session_id: int,
+        kanal: Kanal,
+        *,
+        inhaltssprache: str,
+    ) -> None:
         self.session_id = session_id
         self.kanal = kanal
         self.runde = runde
+        # Einmal beim Anlegen gelesen und danach festgehalten: der Eintrag im
+        # Einwilligungsprotokoll muss den Wortlaut tragen, der wirklich gesprochen wurde.
+        # Stellt jemand die Sprache mitten in der Sitzung um, liefe der Nachzügler sonst in
+        # einer anderen Sprache als die Ansage, unter der die Aufnahme begann — und das
+        # Protokoll behauptete eine Ansage, die niemand so gehört hat.
+        self.inhaltssprache = inhaltssprache
         self._config = config
         # Das **offene** Häppchen je Sprecher; was voll ist, wandert nach ``_fertig`` und
         # steht dann schon in der Warteschlange. Beides zusammen ist die Spur eines Abends.
@@ -355,7 +367,7 @@ class Aufnahme:
             guild_id=self.kanal.guild_id,
             channel_id=self.kanal.id,
             channel_name=self.kanal.name,
-            text=ansage.PROTOKOLL,
+            text=ansage.protokoll_fuer(self.inhaltssprache),
             members=mitglieder,
         )
         if art == consent.ANSAGE:
@@ -631,9 +643,12 @@ async def starten(config: Config, stimme: Stimme, runde: Runde) -> Aufnahme:
     sitzung = notes.latest_session(runde)
     if sitzung is None:
         raise AufnahmeFehler(OHNE_SITZUNG)
-    gesprochen = ansage.datei(config.recordings_dir, tts_url=config.tts_url)
+    inhaltssprache = settings.sprache(runde)
+    gesprochen = ansage.datei(
+        config.recordings_dir, inhaltssprache=inhaltssprache, tts_url=config.tts_url
+    )
 
-    aufnahme = Aufnahme(config, runde, sitzung.id, stimme.kanal)
+    aufnahme = Aufnahme(config, runde, sitzung.id, stimme.kanal, inhaltssprache=inhaltssprache)
     await stimme.ansagen(gesprochen)
     if not stimme.im_kanal():
         raise AufnahmeFehler(VERSCHOBEN_BEIM_START)
@@ -657,7 +672,13 @@ async def nachzuegler(
     —, entsteht keiner. Ein Protokoll, das eine Zustimmung behauptet, die niemand geben
     konnte, ist schlimmer als eine Lücke.
     """
-    await stimme.ansagen(ansage.datei(config.recordings_dir, tts_url=config.tts_url))
+    await stimme.ansagen(
+        ansage.datei(
+            config.recordings_dir,
+            inhaltssprache=aufnahme.inhaltssprache,
+            tts_url=config.tts_url,
+        )
+    )
     if not stimme.im_kanal():
         logger.warning("Die Ansage für einen Nachzügler lief woanders — kein Eintrag.")
         return None

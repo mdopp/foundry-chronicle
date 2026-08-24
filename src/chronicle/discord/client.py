@@ -290,5 +290,5 @@ class DiscordClient:
         except requests.RequestException as fehler:
             ziel.unlink(missing_ok=True)
             raise DiscordUnreachable(
-                f"Anhang »{attachment.filename}« nicht geholt: {type(fehler).__name__}"
+                f"Attachment “{attachment.filename}” not fetched: {type(fehler).__name__}"
             ) from None

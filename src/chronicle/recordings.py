@@ -101,16 +101,18 @@ SWEEP_ABSTAND = 24 * 60 * 60
 # sechsmal schärfer, aber sie ändert sich nicht: gezählt wird ohnehin schon je Sitzung,
 # und ein Abend bleibt eine Zeile, ob vierzig oder zweihundertvierzig Dateien darunter
 # liegen.
-NACH_FRIST = "Sitzung {sitzung}: {was} nach {tage} Tagen gelöscht — die Frist aus der Ansage."
+NACH_FRIST = (
+    "Session {sitzung}: {was} deleted after {tage} days — the period from the announcement."
+)
 
 # Die Frist gilt auch der Spur, die es nie durch die Verschriftung geschafft hat: sie ist
 # eine Zusage an Menschen, deren Stimme aufgenommen wurde, und keine Belohnung für einen
 # geglückten Lauf. Aber sie darf nicht **still** greifen — hier geht eine Stunde
 # gesprochener Abend, von der es keinen Text gibt und nie einen geben wird.
 OHNE_TEXT = (
-    "Sitzung {sitzung}: {was} nach {tage} Tagen gelöscht — die Frist aus der Ansage — und "
-    "nie verschriftet. Von diesem Ton gibt es keinen Text, und nachholen lässt sich das "
-    "nicht."
+    "Session {sitzung}: {was} deleted after {tage} days — the period from the "
+    "announcement — and never transcribed. There is no text for this audio, and it cannot "
+    "be made up for."
 )
 
 # Und sie gilt auch der Datei, zu der es nie eine Zeile gab. Ein Neustart mitten in der
@@ -119,20 +121,20 @@ OHNE_TEXT = (
 # einer echten Person. Gemeldet wird es trotzdem eigens — hier ist nicht nur kein Text
 # entstanden, es hat auch nie jemand darauf gewartet.
 OHNE_ZEILE = (
-    "Sitzung {sitzung}: {was} nach {tage} Tagen gelöscht — die Frist aus der Ansage — und "
-    "nie eingereiht. Diese Aufnahme ist nie in der Warteschlange angekommen; es gibt keinen "
-    "Text davon und auch keine Zeile darüber."
+    "Session {sitzung}: {was} deleted after {tage} days — the period from the "
+    "announcement — and never queued. This recording never reached the queue; there is no "
+    "text for it and no record of it either."
 )
 
 # Was an der Zeile stehen bleibt. Ohne diesen Satz sagte sie »wartet« über eine Aufnahme,
 # auf die niemand mehr wartet.
-NIE_VERSCHRIFTET = "Die Frist hat die Aufnahme geholt, bevor ein Transkript entstand."
+NIE_VERSCHRIFTET = "The retention period took the recording before a transcript existed."
 
 # Der Vermerk an einer Spur, deren Lauf einen Neustart nicht überlebt hat. Er sagt beides:
 # was passiert ist und dass nichts verloren ist — die Datei liegt noch da.
 UNTERBROCHEN = (
-    "Der Lauf wurde unterbrochen, weil der Dienst zwischendurch neu gestartet ist. Die "
-    "Aufnahme liegt noch da und steht wieder in der Warteschlange."
+    "The run was interrupted because the service restarted in between. The recording is "
+    "still there and is back in the queue."
 )
 
 # Wer dieser Prozess ist — für die Dauer genau eines Starts. Ein Zufallswert und nicht die
@@ -732,7 +734,7 @@ def _verschriftet(aufnahme: Recording) -> bool:
 
 
 def _was(anzahl: int) -> str:
-    return "eine Aufnahme" if anzahl == 1 else f"{anzahl} Aufnahmen"
+    return "one recording" if anzahl == 1 else f"{anzahl} recordings"
 
 
 def sweep(config, runde: Runde, *, tage: int = RETENTION_TAGE) -> tuple[str, ...]:

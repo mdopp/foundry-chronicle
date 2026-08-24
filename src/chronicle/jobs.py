@@ -79,54 +79,52 @@ HERZSCHLAG = 20.0
 VERSTUMMT = timedelta(seconds=90)
 
 UNTERBROCHEN = (
-    "Der Lauf wurde unterbrochen, weil der Dienst zwischendurch neu gestartet ist. "
-    "Einfach noch einmal anstoßen."
+    "The run was interrupted because the service restarted in between. Just start it again."
 )
 
-OHNE_BEREICH = "In diesem Bereich liegt keine Sitzung mehr — nachzuerzählen gibt es nichts."
+OHNE_BEREICH = "No session is left in this range — there is nothing to retell."
 
 # Es gibt keine Warteschlange, und der Satz verspricht auch keine mehr: ``start`` legt in
 # diesem Fall **keine** Zeile an und merkt sich nichts. Wer wartet, wartet auf nichts —
 # deshalb steht hier, was wirklich zu tun ist (#179). Und wer im Weg steht, ist oft die
 # eigene Runde mit einem Lauf anderer Art; »eine andere Runde« war dann schlicht falsch.
 BELEGT = (
-    "Eine andere Runde ist gerade an der Maschine. Der Lauf beginnt nicht von allein — "
-    "bitte später noch einmal anstoßen."
+    "Another round is at the machine right now. The run does not begin by itself — "
+    "please start it again later."
 )
 
 BELEGT_EIGEN = (
-    "In dieser Runde läuft gerade schon ein anderer Lauf. Der neue beginnt nicht von "
-    "allein — bitte anstoßen, sobald der erste durch ist."
+    "Another run is already going in this round. The new one does not begin by itself — "
+    "please start it once the first is through."
 )
 
-NICHT_DURCHGEKOMMEN = "Der Lauf ist nicht durchgekommen: {grund}"
+NICHT_DURCHGEKOMMEN = "The run did not get through: {grund}"
 
 # Was der Abschluss nachträglich an die Szenen gehängt hat (#219). Gesagt wird es, weil es
 # sonst niemand sähe: die Zahlen erscheinen still in der Chronik, und ob welche kamen, ist
 # genau die Frage, die an einem Abend ohne Ereignisstrom offen war.
-NACHGETRAGEN = "{anzahl} Würfe aus Foundry sind den Szenen dieser Sitzung zugeordnet. "
-NACHGETRAGEN_EINER = "Ein Wurf aus Foundry ist einer Szene dieser Sitzung zugeordnet. "
+NACHGETRAGEN = "{anzahl} rolls from Foundry are assigned to the scenes of this session. "
+NACHGETRAGEN_EINER = "One roll from Foundry is assigned to a scene of this session. "
 
 # Und der Gegenfall, ebenso ausdrücklich: ohne Abgleich kommt keine Zahl mehr dazu. Das
 # still zu übergehen hieße, eine Chronik ohne Belege als fertig zu melden.
 OHNE_ZAHLEN = (
-    "Aus Foundry kommt damit nichts mehr dazu: in dieser Chronik stehen nur die Zahlen, "
-    "die der Ereignisstrom während der Sitzung geholt hat — lief keiner, steht keine. "
+    "Nothing more joins in from Foundry: this chronicle holds only the numbers the event "
+    "stream fetched during the session — if none ran, none stand there. "
 )
 
-STEHT = "Chronik und Rückblick stehen bereit."
+STEHT = "Chronicle and recap stand ready."
 STEHT_OHNE_MODELL = (
-    "Chronik und Rückblick stehen bereit — ohne Sprachmodell geordnet statt formuliert."
+    "Chronicle and recap stand ready — ordered instead of phrased, without a language model."
 )
-VERSCHRIFTET = "{anzahl} Aufnahme{mehr} verschriftet. "
+VERSCHRIFTET = "{anzahl} recording{mehr} transcribed. "
 
 # Der Gegenfall, und er gehört gesagt: die Tonspuren werden nach der Frist gelöscht, ob
 # ein Transkript entstand oder nicht. Wer »4 Aufnahmen verschriftet« liest, sieht nicht
 # nach — und hat eine Woche später weder Text noch Ton (#244).
 NICHT_VERSCHRIFTET = (
-    "{anzahl} Aufnahme{mehr} konnte ich nicht verschriften; der Ton liegt weiter bereit "
-    "und kommt beim nächsten Lauf wieder dran, wird aber nach {tage} Tagen gelöscht — "
-    "verschriftet oder nicht. "
+    "{anzahl} recording{mehr} I could not transcribe; the audio stays ready and comes up "
+    "again on the next run, but is deleted after {tage} days — transcribed or not. "
 )
 
 # Wer dieser Prozess ist — für die Dauer genau eines Starts. Ein Zufallswert und nicht
@@ -511,4 +509,5 @@ def abschluss(config: Config, runde: Runde, session_id: int, *, passwort: str | 
 
 
 def mehrzahl(anzahl: int) -> str:
-    return "n" if anzahl > 1 else ""
+    """Das Plural-s der Bedienoberfläche. Deutsch hing hier ein ``n`` an (#268)."""
+    return "s" if anzahl > 1 else ""

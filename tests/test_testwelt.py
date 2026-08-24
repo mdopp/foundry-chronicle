@@ -288,8 +288,8 @@ def test_jeder_abgleich_sagt_dass_die_welt_erfunden_ist(auf_testwelt):
 
 def test_die_wahl_selbst_sagt_es_auch(auf_testwelt):
     """``/chronicle setup`` in Discord antwortet auf die Umstellung mit derselben Warnung."""
-    assert "erfunden" in einrichten.QUELLE_GESETZT_TESTWELT
-    assert einrichten.QUELLE_TESTWELT.endswith("erfundene Zahlen")
+    assert "invented" in einrichten.QUELLE_GESETZT_TESTWELT
+    assert einrichten.QUELLE_TESTWELT.endswith("invented numbers")
 
 
 def test_der_weg_zurueck_raeumt_die_erfundenen_wuerfe_und_sagt_wie_viele(auf_testwelt):
@@ -304,7 +304,7 @@ def test_der_weg_zurueck_raeumt_die_erfundenen_wuerfe_und_sagt_wie_viele(auf_tes
 
     antwort = einrichten.quelle_setzen(runde(config), settings.SERVER)
 
-    assert f"{eingespielt} Chat-Nachrichten" in antwort
+    assert f"{eingespielt} chat messages" in antwort
     assert geladen(config).messages == ()
 
 

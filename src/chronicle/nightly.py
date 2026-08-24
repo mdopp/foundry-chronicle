@@ -78,35 +78,35 @@ LEBENSZEICHEN = 15
 
 WACH = "Nachtlauf: der Faden lebt — %d Blicke auf die Uhr seit dem Start."
 
-OHNE_FOUNDRY = "Kein Zugang zu Foundry — die Zahlen wurden nicht geholt."
+OHNE_FOUNDRY = "No access to Foundry — the numbers were not fetched."
 OHNE_PASSWORT = (
-    "Kein Foundry-Passwort im Speicher — die Zahlen wurden nicht geholt. Der Abgleich "
-    "gehört ans Sitzungsende, solange Foundry ohnehin noch läuft."
+    "No Foundry password in memory — the numbers were not fetched. The sync belongs at "
+    "the end of the session, while Foundry is still running anyway."
 )
-NICHTS_ZU_SCHREIBEN = "Keine Sitzung mit neuem Material — es blieb alles, wie es war."
-WARTESCHLANGE_LEER = "Nichts in der Warteschlange."
-NICHT_DURCHGEKOMMEN = "Nicht durchgekommen: {grund}"
+NICHTS_ZU_SCHREIBEN = "No session with new material — everything stayed as it was."
+WARTESCHLANGE_LEER = "Nothing in the queue."
+NICHT_DURCHGEKOMMEN = "Did not get through: {grund}"
 
-VORSPANN = "Sitzung vom {datum}: "
-NICHT_GESCHRIEBEN = "keine Chronik — {grund}"
+VORSPANN = "Session of {datum}: "
+NICHT_GESCHRIEBEN = "no chronicle — {grund}"
 
 # Seit #216 gibt es keinen zweiten Weg zur Verschriftung: ist ``solaris-whisper-batch``
 # aus, bleibt die Spur liegen. Dann darf für diese Sitzung **nichts** entstehen — eine
 # Chronik ohne das gesprochene Wort sieht fertig aus, und niemand sieht ihr an, dass der
 # halbe Abend fehlt. Genau diese Gestalt war #221, nur von der anderen Seite.
 OHNE_SPRACHE = (
-    "keine Chronik — eine Aufnahme dieser Sitzung ist noch nicht verschriftet. "
-    "Geschrieben würde sonst ein Abend ohne das gesprochene Wort, und dem sieht später "
-    "niemand an, dass die Hälfte fehlt. Die Spur bleibt liegen; die nächste Nacht "
-    "schreibt die Chronik, sobald der Spracherkenner wieder antwortet."
+    "no chronicle — a recording of this session is not transcribed yet. Otherwise an "
+    "evening without the spoken word would be written, and later nobody can tell that "
+    "half of it is missing. The track stays put; the next night writes the chronicle as "
+    "soon as the speech recogniser answers again."
 )
 
 
 # Was der Nachtlauf sagt, wenn nach ihm immer noch Ton ohne Text daliegt. Der Schritt war
 # dafür seit #247 rot — nur sah das niemand, seit es die Karte nicht mehr gibt (#287).
 NOCH_OHNE_TEXT = (
-    "{anzahl} Aufnahme{mehr} dieser Runde hat noch keinen Text. Die nächste Nacht versucht "
-    "es wieder; nach {tage} Tagen holt die Frist den Ton, verschriftet oder nicht."
+    "This round still has {anzahl} recording{mehr} without text. The next night tries "
+    "again; after {tage} days the retention period takes the audio, transcribed or not."
 )
 
 

@@ -58,7 +58,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from chronicle import db, settings
-from chronicle.compose.recap import FAKTEN_ZEILE
+from chronicle import sprache as sprachen
 from chronicle.compose.service import RUECKBLICK
 from chronicle.config import Config
 from chronicle.discord.client import DiscordClient, DiscordError
@@ -79,28 +79,28 @@ logger = logging.getLogger(__name__)
 TITEL_GRENZE = EMBED_TITEL
 TEXT_GRENZE = EMBED_TEXT
 
-NICHT_EINGERICHTET = "Kein Bot-Token — der Rückblick bleibt in der Chronik."
-KEIN_ZUSTELLKANAL = "Kein Zustellkanal eingetragen — der Rückblick bleibt in der Chronik."
+NICHT_EINGERICHTET = "No bot token — the recap stays in the chronicle."
+KEIN_ZUSTELLKANAL = "No delivery channel entered — the recap stays in the chronicle."
 # Der eingetragene Wert steht bewusst nicht drin: als Id sagt er niemandem etwas, und als
 # Id aus einer fremden Gilde wäre er das eine, was hier nicht hinausgehen soll. Ins Log
 # gehört er, dorthin sieht der Betreiber.
 KEIN_KANAL = (
-    "Den eingestellten Zustellkanal sehe ich in eurer Gilde nicht — der Rückblick zur "
-    "Sitzung {sitzung} blieb liegen. Wähl den Kanal in `/chronicle setup` noch einmal."
+    "I do not see the configured delivery channel in your guild — the recap for session "
+    "{sitzung} stayed put. Pick the channel again in `/chronicle setup`."
 )
 OHNE_GILDE = (
-    "Diese Runde hängt an keiner Discord-Gilde — den Rückblick zur Sitzung {sitzung} kann "
-    "ich nirgends zustellen. Richte sie mit `/chronicle setup` in eurer Gilde ein."
+    "This round hangs on no Discord guild — I can deliver the recap for session {sitzung} "
+    "nowhere. Set it up with `/chronicle setup` in your guild."
 )
-KEIN_RUECKBLICK = "Sitzung {sitzung} hat keinen Rückblick."
-SCHON_ZUGESTELLT = "Rückblick zur Sitzung {sitzung} war schon zugestellt."
-ZUGESTELLT = "Rückblick zur Sitzung {sitzung} zugestellt."
-GESCHEITERT = "Rückblick zur Sitzung {sitzung} nicht zugestellt: {grund}"
+KEIN_RUECKBLICK = "Session {sitzung} has no recap."
+SCHON_ZUGESTELLT = "Recap for session {sitzung} had already been delivered."
+ZUGESTELLT = "Recap for session {sitzung} delivered."
+GESCHEITERT = "Recap for session {sitzung} not delivered: {grund}"
 
-GEKUERZT = "\n\n… hier gekürzt. Die ganze Sitzung steht in der Chronik-Datei im Thread."
+GEKUERZT = "\n\n… cut short here. The whole session is in the chronicle file in the thread."
 GEKUERZT_FAKTEN = (
-    "\n\n… hier gekürzt: {fehlend} von {gesamt} Foundry-Fakten fehlen. Die ganze Sitzung "
-    "steht in der Chronik-Datei im Thread."
+    "\n\n… cut short here: {fehlend} of {gesamt} Foundry facts are missing. The whole "
+    "session is in the chronicle file in the thread."
 )
 
 
@@ -148,18 +148,24 @@ def _merken(runde: Runde, session_id: int, at: str) -> None:
         scope.close()
 
 
+# Die Zeile, unter der die belegten Fakten stehen — in **jeder** Inhaltssprache. Der
+# Rückblick liegt fertig in der Sprache seiner Runde, und eine Runde darf umstellen; nur
+# die eine Fassung zu kennen hieße, unter dem gekürzten Embed »0 von 0 Fakten« zu melden,
+# wo welche stehen.
+FAKTEN_ZEILE = tuple(texte.fakten_zeile for texte in sprachen.RUECKBLICK.values())
+
+
 def _fakten(zeilen: Sequence[str]) -> int:
     """Wie viele belegte Foundry-Fakten in diesen Zeilen stehen.
 
-    Gezählt wird nur, was unter ``Aus dem Foundry-Chat-Log, unverändert:`` steht — die
-    Szenenliste darüber und die offenen Fäden benutzen dieselbe Aufzählungsform, sind aber
-    keine Fakten.
+    Gezählt wird nur, was unter der Fakten-Zeile steht — die Szenenliste darüber und die
+    offenen Fäden benutzen dieselbe Aufzählungsform, sind aber keine Fakten.
     """
     zahl = 0
     im_beleg = False
     for rohzeile in zeilen:
         zeile = rohzeile.strip()
-        if zeile == FAKTEN_ZEILE:
+        if zeile in FAKTEN_ZEILE:
             im_beleg = True
         elif im_beleg and zeile.startswith("- "):
             zahl += 1

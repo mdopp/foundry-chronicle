@@ -2,30 +2,48 @@
 
 import random
 
+from chronicle import sprache as sprachen
+from chronicle.compose import composer as _composer
 from chronicle.compose.client import ModelUnreachable
 from chronicle.compose.composer import (
-    BELEG_TITEL,
-    HERKUNFT_MIT_FAKTEN,
-    HERKUNFT_OHNE_FAKTEN,
-    LEER,
-    NICHT_ERREICHBAR,
-    NOTIZEN_TITEL,
-    OHNE_MODELL,
-    SYSTEM,
-    TRANSKRIPT_TITEL,
-    VERBINDUNG_TITEL,
-    VERWORFEN,
-    VERWORFEN_UEBERSCHRIFT,
     ZITAT_AUF,
     ZITAT_ZU,
     Notiz,
     SceneMaterial,
     SessionMaterial,
-    compose,
-    fact_line,
-    numbers,
 )
 from chronicle.foundry.model import ChatMessage, Die, Roll
+
+# Das Material dieser Datei ist deutsch — Notizen, Würfe, Zahlwörter. Seit #268 folgt die
+# Chronik der Sprache ihrer Runde, und die Zahlenschranke braucht dieselbe: gegen die
+# englischen Zahlwörter geprüft wäre »achtundzwanzig« keine Zahl. Geprüft wird hier also
+# die deutsche Seite; die englische Vorgabe steht in ``test_englische_chronik``.
+TEXTE = sprachen.chronik(sprachen.DEUTSCH)
+BELEG_TITEL = TEXTE.beleg_titel
+HERKUNFT_MIT_FAKTEN = TEXTE.herkunft_mit_fakten
+HERKUNFT_OHNE_FAKTEN = TEXTE.herkunft_ohne_fakten
+LEER = TEXTE.leer
+NICHT_ERREICHBAR = TEXTE.nicht_erreichbar
+NOTIZEN_TITEL = TEXTE.notizen_titel
+OHNE_MODELL = TEXTE.ohne_modell
+SYSTEM = TEXTE.system
+TRANSKRIPT_TITEL = TEXTE.transkript_titel
+VERBINDUNG_TITEL = TEXTE.verbindung_titel
+VERWORFEN = TEXTE.verworfen
+VERWORFEN_UEBERSCHRIFT = TEXTE.verworfen_ueberschrift
+
+
+def compose(material, model=None):
+    return _composer.compose(material, model, inhaltssprache=sprachen.DEUTSCH)
+
+
+def numbers(text):
+    return _composer.numbers(text, sprachen.DEUTSCH)
+
+
+def fact_line(message):
+    return _composer.fact_line(message, sprachen.DEUTSCH)
+
 
 WURF = ChatMessage(
     id="m-wurf",
@@ -430,3 +448,22 @@ def test_das_verschriftete_steht_im_aufruf_als_solches_ausgewiesen():
 
     assert "Notizen:\n- Borin: wir rasten" in stoff
     assert "möglicherweise verhört:\n- Daniel: achtzig Stueck" in stoff
+
+
+def test_englische_chronik_ist_die_vorgabe() -> None:
+    """Ohne Angabe entsteht die Chronik englisch — und die Schranke zählt englisch mit."""
+    ergebnis = _composer.compose(sitzung(szene(notes=("Seventeen guards at the pass.",))))
+    englisch = sprachen.chronik(sprachen.ENGLISCH)
+    assert englisch.notizen_titel in ergebnis.text
+    assert ergebnis.inhaltssprache == sprachen.ENGLISCH
+    assert ergebnis.reason == englisch.ohne_modell
+    assert _composer.numbers("seventeen guards", sprachen.ENGLISCH) == {"17"}
+    assert _composer.numbers("twenty-one coins", sprachen.ENGLISCH) == {"21"}
+    assert _composer.numbers("one hundred paces", sprachen.ENGLISCH) == {"100"}
+
+
+def test_englischer_absatz_mit_unbelegter_zahl_wird_verworfen() -> None:
+    """Die Schranke trägt in der Vorgabesprache genauso — sonst wäre sie nur deutsch."""
+    modell = Modell("The party met seventeen guards.")
+    ergebnis = _composer.compose(sitzung(szene(notes=("Guards at the pass.",))), modell)
+    assert sprachen.chronik(sprachen.ENGLISCH).verworfen in ergebnis.text

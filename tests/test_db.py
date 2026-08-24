@@ -4,6 +4,7 @@ import pytest
 
 from chronicle import db, notes, protocol, register, settings
 from chronicle import runde as runden
+from chronicle import sprache as sprachen
 
 # Die Werte der Instanz kommen seit #230 aus der Umgebung. Die Wanderung räumt sie nur
 # fort, wenn ihr Ersatz wirklich dasteht — die Tests sagen deshalb ausdrücklich, was in
@@ -186,7 +187,11 @@ def test_wanderung_sortiert_die_schluesselraeume(alte_datenbank):
         }
     finally:
         connection.close()
-    assert gepflegt == {"foundry_url"}
+    # Seit #268 steht die Inhaltssprache daneben, und die Wanderung hat sie **hingeschrieben**:
+    # was es vor #268 gab, wurde deutsch bedient. Ohne diese Zeile hieße der leere Eintrag ab
+    # sofort Englisch, und der nächsten Sitzung liefe eine englische Einwilligungs-Ansage.
+    assert gepflegt == {"foundry_url", db.SPRACHE_KEY}
+    assert settings.sprache(runde) == sprachen.DEUTSCH
     # Der Zeiger des Briefkastens wandert mit — und fällt gleich danach weg, weil er auf
     # eine fremde Gilde gezeigt haben kann (#192). Ein eigener Test hält das fest.
     assert merk == {"foundry_last_error": "Foundry war aus."}
@@ -525,3 +530,19 @@ def test_ohne_bestand_sagt_die_wanderung_nichts(tmp_path, caplog):
         db.init(pfad, umgebung={})
         db.init(pfad, umgebung=ERSATZ)
     assert caplog.records == []
+
+
+def test_eine_frische_datenbank_bekommt_die_neue_vorgabe(tmp_path):
+    """Der Stempel gilt dem Bestand, nicht jedem Start — sonst wäre die Vorgabe wirkungslos."""
+    pfad = tmp_path / "frisch.sqlite3"
+    db.init(pfad, umgebung={})
+    assert settings.sprache(runden.erste(pfad)) == sprachen.DEFAULT == sprachen.ENGLISCH
+
+
+def test_eine_gewaehlte_sprache_ueberlebt_den_naechsten_start(alte_datenbank):
+    """Der zweite Lauf schreibt keine Entscheidung um — ``DO NOTHING`` ist die Zusage."""
+    db.init(alte_datenbank, umgebung={})
+    runde = runden.erste(alte_datenbank)
+    assert settings.save_sprache(runde, sprachen.ENGLISCH)
+    db.init(alte_datenbank, umgebung={})
+    assert settings.sprache(runden.erste(alte_datenbank)) == sprachen.ENGLISCH

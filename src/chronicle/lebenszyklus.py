@@ -64,17 +64,17 @@ FRIST_TAGE = 30
 SWEEP_ABSTAND = 24 * 60 * 60
 
 GESPERRT = "Runde »{name}«: gesperrt, Löschung am {datum}."
-GELOESCHT = "Runde »{name}«: nach {tage} Tagen vollständig gelöscht."
-AUF_VERLANGEN = "Runde »{name}«: auf Verlangen von {wer} vollständig gelöscht."
+GELOESCHT = "Round “{name}”: fully deleted after {tage} days."
+AUF_VERLANGEN = "Round “{name}”: fully deleted at the request of {wer}."
 ZURUECK = "Runde »{name}«: wieder freigegeben."
 
 # Was der Lauf meldet, wenn eine Runde nicht wegzubekommen ist. Die Zahl der Tage steht
 # darin, weil erst sie den Unterschied zeigt: einmal stolpern ist ein Tag, jeden Tag
 # stolpern ist eine gebrochene Zusage.
-NICHT_GELOESCHT = "Runde »{name}«: seit {tage} Tagen zur Löschung fällig und nicht fort — {grund}"
+NICHT_GELOESCHT = "Round “{name}”: due for deletion for {tage} days and not gone — {grund}"
 
 # Was eine ruhende Runde einem Lauf antwortet, der trotzdem an sie herantritt.
-RUHT = "Diese Runde ruht — es wird nichts mehr geholt und nichts mehr abgelegt."
+RUHT = "This round is resting — nothing more is fetched and nothing more is filed."
 
 # Die Übernahme im Log des Betreibers: der Name der Runde und der der Gilde, sonst nichts.
 # Wer in dieser Gilde sitzt, geht keine Logzeile etwas an.
@@ -87,15 +87,14 @@ UEBERNOMMEN = (
 # steht, ist eine stille — und still gehen hier Sitzungen, Chroniken und
 # Einwilligungsprotokolle an einen Discord-Server über.
 UEBERNOMMEN_GESAGT = (
-    "**Auf dieser Instanz lag eine Runde ohne Server — ich habe sie diesem hier "
-    "zugeordnet.**\n"
-    "Sie stammt aus der Zeit, in der der Bot noch keine Server auseinanderhielt. Weil sie "
-    "die einzige Runde dieser Instanz ist und ich in genau einem Server stehe, gibt es "
-    "nur eine mögliche Antwort; gäbe es eine zweite, hätte ich nichts getan. Was in ihr "
-    "steht, gehört ab jetzt hierher: Sitzungen, Notizen, Protokolle, das aus Foundry "
-    "Geholte und die Einwilligungen. `/chronicle search` und `/chronicle who` kommen "
-    "daran heran.\n"
-    "War das nicht eure Runde, sagt es dem Betreiber dieser Box, bevor ihr weiterspielt."
+    "**A round without a server was lying on this instance — I have assigned it to this "
+    "one.**\n"
+    "It comes from the time when the bot did not yet tell servers apart. Because it is the "
+    "only round on this instance and I stand in exactly one server, there is only one "
+    "possible answer; had there been a second, I would have done nothing. What is in it "
+    "belongs here from now on: sessions, notes, logs, what was fetched from Foundry, and "
+    "the consents. `/chronicle search` and `/chronicle who` reach it.\n"
+    "If that was not your round, tell whoever runs this box before you play on."
 )
 
 
