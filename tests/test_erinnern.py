@@ -33,7 +33,7 @@ from test_bot import (
 )
 from test_chronik import FakeHTTPException, FakeInputText, FakeModal
 
-from chronicle import consent, db, lebenszyklus, notes, people, register
+from chronicle import consent, db, lebenszyklus, notes, people, recordings, register, settings
 from chronicle import runde as runden
 from chronicle.bot import chronik, erinnern, gateway
 from chronicle.compose import service as compose_service
@@ -94,6 +94,26 @@ class FakeInteraction:
     def __init__(self, *, guild_id=GILDE):
         self.guild_id = guild_id
         self.response = FakeAntwort()
+
+
+class FakeZielkanal:
+    """Der Zustellkanal aus dem Setup — dorthin, wo auch der Rückblick landet."""
+
+    def __init__(self, kennung, name):
+        self.id = kennung
+        self.name = name
+        self.antworten: list[str | None] = []
+        self.ansichten: list = []
+
+    async def send(self, text=None, *, view=None, **rest):
+        self.antworten.append(text)
+        self.ansichten.append(view)
+
+
+class FakeZielgilde:
+    def __init__(self, *kanaele, kennung=int(GILDE)):
+        self.id = kennung
+        self.text_channels = list(kanaele)
 
 
 # -- Die Bühne --------------------------------------------------------------------------
@@ -589,6 +609,145 @@ def test_je_vorschlag_eine_reihe_aus_name_arten_und_nein(stelle, bot):
     assert [teil.label for teil in view.items] == ["Joras", "Figur", "Ort", "Faden", "Nein"]
     assert view.items[0].disabled
     assert {teil.row for teil in view.items} == {0}
+
+
+# -- Und sie laufen nicht ins Leere ------------------------------------------------------
+
+
+def test_die_registerknoepfe_hoeren_nicht_nach_einer_viertelstunde_auf(stelle, bot):
+    """#281: mit Frist standen sie nach fünfzehn Minuten sichtbar und tot im Kanal.
+
+    Der Befehl, der die Liste zurückholte, ist mit #272 entfallen — also darf die Ansicht
+    nicht mehr ablaufen. Ohne Frist und mit fester ``custom_id`` je Knopf ist sie
+    persistent: py-cord findet ihre Rückrufe darüber wieder.
+    """
+    _config, unsere = stelle
+    sitzung = sitzung_mit_notiz(unsere)
+    eintrag_anlegen(unsere, sitzung, kind=register.FIGUR, name="Joras", satz="Ein Söldner.")
+    ctx = FakeCtx()
+
+    registerfrage(stelle, ctx)
+
+    (view,) = ctx.ansichten
+    assert view.timeout is None
+    assert all(teil.custom_id for teil in view.items)
+
+
+def test_der_neustart_schliesst_die_offenen_vorschlaege_wieder_an(stelle, bot, monkeypatch):
+    """Die Nachricht überlebt den Prozess, ihre Ansicht nicht — angeschlossen wird beim Start.
+
+    Ohne dass jemand einen Befehl kennen muss: die Knöpfe von gestern tragen dieselben
+    ``custom_id``s, und der Klick von heute entscheidet den Vorschlag von gestern.
+    """
+    _config, unsere = stelle
+    sitzung = sitzung_mit_notiz(unsere)
+    eintrag = eintrag_anlegen(
+        unsere, sitzung, kind=register.FIGUR, name="Joras", satz="Ein Söldner."
+    )
+    ctx = FakeCtx()
+    registerfrage(stelle, ctx)
+    (gestern,) = ctx.ansichten
+
+    async def nichts(config, **rest):
+        return None
+
+    monkeypatch.setattr(recordings, "taeglich", nichts)
+    monkeypatch.setattr(lebenszyklus, "taeglich", nichts)
+
+    async def anmelden():
+        await bot.ereignisse["on_ready"]()
+        # Die beiden Dauerläufe werden als Task gestellt; ohne diesen Takt endete die
+        # Schleife mit zwei Tasks, die nie gelaufen sind.
+        await asyncio.sleep(0)
+
+    asyncio.run(anmelden())
+
+    (frisch,) = bot.angeschlossen
+    assert [teil.custom_id for teil in frisch.items] == [teil.custom_id for teil in gestern.items]
+    klicken(frisch, eintrag, register.ORT)
+    assert register.pending(unsere) == ()
+    (gruppe,) = register.overview(unsere)
+    assert (gruppe.kind, [eintrag.name for eintrag in gruppe.entries]) == (register.ORT, ["Joras"])
+
+
+def test_ohne_offenen_vorschlag_wird_beim_start_nichts_angeschlossen(stelle, bot):
+    """Eine Ansicht ohne Eintrag gibt es nicht — und eine leere anzuschließen hieße,
+    py-cord eine Nachricht zu versprechen, die im Kanal gar nicht steht."""
+    config, _unsere = stelle
+
+    asyncio.run(gateway._vorschlaege_wieder_anschliessen(config, bot))
+
+    assert bot.angeschlossen == []
+
+
+def test_der_nachtlauf_fragt_im_zustellkanal_nach_seinen_vorschlaegen(stelle, bot):
+    """#281, das zweite Loch: der Nachtlauf erzeugt dieselben Vorschläge wie ``/session done``.
+
+    Sein Weg endete aber in der Datenbank — die Zeile »N Vorschläge warten« stand nur im
+    Nachtbericht, und ein reiner Notizabend erzeugte damit Vorschläge, nach denen niemand
+    je gefragt wurde. Gefragt wird jetzt dort, wo auch der Rückblick landet.
+    """
+    config, unsere = stelle
+    sitzung = sitzung_mit_notiz(unsere)
+    eintrag_anlegen(unsere, sitzung, kind=register.FIGUR, name="Joras", satz="Ein Söldner.")
+    kanal = FakeZielkanal(4242, "chronik")
+    bot.gilden[int(GILDE)] = FakeZielgilde(kanal)
+    settings.save(unsere, {"discord_recap_channel": "4242"})
+
+    asyncio.run(gateway._nachtvorschlaege_anbieten(config, bot, unsere))
+
+    assert [teil.label for teil in kanal.ansichten[-1].items] == [
+        "Joras",
+        "Figur",
+        "Ort",
+        "Faden",
+        "Nein",
+    ]
+
+
+def test_ohne_zustellkanal_bleiben_die_vorschlaege_der_nacht_liegen(stelle, bot, caplog):
+    """»Keiner« ist eine gültige Wahl im Setup — dann wird nicht geraten, sondern geschwiegen."""
+    config, unsere = stelle
+    sitzung = sitzung_mit_notiz(unsere)
+    eintrag_anlegen(unsere, sitzung, kind=register.FIGUR, name="Joras", satz="Ein Söldner.")
+    bot.gilden[int(GILDE)] = FakeZielgilde(FakeZielkanal(4242, "chronik"))
+
+    with caplog.at_level(logging.WARNING):
+        asyncio.run(gateway._nachtvorschlaege_anbieten(config, bot, unsere))
+
+    assert "Zustellkanal" in caplog.text
+
+
+def test_der_nachtmelder_stellt_die_frage_in_die_ereignisschleife(stelle, bot):
+    """Der Faden des Nachtlaufs schreibt nicht selbst nach Discord — er reicht durch."""
+    config, unsere = stelle
+    sitzung = sitzung_mit_notiz(unsere)
+    eintrag_anlegen(unsere, sitzung, kind=register.FIGUR, name="Joras", satz="Ein Söldner.")
+    kanal = FakeZielkanal(4242, "chronik")
+    bot.gilden[int(GILDE)] = FakeZielgilde(kanal)
+    settings.save(unsere, {"discord_recap_channel": "4242"})
+
+    async def ablauf():
+        bot.loop = asyncio.get_running_loop()
+        gateway._nachtmelder(config, bot)(unsere)
+        for _ in range(100):
+            await asyncio.sleep(0)
+            if kanal.ansichten:
+                return
+
+    asyncio.run(ablauf())
+
+    assert [teil.label for teil in kanal.ansichten[-1].items][0] == "Joras"
+
+
+def test_ohne_laufende_schleife_bleibt_die_nachfrage_liegen(stelle, bot, caplog):
+    """Vor dem ersten Verbinden gibt es keine Schleife — das ist kein Fehlschlag der Nacht."""
+    config, unsere = stelle
+
+    with caplog.at_level(logging.WARNING):
+        gateway._nachtmelder(config, bot)(unsere)
+
+    assert "Schleife" in caplog.text
 
 
 def test_ein_knopf_bestaetigt_den_eintrag_in_der_gewaehlten_art(stelle, bot):

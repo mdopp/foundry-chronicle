@@ -168,7 +168,7 @@ def keine_nacht_nebenher(request, monkeypatch):
     """
     if "nachtwache" in request.fixturenames:
         return
-    monkeypatch.setattr(nightly, "starten", lambda config: None)
+    monkeypatch.setattr(nightly, "starten", lambda config, **rest: None)
 
 
 @pytest.fixture
@@ -1696,9 +1696,24 @@ class FakeBot:
         # Was py-cord beim Anmelden aus dem READY-Rahmen zwischenspeichert. Leer heißt
         # hier: in keiner Gilde — nicht »noch nicht bekannt«.
         self.guilds = ()
+        self.gilden = {}
+        # Die Ansichten, die einen Neustart überleben sollen — py-cord verdrahtet sie
+        # über ihre ``custom_id`` neu an die Nachrichten, die schon im Kanal stehen.
+        self.angeschlossen = []
 
     def get_channel(self, kennung):
         return self.kanaele.get(kennung)
+
+    def get_guild(self, kennung):
+        return self.gilden.get(kennung)
+
+    def add_view(self, view):
+        # Das echte ``add_view`` weist eine Ansicht mit Frist ab: sie ist keine, die einen
+        # Neustart überlebt. Der Doppelgänger tut es auch, sonst bliebe genau der Fehler
+        # aus #281 hier grün.
+        if view.timeout is not None:
+            raise ValueError("Nur Ansichten ohne Frist überleben einen Neustart")
+        self.angeschlossen.append(view)
 
     def get_user(self, kennung):
         return self.nutzer.get(kennung)

@@ -44,7 +44,11 @@ PRO_SEITE = 5
 OPTIONEN_GRENZE = 25
 
 # Nach dieser Zeit hört eine Ansicht auf zuzuhören. Ein Knopf, der still ins Leere führt,
-# ist schlechter als einer, der gar nicht mehr da ist — der Befehl holt sie neu.
+# ist schlechter als einer, der gar nicht mehr da ist — wer eine Ansicht mit Frist baut,
+# muss deshalb sagen können, wie man an sie zurückkommt: die Löschfrage stellt derselbe
+# Befehl noch einmal. Die **Vorschläge** haben keinen solchen Weg mehr, seit der Befehl
+# dafür entfallen ist (#272) — ihre Ansicht läuft seit #281 nicht mehr ab, sondern wird
+# nach einem Neustart wieder angeschlossen.
 FRIST = 900
 
 # Die Beschriftung eines Knopfes und der Platzhalter eines Auswahlmenüs sind bei Discord
