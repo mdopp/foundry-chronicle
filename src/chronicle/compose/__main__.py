@@ -37,8 +37,8 @@ from chronicle import db, kette
 from chronicle import runde as runden
 from chronicle.config import Config
 
-AUFRUF = "Aufruf: python -m chronicle.compose <sitzungs-id> [<runden-id>]"
-UNBEKANNTE_RUNDE = "Runde {gewaehlt} gibt es hier nicht."
+AUFRUF = "Usage: python -m chronicle.compose <session-id> [<round-id>]"
+UNBEKANNTE_RUNDE = "There is no round {gewaehlt} here."
 WELCHE_RUNDE = (
     "Diese Instanz trägt mehrere Runden. Gesucht wird die Sitzung in der genannten Runde "
     "und in keiner anderen — welche ist gemeint?"

@@ -330,9 +330,9 @@ def ausfuellen(fenster, adresse="", benutzer="", uhrzeit="", zone="", *, kanal=N
 
 
 def menues(interaktion):
-    """Die beiden Menüs unter der Antwort von ``/chronicle setup`` — Zustellkanal und Quelle."""
-    kanal, quelle = interaktion.response.gesendet[0]["view"].items
-    return kanal, quelle
+    """Die Menüs unter ``/chronicle setup`` — Zustellkanal, Quelle und Inhaltssprache."""
+    kanal, quelle, sprache = interaktion.response.gesendet[0]["view"].items
+    return kanal, quelle, sprache
 
 
 def loeschbefehl(bot, ctx):
@@ -575,8 +575,8 @@ def test_die_einladung_sagt_wem_die_kiste_gehoert(bot):
 
     (gesagt,) = kanal.gesendet
     assert einrichten.OFFENLEGUNG in gesagt
-    assert "jemand anderem gehört" in gesagt
-    assert "kommt an alles heran" in gesagt
+    assert "belongs to somebody else" in gesagt
+    assert "can reach everything" in gesagt
     assert "/chronicle setup" in gesagt
 
 
@@ -646,8 +646,8 @@ def test_das_benutzerfeld_sagt_mit_wessen_augen_ich_sehe(bot):
     fenster = einrichtungsfenster(bot, FakeCtx(gilde=FakeGilde()))
 
     _, benutzerfeld, _, _ = fenster.children
-    assert "Augen" in benutzerfeld.label
-    assert "Spielerkonto" in benutzerfeld.placeholder
+    assert "see through" in benutzerfeld.label
+    assert "player account" in benutzerfeld.placeholder
 
 
 def test_die_beschriftungen_bleiben_in_discords_grenzen():
@@ -696,8 +696,8 @@ def test_die_einrichtung_empfiehlt_das_spielerkonto_und_ein_eigenes_konto(bot):
 
     gesagt = interaktion.response.gesendet[0]["text"]
     assert einrichten.AUGEN in gesagt
-    assert "Spielerkonto" in gesagt
-    assert "»Chronik«" in gesagt
+    assert "player account" in gesagt
+    assert "“Chronicle”" in gesagt
 
 
 def test_der_rat_sagt_auch_dass_die_rechte_je_figur_vergeben_werden(bot):
@@ -712,8 +712,8 @@ def test_der_rat_sagt_auch_dass_die_rechte_je_figur_vergeben_werden(bot):
     )
 
     gesagt = interaktion.response.gesendet[0]["text"]
-    assert "je Figur" in gesagt
-    assert "Beobachter" in gesagt
+    assert "per character" in gesagt
+    assert "observer" in gesagt
 
 
 def test_die_antwort_der_einrichtung_bleibt_unter_discords_grenze(bot):
@@ -807,7 +807,7 @@ def test_eine_adresse_aus_der_browserzeile_wird_abgewiesen_und_gesagt(konfigurat
     assert settings.stored(unsere).get("foundry_url") is None
     gesagt = interaktion.response.gesendet[0]["text"]
     assert aus_dem_browser[: einrichten.ECHO_GRENZE] in gesagt
-    assert "nicht** übernommen" in gesagt
+    assert "**not** taken" in gesagt
 
 
 def test_die_wurzel_mit_schema_und_port_geht_durch(konfiguration, bot):
@@ -826,7 +826,7 @@ def test_der_zustellkanal_wird_gewaehlt_und_wirkt_sofort(konfiguration, bot):
     ctx = FakeCtx(gilde=FakeGilde(kanaele=(kanal,)))
     interaktion = ausfuellen(einrichtungsfenster(bot, ctx), benutzer="Chronist")
 
-    menue, _quelle = menues(interaktion)
+    menue, _quelle, _sprache = menues(interaktion)
     assert [option.value for option in menue.options] == [einrichten.OHNE_KANAL, "777"]
 
     menue.values = ["777"]
@@ -841,7 +841,7 @@ def test_der_zustellkanal_wird_gewaehlt_und_wirkt_sofort(konfiguration, bot):
 def test_kein_kanal_ist_eine_gueltige_wahl(konfiguration, bot):
     ctx = FakeCtx(gilde=FakeGilde(kanaele=(FakeKanal("777", "chroniken"),)))
     interaktion = ausfuellen(einrichtungsfenster(bot, ctx), benutzer="Chronist")
-    menue, _quelle = menues(interaktion)
+    menue, _quelle, _sprache = menues(interaktion)
 
     menue.values = [einrichten.OHNE_KANAL]
     asyncio.run(menue.callback(FakeInteraction()))
@@ -916,7 +916,7 @@ def test_die_quelle_der_spieldaten_wird_im_menue_gewaehlt_und_wirkt(konfiguratio
     Deshalb wird hier beides gefahren: hin und wieder her.
     """
     interaktion = ausfuellen(einrichtungsfenster(bot, FakeCtx(gilde=FakeGilde())))
-    _kanal, quelle = menues(interaktion)
+    _kanal, quelle, _sprache = menues(interaktion)
     unsere = runden.fuer_gilde(konfiguration.database_path, GILDE)
 
     assert [option.value for option in quelle.options] == [settings.SERVER, settings.TESTWELT]
@@ -927,7 +927,7 @@ def test_die_quelle_der_spieldaten_wird_im_menue_gewaehlt_und_wirkt(konfiguratio
     asyncio.run(quelle.callback(hin))
 
     assert settings.foundry_quelle(unsere) == settings.TESTWELT
-    assert "erfunden" in hin.response.bearbeitet[0]["content"]
+    assert "invented" in hin.response.bearbeitet[0]["content"]
 
     # Die Ansicht bleibt stehen — sonst wäre die Testwelt eine Einbahnstraße, und genau
     # das war der gemeldete Zustand.
@@ -959,7 +959,7 @@ def test_ein_altes_quellenmenue_haengt_nicht_die_fremde_runde_auf_die_testwelt(k
     """Dasselbe wie am Kanalmenü, und teurer: die Nachbarrunde bekäme erfundene Zahlen."""
     unsere = runden.anlegen(konfiguration.database_path, GILDENAME, guild_id=GILDE)
     interaktion = ausfuellen(einrichtungsfenster(bot, FakeCtx(gilde=FakeGilde())))
-    _kanal, quelle = menues(interaktion)
+    _kanal, quelle, _sprache = menues(interaktion)
 
     lebenszyklus.loeschen(konfiguration, unsere)
     nachbar = runden.anlegen(konfiguration.database_path, "Nachbarn", guild_id=NACHBARGILDE)
@@ -1040,7 +1040,7 @@ def test_die_gesperrte_runde_sagt_bis_wann_alles_noch_da_ist(konfiguration, bot)
 
     gesperrt = runden.get(konfiguration.database_path, unsere.id)
     assert lebenszyklus.frist_datum(gesperrt) in str(gefangen.value)
-    assert "lade mich wieder ein" in str(gefangen.value)
+    assert "invite me back" in str(gefangen.value)
 
 
 def test_ein_zweiter_rauswurf_verschiebt_die_frist_nicht(konfiguration, bot):
@@ -1150,10 +1150,10 @@ def test_die_loeschfrage_sagt_was_verschwindet(konfiguration, bot):
     asyncio.run(bot.gruppen[gateway.GRUPPE_CHRONIK].befehle["delete"](ctx))
 
     (frage,) = ctx.antworten
-    for satzteil in ("Notizen", "Tondateien", "Chroniken", "Register", "Nachweise"):
+    for satzteil in ("notes", "audio files", "chronicles", "register", "records"):
         assert satzteil in frage
-    assert "keine Sicherung" in frage
-    assert f"{lebenszyklus.FRIST_TAGE} Tagen" in frage
+    assert "no backup" in frage
+    assert f"{lebenszyklus.FRIST_TAGE} days" in frage
 
 
 def test_der_knopf_loescht_dateien_zeilen_und_den_suchindex(konfiguration, bot):
@@ -1299,7 +1299,7 @@ def test_der_knopf_loescht_die_sitzung_mit_ihren_tondateien(konfiguration, bot):
     ctx = sitzungsbefehl(bot, FakeCtx(gilde=FakeGilde()))
     fertig = sitzung_bestaetigen(sitzung_waehlen(ctx, ids["sitzung"]))
 
-    assert "ist fort" in fertig.response.bearbeitet[-1]["content"]
+    assert "is gone" in fertig.response.bearbeitet[-1]["content"]
     assert notes.session(unsere, ids["sitzung"]) is None
     assert not ids["spur"].exists() and not verwaist.exists()
     # Der zweite Abend derselben Runde und die Nachbarrunde merken nichts davon.
@@ -1323,10 +1323,10 @@ def test_die_frage_sagt_dass_die_tondateien_mitgehen(konfiguration, bot):
 
     frage = klick.response.bearbeitet[-1]["content"]
     assert "Sitzung alpha" in frage
-    assert "1 Aufnahme" in frage and "1 Tondatei" in frage
-    assert "1 Szene mit 1 Notiz" in frage
-    assert "keine Sicherung" in frage
-    assert "Nachweis" in frage
+    assert "1 recording" in frage and "1 audio file" in frage
+    assert "1 scene with 1 note" in frage
+    assert "no backup" in frage
+    assert "record that an announcement was made" in frage
     # Und die Wahl allein hat noch nichts angefasst.
     assert notes.session(unsere, ids["sitzung"]) is not None
     assert ids["spur"].exists()
@@ -1348,10 +1348,10 @@ def test_die_frage_nennt_auch_den_ton_ohne_zeile(konfiguration, bot):
     klick = sitzung_waehlen(ctx, sitzung)
 
     frage = klick.response.bearbeitet[-1]["content"]
-    assert "1 Tondatei" in frage
+    assert "1 audio file" in frage
     fertig = sitzung_bestaetigen(klick).response.bearbeitet[-1]["content"]
     # Und die Meldung danach zählt richtig **und** sagt es in gutem Deutsch.
-    assert "Von der Platte gelöscht: 1 Tondatei." in fertig
+    assert "Deleted from disk: 1 audio file." in fertig
     assert not laufend.exists()
 
 
@@ -1366,8 +1366,8 @@ def test_ohne_tondatei_verspricht_die_frage_keine(konfiguration, bot):
     ctx = sitzungsbefehl(bot, FakeCtx(gilde=FakeGilde()))
     frage = sitzung_waehlen(ctx, ids["sitzung"]).response.bearbeitet[-1]["content"]
 
-    assert "1 Aufnahme" in frage
-    assert "Tondateien liegen dazu keine mehr" in frage
+    assert "1 recording" in frage
+    assert "no audio files are left for them" in frage
 
 
 def test_abbrechen_laesst_die_sitzung_stehen(konfiguration, bot):
@@ -1649,7 +1649,7 @@ def test_die_tondatei_die_bleibt_wird_ohne_ihren_namen_gemeldet(
     assert ".wav" not in caplog.text
     assert "PermissionError" in caplog.text
     fertig = antwort.response.bearbeitet[-1]["content"]
-    assert "1 Tondatei" in fertig and "Nicht gelöscht" in fertig
+    assert "1 audio file" in fertig and "Not deleted" in fertig
     assert spur.exists()
     assert notes.session(unsere, sitzung) is None
 
@@ -1713,7 +1713,7 @@ def test_das_menue_zeigt_die_juengsten_und_sagt_es(konfiguration, bot):
     (menue,) = ctx.ansichten[-1].items
     assert len(menue.options) == chronik.SITZUNG_ZUR_WAHL
     assert menue.options[0].label.startswith("2026-05-27")
-    assert f"{chronik.SITZUNG_ZUR_WAHL} jüngsten" in ctx.antworten[-1]
+    assert f"{chronik.SITZUNG_ZUR_WAHL} most recent" in ctx.antworten[-1]
 
 
 def test_die_sitzung_wird_neben_der_ereignisschleife_geloescht(konfiguration, bot, monkeypatch):
@@ -1837,7 +1837,7 @@ def test_die_absage_ohne_runde_nennt_das_recht_und_den_neuen_namen(bot):
     Genannt wird deshalb das Recht und nicht nur der Befehl — und seit #272 der Name, den
     es in Discord wirklich gibt: ``/setup`` allein trafen in derselben Gilde zwei Bots.
     """
-    assert "Server verwalten" in chronik.KEINE_RUNDE
+    assert "Manage Server" in chronik.KEINE_RUNDE
     assert "`/chronicle setup`" in chronik.KEINE_RUNDE
 
 
@@ -1949,7 +1949,7 @@ def test_ein_altes_kanalmenue_stellt_nicht_in_die_fremde_runde_zu(konfiguration,
         einrichtungsfenster(bot, FakeCtx(gilde=FakeGilde(kanaele=(FakeKanal("777", "hier"),)))),
         benutzer="Chronist",
     )
-    menue, _quelle = menues(interaktion)
+    menue, _quelle, _sprache = menues(interaktion)
 
     lebenszyklus.loeschen(konfiguration, unsere)
     nachbar = runden.anlegen(konfiguration.database_path, "Nachbarn", guild_id=NACHBARGILDE)
@@ -2201,7 +2201,7 @@ def test_eine_sture_runde_haelt_die_naechste_nicht_auf(konfiguration, monkeypatc
 
     assert runden.get(konfiguration.database_path, stur.id) is not None
     assert runden.get(konfiguration.database_path, dahinter.id) is None
-    assert [meldung for meldung in meldungen if "Sture" in meldung and "31 Tagen" in meldung]
+    assert [meldung for meldung in meldungen if "Sture" in meldung and "31 days" in meldung]
     assert "Sture" in caplog.text
 
 
@@ -2256,9 +2256,9 @@ def test_die_loeschfrage_sagt_auch_was_bleibt(konfiguration, bot):
     ctx = loeschbefehl(bot, FakeCtx(gilde=FakeGilde()))
 
     (frage,) = ctx.antworten
-    assert "Das bleibt:" in frage
-    assert "liegt weiter in Discord" in frage
-    assert "Wer den Beleg braucht" in frage
+    assert "This stays:" in frage
+    assert "remains in Discord" in frage
+    assert "needs the proof" in frage
 
 
 def test_die_hinausgeworfene_runde_darf_sofort_loeschen(konfiguration, bot):

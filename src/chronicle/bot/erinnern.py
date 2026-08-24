@@ -60,7 +60,7 @@ ZEILEN_GRENZE = 300
 # Und der Wert eines Embed-Feldes ebenso: dreißig Erwähnungen sind eine Kampagne von zwei
 # Jahren, und ein Feld darüber lässt Discord die **ganze** Nachricht fallen. Geteilt werden
 # kann ein Embed nicht, also wird hier gekappt — das Register selbst bleibt vollständig.
-FELD_GEKUERZT = "\n… und weitere."
+FELD_GEKUERZT = "\n… and more."
 
 # Ab hier ist ein Name nah genug an einem Registereintrag, um ihn als Rückfrage anzubieten.
 NAEHE = 0.6
@@ -72,86 +72,87 @@ VERWERFEN = ""
 
 # Die Knöpfe je Vorschlag, in der Reihenfolge, in der sie stehen sollen.
 ENTSCHEIDUNGEN = (
-    (register.FIGUR, "Figur"),
-    (register.ORT, "Ort"),
-    (register.FADEN, "Faden"),
-    (VERWERFEN, "Nein"),
+    (register.FIGUR, "Character"),
+    (register.ORT, "Place"),
+    (register.FADEN, "Thread"),
+    (VERWERFEN, "No"),
 )
 
-SUCHE_TITEL = "Gefunden zu »{begriff}«"
-OHNE_BEGRIFF = "Sag mir, wonach ich suchen soll — ein Wort genügt."
+SUCHE_TITEL = "Found for “{begriff}”"
+OHNE_BEGRIFF = "Tell me what to look for — one word is enough."
 NOCH_NICHTS = (
-    "Hier ist noch nichts zu finden. Sobald die erste Sitzung geschrieben ist, "
-    "durchsuche ich Notizen, Diktate, Chroniken und das Register."
+    "There is nothing to find here yet. As soon as the first session is written, I search "
+    "notes, dictations, chronicles and the register."
 )
 NICHTS_GEFUNDEN = (
-    "Nichts zu »{begriff}«. Ein kürzeres Wort oder eine andere Schreibweise hilft oft — "
-    "ich suche auch nach Wortanfängen."
+    "Nothing for “{begriff}”. A shorter word or a different spelling often helps — I also "
+    "search for word beginnings."
 )
-WEITERE_TREFFER = "Es gibt mehr; genauer gefragt kommst du schneller hin."
-SPRUNG = "hin"
+WEITERE_TREFFER = "There is more; asking more precisely gets you there faster."
+SPRUNG = "go"
 
-WER_UNBEKANNT = "»{name}« steht nicht im Register."
-WER_AEHNLICH = " Meintest du {namen}?"
+WER_UNBEKANNT = "“{name}” is not in the register."
+WER_AEHNLICH = " Did you mean {namen}?"
 WER_NACHSCHLAG = (
-    " Wartet der Eintrag noch auf ein Ja, findest du ihn unter den offenen Vorschlägen."
+    " If the entry is still waiting for a yes, you will find it among the open suggestions."
 )
-WER_ART = "Art"
-WER_ERWAEHNT = "Kommt vor in"
-WER_FIGUR = "Figur in Foundry"
-WER_SITZUNG = "Sitzung vom {datum}"
-WER_OHNE_ERWAEHNUNG = "noch keiner Sitzung zugeordnet"
+WER_ART = "Kind"
+WER_ERWAEHNT = "Appears in"
+WER_FIGUR = "Character in Foundry"
+WER_SITZUNG = "Session of {datum}"
+WER_OHNE_ERWAEHNUNG = "not assigned to any session yet"
 
-OFFEN_TITEL = "Vorschläge fürs Register"
+OFFEN_TITEL = "Suggestions for the register"
 OFFEN_HINWEIS = (
-    "Je Vorschlag eine Reihe: die Art bestätigt ihn, »Nein« verwirft ihn. "
-    "Die Reihen stehen in derselben Reihenfolge wie die Einträge."
+    "One row per suggestion: the kind confirms it, “No” discards it. "
+    "The rows stand in the same order as the entries."
 )
-NICHTS_OFFEN = "Nichts zu entscheiden — das Register ist auf dem Stand der letzten Chronik."
-OFFEN_WEITERE = "Danach warten noch {anzahl} weitere."
-OFFEN_VORGESCHLAGEN = "vorgeschlagen als {art}"
-BESTAETIGT = "»{name}« steht jetzt als {art} im Register."
-VERWORFEN = "»{name}« ist verworfen."
-SCHON_ENTSCHIEDEN = "Darüber ist schon entschieden — ich habe nichts geändert."
+NICHTS_OFFEN = "Nothing to decide — the register is at the state of the last chronicle."
+OFFEN_WEITERE = "After that {anzahl} more are waiting."
+OFFEN_VORGESCHLAGEN = "suggested as {art}"
+BESTAETIGT = "“{name}” now stands in the register as {art}."
+VERWORFEN = "“{name}” is discarded."
+SCHON_ENTSCHIEDEN = "That has already been decided — I have changed nothing."
 SCHON_IM_REGISTER = (
-    "»{name}« steht schon als {art} im Register — den doppelten Vorschlag habe ich weggeräumt."
+    "“{name}” already stands in the register as {art} — I have cleared the duplicate "
+    "suggestion away."
 )
 NICHT_EINGETRAGEN = (
-    "»{name}« als {art} einzutragen ging nicht: der Name ist unter dieser Art vergeben. "
-    "Der Vorschlag steht weiter offen — »Nein« räumt ihn weg."
+    "Entering “{name}” as {art} did not work: the name is taken under that kind. The "
+    "suggestion stays open — “No” clears it away."
 )
 
-ZUORDNUNG_TITEL = "Wer spricht als wer"
+ZUORDNUNG_TITEL = "Who speaks as whom"
 ZUORDNUNG_HINWEIS = (
-    "Je Person ein Menü. Die Zuordnung entscheidet, welcher Name später an einer "
-    "Tonspur steht — sie bleibt, bis du sie änderst."
+    "One menu per person. The assignment decides which name later stands on an audio track "
+    "— it stays until you change it."
 )
 NIEMAND_AUFGENOMMEN = (
-    "Ich habe noch niemanden aufgenommen. Nach der ersten Aufnahme steht hier, wer zu wem gehört."
+    "I have not recorded anybody yet. After the first recording this shows who belongs to whom."
 )
 KEINE_SPIELER = (
-    "Ich kenne die Foundry-Spieler dieser Runde noch nicht. Sobald eine Sitzung "
-    "abgeschlossen ist, stehen sie hier zur Wahl."
+    "I do not know this round's Foundry players yet. As soon as a session is closed, they "
+    "are on offer here."
 )
-ZUORDNUNG_WAEHLEN = "{name} spielt …"
-ZUORDNUNG_KEINE = "— niemand —"
-ZUORDNUNG_OFFEN = "noch offen"
-ZUORDNUNG_VORSCHLAG = "vielleicht {spieler}"
-ZUGEORDNET = "{name} spielt als {spieler}."
-ZUORDNUNG_GELOEST = "Die Zuordnung von {name} ist aufgehoben."
+ZUORDNUNG_WAEHLEN = "{name} plays …"
+ZUORDNUNG_KEINE = "— nobody —"
+ZUORDNUNG_OFFEN = "still open"
+ZUORDNUNG_VORSCHLAG = "perhaps {spieler}"
+ZUGEORDNET = "{name} plays as {spieler}."
+ZUORDNUNG_GELOEST = "The assignment for {name} is lifted."
 ZU_VIELE_SPIELER = (
-    "Auf dem Foundry-Server stehen mehr Konten, als in ein Menü passen — "
-    "zur Wahl stehen die ersten {anzahl}."
+    "There are more accounts on the Foundry server than fit into a menu — the first "
+    "{anzahl} are on offer."
 )
-NICHT_AUFGENOMMEN = "Diese Person habe ich nicht aufgenommen — ich habe nichts geändert."
-SPIELER_WEG = "Diesen Foundry-Spieler kenne ich nicht mehr — ich habe nichts geändert."
+NICHT_AUFGENOMMEN = "I have not recorded this person — I have changed nothing."
+SPIELER_WEG = "I do not know this Foundry player any more — I have changed nothing."
 SPIELER_VERGEBEN = (
-    "Dieses Foundry-Konto gehört schon jemand anderem — ich habe nichts geändert. "
-    "Soll es wechseln, geht das in `/chronicle zuordnung`: dort darf ein Konto umgehängt werden, "
-    "und die Runde erfährt es dann im Kanal der Sitzung."
+    "This Foundry account already belongs to somebody else — I have changed nothing. If it "
+    "is to change hands, that works in `/chronicle zuordnung`: an account may be moved "
+    "there, and the round then learns of it in the session's channel."
 )
 UEBERNOMMEN = (
-    "{name} spielt als {spieler}. Das Konto hatte {vorher} — dort steht jetzt wieder nichts."
+    "{name} plays as {spieler}. The account belonged to {vorher} — nothing stands there now."
 )
 
 # Und dieselbe Übernahme, gesagt statt nur beantwortet. Die Antwort auf den Klick ist
@@ -160,28 +161,28 @@ UEBERNOMMEN = (
 # damit der stillste; deshalb der Thread für die Runde und ein Wort an sie selbst
 # (Betreiber-Entscheidung vom 2026-08-12 zu #76).
 UEBERNAHME_VERMERK = (
-    "**{name}** spielt in eurem Foundry als **{spieler}** — bis eben gehörte das Konto "
-    "**{vorher}**, dort steht jetzt wieder nichts. Umgehängt wurde es in `/chronicle zuordnung`; "
-    "dort geht es auch wieder zurück."
+    "**{name}** plays as **{spieler}** in your Foundry — until just now the account "
+    "belonged to **{vorher}**, where nothing stands now. It was moved in "
+    "`/chronicle zuordnung`; it also goes back there."
 )
 
 # Auch dieser Satz geht ins Zwiegespräch und nennt deshalb die **Runde** — dieselbe Regel
 # wie bei ``BETRETEN_FRAGE``: eine Instanz trägt mehrere (#62/#63), und weder eine
 # Direktnachricht noch der Verweis auf `/chronicle zuordnung` sagt sonst, welche gemeint ist.
 UEBERNAHME_ANGESAGT = (
-    "In **{runde}** hat **{name}** deine Zuordnung zum Foundry-Konto **{spieler}** "
-    "übernommen — deine Spuren dort tragen ab jetzt wieder deinen Discord-Namen. War das "
-    "ein Versehen, holt `/chronicle zuordnung` in dieser Runde es zurück."
+    "In **{runde}**, **{name}** has taken over your assignment to the Foundry account "
+    "**{spieler}** — your tracks there carry your Discord name again from now on. If that "
+    "was a mistake, `/chronicle zuordnung` in that round brings it back."
 )
 
 # Gefragt wird beim Betreten des Sprachkanals, damit jede Äußerung von Anfang an einer
 # Figur gehört (#76). Der Satz geht ins Zwiegespräch und nennt deshalb den Sprachkanal:
 # in einer Direktnachricht steht sonst nirgends, welche Runde gemeint ist.
 BETRETEN_FRAGE = (
-    "Ich schneide gerade in **#{kanal}** mit und weiß noch nicht, wer du dort in Foundry "
-    "bist. Wähl dich aus — dann steht dein Name später an deiner Spur statt deines "
-    "Discord-Namens. Antwortest du nicht, bleibt es beim Discord-Namen; das Protokoll "
-    "sagt es dann auch so. Ändern kannst du es jederzeit mit `/chronicle zuordnung`."
+    "I am recording in **#{kanal}** right now and do not know yet who you are there in "
+    "Foundry. Pick yourself — then your name stands on your track later instead of your "
+    "Discord name. If you do not answer, it stays with the Discord name; the log says so "
+    "too. You can change it at any time with `/chronicle zuordnung`."
 )
 
 # Und der eine Fall, in dem nicht gefragt wird: der Name ist 1:1 derselbe. Gesagt wird es
@@ -192,14 +193,14 @@ BETRETEN_FRAGE = (
 # seiner Figuren. Einen Satz für beides gibt es nicht — er nennte im Fall der Figur einen
 # Namen, der im selben Satz sichtbar nicht der gleiche ist.
 BETRETEN_VERMERK = (
-    "**{name}** heißt hier genauso wie das Foundry-Konto **{spieler}** — ich habe beide "
-    "verbunden, damit die Spur von Anfang an den richtigen Namen trägt. Stimmt das nicht, "
-    "ändert `/chronicle zuordnung` es."
+    "**{name}** is named exactly like the Foundry account **{spieler}** — I have connected "
+    "the two so that the track carries the right name from the start. If that is wrong, "
+    "`/chronicle zuordnung` changes it."
 )
 BETRETEN_VERMERK_FIGUR = (
-    "**{name}** heißt hier genauso wie **{figur}**, die Figur des Foundry-Kontos "
-    "**{spieler}** — ich habe beide verbunden, damit die Spur von Anfang an den richtigen "
-    "Namen trägt. Stimmt das nicht, ändert `/chronicle zuordnung` es."
+    "**{name}** is named exactly like **{figur}**, the character of the Foundry account "
+    "**{spieler}** — I have connected the two so that the track carries the right name from "
+    "the start. If that is wrong, `/chronicle zuordnung` changes it."
 )
 
 # Der Weg über das Menü im Zwiegespräch: jemand wählt sich ein Konto. Er wird genauso
@@ -208,13 +209,13 @@ BETRETEN_VERMERK_FIGUR = (
 # **nichts über die Namen**: ins Menü führt auch die Mehrdeutigkeit, und dort ist der Name
 # gerade derselbe — nur eben nicht nur bei einer.
 MENUE_VERMERK = (
-    "**{name}** spielt in eurem Foundry als **{spieler}** — so gewählt, nicht erkannt: "
-    "ich habe gefragt, und das ist die Antwort."
+    "**{name}** plays as **{spieler}** in your Foundry — chosen, not recognised: I asked, "
+    "and that is the answer."
 )
 
 NUR_SELBST = (
-    "Diese Frage galt jemand anderem — wer wer ist, entscheidet jede und jeder über sich "
-    "selbst. Ich habe nichts geändert."
+    "This question was for somebody else — who is who is decided by each person about "
+    "themselves. I have changed nothing."
 )
 
 

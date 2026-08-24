@@ -286,10 +286,10 @@ def test_ohne_erkenner_bleibt_die_spur_liegen_und_die_chronik_ungeschrieben(stel
 
     schritte = {s["name"]: s for s in json.loads(nightly.lauf(stelle, gastgeber))}
 
-    assert "nicht erreichbar" in schritte[nightly.TRANSKRIPT]["text"]
+    assert "cannot be reached" in schritte[nightly.TRANSKRIPT]["text"]
     assert not schritte[nightly.TRANSKRIPT]["gelungen"]
     assert not schritte[nightly.CHRONIK]["gelungen"]
-    assert "ohne das gesprochene Wort" in schritte[nightly.CHRONIK]["text"]
+    assert "without the spoken word" in schritte[nightly.CHRONIK]["text"]
     # Nichts geschrieben, nichts als gescheitert vermerkt — und die Sitzung bleibt fällig.
     assert protocol.stored(gastgeber, sitzung_id) is None
     assert recordings.pending(gastgeber)[0].status == recordings.WARTET
@@ -320,7 +320,7 @@ def test_die_nacht_sagt_der_runde_was_sie_nicht_geschrieben_hat(stelle, monkeypa
     ((wer, bericht),) = gemeldet
     assert wer == gastgeber.id
     assert any(nightly.OHNE_SPRACHE in zeile for zeile in bericht)
-    assert any("noch keinen Text" in zeile for zeile in bericht)
+    assert any("without text" in zeile for zeile in bericht)
 
 
 def test_eine_gelungene_nacht_hat_der_runde_nichts_zu_melden(stelle):
@@ -362,7 +362,7 @@ def test_eine_von_der_frist_geholte_spur_steht_im_bericht_der_nacht(stelle):
     nightly.lauf(stelle, gastgeber, danach=lambda _eine, bericht: gemeldet.append(bericht))
 
     (bericht,) = gemeldet
-    assert any("nie verschriftet" in zeile for zeile in bericht)
+    assert any("never transcribed" in zeile for zeile in bericht)
 
 
 class Antwort:

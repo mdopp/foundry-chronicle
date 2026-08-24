@@ -4,9 +4,21 @@ import pytest
 from conftest import runde
 
 from chronicle import db, protocol
-from chronicle.compose.composer import BELEG_TITEL, NOTIZEN_TITEL, VERBINDUNG_TITEL
-from chronicle.compose.recap import CHRONIK_TITEL, FAEDEN_TITEL, HERGANG_TITEL
+from chronicle import sprache as sprachen
 from chronicle.compose.service import RUECKBLICK, save
+
+# Das Material dieser Datei ist deutsch; seit #268 folgt der Text der Sprache seiner Runde
+# (Vorgabe Englisch). Geprüft wird hier deshalb gegen die deutschen Texte.
+_CHRONIK = sprachen.chronik(sprachen.DEUTSCH)
+_RUECKBLICK = sprachen.rueckblick(sprachen.DEUTSCH)
+_ERZAEHLUNG = sprachen.erzaehlung(sprachen.DEUTSCH)
+
+BELEG_TITEL = _CHRONIK.beleg_titel
+NOTIZEN_TITEL = _CHRONIK.notizen_titel
+VERBINDUNG_TITEL = _CHRONIK.verbindung_titel
+CHRONIK_TITEL = _RUECKBLICK.chronik_titel
+FAEDEN_TITEL = _RUECKBLICK.faeden_titel
+HERGANG_TITEL = _RUECKBLICK.hergang_titel
 
 STAND = "2026-08-05T20:00:00+00:00"
 

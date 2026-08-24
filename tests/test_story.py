@@ -22,20 +22,26 @@ from __future__ import annotations
 from dataclasses import replace
 
 import pytest
-from conftest import runde
+from conftest import deutsche_runde, runde
 from mocks import foundry_mock, ollama_mock
 
 from chronicle import db, foundry, notes, protocol, search, settings
-from chronicle.compose.composer import (
-    BELEG_TITEL,
-    NOTIZEN_TITEL,
-    VERBINDUNG_TITEL,
-    VERWORFEN,
-)
-from chronicle.compose.recap import FAEDEN_TITEL
+from chronicle import sprache as sprachen
 from chronicle.compose.service import RUECKBLICK, compose_session, recap_session
 from chronicle.config import Config
 from chronicle.foundry import testwelt
+
+# Das Material dieser Datei ist deutsch; seit #268 folgt der Text der Sprache seiner Runde
+# (Vorgabe Englisch). Geprüft wird hier deshalb gegen die deutschen Texte.
+_CHRONIK = sprachen.chronik(sprachen.DEUTSCH)
+_RUECKBLICK = sprachen.rueckblick(sprachen.DEUTSCH)
+_ERZAEHLUNG = sprachen.erzaehlung(sprachen.DEUTSCH)
+
+BELEG_TITEL = _CHRONIK.beleg_titel
+NOTIZEN_TITEL = _CHRONIK.notizen_titel
+VERBINDUNG_TITEL = _CHRONIK.verbindung_titel
+VERWORFEN = _CHRONIK.verworfen
+FAEDEN_TITEL = _RUECKBLICK.faeden_titel
 
 GESPIELT_AM = "2026-05-16"
 TITEL = "Der Halbe Mond"
@@ -105,6 +111,8 @@ def station_1_aufsetzen(tmp_path):
     config = Config(data_dir=tmp_path / "daten", recordings_dir=tmp_path / "spuren")
     db.init(config.database_path)
     assert config.database_path.is_file()
+    # Diese Runde spielt deutsch; die Vorgabe einer frischen Runde ist Englisch (#268).
+    deutsche_runde(config)
     return config
 
 

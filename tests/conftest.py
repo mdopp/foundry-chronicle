@@ -9,7 +9,7 @@ import time
 
 import pytest
 
-from chronicle import jobs, zugang
+from chronicle import jobs, settings, sprache, zugang
 from chronicle import runde as runden
 from chronicle.config import Config
 
@@ -194,6 +194,19 @@ def runde(quelle):
     if pfad not in _gemerkt:
         _gemerkt[pfad] = runden.erste(pfad)
     return _gemerkt[pfad]
+
+
+def deutsche_runde(quelle):
+    """Die Testrunde mit deutscher Inhaltssprache.
+
+    Seit #268 ist die Vorgabe **Englisch**, und die Wanderung stempelt nur, was es vorher
+    schon gab. Wo eine Testdatei deutsches Material durch Verschriftung und Komposition
+    schickt, ist die Sprache Teil des Aufbaus und wird deshalb hier gesagt statt
+    vorausgesetzt — genau so steht sie bei einer Runde, die es heute gibt.
+    """
+    gewaehlt = runde(quelle)
+    settings.save_sprache(gewaehlt, sprache.DEUTSCH)
+    return gewaehlt
 
 
 def warte_bis(bedingung):

@@ -32,9 +32,9 @@ from chronicle.bot import BotFehler, BotHaelt
 from chronicle.config import Config
 
 KEIN_TOKEN = (
-    "Kein Discord-Bot-Token — der Aufnahme-Bot startet nicht. "
-    "DISCORD_BOT_TOKEN in den Template-Variablen dieses Dienstes setzen, "
-    "dann den Bot neu starten."
+    "No Discord bot token — the recording bot will not start. "
+    "Set DISCORD_BOT_TOKEN in this service's template variables, "
+    "then restart the bot."
 )
 
 

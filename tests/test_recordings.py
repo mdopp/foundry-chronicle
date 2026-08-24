@@ -41,7 +41,7 @@ class Erkenner:
         )
         self.fehler = fehler
 
-    def transcribe(self, audio_path, *, hotwords=()):
+    def transcribe(self, audio_path, *, hotwords=(), sprache="en"):
         if self.fehler is not None:
             raise self.fehler
         yield from self.segmente
@@ -188,7 +188,7 @@ def test_der_stapel_macht_aus_dem_diktat_ein_transkript(config, sitzung_id):
 
     meldungen = service.run_queue(config, runde(config), model=Erkenner())
 
-    assert "2 Segmente" in meldungen[0]
+    assert "2 segments" in meldungen[0]
     aufnahme = recordings.for_session(runde(config), sitzung_id)[0]
     assert aufnahme.status == recordings.FERTIG
     assert aufnahme.text == "Auf dem Heimweg fällt mir ein: die Wirtin hat gelogen."
@@ -210,7 +210,7 @@ def test_eine_verschwundene_spur_wird_gemeldet_statt_still_zu_scheitern(config, 
 
     aufnahme = recordings.for_session(runde(config), sitzung_id)[0]
     assert aufnahme.status == recordings.GESCHEITERT
-    assert "liegt nicht mehr da" in aufnahme.detail
+    assert "is no longer there" in aufnahme.detail
 
 
 def test_eine_spur_ohne_aeusserung_ist_kein_fehlschlag(config, sitzung_id):
@@ -226,11 +226,11 @@ def test_eine_spur_ohne_aeusserung_ist_kein_fehlschlag(config, sitzung_id):
 
     (meldung,) = service.run_queue(config, runde(config), model=Erkenner())
 
-    assert "nicht verschriftet" in meldung
+    assert "not transcribed" in meldung
     aufnahme = recordings.for_session(runde(config), sitzung_id)[0]
     assert aufnahme.status == recordings.FERTIG
     assert aufnahme.text == ""
-    assert "Verlorengegangen ist nichts" in aufnahme.detail
+    assert "Nothing was lost" in aufnahme.detail
 
 
 def test_eine_kaputte_spur_nimmt_die_uebrigen_nicht_mit(config, sitzung_id, monkeypatch):
@@ -470,7 +470,7 @@ def test_der_naechtliche_stapel_setzt_die_frist_auch_ohne_arbeit_durch(config, s
 
     (meldung,) = service.run_queue(config, runde(config))
 
-    assert "gelöscht" in meldung
+    assert "deleted" in meldung
     assert list(config.recordings_dir.iterdir()) == []
     # Das Transkript bleibt — gelöscht wird die Audiodatei, nicht die Geschichte.
     assert recordings.get(runde(config), aufnahme.id).text
@@ -485,7 +485,7 @@ def test_die_meldung_sagt_warum_die_aufnahme_weg_ist(config, sitzung_id):
     (meldung,) = recordings.sweep(config, runde(config))
 
     assert meldung == recordings.NACH_FRIST.format(
-        sitzung=sitzung_id, was="eine Aufnahme", tage=recordings.RETENTION_TAGE
+        sitzung=sitzung_id, was="one recording", tage=recordings.RETENTION_TAGE
     )
     assert recordings.get(runde(config), aufnahme.id).deleted_at
     assert recordings.pending(runde(config)) == ()
@@ -504,7 +504,7 @@ def test_ein_ganzer_abend_bleibt_auch_bei_240_haeppchen_eine_zeile(config, sitzu
 
     assert meldungen == (
         recordings.OHNE_TEXT.format(
-            sitzung=sitzung_id, was="240 Aufnahmen", tage=recordings.RETENTION_TAGE
+            sitzung=sitzung_id, was="240 recordings", tage=recordings.RETENTION_TAGE
         ),
     )
     assert list(config.recordings_dir.iterdir()) == []
@@ -523,7 +523,7 @@ def test_eine_nie_verschriftete_spur_verschwindet_nicht_stillschweigend(config, 
     (meldung,) = recordings.sweep(config, runde(config))
 
     assert meldung == recordings.OHNE_TEXT.format(
-        sitzung=sitzung_id, was="eine Aufnahme", tage=recordings.RETENTION_TAGE
+        sitzung=sitzung_id, was="one recording", tage=recordings.RETENTION_TAGE
     )
     nachher = recordings.get(runde(config), aufnahme.id)
     assert nachher.status == recordings.GESCHEITERT
@@ -548,7 +548,7 @@ def test_eine_absichtlich_uebersprungene_spur_ist_kein_solcher_verlust(config, s
     (meldung,) = recordings.sweep(config, runde(config))
 
     assert meldung == recordings.NACH_FRIST.format(
-        sitzung=sitzung_id, was="eine Aufnahme", tage=recordings.RETENTION_TAGE
+        sitzung=sitzung_id, was="one recording", tage=recordings.RETENTION_TAGE
     )
     assert recordings.get(runde(config), aufnahme.id).status == recordings.FERTIG
 
@@ -582,7 +582,7 @@ def test_eine_datei_ohne_zeile_ueberlebt_die_frist_nicht(config, sitzung_id):
 
     assert not pfad.exists()
     assert meldung == recordings.OHNE_ZEILE.format(
-        sitzung=sitzung_id, was="eine Aufnahme", tage=recordings.RETENTION_TAGE
+        sitzung=sitzung_id, was="one recording", tage=recordings.RETENTION_TAGE
     )
 
 
@@ -599,7 +599,7 @@ def test_der_verlust_ohne_zeile_wird_gemeldet_statt_still_zu_geschehen(config, s
         recordings.sweep_alle(config, melden=lambda _eine, saetze: erreicht.extend(saetze))
 
     ((satz,), gelogt) = (tuple(erreicht), caplog.text)
-    assert "nie eingereiht" in satz
+    assert "never queued" in satz
     assert satz in gelogt
     assert pfad.stem not in gelogt
 
@@ -613,7 +613,7 @@ def test_zwei_waisen_derselben_sitzung_bleiben_eine_zeile(config, sitzung_id):
 
     assert meldungen == (
         recordings.OHNE_ZEILE.format(
-            sitzung=sitzung_id, was="3 Aufnahmen", tage=recordings.RETENTION_TAGE
+            sitzung=sitzung_id, was="3 recordings", tage=recordings.RETENTION_TAGE
         ),
     )
     assert list(config.recordings_dir.iterdir()) == []
@@ -671,7 +671,7 @@ def test_die_frist_sagt_jeder_runde_ihr_eigenes(config, sitzung_id):
     assert wer == runde(config).id
     assert saetze == (
         recordings.OHNE_TEXT.format(
-            sitzung=sitzung_id, was="eine Aufnahme", tage=recordings.RETENTION_TAGE
+            sitzung=sitzung_id, was="one recording", tage=recordings.RETENTION_TAGE
         ),
     )
 
@@ -708,7 +708,7 @@ def test_der_taegliche_lauf_reicht_den_weg_zurueck_durch(config, sitzung_id):
             )
         )
 
-    assert erreicht and "nie verschriftet" in erreicht[0][0]
+    assert erreicht and "never transcribed" in erreicht[0][0]
 
 
 def laeuft_bei(config, aufnahme_id, besitzer, herzschlag):
@@ -760,7 +760,7 @@ def test_ein_neustart_mitten_im_verschriften_verliert_die_spur_nicht(config, sit
 
     meldungen = service.run_queue(config, runde(config), model=Erkenner())
 
-    assert "2 Segmente" in meldungen[0]
+    assert "2 segments" in meldungen[0]
     nachher = recordings.get(runde(config), aufnahme.id)
     assert nachher.status == recordings.FERTIG
     assert nachher.text == "Auf dem Heimweg fällt mir ein: die Wirtin hat gelogen."
@@ -850,7 +850,7 @@ def test_die_spur_in_arbeit_gibt_lebenszeichen(config, sitzung_id, monkeypatch):
     tor = threading.Event()
 
     class Langsam(Erkenner):
-        def transcribe(self, audio_path, *, hotwords=()):
+        def transcribe(self, audio_path, *, hotwords=(), sprache="en"):
             tor.wait(GRENZE)
             yield from ()
 

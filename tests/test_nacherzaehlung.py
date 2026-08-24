@@ -30,26 +30,35 @@ from conftest import runde as erste_runde
 from test_discord_ausgabe import FakeDiscord
 
 from chronicle import db, lebenszyklus, register, settings
+from chronicle import sprache as sprachen
+from chronicle.compose import nacherzaehlung as _nacherzaehlung
 from chronicle.compose.client import ModelUnreachable
-from chronicle.compose.composer import NICHT_ERREICHBAR
-from chronicle.compose.nacherzaehlung import (
-    ERZAEHLT_TITEL,
-    LUECKE,
-    LUECKE_TITEL,
-    OHNE_MODELL,
-    REGISTER_TITEL,
-    REGISTER_ZEILE,
-    STAND_ZEILE,
-    VERWORFEN,
-    VERWORFEN_UEBERSCHRIFT,
-    Abschnitt,
-    ErzaehlStoff,
-    nacherzaehlen,
-)
+from chronicle.compose.nacherzaehlung import REGISTER_ZEILE, Abschnitt, ErzaehlStoff
 from chronicle.compose.service import KIND, erzaehlen
 from chronicle.config import Config
 from chronicle.discord import ausgabe
 from chronicle.discord.client import DiscordClient
+
+# Das Material dieser Datei ist deutsch; seit #268 folgt der Text der Sprache seiner Runde
+# (Vorgabe Englisch). Geprüft wird hier deshalb gegen die deutschen Texte.
+_CHRONIK = sprachen.chronik(sprachen.DEUTSCH)
+_RUECKBLICK = sprachen.rueckblick(sprachen.DEUTSCH)
+_ERZAEHLUNG = sprachen.erzaehlung(sprachen.DEUTSCH)
+
+NICHT_ERREICHBAR = _ERZAEHLUNG.nicht_erreichbar
+ERZAEHLT_TITEL = _ERZAEHLUNG.erzaehlt_titel
+LUECKE = _ERZAEHLUNG.luecke
+LUECKE_TITEL = _ERZAEHLUNG.luecke_titel
+OHNE_MODELL = _ERZAEHLUNG.ohne_modell
+REGISTER_TITEL = _ERZAEHLUNG.register_titel
+STAND_ZEILE = _ERZAEHLUNG.stand_zeile
+VERWORFEN = _ERZAEHLUNG.verworfen
+VERWORFEN_UEBERSCHRIFT = _ERZAEHLUNG.verworfen_ueberschrift
+
+
+def nacherzaehlen(stoff, model=None):
+    return _nacherzaehlung.nacherzaehlen(stoff, model, inhaltssprache=sprachen.DEUTSCH)
+
 
 TOKEN = "bot-token-nur-fuer-den-test"
 
@@ -450,7 +459,7 @@ def test_ein_eintrag_steht_je_sitzung_genau_einmal(config):
     erste = sitzung(config, "2026-05-01")
     eintragen(config, erste, name="Mira", state=register.BESTAETIGT, verweise=3)
 
-    erwartet = REGISTER_ZEILE.format(label="Figur", name="Mira", satz="Kundschafterin")
+    erwartet = REGISTER_ZEILE.format(label="Character", name="Mira", satz="Kundschafterin")
     assert register.nach_sitzung(unsere)[erste] == (erwartet,)
 
 
@@ -530,7 +539,7 @@ def test_die_nacherzaehlung_geht_als_markdown_datei_in_den_kanal(config):
     # Die Trennung übersteht den Weg: Markdown trägt die Überschriften unverändert.
     assert ERZAEHLT_TITEL in inhalt
     assert REGISTER_TITEL in inhalt
-    assert "Belegt aus dem Register" in begleitung["payload_json"]
+    assert "traced from the register" in begleitung["payload_json"]
 
 
 def test_eine_zu_grosse_nacherzaehlung_wird_gesagt_statt_abgeschnitten(config, monkeypatch):
@@ -541,4 +550,4 @@ def test_eine_zu_grosse_nacherzaehlung_wird_gesagt_statt_abgeschnitten(config, m
         config, unsere, "kanal-1", "viel zu lang für zehn Bytes", "2026-05-01", "2026-05-03"
     )
 
-    assert meldung.startswith("Die Nacherzählung ist größer als")
+    assert meldung.startswith("The retelling is larger than")

@@ -229,7 +229,7 @@ def test_der_chronik_lauf_schreibt_chronik_und_rueckblick(stelle):
 
     meldung = jobs.chronik(stelle, runde(stelle), sitzung_id)
 
-    assert "stehen bereit" in meldung
+    assert "stand ready" in meldung
     scope = db.scoped(runde(stelle))
     try:
         arten = {
@@ -317,7 +317,7 @@ class Abgeschaltet:
 
     name = "nicht-erreichbar"
 
-    def transcribe(self, audio_path, *, hotwords=()):
+    def transcribe(self, audio_path, *, hotwords=(), sprache="en"):
         raise TranscriberUnreachable("Der Spracherkenner ist nicht erreichbar")
 
 
@@ -326,7 +326,7 @@ class Erkenner:
 
     name = "erfundenes-modell"
 
-    def transcribe(self, audio_path, *, hotwords=()):
+    def transcribe(self, audio_path, *, hotwords=(), sprache="en"):
         yield Segment(start=0.0, end=2.0, text=" Da unten steht eine Tür.")
 
 
@@ -353,9 +353,9 @@ def test_der_lauf_meldet_keine_verschriftung_die_nicht_stattfand(stelle, monkeyp
 
     stände = [spur.status for spur in recordings.for_session(runde(stelle), sitzung_id)]
     assert stände == [recordings.WARTET, recordings.WARTET]
-    assert "Aufnahmen verschriftet" not in meldung
-    assert "2 Aufnahmen konnte ich nicht verschriften" in meldung
-    assert f"nach {recordings.RETENTION_TAGE} Tagen gelöscht" in meldung
+    assert "recordings transcribed" not in meldung
+    assert "2 recordings I could not transcribe" in meldung
+    assert f"deleted after {recordings.RETENTION_TAGE} days" in meldung
 
 
 def _altern(stelle, aufnahme_id, tage):
@@ -375,7 +375,7 @@ class Kaputt:
 
     name = "erfundenes-modell"
 
-    def transcribe(self, audio_path, *, hotwords=()):
+    def transcribe(self, audio_path, *, hotwords=(), sprache=None):
         raise RuntimeError("Die Datei ist kein Ton")
         yield  # pragma: no cover
 
@@ -404,11 +404,11 @@ def test_die_frist_holt_eine_spur_ohne_text_und_die_runde_erfaehrt_es(stelle, mo
     assert "konnte ich nicht verschriften" not in meldung
     assert (
         recordings.OHNE_TEXT.format(
-            sitzung=sitzung_id, was="eine Aufnahme", tage=recordings.RETENTION_TAGE
+            sitzung=sitzung_id, was="one recording", tage=recordings.RETENTION_TAGE
         )
         in meldung
     )
-    assert "stehen bereit" in meldung
+    assert "stand ready" in meldung
 
 
 def test_der_letzte_verbrannte_anlauf_steht_im_satz_an_die_runde(stelle, monkeypatch):
@@ -436,7 +436,7 @@ def test_was_wirklich_verschriftet_wurde_steht_auch_so_da(stelle, monkeypatch):
     assert [spur.status for spur in recordings.for_session(runde(stelle), sitzung_id)] == [
         recordings.FERTIG
     ]
-    assert "1 Aufnahme verschriftet" in meldung
+    assert "1 recording transcribed" in meldung
     assert "konnte ich nicht verschriften" not in meldung
 
 
@@ -452,7 +452,7 @@ def test_der_abschluss_holt_erst_die_zahlen_und_schreibt_dann(stelle, welt, monk
 
     meldung = jobs.abschluss(stelle, runde(stelle), sitzung_id)
 
-    assert "stehen bereit" in meldung
+    assert "stand ready" in meldung
     assert protokollarten(stelle, sitzung_id) == {"chronik", "rueckblick"}
 
 
@@ -471,7 +471,7 @@ def test_ein_ausgefallenes_foundry_kostet_nicht_die_ganze_chronik(stelle, monkey
     meldung = jobs.abschluss(stelle, runde(stelle), sitzung_id)
 
     assert "nicht erreichbar" in meldung
-    assert "stehen bereit" in meldung
+    assert "stand ready" in meldung
     assert protokollarten(stelle, sitzung_id) == {"chronik", "rueckblick"}
 
 
@@ -494,7 +494,7 @@ def test_eine_unlesbare_weltantwort_kostet_die_zahlen_und_sagt_es(stelle, welt, 
 
     assert jobs.OHNE_ZAHLEN in meldung
     assert "sieht nicht aus wie eine Welt" in meldung
-    assert "stehen bereit" in meldung
+    assert "stand ready" in meldung
     assert _verknuepft(stelle, sitzung_id) == set()
 
 
@@ -557,7 +557,7 @@ def test_der_abschluss_ordnet_die_zahlen_den_szenen_zu(stelle, welt, monkeypatch
 
     assert _verknuepft(stelle, sitzung_id) == {"w-abschluss"}
     assert meldung.startswith(jobs.NACHGETRAGEN_EINER)
-    assert "stehen bereit" in meldung
+    assert "stand ready" in meldung
 
 
 def test_ein_abend_ohne_passwort_bekommt_keine_zahlen_und_erfaehrt_es(stelle):
@@ -571,7 +571,7 @@ def test_ein_abend_ohne_passwort_bekommt_keine_zahlen_und_erfaehrt_es(stelle):
     meldung = jobs.abschluss(stelle, runde(stelle), sitzung_id)
 
     assert jobs.OHNE_ZAHLEN in meldung
-    assert "stehen bereit" in meldung
+    assert "stand ready" in meldung
     assert _verknuepft(stelle, sitzung_id) == set()
 
 

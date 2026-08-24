@@ -16,12 +16,22 @@ import requests
 from conftest import runde
 
 from chronicle import db, settings
-from chronicle.compose.composer import BELEG_TITEL, NOTIZEN_TITEL, VERBINDUNG_TITEL
+from chronicle import sprache as sprachen
 from chronicle.compose.service import KIND, RUECKBLICK
 from chronicle.config import Config
 from chronicle.discord import ausgabe
 from chronicle.discord.ausgabe import anhaengen
 from chronicle.discord.client import API, DiscordClient
+
+# Das Material dieser Datei ist deutsch; seit #268 folgt der Text der Sprache seiner Runde
+# (Vorgabe Englisch). Geprüft wird hier deshalb gegen die deutschen Texte.
+_CHRONIK = sprachen.chronik(sprachen.DEUTSCH)
+_RUECKBLICK = sprachen.rueckblick(sprachen.DEUTSCH)
+_ERZAEHLUNG = sprachen.erzaehlung(sprachen.DEUTSCH)
+
+BELEG_TITEL = _CHRONIK.beleg_titel
+NOTIZEN_TITEL = _CHRONIK.notizen_titel
+VERBINDUNG_TITEL = _CHRONIK.verbindung_titel
 
 TOKEN = "bot-token-nur-fuer-den-test"
 
@@ -164,7 +174,7 @@ def test_die_datei_sagt_welche_fassung_sie_ist(config):
 
     haengen(config, sitzung_id, api)
 
-    assert api.angehaengt[0][2].startswith("_Fassung vom ")
+    assert api.angehaengt[0][2].startswith("_Version of ")
 
 
 def test_ohne_zustellkanal_landet_die_chronik_trotzdem_im_sitzungskanal(tmp_path):
@@ -219,7 +229,7 @@ def test_eine_neu_geschriebene_fassung_kommt_als_neue_datei_und_benennt_die_alte
     assert len(api.angehaengt) == 2
     zweite = api.angehaengt[1]
     assert zweite[1] == f"chronik-{DATUM}.md"
-    assert f"ersetzt die Fassung vom {ausgabe._lesbar(erster)}" in zweite[2]
+    assert f"replaces the version of {ausgabe._lesbar(erster)}" in zweite[2]
     assert "Szene 2" in zweite[2]
     assert ausgabe.NEUE.split("{")[0] in zweite[4]["payload_json"]
     # Die erste Datei bleibt stehen — der Kanal ist ein Protokoll, keine Tafel.
@@ -286,7 +296,7 @@ def test_ein_unerreichbares_discord_verschiebt_den_anhang_ohne_token(config):
 
     meldung = anhaengen(config, runde(config), sitzung_id, client=DiscordClient(config, http=Weg))
 
-    assert meldung.startswith("Die Chronik konnte ich hier nicht anhängen:")
+    assert meldung.startswith("I could not attach the chronicle here:")
     assert TOKEN not in meldung
     assert angehaengt_am(config, sitzung_id) is None
 

@@ -1,17 +1,25 @@
 """Vom Speicher bis zum abgelegten Protokoll — der Stapellauf am Stück."""
 
 import pytest
-from conftest import UNSER_KONTO, runde
+from conftest import UNSER_KONTO, deutsche_runde, runde
 
 import chronicle.compose.__main__ as entry
 from chronicle import db, settings
 from chronicle import runde as runden
-from chronicle.compose.composer import VERBINDUNG_TITEL
+from chronicle import sprache as sprachen
 from chronicle.compose.service import KIND, RUECKBLICK, compose_session, recap_session
 from chronicle.discord import rueckblick
 from chronicle.foundry import store
 from chronicle.foundry.model import NICHT_MEHR_VORHANDEN, WorldSnapshot
 from chronicle.foundry.world import project
+
+# Das Material dieser Datei ist deutsch; seit #268 folgt der Text der Sprache seiner Runde
+# (Vorgabe Englisch). Geprüft wird hier deshalb gegen die deutschen Texte.
+_CHRONIK = sprachen.chronik(sprachen.DEUTSCH)
+_RUECKBLICK = sprachen.rueckblick(sprachen.DEUTSCH)
+_ERZAEHLUNG = sprachen.erzaehlung(sprachen.DEUTSCH)
+
+VERBINDUNG_TITEL = _CHRONIK.verbindung_titel
 
 STAND = "2026-08-05T20:00:00+00:00"
 SPAETER = "2026-08-06T20:00:00+00:00"
@@ -36,7 +44,7 @@ class Modell:
 
 @pytest.fixture
 def scope(config):
-    zugang = db.scoped(runde(config))
+    zugang = db.scoped(deutsche_runde(config))
     yield zugang
     zugang.close()
 
@@ -285,7 +293,7 @@ def test_der_stapelaufruf_stellt_den_rueckblick_genau_einmal_zu(
     monkeypatch.delenv("OLLAMA_MODEL", raising=False)
 
     entry.main([str(sitzung_id)])
-    assert "zugestellt" in capsys.readouterr().out
+    assert "delivered" in capsys.readouterr().out
 
     # Ein zweiter Lauf komponiert neu — gepostet wird deshalb nicht noch einmal.
     entry.main([str(sitzung_id)])
@@ -293,7 +301,7 @@ def test_der_stapelaufruf_stellt_den_rueckblick_genau_einmal_zu(
     zeilen = protokolle(scope, sitzung_id)
     abgelegt = next(z["text"] for z in zeilen if z["kind"] == RUECKBLICK)
     assert gepostet == [("g-runde/chronik", rueckblick.embed(abgelegt))]
-    assert "war schon zugestellt" in capsys.readouterr().out
+    assert "had already been delivered" in capsys.readouterr().out
 
 
 def test_der_stapelaufruf_weist_falsche_argumente_ab(config, monkeypatch, capsys):
@@ -305,8 +313,8 @@ def test_der_stapelaufruf_weist_falsche_argumente_ab(config, monkeypatch, capsys
     assert entry.main(["999"]) == 2
     assert entry.main(["999", "4711"]) == 2
     ausgabe = capsys.readouterr().out
-    assert "gibt es nicht" in ausgabe
-    assert "Runde 4711" in ausgabe
+    assert "no round" in ausgabe.casefold()
+    assert "4711" in ausgabe
 
 
 def _zweite_runde(config, welt):
@@ -342,7 +350,8 @@ def test_der_stapelaufruf_erreicht_die_sitzung_der_zweiten_runde(
 
     assert entry.main([str(sitzung_id), str(zweite.id)]) == 1
 
-    assert "Chronik aus" in capsys.readouterr().out
+    # Die zweite Runde ist frisch und damit englisch — die Vorgabe seit #268.
+    assert sprachen.chronik(sprachen.ENGLISCH).fertig.split()[0] in capsys.readouterr().out
     assert {z["kind"] for z in _fremde_protokolle(zweite, sitzung_id)} == {KIND, RUECKBLICK}
 
 
@@ -375,6 +384,6 @@ def test_der_stapelaufruf_greift_nicht_in_die_nicht_genannte_runde(
 
     assert entry.main([str(sitzung_id), str(runde(config).id)]) == 2
 
-    assert "gibt es nicht" in capsys.readouterr().out
+    assert "no longer exists" in capsys.readouterr().out
     assert protokolle(scope, sitzung_id) == []
     assert _fremde_protokolle(zweite, sitzung_id) == []

@@ -29,7 +29,7 @@ from chronicle.runde import Runde
 from chronicle.transcribe.merge import uebernehmen
 from chronicle.transcribe.service import run_queue
 
-OHNE_SITZUNG = "Diese Sitzung gibt es nicht mehr."
+OHNE_SITZUNG = "This session no longer exists."
 
 
 @dataclass(frozen=True)

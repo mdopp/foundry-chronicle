@@ -47,21 +47,23 @@ ABGELEGT = "abgelegt"
 WARTET = "wartet"
 UEBERSPRUNGEN = "uebersprungen"
 
-QUITTUNG = "Landet im nächsten Stapel — Ergebnis morgen früh."
-NOTIZ_QUITTUNG = "Als Notiz zur Sitzung vom {datum} abgelegt."
-OHNE_SITZUNG = "Noch keine Sitzung angelegt — das Diktat wartet, bis es eine gibt."
-ZU_GROSS = "»{name}« ist größer als {grenze} MB und bleibt liegen."
+QUITTUNG = "Lands in the next batch — result tomorrow morning."
+NOTIZ_QUITTUNG = "Filed as a note for the session of {datum}."
+OHNE_SITZUNG = "No session created yet — the dictation waits until there is one."
+ZU_GROSS = "“{name}” is larger than {grenze} MB and stays where it is."
 
-NICHT_EINGERICHTET = "Kein Bot-Token — der Diktat-Kanal ist nicht eingerichtet."
+NICHT_EINGERICHTET = "No bot token — the dictation channel is not set up."
 # Die Gilde steht bewusst nicht drin: sie sagt der Gruppe nichts, und die Kennung einer
 # fremden wäre das eine, was hier nicht hinausgehen soll. Ins Log gehört sie, dorthin
 # sieht der Betreiber.
-KEIN_KANAL = f"Kein Kanal #{KANAL} in eurer Gilde — der Bot sieht ihn nicht, oder er heißt anders."
-OHNE_GILDE = (
-    f"Diese Runde hängt an keiner Discord-Gilde — einen Briefkasten #{KANAL} hat sie damit "
-    "nirgends. Richte sie mit `/chronicle setup` in eurer Gilde ein."
+KEIN_KANAL = (
+    f"No #{KANAL} channel in your guild — the bot does not see it, or it is named differently."
 )
-LEER = "Nichts im Briefkasten."
+OHNE_GILDE = (
+    f"This round hangs on no Discord guild — so it has a #{KANAL} mailbox nowhere. "
+    "Set it up with `/chronicle setup` in your guild."
+)
+LEER = "Nothing in the mailbox."
 
 
 def _now() -> str:
@@ -176,7 +178,7 @@ def _eine_nachricht(
     if not spuren and not text:
         if erstmals:
             bot.react(kanal, nachricht.id, WARNUNG)
-        return f"Nachricht {nachricht.id}: weder Audio noch Text — übersprungen.", UEBERSPRUNGEN
+        return f"Message {nachricht.id}: neither audio nor text — skipped.", UEBERSPRUNGEN
 
     zu_gross = next((anhang for anhang in spuren if anhang.size > recordings.MAX_BYTES), None)
     if zu_gross is not None:
@@ -196,9 +198,9 @@ def _eine_nachricht(
         return OHNE_SITZUNG, WARTET
 
     meldungen = [
-        f"Diktat »{_spur(config, runde, bot, sitzung.id, anhang, nachricht)}« → "
-        f"Sitzung {sitzung.id}, "
-        "wartet auf den Stapel."
+        f"Dictation “{_spur(config, runde, bot, sitzung.id, anhang, nachricht)}” → "
+        f"session {sitzung.id}, "
+        "queued for the batch."
         for anhang in spuren
     ]
     if text:

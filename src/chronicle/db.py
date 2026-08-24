@@ -30,7 +30,7 @@ if TYPE_CHECKING:  # pragma: no cover - nur für die Typprüfung
 
 logger = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 29
+SCHEMA_VERSION = 30
 
 # Der Zeiger, den der Diktat-Lauf je Runde führt — ``chronicle.discord.service`` nennt ihn
 # ebenso. Er steht auch hier, weil die Wanderung ihn einmal verwerfen muss und die
@@ -41,6 +41,21 @@ BRIEFKASTEN_ZEIGER = "discord_cursor"
 # eine ältere Datenbank hat den Durchlauf noch vor sich. Bewusst eine eigene Zahl und nicht
 # ``SCHEMA_VERSION``: die nächste Hebung soll ihn nicht ein zweites Mal auslösen.
 ZEIGER_VERWORFEN_AB = 27
+
+# Ab diesem Stand trägt jede Runde ihre Inhaltssprache ausdrücklich (#268); eine ältere
+# Datenbank hat den Durchlauf noch vor sich. Wieder eine eigene Zahl aus demselben Grund
+# wie oben: die nächste Hebung soll ihn nicht ein zweites Mal auslösen.
+SPRACHE_GESTEMPELT_AB = 30
+
+# Und das ist der Stempel. Alles, was vor #268 entstanden ist, wurde **deutsch** bedient
+# und deutsch aufgezeichnet; die neue Vorgabe ist Englisch. Eine Wanderung, die das offen
+# ließe, stellte jede laufende Runde still auf Englisch um — die nächste
+# Einwilligungs-Ansage liefe dann in einer Sprache, die am Tisch niemand erwartet, und
+# genau die Ansage ist der Vorgang, der das Aufzeichnen zulässig macht (§201 StGB).
+# Deshalb wird der Ist-Zustand **hingeschrieben** statt vorausgesetzt: die Vorgabe gilt
+# ab hier nur für Runden, die es noch nicht gab.
+SPRACHE_KEY = "content_language"
+BESTANDSSPRACHE = "de"
 
 # Der Name der ersten Runde: die Bestände der Entwicklungs-Instanz wandern hier hinein,
 # und eine frische Datenbank bekommt sie ebenfalls — die Oberfläche braucht bis zu ihrer
@@ -421,6 +436,31 @@ def _abgeloeste_werte_verwerfen(
         connection.execute("DELETE FROM settings WHERE key = ?", (schluessel,))
 
 
+def _bestandssprache_stempeln(connection: sqlite3.Connection) -> None:
+    """Jede Runde von vor #268 bekommt ``de`` hingeschrieben — sie ist es faktisch.
+
+    Kein Rückfall auf eine Vorgabe, sondern eine Zeile je Runde: gelesen wird die Sprache
+    an drei Stellen, und an einer davon hängt die Rechtmäßigkeit der Aufnahme. Ein leerer
+    Eintrag hieße ab sofort Englisch, und der nächste Abend einer deutschen Runde begänne
+    mit einer englischen Einwilligungs-Ansage — der Gruppe würde die Ansage unter den
+    Füßen weggezogen, ohne dass jemand etwas entschieden hätte.
+
+    Eine **frische** Datenbank hat noch keinen Schema-Stand und wird deshalb nicht
+    gestempelt: dort gilt die neue Vorgabe, und das ist Englisch. Wer schon ``de`` stehen
+    hat, behält es — ``ON CONFLICT DO NOTHING`` schreibt keine Entscheidung um.
+    """
+    zeile = connection.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()
+    if zeile is None or int(zeile["value"]) >= SPRACHE_GESTEMPELT_AB:
+        return
+    connection.execute(
+        # ``WHERE true`` ist kein Filter, sondern SQLites Bedingung: ohne es liest der
+        # Parser ``ON CONFLICT`` als Teil des SELECT und bricht ab.
+        "INSERT INTO settings (runde_id, key, value) SELECT id, ?, ? FROM runde WHERE true "
+        "ON CONFLICT (runde_id, key) DO NOTHING",
+        (SPRACHE_KEY, BESTANDSSPRACHE),
+    )
+
+
 def _geheimnisse_verwerfen(connection: sqlite3.Connection) -> None:
     """Ein nicht mehr gepflegter Wert wird gelöscht, nicht stehen gelassen."""
     for schluessel in VERWORFENE_SCHLUESSEL:
@@ -512,6 +552,9 @@ def init(database_path: Path, umgebung: Mapping[str, str] | None = None) -> None
         # noch in ``meta``. Und vor ``suchindex.sql``, das den Schema-Stand hebt — daran
         # erkennt der Durchlauf, dass er schon war.
         _briefkastenzeiger_verwerfen(connection)
+        # Aus demselben Grund an derselben Stelle: der Stempel liest den Schema-Stand von
+        # **vorher**, und den hebt erst ``suchindex.sql`` ganz unten.
+        _bestandssprache_stempeln(connection)
         _geheimnisse_verwerfen(connection)
         # Nach ``_umziehen``: was aus der Zeit vor dem Runden-Modell noch in ``settings``
         # lag, steht bis dahin nicht in ``meta``, und dann fände dieser Lauf es nicht.

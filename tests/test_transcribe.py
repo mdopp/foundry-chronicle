@@ -39,7 +39,7 @@ class Erkenner:
         )
         self.vokabular = ()
 
-    def transcribe(self, audio_path, *, hotwords=()):
+    def transcribe(self, audio_path, *, hotwords=(), sprache="en"):
         self.vokabular = tuple(hotwords)
         yield from self.segmente
 
@@ -424,7 +424,7 @@ class NieGefragt:
 
     name = "nie-gefragt"
 
-    def transcribe(self, audio_path, *, hotwords=()):
+    def transcribe(self, audio_path, *, hotwords=(), sprache="en"):
         raise AssertionError("eine Spur ohne Äußerung darf das Modell nicht erreichen")
 
 
@@ -479,9 +479,9 @@ def test_die_meldung_zur_uebersprungenen_spur_behauptet_keinen_verlust(config, s
         config, runde(config), sitzung_id, bruchstueck, model=NieGefragt()
     ).message
 
-    assert "0.08 Sekunden" in meldung
-    assert "keine Äußerung" in meldung
-    assert "Verlorengegangen ist nichts" in meldung
+    assert "0.08 seconds" in meldung
+    assert "no utterance in it" in meldung
+    assert "Nothing was lost" in meldung
 
 
 def test_was_sich_nicht_messen_laesst_wird_nicht_geraten(spur, tmp_path):
@@ -587,7 +587,7 @@ def test_ein_abgeschalteter_dienst_ist_kein_fehler_dieser_spur(config, spur):
     with pytest.raises(TranscriberUnreachable) as fehler:
         list(dienst(config, gegenstelle).transcribe(spur))
 
-    assert "bleibt liegen" in str(fehler.value)
+    assert "stays put" in str(fehler.value)
 
 
 def test_ein_noch_ladendes_modell_heisst_warten_und_nicht_scheitern(config, spur):
@@ -688,7 +688,7 @@ def test_der_stapelaufruf_transkribiert_eine_spur(config, scope, spur, monkeypat
 
     assert entry.main([str(sitzung_id), "mira.ogg"]) == 0
 
-    assert "2 Segmente" in capsys.readouterr().out
+    assert "2 segments" in capsys.readouterr().out
     assert len(segmente(scope, sitzung_id)) == 2
 
 
@@ -728,7 +728,7 @@ def test_ohne_argumente_wird_die_warteschlange_abgearbeitet(
     recordings.enqueue(runde(config), sitzung_id, spur.name)
     assert entry.main([]) == 0
 
-    assert "2 Segmente" in capsys.readouterr().out
+    assert "2 segments" in capsys.readouterr().out
     assert len(segmente(scope, sitzung_id)) == 2
 
 
@@ -749,4 +749,4 @@ def test_der_stapelaufruf_meldet_einen_abgeschalteten_erkenner(
     monkeypatch.setattr(service, "model_from_config", lambda _c: dienst(config, gegenstelle))
 
     assert entry.main([str(sitzung_id), "mira.ogg"]) == 2
-    assert "nicht erreichbar" in capsys.readouterr().out
+    assert "cannot be reached" in capsys.readouterr().out

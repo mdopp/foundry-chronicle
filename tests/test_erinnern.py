@@ -402,11 +402,11 @@ def test_ein_treffer_fuehrt_in_die_nachricht_zurueck(stelle, bot):
 
     (embed,) = ctx.embeds
     arten = {feld["name"] for feld in embed.gebaut["fields"]}
-    assert arten == {"Notizen", "Chronik"}
-    notizen = next(f for f in embed.gebaut["fields"] if f["name"] == "Notizen")["value"]
+    assert arten == {"Notes", "Chronicle"}
+    notizen = next(f for f in embed.gebaut["fields"] if f["name"] == "Notes")["value"]
     assert f"https://discord.com/channels/{GILDE}/{SITZUNGSKANAL}/{NACHRICHT}" in notizen
     assert "**Schwert**" in notizen
-    chronik = next(f for f in embed.gebaut["fields"] if f["name"] == "Chronik")["value"]
+    chronik = next(f for f in embed.gebaut["fields"] if f["name"] == "Chronicle")["value"]
     assert f"https://discord.com/channels/{GILDE}/{SITZUNGSKANAL}" in chronik
     assert ctx.fluechtig == [True]
 
@@ -511,7 +511,7 @@ def test_wer_zeigt_den_eintrag_mit_art_satz_und_sitzung(stelle, bot):
     assert embed.gebaut["title"] == "Joras"
     assert embed.gebaut["description"] == "Ein Söldner aus dem Norden."
     felder = {feld["name"]: feld["value"] for feld in embed.gebaut["fields"]}
-    assert felder[erinnern.WER_ART] == "Figur"
+    assert felder[erinnern.WER_ART] == "Character"
     assert f"https://discord.com/channels/{GILDE}/{SITZUNGSKANAL}" in felder[erinnern.WER_ERWAEHNT]
 
 
@@ -575,10 +575,10 @@ def test_der_lauf_zieht_die_frage_hinter_seine_meldung(stelle, bot):
     assert ziel.antworten[0] == "Die Chronik steht."
     assert [teil.label for teil in ziel.ansichten[-1].items] == [
         "Joras",
-        "Figur",
-        "Ort",
-        "Faden",
-        "Nein",
+        "Character",
+        "Place",
+        "Thread",
+        "No",
     ]
 
 
@@ -616,7 +616,7 @@ def test_je_vorschlag_eine_reihe_aus_name_arten_und_nein(stelle, bot):
     registerfrage(stelle, ctx)
 
     (view,) = ctx.ansichten
-    assert [teil.label for teil in view.items] == ["Joras", "Figur", "Ort", "Faden", "Nein"]
+    assert [teil.label for teil in view.items] == ["Joras", "Character", "Place", "Thread", "No"]
     assert view.items[0].disabled
     assert {teil.row for teil in view.items} == {0}
 
@@ -708,10 +708,7 @@ def test_der_nachtlauf_fragt_im_zustellkanal_nach_seinen_vorschlaegen(stelle, bo
 
     assert [teil.label for teil in kanal.ansichten[-1].items] == [
         "Joras",
-        "Figur",
-        "Ort",
-        "Faden",
-        "Nein",
+        *(beschriftung for _, beschriftung in erinnern.ENTSCHEIDUNGEN),
     ]
 
 
@@ -788,7 +785,7 @@ def test_die_frist_meldet_sich_im_zustellkanal(stelle, bot):
     kanal = FakeZielkanal(4242, "chronik")
     bot.gilden[int(GILDE)] = FakeZielgilde(kanal)
     settings.save(unsere, {"discord_recap_channel": "4242"})
-    satz = recordings.OHNE_TEXT.format(sitzung=1, was="eine Aufnahme", tage=7)
+    satz = recordings.OHNE_TEXT.format(sitzung=1, was="one recording", tage=7)
 
     async def ablauf():
         bot.loop = asyncio.get_running_loop()
@@ -829,7 +826,7 @@ def test_ein_knopf_bestaetigt_den_eintrag_in_der_gewaehlten_art(stelle, bot):
     assert gruppe.entries[0].name == "Joras"
     assert register.pending(unsere) == ()
     (bearbeitet,) = interaktion.response.bearbeitet
-    assert erinnern.BESTAETIGT.format(name="Joras", art="Ort") in bearbeitet["content"]
+    assert erinnern.BESTAETIGT.format(name="Joras", art="Place") in bearbeitet["content"]
     assert bearbeitet["view"] is None
 
 
@@ -874,10 +871,10 @@ def test_derselbe_name_unter_zwei_arten_wird_nur_einmal_bestaetigt(stelle, bot):
     zuerst = klicken(view, ort, register.ORT)
     danach = klicken(view, faden, register.ORT)
 
-    bestaetigt = erinnern.BESTAETIGT.format(name=name, art="Ort")
+    bestaetigt = erinnern.BESTAETIGT.format(name=name, art="Place")
     assert bestaetigt in zuerst.response.bearbeitet[0]["embed"].gebaut["description"]
     zweite = danach.response.bearbeitet[0]["content"]
-    assert zweite.startswith(erinnern.SCHON_IM_REGISTER.format(name=name, art="Ort"))
+    assert zweite.startswith(erinnern.SCHON_IM_REGISTER.format(name=name, art="Place"))
     assert bestaetigt not in zweite
     # Und die Ansicht widerspricht der Antwort nicht mehr: der doppelte Vorschlag ist weg,
     # im Register steht der Name genau einmal.
@@ -899,7 +896,7 @@ def test_ein_vergebener_name_wird_nicht_als_bestaetigt_gemeldet(stelle, bot):
     interaktion = klicken(ctx.ansichten[0], faden, register.ORT)
 
     beschreibung = interaktion.response.bearbeitet[0]["embed"].gebaut["description"]
-    assert beschreibung.startswith(erinnern.NICHT_EINGETRAGEN.format(name=name, art="Ort"))
+    assert beschreibung.startswith(erinnern.NICHT_EINGETRAGEN.format(name=name, art="Place"))
     assert erinnern.BESTAETIGT.format(name=name, art="Ort") not in beschreibung
     assert register.overview(unsere) == ()
     assert sorted(e.kind for e in register.pending(unsere)) == [register.FADEN, register.ORT]
@@ -997,7 +994,7 @@ def test_ein_stolpernder_knopf_antwortet_trotzdem(stelle, bot, monkeypatch):
     interaktion = klicken(ctx.ansichten[0], eintrag, register.FIGUR)
 
     (gesendet,) = interaktion.response.gesendet
-    assert gesendet.startswith("Das hat nicht geklappt:")
+    assert gesendet.startswith("That did not work:")
     assert "RuntimeError" in gesendet
 
 
@@ -1435,7 +1432,7 @@ def test_der_satz_zum_menue_behauptet_nichts_ueber_die_namen(stelle):
     assert people.genau(stand.person.discord_name, stand.spieler) is not None
 
     satz = erinnern.MENUE_VERMERK.format(name="Mira", spieler="Mira")
-    assert "gewählt, nicht erkannt" in satz
+    assert "chosen, not recognised" in satz
     assert "überein" not in satz
 
 

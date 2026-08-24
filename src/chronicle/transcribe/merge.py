@@ -65,7 +65,7 @@ from chronicle import consent, db, lebenszyklus, notes, people
 from chronicle.runde import Runde
 from chronicle.transcribe.service import zeitmarke
 
-UNLESBAR = "»{marke}« ist keine Zeitmarke — erwartet wird 1:02:03 oder 02:03."
+UNLESBAR = "“{marke}” is not a timestamp — 1:02:03 or 02:03 is expected."
 
 LEERE_SPANNE = "In diesem Abschnitt steht nichts — die Zeitmarken stehen vor den Zeilen."
 
