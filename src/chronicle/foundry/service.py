@@ -29,7 +29,13 @@ from chronicle.foundry.model import (
     World,
     WorldSnapshot,
 )
-from chronicle.foundry.world import fuer_die_gruppe, identity, project
+from chronicle.foundry.world import (
+    fehlende_listen,
+    fuer_die_gruppe,
+    identity,
+    kernversion,
+    project,
+)
 from chronicle.runde import Runde
 
 logger = logging.getLogger(__name__)
@@ -57,6 +63,14 @@ TESTWELT_STAND = (
 STROM_OHNE_PASSWORT = (
     "Für den Blick nach Foundry liegt kein Passwort mehr bereit — ich sehe ab jetzt nicht "
     "mehr nach. Beim Abschluss werde ich noch einmal danach fragen."
+)
+
+NICHT_WIEDERERKANNT = (
+    "Foundry hat geantwortet, aber die Antwort sieht nicht aus wie eine Welt, die ich lesen "
+    "kann: {fehlend} fehlt darin oder steht an anderer Stelle.{kern} Es wurde nichts "
+    "übernommen — der letzte Stand bleibt stehen, und keine Zahl gilt als verschwunden. So "
+    "sieht es aus, wenn der Server auf eine neue Foundry-Hauptversion gehoben wurde; dann "
+    "muss die Anbindung nachgezogen werden, bevor wieder Zahlen ankommen."
 )
 
 ANDERE_WELT = (
@@ -122,6 +136,18 @@ def _state(snapshot: WorldSnapshot | None, reason: str | None, at: str | None) -
         ),
         stale=True,
         snapshot=snapshot,
+    )
+
+
+def _nicht_wiedererkannt(raw: Mapping) -> str | None:
+    """Der fertige Satz, wenn diese Antwort keine lesbare Welt ist — sonst ``None``."""
+    fehlend = fehlende_listen(raw)
+    if not fehlend:
+        return None
+    version = kernversion(raw)
+    return NICHT_WIEDERERKANNT.format(
+        fehlend=", ".join(fehlend),
+        kern="" if version is None else f" Der Server meldet Foundry-Kern {version}.",
     )
 
 
@@ -286,6 +312,10 @@ def beobachten(
         logger.warning("Ereignisstrom: Foundry nicht erreichbar: %s", fehler)
         return Ereignisse(grund=NICHT_ERREICHBAR.format(grund=fehler))
     _mitschreiben(config, runde, user_id, raw)
+    grund = _nicht_wiedererkannt(raw)
+    if grund is not None:
+        logger.warning("Ereignisstrom: Weltantwort nicht wiedererkannt: %s", fehlende_listen(raw))
+        return Ereignisse(grund=grund, weiter=False)
     scope = _open(config, runde)
     try:
         gefunden = identity(raw)
@@ -403,6 +433,13 @@ def sync(
                 store.record_failure(scope, grund, zeitpunkt)
                 return _state(store.load(scope), grund, zeitpunkt)
             _mitschreiben(config, runde, user_id, raw)
+            # Vor der Weltfrage und vor allem Schreiben: eine Antwort, die wir nicht
+            # wiedererkennen, wird nicht als leere Welt verbucht (#284).
+            grund = _nicht_wiedererkannt(raw)
+            if grund is not None:
+                logger.warning("Weltantwort nicht wiedererkannt: %s", fehlende_listen(raw))
+                store.record_failure(scope, grund, zeitpunkt)
+                return _state(store.load(scope), grund, zeitpunkt)
             gefunden = identity(raw)
             gebunden = store.world(scope)
             if not umhaengen and _falsche_welt(gebunden, gefunden):

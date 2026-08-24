@@ -407,6 +407,29 @@ def test_ein_ausgefallenes_foundry_kostet_nicht_die_ganze_chronik(stelle, monkey
     assert protokollarten(stelle, sitzung_id) == {"chronik", "rueckblick"}
 
 
+def test_eine_unlesbare_weltantwort_kostet_die_zahlen_und_sagt_es(stelle, welt, monkeypatch):
+    """#284: der Versionssprung nahm bisher den Erfolgszweig — mit einer Chronik ohne Zahl."""
+    umgehaengt = {
+        "world": dict(welt["world"], coreVersion="14.365"),
+        "documents": {name: wert for name, wert in welt.items() if name != "world"},
+    }
+    monkeypatch.setattr(
+        jobs,
+        "sync",
+        lambda config, eine, passwort=None, session_id=None: foundry.sync(
+            config, eine, client=Abgleich(umgehaengt), session_id=session_id
+        ),
+    )
+    sitzung_id = eine_sitzung_mit_notiz(stelle)
+
+    meldung = jobs.abschluss(stelle, runde(stelle), sitzung_id)
+
+    assert jobs.OHNE_ZAHLEN in meldung
+    assert "sieht nicht aus wie eine Welt" in meldung
+    assert "stehen bereit" in meldung
+    assert _verknuepft(stelle, sitzung_id) == set()
+
+
 def _abend_mit_wurf(welt, *, in_sekunden=60):
     """Dieselbe Welt, aber mit einem Wurf, der **heute** fiel.
 
