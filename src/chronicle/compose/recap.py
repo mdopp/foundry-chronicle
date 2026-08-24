@@ -28,8 +28,10 @@ from chronicle.compose.client import ModelError, TextModel
 from chronicle.compose.composer import (
     BELEG_TITEL,
     NICHT_ERREICHBAR,
+    ZITAT_REGEL,
     eigene_ueberschrift,
     numbers,
+    zitat,
 )
 
 logger = logging.getLogger(__name__)
@@ -63,6 +65,7 @@ SYSTEM_HERGANG = (
     "Du fasst für eine Tisch-Rollenspiel-Runde zusammen, was zuletzt geschah; gelesen "
     "wird das unmittelbar vor der nächsten Sitzung. Du ordnest und verknüpfst, du "
     "erfindest nichts.\n"
+    f"{ZITAT_REGEL}\n"
     "- Zehn bis fünfzehn Sätze, zusammenhängend, in der Vergangenheitsform.\n"
     "- Nenne keine Ziffer und keine Zahl. Die Zahlen stehen belegt unter dem Rückblick.\n"
     "- Erfinde keine Ereignisse, Namen, Orte, Würfe oder Ergebnisse.\n"
@@ -73,6 +76,7 @@ SYSTEM_HERGANG = (
 SYSTEM_FAEDEN = (
     "Du benennst die offenen Fäden einer Tisch-Rollenspiel-Runde: was begonnen und nicht "
     "zu Ende gebracht wurde. Du deutest nur, was in der Vorlage steht.\n"
+    f"{ZITAT_REGEL}\n"
     f"- Höchstens {MAX_FAEDEN} Punkte, je einer pro Zeile, jede Zeile beginnt mit '- '.\n"
     "- Nenne keine Ziffer und keine Zahl.\n"
     "- Erfinde keinen Faden. Gibt die Vorlage keinen her, antworte mit: keine\n"
@@ -132,6 +136,12 @@ def _liste(zeilen: tuple[str, ...]) -> str:
 
 
 def _prompt(material: RecapMaterial, auftrag: str) -> str:
+    """Die Chronik zwischen den Marken, der Auftrag außerhalb.
+
+    Die Chronik trägt unter »Notizen« wörtliches Tischgespräch — dasselbe fremde Wort,
+    das die Komposition eine Stufe früher schon eingeklammert hat. Ungeklammert stünde es
+    hier an derselben Stelle wie unsere eigene Auftragszeile.
+    """
     teile = []
     if material.previous:
         teile.append(
@@ -139,8 +149,7 @@ def _prompt(material: RecapMaterial, auftrag: str) -> str:
             + "\n\n".join(material.previous)
         )
     teile.append(f"Chronik der Sitzung vom {material.played_on}:\n\n{material.chronicle.strip()}")
-    teile.append(auftrag)
-    return "\n\n".join(teile)
+    return zitat("\n\n".join(teile)) + f"\n\n{auftrag}"
 
 
 def _faeden(text: str) -> tuple[str, ...]:

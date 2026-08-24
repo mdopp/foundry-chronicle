@@ -9,13 +9,16 @@ from chronicle.compose.composer import (
     HERKUNFT_OHNE_FAKTEN,
     LEER,
     NICHT_ERREICHBAR,
+    NOTIZEN_TITEL,
     OHNE_MODELL,
     SYSTEM,
+    TRANSKRIPT_TITEL,
     VERBINDUNG_TITEL,
     VERWORFEN,
     VERWORFEN_UEBERSCHRIFT,
     ZITAT_AUF,
     ZITAT_ZU,
+    Notiz,
     SceneMaterial,
     SessionMaterial,
     compose,
@@ -355,3 +358,75 @@ def test_der_satz_zum_lauf_nennt_umfang_und_betriebsart():
     assert ohne.message == f"Chronik aus 1 Szenen, 1 Foundry-Fakten. {OHNE_MODELL}"
     mit = compose(sitzung(szene(facts=(WURF,))), Modell("Ein Wurf im Zwielicht."))
     assert mit.message == "Chronik aus 1 Szenen, 1 Foundry-Fakten — 1 Verbindungstexte vom Modell."
+
+
+# -- Die Erfindungsschranke gegen Verschriftetes (#279) ---------------------------------
+
+
+def test_eine_verschriftete_notiz_steht_nicht_wie_eine_getippte_da():
+    ergebnis = compose(
+        sitzung(
+            szene(
+                notes=(
+                    "Borin: wir rasten hier",
+                    Notiz("Daniel: ich glaub das waren achtzig Goldstuecke", verschriftet=True),
+                )
+            )
+        )
+    )
+
+    assert NOTIZEN_TITEL in ergebnis.text
+    assert TRANSKRIPT_TITEL in ergebnis.text
+    getippt, verschriftet = ergebnis.text.split(TRANSKRIPT_TITEL)
+    assert "Borin: wir rasten hier" in getippt
+    assert "achtzig Goldstuecke" not in getippt
+    assert "achtzig Goldstuecke" in verschriftet
+
+
+def test_ohne_verschriftetes_bleibt_die_ueberschrift_fort():
+    ergebnis = compose(sitzung(szene(notes=("Borin: wir rasten hier",))))
+    assert TRANSKRIPT_TITEL not in ergebnis.text
+
+
+def test_eine_verhoerte_zahl_aus_szene_eins_deckt_keinen_satz_in_szene_zwei():
+    modell = Modell(
+        "Die Gruppe zog weiter.",
+        "Die Gruppe teilte die achtzig Goldstuecke unter sich auf.",
+    )
+    ergebnis = compose(
+        sitzung(
+            szene(
+                position=1,
+                title="Wald",
+                notes=(Notiz("Daniel: ich glaub das waren achtzig Goldstuecke", True),),
+            ),
+            szene(position=2, title="Lager", notes=("Borin: wir rasten",)),
+        ),
+        modell,
+    )
+
+    zweite = ergebnis.text.split("## Szene 2")[1]
+    assert VERWORFEN in zweite
+    assert "achtzig Goldstuecke unter sich" not in ergebnis.text
+    assert ergebnis.prose_count == 1
+
+
+def test_die_zahl_der_eigenen_szene_deckt_den_satz_weiterhin():
+    modell = Modell("Die Gruppe teilte die achtzig Goldstuecke unter sich auf.")
+    ergebnis = compose(
+        sitzung(szene(notes=("Borin: achtzig Goldstuecke lagen in der Truhe",))), modell
+    )
+
+    assert VERWORFEN not in ergebnis.text
+    assert ergebnis.prose_count == 1
+
+
+def test_das_verschriftete_steht_im_aufruf_als_solches_ausgewiesen():
+    modell = Modell()
+    compose(
+        sitzung(szene(notes=("Borin: wir rasten", Notiz("Daniel: achtzig Stueck", True)))), modell
+    )
+    stoff = modell.prompts[0].split(ZITAT_AUF)[1].split(ZITAT_ZU)[0]
+
+    assert "Notizen:\n- Borin: wir rasten" in stoff
+    assert "möglicherweise verhört:\n- Daniel: achtzig Stueck" in stoff

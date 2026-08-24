@@ -11,7 +11,7 @@ import pytest
 from conftest import runde
 
 from chronicle import consent, db, notes, people, recordings
-from chronicle.compose.composer import NOTIZEN_TITEL, compose
+from chronicle.compose.composer import NOTIZEN_TITEL, TRANSKRIPT_TITEL, Notiz, compose
 from chronicle.compose.service import material
 from chronicle.config import Config
 from chronicle.transcribe import merge, service
@@ -419,7 +419,9 @@ def test_die_komposition_bekommt_das_diktat_wie_eine_notiz(config, sitzung_id):
     finally:
         scope.close()
 
-    assert f"Mira: {GESAGT}" in [text for szene in stoff.scenes for text in szene.notes]
+    assert Notiz(f"Mira: {GESAGT}", verschriftet=True) in [
+        note for szene in stoff.scenes for note in szene.notes
+    ]
 
 
 def test_eine_ruhende_runde_bekommt_auch_kein_diktat_mehr(config, sitzung_id, monkeypatch):
@@ -522,7 +524,10 @@ def test_die_komposition_nimmt_das_transkript_wie_eine_notiz(config, sitzung_id)
     zwei_stimmen(config, sitzung_id)
     szene = notes.session(runde(config), sitzung_id).scenes[0]
     notes.add_note(
-        runde(config), szene.id, merge.note_text(merge.conversation(runde(config), sitzung_id))
+        runde(config),
+        szene.id,
+        merge.note_text(merge.conversation(runde(config), sitzung_id)),
+        origin=merge.TRANSKRIPT,
     )
 
     scope = db.scoped(runde(config))
@@ -532,11 +537,14 @@ def test_die_komposition_nimmt_das_transkript_wie_eine_notiz(config, sitzung_id)
         scope.close()
 
     assert stoff.scenes[0].notes == (
-        "Mira: Wir brechen bei Sonnenaufgang auf.\nDavey: Warte, ich sehe nach.\n"
-        "Mira: Da liegt etwas vor der Tür.\nDavey: Es ist verriegelt.",
+        Notiz(
+            "Mira: Wir brechen bei Sonnenaufgang auf.\nDavey: Warte, ich sehe nach.\n"
+            "Mira: Da liegt etwas vor der Tür.\nDavey: Es ist verriegelt.",
+            verschriftet=True,
+        ),
     )
     assert stoff.scenes[0].facts == ()
 
     chronik = compose(stoff).text
-    assert NOTIZEN_TITEL in chronik
+    assert TRANSKRIPT_TITEL in chronik
     assert "Mira: Wir brechen bei Sonnenaufgang auf." in chronik

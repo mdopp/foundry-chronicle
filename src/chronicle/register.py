@@ -32,7 +32,7 @@ from datetime import UTC, datetime
 from chronicle import db, settings
 from chronicle.compose import client
 from chronicle.compose.client import ModelError, TextModel
-from chronicle.compose.composer import numbers
+from chronicle.compose.composer import ZITAT_REGEL, numbers, zitat
 from chronicle.compose.nacherzaehlung import REGISTER_ZEILE
 from chronicle.compose.service import KIND as CHRONIK
 from chronicle.config import Config
@@ -84,6 +84,7 @@ NICHTS_NEUES = "Das Register bekam keinen neuen Vorschlag."
 SYSTEM = (
     "Du führst das Register einer Tisch-Rollenspiel-Runde: Figuren, Orte, "
     "Handlungsfäden. Du benennst nur, was in der Vorlage steht, und erfindest nichts.\n"
+    f"{ZITAT_REGEL}\n"
     f"- Höchstens {MAX_VORSCHLAEGE} Zeilen, je ein Eintrag pro Zeile.\n"
     f"- Jede Zeile genau so: art {TRENNER} Name {TRENNER} ein Satz.\n"
     f"- Die Art ist {FIGUR}, {ORT} oder {FADEN}.\n"
@@ -318,7 +319,11 @@ def suggest(
         if schreiber is None:
             return Suggested(reason=OHNE_MODELL)
         try:
-            antwort = schreiber.write(system=SYSTEM, prompt=f"{chronik.strip()}\n\n{AUFTRAG}")
+            # Die Chronik trägt wörtliches Tischgespräch — sie geht als Zitat hinein, der
+            # Auftrag steht außerhalb der Marken.
+            antwort = schreiber.write(
+                system=SYSTEM, prompt=zitat(chronik.strip()) + f"\n\n{AUFTRAG}"
+            )
         except ModelError as fehler:
             logger.warning("Register bleibt ohne neuen Vorschlag: %s", fehler)
             return Suggested(reason=NICHT_ERREICHBAR)

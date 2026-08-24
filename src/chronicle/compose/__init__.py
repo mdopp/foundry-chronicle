@@ -10,6 +10,7 @@ from chronicle.compose.client import (
 )
 from chronicle.compose.composer import (
     Composition,
+    Notiz,
     SceneMaterial,
     SessionMaterial,
     compose,
@@ -31,6 +32,7 @@ __all__ = [
     "ModelNotConfigured",
     "ModelUnreachable",
     "Nacherzaehlung",
+    "Notiz",
     "OllamaClient",
     "Recap",
     "RecapMaterial",
