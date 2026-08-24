@@ -43,6 +43,10 @@ class Lauf:
     zustellung: Zustellung
     ausgabe: str
     vorschlaege: Suggested
+    # Was der Durchgang endgültig verloren hat — eine Spur ohne letzten Anlauf, ein Ton,
+    # den die Frist geholt hat. Die beiden Zähler darüber können das nicht tragen: sie
+    # zählen die Spuren, die noch einmal drankommen (#286).
+    verlust: tuple[str, ...] = ()
 
 
 def warum_nicht(runde: Runde) -> str:
@@ -80,7 +84,7 @@ def schreiben(config: Config, runde: Runde, session_id: int) -> Lauf | None:
     ``None`` heißt: es ist nichts entstanden; ``warum_nicht`` sagt, warum.
     """
     wartende = recordings.pending(runde)
-    run_queue(config, runde)
+    meldungen = run_queue(config, runde)
     verschriftet, offen = _stand(runde, wartende)
     uebernehmen(runde, session_id)
     chronik = compose_session(config, runde, session_id)
@@ -98,4 +102,5 @@ def schreiben(config: Config, runde: Runde, session_id: int) -> Lauf | None:
         zustellung=zustellung,
         ausgabe=ausgabe,
         vorschlaege=vorschlaege,
+        verlust=meldungen.verlust,
     )

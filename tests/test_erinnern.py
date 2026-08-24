@@ -33,7 +33,17 @@ from test_bot import (
 )
 from test_chronik import FakeHTTPException, FakeInputText, FakeModal
 
-from chronicle import consent, db, lebenszyklus, notes, people, recordings, register, settings
+from chronicle import (
+    consent,
+    db,
+    lebenszyklus,
+    nightly,
+    notes,
+    people,
+    recordings,
+    register,
+    settings,
+)
 from chronicle import runde as runden
 from chronicle.bot import chronik, erinnern, gateway
 from chronicle.compose import service as compose_service
@@ -694,7 +704,7 @@ def test_der_nachtlauf_fragt_im_zustellkanal_nach_seinen_vorschlaegen(stelle, bo
     bot.gilden[int(GILDE)] = FakeZielgilde(kanal)
     settings.save(unsere, {"discord_recap_channel": "4242"})
 
-    asyncio.run(gateway._nachtvorschlaege_anbieten(config, bot, unsere))
+    asyncio.run(gateway._nacht_zustellen(config, bot, unsere, ()))
 
     assert [teil.label for teil in kanal.ansichten[-1].items] == [
         "Joras",
@@ -713,7 +723,7 @@ def test_ohne_zustellkanal_bleiben_die_vorschlaege_der_nacht_liegen(stelle, bot,
     bot.gilden[int(GILDE)] = FakeZielgilde(FakeZielkanal(4242, "chronik"))
 
     with caplog.at_level(logging.WARNING):
-        asyncio.run(gateway._nachtvorschlaege_anbieten(config, bot, unsere))
+        asyncio.run(gateway._nacht_zustellen(config, bot, unsere, ()))
 
     assert "Zustellkanal" in caplog.text
 
@@ -738,6 +748,59 @@ def test_der_nachtmelder_stellt_die_frage_in_die_ereignisschleife(stelle, bot):
     asyncio.run(ablauf())
 
     assert [teil.label for teil in kanal.ansichten[-1].items][0] == "Joras"
+
+
+def test_der_bericht_der_nacht_steht_im_zustellkanal(stelle, bot):
+    """#287: was die Nacht nicht geschrieben hat, stand nur in ``job.result``.
+
+    Deren einziger Leser hat seit #231/#272 keinen Aufrufer mehr — das erste Signal der
+    Gruppe wäre gewesen, dass die Chronik nie kam.
+    """
+    config, unsere = stelle
+    kanal = FakeZielkanal(4242, "chronik")
+    bot.gilden[int(GILDE)] = FakeZielgilde(kanal)
+    settings.save(unsere, {"discord_recap_channel": "4242"})
+
+    asyncio.run(gateway._nacht_zustellen(config, bot, unsere, (nightly.OHNE_SPRACHE,)))
+
+    assert nightly.OHNE_SPRACHE in kanal.antworten[0]
+
+
+def test_eine_nacht_ohne_verlust_sagt_nichts(stelle, bot):
+    """Eine geschriebene Chronik steht ohnehin im Kanal — gesagt wird, was fehlt."""
+    config, unsere = stelle
+    kanal = FakeZielkanal(4242, "chronik")
+    bot.gilden[int(GILDE)] = FakeZielgilde(kanal)
+    settings.save(unsere, {"discord_recap_channel": "4242"})
+
+    asyncio.run(gateway._nacht_zustellen(config, bot, unsere, ()))
+
+    assert kanal.antworten == []
+
+
+def test_die_frist_meldet_sich_im_zustellkanal(stelle, bot):
+    """#286: ``recordings.taeglich`` warf den Rückgabewert von ``sweep_alle`` weg.
+
+    Das ist der Weg, über den die Frist im Betrieb wirklich läuft — der Tag, an dem die
+    Stimme einer echten Person gelöscht wird, war damit der stillste des Monats.
+    """
+    config, unsere = stelle
+    kanal = FakeZielkanal(4242, "chronik")
+    bot.gilden[int(GILDE)] = FakeZielgilde(kanal)
+    settings.save(unsere, {"discord_recap_channel": "4242"})
+    satz = recordings.OHNE_TEXT.format(sitzung=1, was="eine Aufnahme", tage=7)
+
+    async def ablauf():
+        bot.loop = asyncio.get_running_loop()
+        gateway._fristmelder(config, bot)(unsere, (satz,))
+        for _ in range(100):
+            await asyncio.sleep(0)
+            if kanal.antworten:
+                return
+
+    asyncio.run(ablauf())
+
+    assert satz in kanal.antworten[0]
 
 
 def test_ohne_laufende_schleife_bleibt_die_nachfrage_liegen(stelle, bot, caplog):

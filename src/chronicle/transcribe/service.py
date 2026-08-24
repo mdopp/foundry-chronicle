@@ -368,6 +368,25 @@ def transcribe_session(
     )
 
 
+class Meldungen(tuple[str, ...]):
+    """Alles, was ein Durchgang zu sagen hat — und der Teil davon, der einen Verlust meldet.
+
+    Ein ``tuple[str, ...]`` bleibt es, weil jeder bisherige Leser genau das erwartet. Der
+    zweite Zugang ist für den Weg nach Discord: seit dem Schnitt in Häppchen (#269) sind
+    die Erfolgsmeldungen eines Abends zweihundert Zeilen, und der eine Satz über eine Spur,
+    die endgültig ohne Text bleibt, ginge darin unter (#286). Was in ``verlust`` steht,
+    kommt nicht wieder — eine verbrauchte letzte Anlaufchance oder ein von der Frist
+    gelöschter Ton — und genau das gehört der Runde gesagt.
+    """
+
+    verlust: tuple[str, ...]
+
+    def __new__(cls, alle=(), verlust=()) -> Meldungen:
+        selbst = super().__new__(cls, alle)
+        selbst.verlust = tuple(verlust)
+        return selbst
+
+
 def run_queue(
     config: Config,
     runde: Runde,
@@ -375,7 +394,7 @@ def run_queue(
     model: SpeechModel | None = None,
     delete_audio: bool = False,
     mitlaufend: bool = False,
-) -> tuple[str, ...]:
+) -> Meldungen:
     """Arbeitet die wartenden Spuren ab — der Stapel, den die Oberfläche befüllt.
 
     Das Modell wird erst geladen, wenn wirklich etwas wartet: ein leerer Lauf soll
@@ -413,11 +432,14 @@ def run_queue(
     # nach dem Rauswurf noch wochenlang zu neuem Text. Die Aufbewahrungsfrist der Dateien
     # setzt ``recordings.sweep_alle`` durch, die gilt ihr weiter.
     if lebenszyklus.ruht(runde):
-        return ()
-    meldungen = list(_abarbeiten(config, runde, model, delete_audio, mitlaufend))
-    if not mitlaufend:
-        meldungen.extend(recordings.sweep(config, runde))
-    return tuple(meldungen)
+        return Meldungen()
+    gelaufen = _abarbeiten(config, runde, model, delete_audio, mitlaufend)
+    if mitlaufend:
+        return gelaufen
+    geraeumt = recordings.sweep(config, runde)
+    # Was die Frist geholt hat, ist fort — beides gehört zum Verlust, auch die verschriftete
+    # Spur: gelöscht wird ihr Ton, und die Ansage hat das genau so zugesagt.
+    return Meldungen(tuple(gelaufen) + geraeumt, gelaufen.verlust + geraeumt)
 
 
 def _abarbeiten(
@@ -426,7 +448,7 @@ def _abarbeiten(
     model: SpeechModel | None,
     delete_audio: bool,
     mitlaufend: bool,
-) -> tuple[str, ...]:
+) -> Meldungen:
     """Die Schleife durch die Warteschlange — unter dem Schloss, immer nur einmal zugleich."""
     with _ERKENNER:
         # Vor dem Blick in die Warteschlange: was ein Neustart auf ``laeuft`` stehen ließ,
@@ -437,9 +459,10 @@ def _abarbeiten(
         if mitlaufend:
             wartend = tuple(spur for spur in wartend if spur.versuche == 0)
         if not wartend:
-            return ()
+            return Meldungen()
         erkenner = model if model is not None else model_from_config(config)
         meldungen = []
+        verlust = []
         for aufnahme in wartend:
             try:
                 with recordings.in_arbeit(runde, aufnahme.id):
@@ -448,6 +471,10 @@ def _abarbeiten(
                     )
                     stand = recordings.FERTIG if gelungen else recordings.GESCHEITERT
                     recordings.mark(runde, aufnahme.id, stand, meldung)
+                    # Der letzte Anlauf ist eben verbrannt: ab hier steht die Spur in keiner
+                    # Warteschlange mehr und in keinem Zähler — sie wäre still verloren.
+                    if not gelungen and aufnahme.versuche + 1 >= recordings.MAX_VERSUCHE:
+                        verlust.append(meldung)
             except TranscriberUnreachable as fehler:
                 # **Nicht gescheitert, nur nicht drangekommen.** Seit der lokale Weg weg
                 # ist (#216), gibt es für einen abgeschalteten Erkenner keinen Rückfall
@@ -461,7 +488,7 @@ def _abarbeiten(
             # Der Stand steht an der Zeile, gemeldet wird nur, was etwas ergab.
             if not stumm:
                 meldungen.append(meldung)
-        return tuple(meldungen)
+        return Meldungen(meldungen, verlust)
 
 
 def _eine_spur(
