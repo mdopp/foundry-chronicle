@@ -55,6 +55,8 @@ implement → fast gate → commit `Closes #<N>` → push → `gh pr create --dr
 
 **`park … review` is this unit's terminal verb, not `built`** — it labels `autoloop:review` (the durable pre-merge worklist), releases the `autoloop:building` claim, and takes the unit out of `next`'s rotation, all without touching `batch.count`. `built` books a unit **onto the batch branch**; a draft never rides it, so counting it there makes `batch.count` disagree with `git log main..<batch.branch>` and the seal-at-8 check fires early. `queue.py built` refuses a `security: true` unit outright.
 
+**Unless the operator lifted the gate for that one unit.** Then it is an ordinary batch unit: `queue.py waive <issue> --reason "<what the operator said>"` for **every** member issue, then build it onto the shared batch branch and book it with `built` like any other. The waiver's whole point is that it is **readable afterwards**: `waive` stamps `autoloop:draft-waived` and a comment on the issue, so the merge is later distinguishable from the #235 guard having been circumvented. Two things you do **not** do: you don't waive on your own authority (the lift is the operator's, you only write it down), and you don't reach for `park … review` to book the unit out — that stamps »waiting for human review« on something that is being merged, which is a falsehood in durable state. No operator lift on record → the refusal stands; draft it.
+
 ### Lint-sweep unit
 Implement the one file/rule named. Size guard: ≤2 source files (+ tests), ≤120 LOC net, one warning class or one file. If even a bite-size fix won't fit → `queue.py park <issue> blocked --comment "<why>"` and return. Lint-sweep commits ride the batch branch (no `Closes #`); `queue.py note "lint-sweep: <file> <rule>"` at seal.
 
@@ -107,7 +109,7 @@ until the box says green. Rationale: a template is only shown correct by install
 ## Never
 - Run the full suite per unit (seal's job) — fast gate only mid-batch.
 - Push / open a PR / trigger CI / merge a normal unit while mid-batch.
-- Auto-merge a `security:true` unit — draft + `autoloop:review`, human merges.
+- Auto-merge a `security:true` unit — draft + `autoloop:review`, human merges. The one exception is an operator lift recorded with `queue.py waive`; you never grant one yourself.
 - Loosen the diff-coverage floor or skip a test to go green — fix the root cause / add the test.
 - Guess past an ambiguous issue — bounce to needs-refinement.
 - Bump versions in `pyproject.toml` or push `v*` tags — releases are the user's call.
