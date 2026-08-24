@@ -11,9 +11,11 @@ geschrieben**, und **was angesagt wurde, steht im Wortlaut im Protokoll.**
 from __future__ import annotations
 
 import asyncio
+import functools
 import inspect
 import io
 import logging
+import re
 import sqlite3
 import sys
 import threading
@@ -203,7 +205,13 @@ def unsere_runde(konfiguration):
 
 @pytest.fixture
 def sitzung_id(konfiguration):
-    return notes.create_session(unsere_runde(konfiguration), played_on="2026-08-06")
+    """Die **laufende** Sitzung des Abends.
+
+    ``laeuft=True`` seit #272: ``/session start`` legt seither selbst eine an, wenn keine
+    offen ist. Eine geschlossene Sitzung hieße hier also »fang einen neuen Abend an« —
+    gemeint ist aber der Mitschnitt in dem, der schon läuft.
+    """
+    return notes.create_session(unsere_runde(konfiguration), played_on="2026-08-06", laeuft=True)
 
 
 @pytest.fixture
@@ -1263,7 +1271,7 @@ def test_ein_haeppchen_steht_in_der_warteschlange_bevor_die_sitzung_endet(
 ):
     """Der Ertrag des ganzen Umbaus: die Arbeit läuft **während** der Sitzung.
 
-    Stünde das volle Häppchen erst bei ``/aufnahme stop`` in der Warteschlange, hinge die
+    Stünde das volle Häppchen erst bei ``/session pause`` in der Warteschlange, hinge die
     Verschriftung weiter vollständig hinter dem Abend — und dieser Schnitt brächte nichts.
     """
     haeppchen(SEKUNDE_BYTES)
@@ -1624,6 +1632,28 @@ class FakeRechte:
         self.administrator = administrator
 
 
+def mit_vorgaben(funktion):
+    """Wie py-cord: ein nicht gegebenes Feld kommt als sein **Wert** an, nicht als ``Option``.
+
+    Im Vorgabewert eines Befehls steht ein fertiges ``Option`` — py-cord liest daraus den
+    Typ und löst es auf, bevor der Rumpf es sieht. Solange kein Befehl mit einem Feld
+    etwas *tat*, fiel der Unterschied nicht auf; seit ``/session start`` den Titel in die
+    Sitzung schreibt (#272), fiele stattdessen der Test um.
+    """
+    signatur = inspect.signature(funktion)
+
+    @functools.wraps(funktion)
+    async def aufgeloest(*args, **rest):
+        gebunden = signatur.bind(*args, **rest)
+        gebunden.apply_defaults()
+        for name, wert in list(gebunden.arguments.items()):
+            if hasattr(wert, "input_type") and hasattr(wert, "default"):
+                gebunden.arguments[name] = wert.default
+        return await funktion(*gebunden.args, **gebunden.kwargs)
+
+    return aufgeloest
+
+
 class FakeGruppe:
     def __init__(self, beschreibung):
         self.beschreibung = beschreibung
@@ -1631,7 +1661,7 @@ class FakeGruppe:
 
     def command(self, *, name, description=""):
         def nimm(funktion):
-            self.befehle[name] = funktion
+            self.befehle[name] = mit_vorgaben(funktion)
             return funktion
 
         return nimm
@@ -1842,7 +1872,13 @@ class FakeSprachkanal(FakeSprachkanalOhneChat):
 
 
 class FakeTextkanal:
+    # Seit #272 legt `/session start` die Sitzung selbst an, und die hängt an der Kennung
+    # ihres Kanals — der Doppelgänger braucht deshalb eine.
+    naechste_id = 7000
+
     def __init__(self):
+        FakeTextkanal.naechste_id += 1
+        self.id = FakeTextkanal.naechste_id
         self.geschrieben = []
         # Wie oft das Senden noch scheitert, bevor es durchgeht — Discord zuckt.
         self.stolpert = 0
@@ -2241,13 +2277,83 @@ def test_der_nachtlauf_faden_meldet_sich_im_log_ohne_auf_vier_uhr_zu_warten(
         assert warte_bis(lambda: nightly.WACH % 0 in caplog.messages)
 
 
+# Die neun, die in der Hilfe stehen — und damit alles, was eine spielende Gruppe kennen
+# muss (#272). Was aufrufbar, aber ungenannt bleibt, steht in NOTNAEGEL.
+NEUN_BEFEHLE = (
+    "/session start",
+    "/session scene",
+    "/session done",
+    "/session check",
+    "/session help",
+    "/chronicle search",
+    "/chronicle who",
+    "/chronicle delete",
+    "/chronicle setup",
+)
+
+# Aufrufbar, aber bewusst ohne Eintrag in der Hilfe.
+NOTNAEGEL = ("pause", "abgleich", "sitzung-loeschen", "zuordnung")
+
+# Die obersten Namen von vorher. Discord kennt nur diese Ebene; steht einer davon noch im
+# Satz, den py-cord beim Verbinden schreibt, stünden beide Befehlssätze nebeneinander.
+ALTE_NAMEN = ("aufnahme", "chronik", "register", "setup", "suche", "wer", "zuordnung", "szene")
+
+
 def test_der_bot_bringt_beide_befehle_mit_und_bekommt_den_token(konfiguration, pycord):
     gateway.run(konfiguration)
 
     (bot,) = FakeBot.erzeugt
-    assert set(bot.gruppen[gateway.GRUPPE].befehle) == {"start", "stop", "test", "hilfe"}
+    assert set(bot.gruppen[gateway.GRUPPE].befehle) == {
+        "start",
+        "pause",
+        "check",
+        "help",
+        "done",
+        "scene",
+    }
+    assert set(bot.gruppen[gateway.GRUPPE_CHRONIK].befehle) == {
+        "search",
+        "who",
+        "delete",
+        "setup",
+        "abgleich",
+        "sitzung-loeschen",
+        "zuordnung",
+    }
     assert bot.intents.guilds and bot.intents.voice_states
     assert bot.token == TOKEN
+
+
+def test_die_alten_befehlsnamen_sind_abgemeldet_und_nicht_nur_versteckt(konfiguration, pycord):
+    """Acht oberste Namen fallen weg — und zwar bei Discord, nicht nur in der Hilfe (#272).
+
+    py-cord schreibt beim Verbinden **alle** Anwendungsbefehle in einem Sammelaufruf und
+    löscht dabei, was nicht darin steht. Genau deshalb genügt es, sie hier nicht mehr zu
+    registrieren — und genau deshalb ist dieser Test der Wächter: bliebe einer stehen,
+    stünden in der Gilde beide Sätze nebeneinander, und niemand wüsste, welcher gilt.
+    """
+    gateway.run(konfiguration)
+
+    (bot,) = FakeBot.erzeugt
+    assert set(bot.gruppen) == {gateway.GRUPPE, gateway.GRUPPE_CHRONIK}
+    # Kein Befehl mehr auf oberster Ebene: alles hängt unter einer der beiden Gruppen.
+    assert bot.befehle == {}
+    for alt in ALTE_NAMEN:
+        assert alt not in bot.gruppen
+
+
+def test_die_hilfe_fuehrt_genau_die_neun_befehle_und_keinen_notnagel():
+    """Das Abnahmekriterium aus #272, festgehalten.
+
+    Die Liste wächst sonst mit jedem Befehl, bis sie niemand mehr liest — am 2026-08-18
+    konnte der Betreiber selbst mehrere seiner siebzehn nicht erklären. Was ungenannt
+    bleibt, bleibt trotzdem aufrufbar; ungenannt ist es, damit die neun tragen.
+    """
+    genannt = re.findall(r"`(/[a-z]+ [a-z-]+)[ `]", gateway.BEFEHLE)
+
+    assert tuple(dict.fromkeys(genannt)) == NEUN_BEFEHLE
+    for notnagel in NOTNAEGEL:
+        assert notnagel not in gateway.BEFEHLE
 
 
 def test_start_tritt_bei_sagt_an_und_schneidet_dann_mit(
@@ -2353,9 +2459,9 @@ def test_ohne_kanal_chat_geht_die_vorstellung_dorthin_wo_der_befehl_kam(
     assert kanal.verbindung.schneidet
 
 
-@pytest.mark.parametrize("welcher", ["start", "test"])
+@pytest.mark.parametrize("welcher", ["start", "check"])
 def test_ohne_eigene_runde_nimmt_die_gilde_nicht_auf(konfiguration, ohne_espeak, runde, welcher):
-    """Dieselbe Absage wie vor ``/chronik start``, und vor dem Beitreten in den Kanal.
+    """Dieselbe Absage wie vor ``/session start``, und vor dem Beitreten in den Kanal.
 
     Und damit vor jeder Ankündigung (#270): im Kanal steht kein Wort, das die nächste
     Zeile zurücknehmen müsste — nur die Absage an den, der den Befehl gab.
@@ -2390,7 +2496,8 @@ def test_start_ohne_sprachkanal_verbindet_nicht(konfiguration, sitzung_id, ohne_
 
     asyncio.run(befehl(bot, "start")(ctx))
 
-    assert ctx.antworten == [gateway.NICHT_IM_KANAL]
+    # Kein Fehlschlag mehr, sondern eine Auskunft: die Sitzung läuft, der Ton fehlt (#272).
+    assert ctx.antworten == [gateway.OHNE_SPRACHKANAL]
     assert runde.kanal.verbindung is None
 
 
@@ -2416,7 +2523,7 @@ def test_chronik_start_im_sprachkanal_legt_die_sitzung_genau_dort_an(konfigurati
     bot = gateway.baue(konfiguration)
     ctx = FakeCtx(runde.mira, kanal=runde.kanal)
 
-    asyncio.run(bot.gruppen[gateway.GRUPPE_CHRONIK].befehle["start"](ctx, "Der erste Abend"))
+    asyncio.run(befehl(bot, "start")(ctx, "Der erste Abend"))
 
     (antwort,) = ctx.antworten
     assert chronik.SITZUNG_STEHT in antwort
@@ -2435,7 +2542,7 @@ def test_chronik_start_im_sprachkanal_legt_die_sitzung_genau_dort_an(konfigurati
 def nachbarn(pycord, konfiguration):
     """Eine zweite Gilde mit eigener Runde, eigenem Kanal und eigener Sitzung."""
     zweite = runden.anlegen(konfiguration.database_path, "Die Nachbarn", guild_id=NACHBARGILDE)
-    notes.create_session(zweite, played_on="2026-08-06")
+    notes.create_session(zweite, played_on="2026-08-06", laeuft=True)
     gilde = FakeGilde(int(NACHBARGILDE))
     wer = FakeMitglied(int(SILDAR.id), SILDAR.name)
     chronist = FakeMitglied(998, "Chronik-Bot", bot=True, kanal=None)
@@ -2489,7 +2596,7 @@ def test_aufnahme_stop_der_zweiten_gilde_beendet_nur_ihren_eigenen_abend(
         await befehl(bot, "start")(nachbar_ctx(nachbarn))
         runde.kanal.verbindung.senke.write(sprachdaten(stille(480)), runde.mira)
         nachbarn.kanal.verbindung.senke.write(sprachdaten(stille(480)), nachbarn.sildar)
-        await befehl(bot, "stop")(ctx)
+        await befehl(bot, "pause")(ctx)
 
     asyncio.run(ablauf())
 
@@ -2513,7 +2620,7 @@ def test_aufnahme_stop_ohne_eigene_aufnahme_ruehrt_die_fremde_nicht_an(
     async def ablauf():
         await befehl(bot, "start")(FakeCtx(runde.mira))
         runde.kanal.verbindung.senke.write(sprachdaten(stille(480)), runde.mira)
-        await befehl(bot, "stop")(ctx)
+        await befehl(bot, "pause")(ctx)
 
     asyncio.run(ablauf())
 
@@ -2533,7 +2640,7 @@ def test_der_empfangstest_der_zweiten_gilde_stoert_die_erste_nicht(
     async def ablauf():
         await befehl(bot, "start")(FakeCtx(runde.mira))
         runde.kanal.verbindung.senke.write(sprachdaten(PAKET), runde.mira)
-        await befehl(bot, "test")(ctx)
+        await befehl(bot, "check")(ctx)
 
     asyncio.run(ablauf())
 
@@ -2563,9 +2670,8 @@ def test_der_lauf_der_einen_gilde_ist_nicht_der_der_anderen(
     assert laeufe.fuer_gilde("13") is None
 
 
-@pytest.mark.parametrize("welcher", ["start", "test"])
 def test_ohne_sitzung_wird_abgesagt_bevor_irgendetwas_angekuendigt_ist(
-    konfiguration, ohne_espeak, runde, welcher
+    konfiguration, ohne_espeak, runde
 ):
     """Punkt 1 aus #270: erst prüfen, dann ansagen.
 
@@ -2574,17 +2680,42 @@ def test_ohne_sitzung_wird_abgesagt_bevor_irgendetwas_angekuendigt_ist(
     und stellte erst danach fest, dass es keine Sitzung gibt; die nächste Zeile nahm alles
     zurück. Eine zurückgenommene Einwilligungs-Ansage ist schlimmer als keine, also fällt
     hier weder eine Ankündigung noch ein Widerruf: der Bot betritt den Kanal gar nicht.
+
+    Nur noch ``/session check``: ``/session start`` **legt** die fehlende Sitzung seit
+    #272 selbst an, statt an ihr zu scheitern — die Reihenfolge-Falle, um die es hier
+    ging, gibt es dort nicht mehr. Der Test daneben hält fest, dass auch dieser Weg erst
+    die Sitzung hat und dann ansagt.
     """
     unsere_runde(konfiguration)
     bot = gateway.baue(konfiguration)
     ctx = FakeCtx(runde.mira)
 
-    asyncio.run(befehl(bot, welcher)(ctx))
+    asyncio.run(befehl(bot, "check")(ctx))
 
     assert ctx.antworten == [recorder.OHNE_SITZUNG]
     assert runde.kanal.geschrieben == []
     assert runde.kanal.verbindung is None
     assert der_lauf(bot, konfiguration).aufnahme is None
+
+
+def test_start_ohne_sitzung_legt_eine_an_und_sagt_erst_dann_an(konfiguration, ohne_espeak, runde):
+    """Ein Befehl statt einer Reihenfolge (#272) — und die Ansage bleibt stehen.
+
+    Der Fall, an dem die echte Runde scheiterte: keine Sitzung, aber alle im Sprachkanal.
+    Der Bot legt sie jetzt an und schneidet danach mit; die Einwilligungs-Ansage steht im
+    Kanal, weil es hinter ihr nichts mehr gibt, was sie zurücknähme.
+    """
+    unsere = unsere_runde(konfiguration)
+    bot = gateway.baue(konfiguration)
+    ctx = FakeCtx(runde.mira)
+
+    asyncio.run(befehl(bot, "start")(ctx, "Der erste Abend"))
+
+    (angelegt,) = notes.sessions(unsere)
+    assert notes.running_session(unsere).id == angelegt.id
+    assert "".join(text for text, _gespielt in runde.kanal.geschrieben) == gateway.VORSTELLUNG
+    assert runde.kanal.verbindung.schneidet
+    assert der_lauf(bot, konfiguration).aufnahme is not None
 
 
 def _start_stolpert(monkeypatch, grund=recorder.VERSCHOBEN_BEIM_START):
@@ -2688,7 +2819,14 @@ def test_die_halb_zugestellte_vorstellung_wird_auch_zurueckgenommen(
     erst das zweite, hängt ``_abriss_melden`` nur an, dass der Text unvollständig sei —
     von einer angekündigten Aufnahme nimmt das nichts zurück. Wer allein den Kanal sieht,
     liest weiter, dass gleich mitgeschnitten wird, und das ist genau die Lücke aus #189.
+
+    Die Teilung wird hergestellt und nicht abgewartet: seit #272 stehen neun Befehle in der
+    Liste statt siebzehn, und damit passt die Vorstellung wieder in **eine** Nachricht. Der
+    Fall bleibt trotzdem der Normalfall — die Liste wächst mit jedem Befehl zurück.
     """
+    monkeypatch.setattr(
+        gateway, "VORSTELLUNG", gateway.VORSTELLUNG.replace(gateway.BEFEHLE, gateway.BEFEHLE * 4)
+    )
     stuecke = grenzen.teile(gateway.VORSTELLUNG)
     # Sonst prüfte dieser Test unbemerkt denselben Alles-oder-nichts-Fall wie der davor.
     assert len(stuecke) > 1
@@ -2771,8 +2909,14 @@ def test_der_widerruf_kommt_auch_wenn_die_vorstellung_selbst_abreisst(
     ein Test rot wurde. Gerade hier trägt sie: die halbe Ankündigung steht schon im Kanal,
     daneben der Abriss-Hinweis, der von einer Aufnahme nichts zurücknimmt. Stolpert das
     Trennen davor, bliebe sie für immer stehen.
+
+    Die Teilung wird hergestellt: mit neun Befehlen statt siebzehn passt die Vorstellung
+    seit #272 wieder in eine Nachricht, und der Zweig hier braucht zwei.
     """
     unsere_runde(konfiguration)
+    monkeypatch.setattr(
+        gateway, "VORSTELLUNG", gateway.VORSTELLUNG.replace(gateway.BEFEHLE, gateway.BEFEHLE * 4)
+    )
     _stolpert_beim_trennen(runde.kanal, monkeypatch)
     echt_senden = runde.kanal.send
     versuche = []
@@ -2811,7 +2955,7 @@ def test_der_widerruf_kommt_auch_wenn_der_empfangstest_nicht_anlaeuft(
     _stolpert_beim_trennen(runde.kanal, monkeypatch)
     bot = gateway.baue(konfiguration)
 
-    asyncio.run(befehl(bot, "test")(FakeCtx(runde.mira)))
+    asyncio.run(befehl(bot, "check")(FakeCtx(runde.mira)))
 
     gesagt = [text for text, _ in runde.kanal.geschrieben]
     assert gesagt[0] == gateway.PROBE_VORSTELLUNG
@@ -2881,7 +3025,7 @@ def test_die_senke_schreibt_je_sprecher_eine_spur(konfiguration, sitzung_id, ohn
     senke.write(sprachdaten(stille(480)), runde.mira)
     senke.write(sprachdaten(stille(480)), runde.brok)
     ctx = FakeCtx(runde.mira)
-    asyncio.run(befehl(bot, "stop")(ctx))
+    asyncio.run(befehl(bot, "pause")(ctx))
 
     assert runde.kanal.verbindung.getrennt
     assert senke.finished
@@ -2909,7 +3053,7 @@ def test_was_nach_dem_hinauswurf_ankommt_faellt_weg_und_nicht_in_ein_haeppchen(
 
     verschieben(runde)
     senke.write(sprachdaten(stille(480)), runde.mira)
-    asyncio.run(befehl(bot, "stop")(FakeCtx(runde.mira)))
+    asyncio.run(befehl(bot, "pause")(FakeCtx(runde.mira)))
 
     (spur,) = recordings.pending(unsere_runde(konfiguration))
     with wave.open(str(konfiguration.recordings_dir / spur.filename), "rb") as datei:
@@ -2920,7 +3064,7 @@ def test_stop_ohne_aufnahme_sagt_es(konfiguration, sitzung_id, ohne_espeak, rund
     bot = gateway.baue(konfiguration)
     ctx = FakeCtx(runde.mira)
 
-    asyncio.run(befehl(bot, "stop")(ctx))
+    asyncio.run(befehl(bot, "pause")(ctx))
 
     assert ctx.antworten == [gateway.LAEUFT_NICHT]
 
@@ -2953,7 +3097,7 @@ def test_der_empfangstest_nennt_pakete_und_spuren(
     bot = gateway.baue(konfiguration)
     ctx = FakeCtx(runde.mira)
 
-    asyncio.run(befehl(bot, "test")(ctx))
+    asyncio.run(befehl(bot, "check")(ctx))
 
     (antwort,) = ctx.antworten
     assert "Pakete: 3" in antwort
@@ -2981,7 +3125,7 @@ def test_der_bericht_zaehlt_keine_dekodierfehler_und_sagt_das_auch(
     bot = gateway.baue(konfiguration)
     ctx = FakeCtx(runde.mira)
 
-    asyncio.run(befehl(bot, "test")(ctx))
+    asyncio.run(befehl(bot, "check")(ctx))
 
     (antwort,) = ctx.antworten
     assert "Dekodierfehler:" not in antwort
@@ -3003,7 +3147,7 @@ def test_ein_empfang_der_von_selbst_aufhoert_faellt_nicht_gruen_aus(
     bot = gateway.baue(konfiguration)
     ctx = FakeCtx(runde.mira)
 
-    asyncio.run(befehl(bot, "test")(ctx))
+    asyncio.run(befehl(bot, "check")(ctx))
 
     (antwort,) = ctx.antworten
     assert "Pakete: 1" in antwort
@@ -3025,7 +3169,7 @@ def test_ein_abbruch_ohne_paket_wird_nicht_der_stille_angelastet(
     bot = gateway.baue(konfiguration)
     ctx = FakeCtx(runde.mira)
 
-    asyncio.run(befehl(bot, "test")(ctx))
+    asyncio.run(befehl(bot, "check")(ctx))
 
     (antwort,) = ctx.antworten
     assert "Pakete: 0" in antwort
@@ -3039,7 +3183,7 @@ def test_ohne_ein_einziges_paket_faellt_das_urteil_nicht_gruen_aus(
     bot = gateway.baue(konfiguration)
     ctx = FakeCtx(runde.mira)
 
-    asyncio.run(befehl(bot, "test")(ctx))
+    asyncio.run(befehl(bot, "check")(ctx))
 
     (antwort,) = ctx.antworten
     assert "Pakete: 0" in antwort
@@ -3056,7 +3200,7 @@ def test_die_probespuren_sind_danach_von_der_platte_weg(
     bot = gateway.baue(konfiguration)
     ctx = FakeCtx(runde.mira)
 
-    asyncio.run(befehl(bot, "test")(ctx))
+    asyncio.run(befehl(bot, "check")(ctx))
 
     assert probespuren(konfiguration) == []
     assert recorder.PROBE_AUFGERAEUMT.format(dauer=recorder.PROBE_DAUER) in ctx.antworten[0]
@@ -3069,7 +3213,7 @@ def test_der_empfangstest_reiht_nichts_ein(
     runde.kanal.ankommend = [(PAKET, runde.mira)]
     bot = gateway.baue(konfiguration)
 
-    asyncio.run(befehl(bot, "test")(FakeCtx(runde.mira)))
+    asyncio.run(befehl(bot, "check")(FakeCtx(runde.mira)))
 
     unsere = unsere_runde(konfiguration)
     assert list(recordings.pending(unsere)) == []
@@ -3089,7 +3233,7 @@ def test_auch_die_gescheiterte_probe_laesst_keine_spur_liegen(
     bot = gateway.baue(konfiguration)
     ctx = FakeCtx(runde.mira)
 
-    asyncio.run(befehl(bot, "test")(ctx))
+    asyncio.run(befehl(bot, "check")(ctx))
 
     assert ctx.antworten[0].startswith("Das hat nicht geklappt:")
     assert probespuren(konfiguration) == []
@@ -3102,7 +3246,7 @@ def test_der_empfangstest_sagt_hoerbar_an_und_protokolliert_die_einwilligung(
     """Zehn Sekunden sind eine Aufnahme. Ein Testmodus, der leise mitschnitte, wäre strafbar."""
     bot = gateway.baue(konfiguration)
 
-    asyncio.run(befehl(bot, "test")(FakeCtx(runde.mira)))
+    asyncio.run(befehl(bot, "check")(FakeCtx(runde.mira)))
 
     assert len(runde.kanal.verbindung.gespielt) == 1
     (eintrag,) = consent.for_session(unsere_runde(konfiguration), sitzung_id)
@@ -3126,14 +3270,14 @@ def test_der_empfangstest_ruehrt_eine_laufende_aufnahme_nicht_an(
     verbindung.senke.write(sprachdaten(PAKET), runde.mira)
     ctx = FakeCtx(runde.brok)
 
-    asyncio.run(befehl(bot, "test")(ctx))
+    asyncio.run(befehl(bot, "check")(ctx))
 
     assert ctx.antworten == [gateway.PROBE_NICHT_STOEREN]
     assert verbindung.schneidet and not verbindung.getrennt
     assert len(verbindung.gespielt) == 1
 
     # Und die Spur der echten Aufnahme ist unversehrt — sie geht ihren Weg zu Ende.
-    asyncio.run(befehl(bot, "stop")(FakeCtx(runde.mira)))
+    asyncio.run(befehl(bot, "pause")(FakeCtx(runde.mira)))
     (spur,) = recordings.pending(unsere_runde(konfiguration))
     assert spur.filename.endswith(f"{MIRA.name}.wav")
 
@@ -3186,7 +3330,7 @@ def test_ein_zweiter_empfangstest_laeuft_nicht_daneben(
     der_lauf(bot, konfiguration).probe = True
     ctx = FakeCtx(runde.mira)
 
-    asyncio.run(befehl(bot, "test")(ctx))
+    asyncio.run(befehl(bot, "check")(ctx))
 
     assert ctx.antworten == [gateway.PROBE_LAEUFT]
     assert runde.kanal.verbindung is None
@@ -3198,7 +3342,7 @@ def test_der_empfangstest_ohne_sprachkanal_verbindet_nicht(
     bot = gateway.baue(konfiguration)
     ctx = FakeCtx(FakeMitglied(4100, "Ohne Kanal"))
 
-    asyncio.run(befehl(bot, "test")(ctx))
+    asyncio.run(befehl(bot, "check")(ctx))
 
     assert ctx.antworten == [gateway.NICHT_IM_KANAL]
     assert runde.kanal.verbindung is None
@@ -3212,7 +3356,7 @@ def test_der_gescheiterte_empfangstest_trennt_wieder(
     bot = gateway.baue(konfiguration)
     ctx = FakeCtx(runde.mira)
 
-    asyncio.run(befehl(bot, "test")(ctx))
+    asyncio.run(befehl(bot, "check")(ctx))
 
     assert grund in ctx.antworten[0]
     assert runde.kanal.verbindung.getrennt
@@ -3227,12 +3371,12 @@ def test_der_gescheiterte_empfangstest_trennt_wieder(
 def test_die_ruhende_runde_wird_auch_nicht_geprueft(
     konfiguration, sitzung_id, ohne_espeak, runde, kurze_probe
 ):
-    """Dieselbe Schranke wie vor ``/aufnahme start`` — hier wird aufgezeichnet."""
+    """Dieselbe Schranke wie vor ``/session start`` — hier wird aufgezeichnet."""
     lebenszyklus.sperren(konfiguration.database_path, KANAL.guild_id)
     bot = gateway.baue(konfiguration)
     ctx = FakeCtx(runde.mira)
 
-    asyncio.run(befehl(bot, "test")(ctx))
+    asyncio.run(befehl(bot, "check")(ctx))
 
     assert "Diese Runde ruht" in ctx.antworten[0]
     assert runde.kanal.verbindung is None
@@ -3320,15 +3464,25 @@ SITZUNGSKANAL = 88
 
 
 @pytest.fixture
-def sitzung_im_kanal(konfiguration):
-    """Eine Sitzung mit Kanal, aber **nicht** laufend — hier geht es um den Mitschnitt.
+def sitzung_im_kanal(konfiguration, monkeypatch):
+    """Eine laufende Sitzung mit Kanal — und der Abschluss von selbst abgeklemmt.
 
-    Die Sitzungsgrenze hat ihre eigenen Tests: eine laufende Sitzung zöge in jedem
-    Mitschnitt-Test den ganzen Abschluss nach sich (Zahlen, Verschriftung, Chronik) und
-    prüfte damit überall dasselbe. Die laufende Fassung steht in
-    ``laufende_sitzung_im_kanal``.
+    Laufend muss sie sein: ``/session start`` legt seit #272 selbst eine an, wenn keine
+    offen ist, und schnitte hier sonst in einen zweiten, frisch erfundenen Abend hinein.
+
+    Abgeklemmt ist der Abschluss aus dem Grund, aus dem die Sitzung bis dahin
+    **geschlossen** war: der leere Kanal zieht seit #271 den ganzen Abschluss nach sich —
+    Zahlen, Verschriftung, Chronik —, und jeder Mitschnitt-Test prüfte damit nebenbei
+    dasselbe. Er hat eigene Tests; sie nehmen ``laufende_sitzung_im_kanal``.
     """
-    return notes.create_session(unsere_runde(konfiguration), kanal_id=str(SITZUNGSKANAL))
+
+    async def nichts(*args, **rest):
+        return None
+
+    monkeypatch.setattr(gateway, "_sitzung_von_selbst_abschliessen", nichts)
+    return notes.create_session(
+        unsere_runde(konfiguration), kanal_id=str(SITZUNGSKANAL), laeuft=True
+    )
 
 
 @pytest.fixture
@@ -3624,21 +3778,21 @@ def der_lauf(bot, konfiguration):
 
 def test_der_satz_ans_alleinsein_zeigt_den_widerspruch_und_traegt_keinen_namen():
     """Ein Satz ohne Feld kann keinen Namen und keine Kennung tragen — auch nicht später."""
-    assert "`/aufnahme stop`" in gateway.ALLEIN
+    assert "`/session pause`" in gateway.ALLEIN
     assert "{" not in gateway.ALLEIN
     # Und die Hilfe sagt es vorab — die Vorstellung nicht, denn sie ist ohnehin der längste
     # Text des Bots. Geprüft wird der Satz und nicht »allein im Sprachkanal«: das steht auch
-    # im Punkt zu ``/aufnahme stop`` und meint dort die Gegenlage, den leeren Kanal.
+    # im Punkt zu ``/session pause`` und meint dort die Gegenlage, den leeren Kanal.
     hinweis = "Bleibt eine Person allein im Sprachkanal zurück, schneide ich weiter mit"
     assert hinweis in gateway.HILFE
     assert hinweis not in gateway.BEFEHLE
     assert hinweis not in gateway.VORSTELLUNG
-    # Und die Hilfe steht seit `/aufnahme test` ebenfalls darüber — aus demselben Grund und
+    # Und die Hilfe steht seit `/session check` ebenfalls darüber — aus demselben Grund und
     # mit derselben Folge: geteilt statt abgewiesen, der Ausweg im ersten Stück.
     hilfe = grenzen.teile(gateway.HILFE)
     assert gateway.AUSWEG in hilfe[0]
     assert "".join(hilfe) == gateway.HILFE
-    # Die Vorstellung steht **über** der Grenze, seit die Befehlsliste um `/chronik abgleich`
+    # Die Vorstellung steht **über** der Grenze, seit die Befehlsliste um `/chronicle abgleich`
     # gewachsen ist — und das ist kein Fehlschlag, sondern der Fall, den #109 gebaut hat:
     # ``_zustellen`` teilt, statt abweisen zu lassen, und der Kommentar an ``AUSWEG`` sagt
     # den Tag vorher an (»schiebt alles hinter sich irgendwann in eine zweite Nachricht«).
@@ -3798,7 +3952,7 @@ def test_ein_vermerk_von_vorhin_verschluckt_den_satz_der_naechsten_aufnahme_nich
         anwesend = list(runde.kanal.members)
         einer_bleibt(runde.kanal, runde.mira)
         await dazu(runde.brok, zustand(runde.kanal), zustand())
-        await befehl(bot, "stop")(FakeCtx(runde.mira))
+        await befehl(bot, "pause")(FakeCtx(runde.mira))
         runde.kanal.members = anwesend
         await befehl(bot, "start")(FakeCtx(runde.mira))
         einer_bleibt(runde.kanal, runde.mira)
@@ -3939,7 +4093,7 @@ def test_der_vermerk_ans_alleinsein_ueberlebt_das_ende_der_aufnahme_nicht(
         einer_bleibt(runde.kanal, runde.mira)
         await dazu(runde.brok, zustand(runde.kanal), zustand())
         gemerkt = der_lauf(bot, konfiguration).allein
-        await befehl(bot, "stop")(FakeCtx(runde.mira))
+        await befehl(bot, "pause")(FakeCtx(runde.mira))
         await ruhen()
         return gemerkt
 
@@ -4025,7 +4179,7 @@ def test_wer_allein_widerspricht_beendet_damit_den_mitschnitt(
         einer_bleibt(runde.kanal, runde.mira)
         await dazu(runde.brok, zustand(runde.kanal), zustand())
         ctx = FakeCtx(runde.mira)
-        await befehl(bot, "stop")(ctx)
+        await befehl(bot, "pause")(ctx)
         await ruhen()
         return ctx
 
@@ -4118,7 +4272,7 @@ def test_der_waechter_der_alten_aufnahme_verdraengt_den_der_neuen_nicht(
         await befehl(bot, "start")(FakeCtx(runde.mira))
         anwesend = nur_der_bot(runde.kanal)
         await dazu(runde.mira, zustand(runde.kanal), zustand())
-        await befehl(bot, "stop")(FakeCtx(runde.mira))
+        await befehl(bot, "pause")(FakeCtx(runde.mira))
         # Y beginnt innerhalb der Frist von X — deren Wächter schläft noch.
         runde.kanal.members = anwesend
         await befehl(bot, "start")(FakeCtx(runde.mira))
@@ -4591,7 +4745,7 @@ def test_das_langsamere_netz_meldet_kein_zweites_ende(konfiguration, sitzung_im_
 
     ``_mitschnitt_beenden`` gibt leer zurück, wenn ein anderer den Lauf schon beansprucht
     hat. Ein zweiter Satz behauptete ein zweites Ende und schickte zu einem
-    ``/aufnahme stop``, das »keine Aufnahme« antwortet.
+    ``/session pause``, das »keine Aufnahme« antwortet.
     """
     bot = gateway.baue(konfiguration)
     kanal = FakeTextkanal()
@@ -4609,8 +4763,8 @@ def test_eine_misslungene_ansage_macht_aus_dem_ende_keinen_fehlschlag(
     """``LEER_GESCHEITERT`` gehört dem gescheiterten Beenden, nicht der stummen Ansage.
 
     Umfasste ein ``try`` beides, schriebe ein zuckendes ``kanal.send`` »die Aufnahme gilt
-    weiter als laufend, gib `/aufnahme stop`« in den Kanal — während der Lauf beendet, der
-    Bot getrennt und die Spuren eingereiht sind und ``/aufnahme stop`` »keine Aufnahme«
+    weiter als laufend, gib `/session pause`« in den Kanal — während der Lauf beendet, der
+    Bot getrennt und die Spuren eingereiht sind und ``/session pause`` »keine Aufnahme«
     antwortet. Genau die falsche Anweisung, gegen die dieser Wächter gebaut ist.
     """
     bot = gateway.baue(konfiguration)
@@ -4632,7 +4786,7 @@ def test_eine_misslungene_ansage_macht_aus_dem_ende_keinen_fehlschlag(
         await bot.ereignisse["on_voice_state_update"](runde.mira, zustand(runde.kanal), zustand())
         await ruhen()
         ctx = FakeCtx(runde.mira)
-        await befehl(bot, "stop")(ctx)
+        await befehl(bot, "pause")(ctx)
         return ctx
 
     ctx = asyncio.run(ablauf())
@@ -4695,7 +4849,7 @@ def test_nach_gescheitertem_beenden_greift_aufnahme_stop_noch(
     """Der Anspruch vor dem Abgeben darf den Fehlerpfad nicht unrettbar machen.
 
     Ohne Rücknahme wäre der Lauf nach einem gescheiterten Trennen geleert: der Bot bliebe
-    im Kanal, die Spuren lägen uneingereiht, und ``/aufnahme stop`` antwortete ab da immer
+    im Kanal, die Spuren lägen uneingereiht, und ``/session pause`` antwortete ab da immer
     »keine Aufnahme« — genau der Zustand, gegen den dieser Wächter gebaut ist, nur ohne
     jeden Befehl, der ihn beendet. Der Satz im Kanal verspricht das Gegenteil; hier wird
     das Versprechen eingelöst.
@@ -4716,7 +4870,7 @@ def test_nach_gescheitertem_beenden_greift_aufnahme_stop_noch(
         # Und jetzt das, wozu die Meldung im Kanal auffordert.
         verbindung.trennen_stolpert = False
         ctx = FakeCtx(runde.mira)
-        await befehl(bot, "stop")(ctx)
+        await befehl(bot, "pause")(ctx)
         return ctx
 
     ctx = asyncio.run(ablauf())
@@ -4733,7 +4887,7 @@ def test_nach_gescheitertem_beenden_greift_aufnahme_stop_noch(
 def test_ein_zweites_aufnahme_stop_holt_die_liegengebliebene_spur_nach(
     konfiguration, sitzung_im_kanal, ohne_espeak, runde, monkeypatch
 ):
-    """Der Repro aus #104, so wie er gemeldet wurde: ``/aufnahme stop`` ein zweites Mal.
+    """Der Repro aus #104, so wie er gemeldet wurde: ``/session pause`` ein zweites Mal.
 
     Vorher scheiterte der zweite Anlauf an der UNIQUE-Bedingung der schon eingereihten
     ersten Spur — und die zweite blieb für immer als Datei ohne Zeile liegen: weder
@@ -4749,8 +4903,8 @@ def test_ein_zweites_aufnahme_stop_holt_die_liegengebliebene_spur_nach(
         senke.write(sprachdaten(stille(480)), runde.brok)
         monkeypatch.setattr(recordings, "enqueue", StolpertBeimEinreihen(2))
         erster, zweiter = FakeCtx(runde.mira), FakeCtx(runde.mira)
-        await befehl(bot, "stop")(erster)
-        await befehl(bot, "stop")(zweiter)
+        await befehl(bot, "pause")(erster)
+        await befehl(bot, "pause")(zweiter)
         return erster, zweiter
 
     erster, zweiter = asyncio.run(ablauf())
@@ -4779,7 +4933,7 @@ def test_zwei_beender_zugleich_geben_dem_zweiten_keine_leere_antwort(
     async def ablauf():
         await befehl(bot, "start")(FakeCtx(runde.mira))
         erster, zweiter = FakeCtx(runde.mira), FakeCtx(runde.mira)
-        await asyncio.gather(befehl(bot, "stop")(erster), befehl(bot, "stop")(zweiter))
+        await asyncio.gather(befehl(bot, "pause")(erster), befehl(bot, "pause")(zweiter))
         return erster, zweiter
 
     erster, zweiter = asyncio.run(ablauf())
@@ -4830,13 +4984,13 @@ def test_die_hilfe_erklaert_die_bedienung(konfiguration, runde):
     bot = gateway.baue(konfiguration)
     ctx = FakeCtx(runde.mira)
 
-    asyncio.run(befehl(bot, "hilfe")(ctx))
+    asyncio.run(befehl(bot, "help")(ctx))
 
     # Angehängt ergeben die Stücke wieder genau die Hilfe — sie braucht seit
-    # `/aufnahme test` zwei Nachrichten, und keins der Stücke darf dabei wegfallen.
+    # `/session check` zwei Nachrichten, und keins der Stücke darf dabei wegfallen.
     ganz = "".join(ctx.antworten)
     assert ganz == gateway.HILFE
-    for satzteil in ("/aufnahme start", "/aufnahme stop", "/aufnahme test", "Ansage", "verlässt"):
+    for satzteil in ("/session start", "/session pause", "/session check", "Ansage", "verlässt"):
         assert satzteil in ganz
     # Der Ausweg kommt zuerst — er trägt rechtlich und darf nicht in Stück zwei rutschen.
     assert gateway.AUSWEG in ctx.antworten[0]
@@ -4849,7 +5003,7 @@ def test_eine_zu_lange_hilfe_wird_nachgereicht_statt_abgewiesen(konfiguration, r
     bot = gateway.baue(konfiguration)
     ctx = FakeCtx(runde.mira)
 
-    asyncio.run(befehl(bot, "hilfe")(ctx))
+    asyncio.run(befehl(bot, "help")(ctx))
 
     assert len(ctx.antworten) > 1
     assert all(len(antwort) <= grenzen.NACHRICHT for antwort in ctx.antworten)
@@ -4863,7 +5017,7 @@ def test_die_bestaetigung_sagt_das_wichtigste(konfiguration, sitzung_id, ohne_es
     asyncio.run(befehl(bot, "start")(ctx))
 
     (antwort,) = ctx.antworten
-    for satzteil in ("Ansage", "eigene Spur", "verlässt den Sprachkanal", "/aufnahme stop"):
+    for satzteil in ("Ansage", "eigene Spur", "verlässt den Sprachkanal", "/session pause"):
         assert satzteil in antwort
 
 
@@ -5006,7 +5160,7 @@ def test_wer_bestaetigt_hat_wird_beim_naechsten_betreten_nicht_erneut_gefragt(
     async def ablauf():
         await befehl(bot, "start")(FakeCtx(runde.mira))
         await antwort_geben(gefragt_wurde(runde.brok), runde.brok, "u-brok eisenfaust")
-        await befehl(bot, "stop")(FakeCtx(runde.mira))
+        await befehl(bot, "pause")(FakeCtx(runde.mira))
         await befehl(bot, "start")(FakeCtx(runde.mira))
         await ruhen()
 
@@ -5054,7 +5208,7 @@ def test_ein_vermerk_von_vorhin_verschluckt_die_frage_der_naechsten_aufnahme_nic
     async def ablauf():
         await befehl(bot, "start")(FakeCtx(runde.mira))
         gemerkt = der_lauf(bot, konfiguration).gefragt
-        await befehl(bot, "stop")(FakeCtx(runde.mira))
+        await befehl(bot, "pause")(FakeCtx(runde.mira))
         leer = der_lauf(bot, konfiguration).gefragt
         await befehl(bot, "start")(FakeCtx(runde.mira))
         await ruhen()
@@ -5368,7 +5522,8 @@ def test_ohne_ruecknahme_bleibt_eine_wahre_zuordnung_ohne_ansage_stehen(
 def test_die_ruecknahme_loescht_keine_entscheidung_von_zwischendurch(
     konfiguration, mit_kanal, ohne_espeak, runde, caplog
 ):
-    """Zwischen Schreiben und Rücknahme liegt ein Gang ans Netz — und in dem gibt es `/zuordnung`.
+    """Zwischen Schreiben und Rücknahme liegt ein Gang ans Netz — und darin
+    `/chronicle zuordnung`.
 
     Der Kanal hier tut genau das, was ein langsames Discord zulässt: er lässt jemanden
     dieselbe Person auf ein anderes Konto legen und wirft danach. Nähme die Rücknahme
@@ -5918,7 +6073,7 @@ def test_ein_dekodierfehler_toetet_den_paket_router_nicht(konfiguration, sitzung
     Spur steht der Ersatz.
 
     Bis 2.8.1 flog der Fehler bis in ``PacketRouter.run``, der Empfang starb, und
-    `/aufnahme start` sah dabei gruen aus. Wer diesen Test rot sieht, sitzt wieder auf
+    `/session start` sah dabei gruen aus. Wer diesen Test rot sieht, sitzt wieder auf
     einer Fassung ohne #3159.
     """
     pytest.importorskip("discord")

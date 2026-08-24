@@ -218,9 +218,9 @@ Eine Adresse ohne Konto ergäbe sonst ein Fenster, dessen Eingabe ein `FoundryEr
 verbraucht, bevor der erste Byte über die Leitung geht.
 
 **Und nur, wer es hinterlegt hat, überspringt die Frage.** Seit das Passwort beim Start
-kommt, sind Hinterlegen und Verbrauchen zwei Handlungen, und `/chronik start` steht jedem
+kommt, sind Hinterlegen und Verbrauchen zwei Handlungen, und `/session start` steht jedem
 Mitglied offen. Neben dem Passwort liegt deshalb die Discord-Kennung dessen, der es gab
-(`zugang.gemerkt_von`); `/chronik fertig` nimmt den kurzen Weg nur für genau diese Person.
+(`zugang.gemerkt_von`); `/session done` nimmt den kurzen Weg nur für genau diese Person.
 Jeder andere bekommt das Fenster — und damit sofort den Weg zum eigenen Passwort, ohne die
 zwölf Stunden abzuwarten. Verworfen wird nichts: eine spätere Eingabe überschreibt die
 frühere, sie wird nur nie *ungefragt* dem Foundry-Konto der Runde vorgezeigt. Eine

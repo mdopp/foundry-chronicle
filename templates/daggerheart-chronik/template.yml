@@ -103,7 +103,7 @@ spec:
       - name: OLLAMA_MODEL
         value: "{{OLLAMA_MODEL}}"
       # Der Foundry-Zugang steht bewusst nicht hier: den pflegt die Gruppe selbst in
-      # Discord unter /setup, er gehört ihrer Runde und nicht der Instanz. Das Passwort
+      # Discord unter /chronicle setup, er gehört ihrer Runde und nicht der Instanz. Das Passwort
       # gibt es seit #64 überhaupt nirgends.
     # **Hier steht absichtlich keine Karten-Durchreichung.** ``podman kube play`` (5.8.2)
     # verwirft ``resources.limits`` für eine Pod-Spezifikation still — kein Fehler, kein

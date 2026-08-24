@@ -187,7 +187,7 @@ def anhang(quelle: Path, name: str = DIKTAT) -> chronik.Anhang:
 
 
 def abschluss_abwarten(runde, session_id: int) -> str:
-    """``/chronik fertig`` reiht einen Auftrag ein; hier wird auf dessen Ende gewartet."""
+    """``/session done`` reiht einen Auftrag ein; hier wird auf dessen Ende gewartet."""
     ende = time.monotonic() + KOMPOSITIONSFRIST
     while time.monotonic() < ende:
         auftrag = jobs.latest(runde, jobs.CHRONIK, session_id)
@@ -207,7 +207,7 @@ def durchlauf(config: Config, lauf: Lauf) -> None:
     pruefe(chronik.runde_der_gilde(config, GILDE) is not None, "Die Runde der Gilde fehlt.")
     lauf.ok("Runde der Gilde angelegt")
 
-    # /chronik start — der Thread ist die Sitzung.
+    # /session start — der Thread ist die Sitzung.
     sitzung = chronik.sitzung_anlegen(runde, THREAD, SITZUNGSTITEL)
     pruefe(
         chronik.sitzung_verlangen(runde, THREAD) == sitzung,
@@ -215,7 +215,7 @@ def durchlauf(config: Config, lauf: Lauf) -> None:
     )
     lauf.ok(f"Sitzung {sitzung} angelegt, Thread verknüpft")
 
-    # /szene — die Trennlinie zur nächsten Szene.
+    # /session scene — die Trennlinie zur nächsten Szene.
     chronik.szene_setzen(runde, sitzung, SZENE)
     szenen = notes.session(runde, sitzung).scenes
     pruefe(szenen[-1].title == SZENE, f"Szene nicht angelegt: {[s.title for s in szenen]}")
@@ -227,7 +227,7 @@ def durchlauf(config: Config, lauf: Lauf) -> None:
     pruefe(notiz in geschrieben, f"Die Notiz steht in keiner Szene: {geschrieben}")
     lauf.ok("Nachricht im Thread wurde zur Notiz")
 
-    # /chronik fertig — Zahlen holen, verschriften, komponieren, zustellen.
+    # /session done — Zahlen holen, verschriften, komponieren, zustellen.
     meldungen: list[str] = []
     antwort = chronik.abschluss_starten(
         config, runde, sitzung, None, wer=WER, melden=meldungen.append
@@ -246,7 +246,7 @@ def durchlauf(config: Config, lauf: Lauf) -> None:
     pruefe(protocol.stored(runde, sitzung, RUECKBLICK) is not None, "Kein Rückblick abgelegt")
     lauf.ok("Der Rückblick liegt neben der Chronik")
 
-    # /suche — wochenlang später wiederfinden.
+    # /chronicle search — wochenlang später wiederfinden.
     gefunden = erinnern.suche(runde, marke)
     pruefe(gefunden.embed is not None, f"Suche: keine Trefferliste zu »{marke}« — {gefunden.text}")
     pruefe(marke in str(gefunden.embed), f"Suche: »{marke}« steht in keinem Treffer")

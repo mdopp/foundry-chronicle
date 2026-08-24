@@ -22,7 +22,7 @@ gibt es ``ist_gemerkt`` — *ob*, nie *was*. Gemerkt wird **je Runde**; eine Run
 das Passwort einer anderen so wenig wie an deren Chronik.
 
 Neben dem Passwort liegt, **wer** es hinterlegt hat (#96). Seit es beim Sitzungsstart
-erfragt wird, sind Hinterlegen und Verbrauchen zwei Handlungen, und ``/chronik start``
+erfragt wird, sind Hinterlegen und Verbrauchen zwei Handlungen, und ``/session start``
 steht jedem Mitglied offen: ohne diese Angabe könnte ein Zweiter eine Zeichenkette
 ablegen, die der Abschluss dann ungefragt dem Foundry-Konto dessen vorzeigt, der ihn
 auslöst. Eine Discord-Kennung ist im Kanal ohnehin sichtbar und damit kein Geheimnis —

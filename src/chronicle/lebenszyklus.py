@@ -93,7 +93,8 @@ UEBERNOMMEN_GESAGT = (
     "die einzige Runde dieser Instanz ist und ich in genau einem Server stehe, gibt es "
     "nur eine mögliche Antwort; gäbe es eine zweite, hätte ich nichts getan. Was in ihr "
     "steht, gehört ab jetzt hierher: Sitzungen, Notizen, Protokolle, das aus Foundry "
-    "Geholte und die Einwilligungen. `/suche`, `/wer` und `/chronik` kommen daran heran.\n"
+    "Geholte und die Einwilligungen. `/chronicle search` und `/chronicle who` kommen "
+    "daran heran.\n"
     "War das nicht eure Runde, sagt es dem Betreiber dieser Box, bevor ihr weiterspielt."
 )
 

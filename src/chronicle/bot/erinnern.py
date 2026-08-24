@@ -143,7 +143,7 @@ NICHT_AUFGENOMMEN = "Diese Person habe ich nicht aufgenommen — ich habe nichts
 SPIELER_WEG = "Diesen Foundry-Spieler kenne ich nicht mehr — ich habe nichts geändert."
 SPIELER_VERGEBEN = (
     "Dieses Foundry-Konto gehört schon jemand anderem — ich habe nichts geändert. "
-    "Soll es wechseln, geht das in `/zuordnung`: dort darf ein Konto umgehängt werden, "
+    "Soll es wechseln, geht das in `/chronicle zuordnung`: dort darf ein Konto umgehängt werden, "
     "und die Runde erfährt es dann im Kanal der Sitzung."
 )
 UEBERNOMMEN = (
@@ -151,23 +151,23 @@ UEBERNOMMEN = (
 )
 
 # Und dieselbe Übernahme, gesagt statt nur beantwortet. Die Antwort auf den Klick ist
-# ephemer und `/zuordnung` zeigt nur ``PRO_SEITE`` Personen — ab der sechsten stünde die
+# ephemer und `/chronicle zuordnung` zeigt nur ``PRO_SEITE`` Personen — ab der sechsten stünde die
 # Vorbesitzerin weder vorher noch nachher darin. Der Schritt mit der größten Folge wäre
 # damit der stillste; deshalb der Thread für die Runde und ein Wort an sie selbst
 # (Betreiber-Entscheidung vom 2026-08-12 zu #76).
 UEBERNAHME_VERMERK = (
     "**{name}** spielt in eurem Foundry als **{spieler}** — bis eben gehörte das Konto "
-    "**{vorher}**, dort steht jetzt wieder nichts. Umgehängt wurde es in `/zuordnung`; "
+    "**{vorher}**, dort steht jetzt wieder nichts. Umgehängt wurde es in `/chronicle zuordnung`; "
     "dort geht es auch wieder zurück."
 )
 
 # Auch dieser Satz geht ins Zwiegespräch und nennt deshalb die **Runde** — dieselbe Regel
 # wie bei ``BETRETEN_FRAGE``: eine Instanz trägt mehrere (#62/#63), und weder eine
-# Direktnachricht noch der Verweis auf `/zuordnung` sagt sonst, welche gemeint ist.
+# Direktnachricht noch der Verweis auf `/chronicle zuordnung` sagt sonst, welche gemeint ist.
 UEBERNAHME_ANGESAGT = (
     "In **{runde}** hat **{name}** deine Zuordnung zum Foundry-Konto **{spieler}** "
     "übernommen — deine Spuren dort tragen ab jetzt wieder deinen Discord-Namen. War das "
-    "ein Versehen, holt `/zuordnung` in dieser Runde es zurück."
+    "ein Versehen, holt `/chronicle zuordnung` in dieser Runde es zurück."
 )
 
 # Gefragt wird beim Betreten des Sprachkanals, damit jede Äußerung von Anfang an einer
@@ -177,7 +177,7 @@ BETRETEN_FRAGE = (
     "Ich schneide gerade in **#{kanal}** mit und weiß noch nicht, wer du dort in Foundry "
     "bist. Wähl dich aus — dann steht dein Name später an deiner Spur statt deines "
     "Discord-Namens. Antwortest du nicht, bleibt es beim Discord-Namen; das Protokoll "
-    "sagt es dann auch so. Ändern kannst du es jederzeit mit `/zuordnung`."
+    "sagt es dann auch so. Ändern kannst du es jederzeit mit `/chronicle zuordnung`."
 )
 
 # Und der eine Fall, in dem nicht gefragt wird: der Name ist 1:1 derselbe. Gesagt wird es
@@ -190,12 +190,12 @@ BETRETEN_FRAGE = (
 BETRETEN_VERMERK = (
     "**{name}** heißt hier genauso wie das Foundry-Konto **{spieler}** — ich habe beide "
     "verbunden, damit die Spur von Anfang an den richtigen Namen trägt. Stimmt das nicht, "
-    "ändert `/zuordnung` es."
+    "ändert `/chronicle zuordnung` es."
 )
 BETRETEN_VERMERK_FIGUR = (
     "**{name}** heißt hier genauso wie **{figur}**, die Figur des Foundry-Kontos "
     "**{spieler}** — ich habe beide verbunden, damit die Spur von Anfang an den richtigen "
-    "Namen trägt. Stimmt das nicht, ändert `/zuordnung` es."
+    "Namen trägt. Stimmt das nicht, ändert `/chronicle zuordnung` es."
 )
 
 # Der Weg über das Menü im Zwiegespräch: jemand wählt sich ein Konto. Er wird genauso
@@ -576,7 +576,7 @@ def zuruecknehmen(runde: Runde, discord_user_id: str, foundry_user_id: str) -> b
 
     Der Unterschied zu ``zuordnen(…, KEINE)`` ist die Bedingung, und sie ist der ganze
     Punkt: wer zurücknimmt, nimmt zurück, was **er selbst** geschrieben hat. Zwischen
-    beidem liegt ein Gang ans Netz, und in diesem Fenster kann ``/zuordnung`` dieselbe
+    beidem liegt ein Gang ans Netz, und in diesem Fenster kann ``/chronicle zuordnung`` dieselbe
     Person längst umgehängt haben; blind zu löschen nähme dieser Entscheidung still ihre
     Wirkung. ``False`` heißt deshalb: dort steht etwas anderes, und das bleibt stehen.
     """
@@ -601,16 +601,16 @@ def zuordnen(
     ein bereits vergebenes Konto steht dort ohnehin nur, wenn die Ansicht von vorhin ist.
 
     Mit ``uebernehmen`` wechselt es und die Vorbesitzerin verliert es — so kommt
-    ``/zuordnung`` her, und das ist seit dem 2026-08-12 die Antwort darauf, wie eine
+    ``/chronicle zuordnung`` her, und das ist seit dem 2026-08-12 die Antwort darauf, wie eine
     **falsche** Zuordnung wieder weggeht. Der Fall ist echt: benennt sich Brok in »Mira«
     um, während die echte Mira »Mira am Handy« heißt, bekommt Brok beim Betreten Miras
     Konto — 1:1 gleicher Name. Ohne Umhängen käme Mira nie daran, und der Satz im Vermerk
-    (»ändert `/zuordnung` es«) wäre gelogen. Der Weg über »erst zurücknehmen« wäre die
+    (»ändert `/chronicle zuordnung` es«) wäre gelogen. Der Weg über »erst zurücknehmen« wäre die
     schlechtere Antwort: er verlangt zwei Schritte in der Zeile einer **anderen** Person,
     und dazwischen liegt das Konto frei — auch für das Menü der nächsten, die den
     Sprachkanal betritt.
 
-    Was das Umhängen **sichtbar** macht, steht nicht hier: ``/zuordnung`` zeigt nur
+    Was das Umhängen **sichtbar** macht, steht nicht hier: ``/chronicle zuordnung`` zeigt nur
     ``PRO_SEITE`` Personen, die Vorbesitzerin fehlt darin ab der sechsten, und die Antwort
     auf den Klick sieht ohnehin nur, wer geklickt hat. Getragen wird es deshalb vom Thread
     und von einem Wort an die Vorbesitzerin — dafür steht ``vorher`` in der Antwort.

@@ -50,7 +50,6 @@ from test_dokument import BEISPIEL, DRITTER_ABEND
 import chronicle.bot.__main__ as bot_eintritt
 from chronicle import (
     db,
-    dokument,
     jobs,
     lebenszyklus,
     notes,
@@ -72,7 +71,7 @@ from chronicle.transcribe import service as transcribe_service
 GILDE = "1101"
 FREMDE_GILDE = "9909"
 
-# Zwei Mitglieder derselben Gilde: ``/chronik start`` steht jedem offen, und seit #96
+# Zwei Mitglieder derselben Gilde: ``/session start`` steht jedem offen, und seit #96
 # entscheidet die Kennung, wessen Eingabe der Abschluss ungefragt weiterreicht.
 WER = 7001
 ZWEITES_MITGLIED = 7002
@@ -310,11 +309,16 @@ def bot(stelle, pycord):
 
 
 def chronikbefehl(bot, name):
-    return bot.gruppen[gateway.GRUPPE_CHRONIK].befehle[name]
+    """Der Befehl unter seinem Namen, gleich in welcher der beiden Gruppen er hängt (#272)."""
+    for gruppe in (gateway.GRUPPE, gateway.GRUPPE_CHRONIK):
+        befehle = bot.gruppen[gruppe].befehle
+        if name in befehle:
+            return befehle[name]
+    raise KeyError(name)
 
 
 def sitzung_starten(bot, ctx=None, titel="", *, passwort="", wer=WER):
-    """``/chronik start`` samt dem Fenster, das seit #96 davor steht.
+    """``/session start`` samt dem Fenster, das seit #96 davor steht.
 
     Der Rumpf ist mit #96 aus dem Befehl in den Rückruf des Fensters gewandert und bekommt
     dort eine **Interaktion**, keinen Befehlskontext. Genau diesen Unterschied bildet der
@@ -337,7 +341,7 @@ def sitzung_starten(bot, ctx=None, titel="", *, passwort="", wer=WER):
 
 
 def mitschnitt_starten(bot, gilde=GILDE):
-    """``/aufnahme start`` in einem Sprachkanal dieser Gilde, mit einer Spur darin."""
+    """``/session start`` in einem Sprachkanal dieser Gilde, mit einer Spur darin."""
     wer = FakeMitglied(4001, "Mira")
     kanal = FakeSprachkanal(FakeGilde(gilde), wer)
     wer.voice = types.SimpleNamespace(channel=kanal)
@@ -368,15 +372,16 @@ def notizen(runde, sitzung_id):
 
 def test_der_bot_bringt_die_chronik_befehle_mit(bot):
     assert set(bot.gruppen[gateway.GRUPPE_CHRONIK].befehle) == {
-        "start",
-        "fertig",
         "abgleich",
-        "nacherzaehlung",
-        "einlesen",
         "sitzung-loeschen",
-        "loeschen",
+        "delete",
+        "search",
+        "who",
+        "setup",
+        "zuordnung",
     }
-    assert gateway.BEFEHL_SZENE in bot.befehle
+    # Anfang, Szene und Abschluss gehören zum Abend und damit unter `/session` (#272).
+    assert {"start", "done", gateway.BEFEHL_SZENE} <= set(bot.gruppen[gateway.GRUPPE].befehle)
     assert set(bot.ereignisse) >= {"on_message", "on_raw_message_edit", "on_raw_message_delete"}
 
 
@@ -405,14 +410,19 @@ def test_eine_zweite_sitzung_wird_nicht_ueber_die_erste_gelegt(stelle, bot):
 
     Zwei offene Sitzungen hätten zwei Ziele für dieselbe getippte Zeile, und der Mitschnitt
     hinge an der falschen.
+
+    Seit #272 ist der zweite Aufruf kein Fehlgriff mehr, sondern der Griff, der den
+    Mitschnitt nachholt: gefragt wird nicht noch einmal, angelegt wird nichts. Hier steht
+    niemand in einem Sprachkanal, also bleibt genau das übrig — und wird auch so gesagt.
     """
     _config, unsere = stelle
-
     _erstes, kanal = sitzung_starten(bot, titel="Der Keller")
-    zweites, _kanal = sitzung_starten(bot, titel="Der Turm")
+    zweiter = FakeCtx()
 
-    (antwort,) = zweites.antworten
-    assert chronik.SITZUNG_LAEUFT_SCHON in antwort
+    asyncio.run(chronikbefehl(bot, "start")(zweiter, "Der Turm"))
+
+    assert zweiter.antworten == [gateway.OHNE_SPRACHKANAL]
+    assert zweiter.modale == []
     assert [eine.title for eine in notes.sessions(unsere)] == ["Der Keller"]
     assert chronik.sitzung_im_kanal(unsere, str(kanal.id)) == sitzung_von(unsere, kanal)
 
@@ -600,7 +610,7 @@ def test_auf_der_testwelt_kommt_kein_passwortfenster(stelle, bot):
 
 
 def test_ohne_eingetragene_adresse_kommt_kein_passwortfenster(tmp_path, pycord):
-    """Eine Runde, die nie durch ``/setup`` ging, hat kein Foundry — und wird nicht gefragt."""
+    """Eine Runde ohne ``/chronicle setup`` hat kein Foundry — und wird nicht gefragt."""
     config = Config(
         discord_bot_token=TOKEN,
         data_dir=tmp_path / "daten",
@@ -738,7 +748,7 @@ def test_szene_zieht_die_trennlinie_und_das_naechste_landet_dahinter(stelle, bot
     melden(bot, FakeNachricht(7101, "Noch im Wirtshaus.", kanal=kanal.id))
 
     szene_ctx = FakeCtx(kanal=types.SimpleNamespace(id=kanal.id))
-    asyncio.run(bot.befehle[gateway.BEFEHL_SZENE](szene_ctx, "Im Keller"))
+    asyncio.run(bot.gruppen[gateway.GRUPPE].befehle[gateway.BEFEHL_SZENE](szene_ctx, "Im Keller"))
     spaeter = datetime.now(UTC) + timedelta(seconds=5)
     melden(bot, FakeNachricht(7102, "Die Treppe knarrt.", kanal=kanal.id, zeit=spaeter))
 
@@ -753,7 +763,7 @@ def test_eine_szene_ohne_namen_ist_trotzdem_eine_trennlinie(stelle, bot):
     _ctx, kanal = sitzung_starten(bot)
     ctx = FakeCtx(kanal=types.SimpleNamespace(id=kanal.id))
 
-    asyncio.run(bot.befehle[gateway.BEFEHL_SZENE](ctx, "  "))
+    asyncio.run(bot.gruppen[gateway.GRUPPE].befehle[gateway.BEFEHL_SZENE](ctx, "  "))
 
     sitzung_id = sitzung_von(unsere, kanal)
     assert ctx.antworten == [chronik.SZENE_OHNE_NAMEN]
@@ -763,7 +773,7 @@ def test_eine_szene_ohne_namen_ist_trotzdem_eine_trennlinie(stelle, bot):
 def test_szene_ausserhalb_einer_laufenden_sitzung_sagt_es(stelle, bot):
     ctx = FakeCtx(kanal=types.SimpleNamespace(id=8888))
 
-    asyncio.run(bot.befehle[gateway.BEFEHL_SZENE](ctx, "Im Keller"))
+    asyncio.run(bot.gruppen[gateway.GRUPPE].befehle[gateway.BEFEHL_SZENE](ctx, "Im Keller"))
 
     (antwort,) = ctx.antworten
     assert chronik.NUR_IN_DER_SITZUNG in antwort
@@ -930,7 +940,7 @@ def test_steht_die_chronik_schon_wird_das_bei_jeder_aenderung_gesagt(stelle, bot
     aendern(bot, 7313, kanal=kanal, inhalt="Mara hat den Wirt gefragt.")
     aendern(bot, 7313, kanal=kanal, inhalt="")
 
-    # Auch die stumme Änderung sagt es jetzt — und der Ausweg stimmt: ``/chronik fertig``
+    # Auch die stumme Änderung sagt es jetzt — und der Ausweg stimmt: ``/session done``
     # meint genau diese Sitzung.
     assert gesagt(kanal) == [
         chronik.CHRONIK_STEHT_SCHON,
@@ -939,7 +949,7 @@ def test_steht_die_chronik_schon_wird_das_bei_jeder_aenderung_gesagt(stelle, bot
 
 
 def test_an_einer_aelteren_sitzung_wird_kein_ausweg_versprochen(stelle, bot):
-    """``/chronik fertig`` meint die zuletzt angelegte — für die davor wäre es gelogen."""
+    """``/session done`` meint die zuletzt angelegte — für die davor wäre es gelogen."""
     _config, unsere = stelle
     kanal = FakeTextkanal()
     _ctx, kanal = sitzung_starten(bot, FakeCtx(kanal=kanal))
@@ -950,7 +960,7 @@ def test_an_einer_aelteren_sitzung_wird_kein_ausweg_versprochen(stelle, bot):
         compose_service.save(scope, sitzung_id, "# Chronik", "2026-08-05T22:00:00+00:00")
     finally:
         scope.close()
-    # Ein neuer Abend darüber: ``/chronik fertig`` meint jetzt ihn. Erst muss der alte zu
+    # Ein neuer Abend darüber: ``/session done`` meint jetzt ihn. Erst muss der alte zu
     # sein — zwei Sitzungen nebeneinander gibt es seit #271 nicht.
     chronik.sitzung_schliessen(unsere, sitzung_id)
     sitzung_starten(bot, FakeCtx(kanal=kanal))
@@ -1146,7 +1156,7 @@ def abschluss_fahren(bot, unsere, kanal, *, passwort=PASSWORT):
     interaktion = FakeInteraction(kanal)
 
     async def ablauf():
-        await chronikbefehl(bot, "fertig")(ctx)
+        await chronikbefehl(bot, "done")(ctx)
         if ctx.modale:
             ctx.modale[0].children[0].value = passwort
             await ctx.modale[0].callback(interaktion)
@@ -1200,7 +1210,7 @@ def test_nach_dem_passwort_beim_start_fragt_der_abschluss_nicht_noch_einmal(
     ctx = FakeCtx(kanal=kanal)
 
     async def ablauf():
-        await chronikbefehl(bot, "fertig")(ctx)
+        await chronikbefehl(bot, "done")(ctx)
         await _bis_der_lauf_durch_ist(unsere)
 
     asyncio.run(ablauf())
@@ -1213,13 +1223,13 @@ def test_nach_dem_passwort_beim_start_fragt_der_abschluss_nicht_noch_einmal(
 def test_ein_zweites_mitglied_schiebt_dem_abschluss_kein_fremdes_passwort_unter(
     stelle, bot, monkeypatch
 ):
-    """``/chronik start`` steht jedem Mitglied offen. Ohne diese Prüfung nähme der
+    """``/session start`` steht jedem Mitglied offen. Ohne diese Prüfung nähme der
     Abschluss die Zeichenkette eines Zweiten und zeigte sie dem Foundry-Konto dieser Runde
     vor, ausgelöst von jemandem, der sie nie gesehen hat."""
     _config, unsere = stelle
     _fenster, kanal = sitzung_starten(bot, passwort=PASSWORT, wer=WER)
-    # Direkt in den Merkzettel: ein zweiter ``/chronik start`` legte seit #271 keine zweite
-    # Sitzung mehr an, und der Weg über ``/chronik abgleich`` führte am Abschluss vorbei.
+    # Direkt in den Merkzettel: ein zweiter ``/session start`` legte seit #271 keine zweite
+    # Sitzung mehr an, und der Weg über ``/chronicle abgleich`` führte am Abschluss vorbei.
     chronik.passwort_merken(unsere, ANDERE_EINGABE, str(ZWEITES_MITGLIED))
     gesehen = []
     monkeypatch.setattr(
@@ -1231,7 +1241,7 @@ def test_ein_zweites_mitglied_schiebt_dem_abschluss_kein_fremdes_passwort_unter(
     interaktion = FakeInteraction(kanal, wer=WER)
 
     async def ablauf():
-        await chronikbefehl(bot, "fertig")(ctx)
+        await chronikbefehl(bot, "done")(ctx)
         ctx.modale[0].children[0].value = PASSWORT
         await ctx.modale[0].callback(interaktion)
         await _bis_der_lauf_durch_ist(unsere)
@@ -1274,7 +1284,7 @@ def test_ein_fenster_in_der_luecke_schiebt_dem_lauf_kein_fremdes_passwort_unter(
     ctx = FakeCtx(kanal=kanal, wer=WER)
 
     async def ablauf():
-        await chronikbefehl(bot, "fertig")(ctx)
+        await chronikbefehl(bot, "done")(ctx)
         await _bis_der_lauf_durch_ist(unsere)
 
     asyncio.run(ablauf())
@@ -1322,7 +1332,7 @@ def test_ohne_foundry_fragt_auch_der_abschluss_nicht_nach_dem_passwort(stelle, b
     abschluss_ctx = FakeCtx(kanal=kanal)
 
     async def ablauf():
-        await chronikbefehl(bot, "fertig")(abschluss_ctx)
+        await chronikbefehl(bot, "done")(abschluss_ctx)
         await _bis_der_lauf_durch_ist(unsere)
 
     asyncio.run(ablauf())
@@ -1341,7 +1351,7 @@ def test_auch_mit_gemerktem_passwort_endet_die_aufnahme_vor_dem_lauf(
     ctx = FakeCtx(kanal=kanal)
 
     async def ablauf():
-        await chronikbefehl(bot, "fertig")(ctx)
+        await chronikbefehl(bot, "done")(ctx)
         await _bis_der_lauf_durch_ist(unsere)
 
     asyncio.run(ablauf())
@@ -1369,7 +1379,7 @@ def test_ein_altes_passwortfenster_zeigt_das_passwort_keiner_fremden_runde(
     interaktion = FakeInteraction(kanal)
 
     async def ablauf():
-        await chronikbefehl(bot, "fertig")(ctx)
+        await chronikbefehl(bot, "done")(ctx)
         lebenszyklus.loeschen(config, unsere)
         frisch = runden.anlegen(config.database_path, "Frisch", guild_id=GILDE)
         ctx.modale[0].children[0].value = PASSWORT
@@ -1450,7 +1460,7 @@ def test_fertig_beendet_die_laufende_aufnahme_und_reiht_die_spuren_ein(
     # Aus **dieser** Gilde, nicht aus irgendeiner: seit #226 sieht ``stop`` nur den Lauf
     # der eigenen Runde, und ein Aufruf von woanders erführe nichts über diesen hier.
     danach = FakeSprechCtx(mitschnitt.wer, guild_id=GILDE)
-    asyncio.run(bot.gruppen[gateway.GRUPPE].befehle["stop"](danach))
+    asyncio.run(bot.gruppen[gateway.GRUPPE].befehle["pause"](danach))
     assert danach.antworten == [gateway.LAEUFT_NICHT]
 
 
@@ -1459,7 +1469,7 @@ def test_ein_abschluss_reisst_den_mitschnitt_einer_fremden_runde_nicht_ab(
 ):
     config, unsere = stelle
     fremde = runden.anlegen(config.database_path, "Die Andere", guild_id=FREMDE_GILDE)
-    notes.create_session(fremde, played_on="2026-08-07")
+    notes.create_session(fremde, played_on="2026-08-07", laeuft=True)
     mitschnitt = mitschnitt_starten(bot, gilde=FREMDE_GILDE)
     _ctx, kanal = sitzung_starten(bot)
     monkeypatch.setattr(jobs, "abschluss", lambda config, eine, sid, *, passwort=None: STEHT)
@@ -1472,9 +1482,9 @@ def test_ein_abschluss_reisst_den_mitschnitt_einer_fremden_runde_nicht_ab(
 
 
 def test_fertig_aus_dem_sprachkanal_schliesst_die_laufende_sitzung(stelle, bot, monkeypatch):
-    """Nach ``/aufnahme stop`` steht man im Sprachkanal — abgewiesen wird dort nicht mehr.
+    """Nach ``/session pause`` steht man im Sprachkanal — abgewiesen wird dort nicht mehr.
 
-    Die Abweisung riet zu ``/chronik start`` und damit zu einer **zweiten** Sitzung; die
+    Die Abweisung riet zu ``/session start`` und damit zu einer **zweiten** Sitzung; die
     Aufnahmen der ersten blieben liegen (#156). Genommen wird dieselbe Sitzung wie bei der
     Aufnahme, und die Antwort sagt, welche das ist und wo ihre Chronik erscheint.
     """
@@ -1487,11 +1497,11 @@ def test_fertig_aus_dem_sprachkanal_schliesst_die_laufende_sitzung(stelle, bot, 
         lambda config, eine, sid, *, passwort=None: gesehen.append(sid) or STEHT,
     )
     # Der Textkanal des Sprachkanals: nicht der Kanal, und auch nicht der Kanal, in dem
-    # ``/chronik start`` gegeben wurde.
+    # ``/session start`` gegeben wurde.
     ctx = FakeCtx(kanal=FakeKanal(4711, "Im Sprachkanal"))
 
     async def ablauf():
-        await chronikbefehl(bot, "fertig")(ctx)
+        await chronikbefehl(bot, "done")(ctx)
         await _bis_der_lauf_durch_ist(unsere)
 
     asyncio.run(ablauf())
@@ -1520,7 +1530,7 @@ def test_der_schnellweg_aus_dem_sprachkanal_schiebt_die_frist_nicht_weiter(
     monkeypatch.setattr(jobs, "start", lambda *args, **kwargs: None)
 
     ctx = FakeCtx(kanal=types.SimpleNamespace(id=4711))
-    asyncio.run(chronikbefehl(bot, "fertig")(ctx))
+    asyncio.run(chronikbefehl(bot, "done")(ctx))
 
     # Der Schnellweg wurde wirklich gegangen — sonst prüfte die Frist unten eine Abweisung.
     assert ctx.antworten == [jobs.BELEGT]
@@ -1537,7 +1547,7 @@ def test_fertig_ohne_kanal_nennt_die_sitzung_trotzdem(stelle, bot, monkeypatch):
     ctx = FakeCtx(kanal=FakeKanal(4711, "Im Sprachkanal"))
 
     async def ablauf():
-        await chronikbefehl(bot, "fertig")(ctx)
+        await chronikbefehl(bot, "done")(ctx)
         await _bis_der_lauf_durch_ist(unsere)
 
     asyncio.run(ablauf())
@@ -1552,11 +1562,11 @@ def test_fertig_ohne_laufende_sitzung_raet_zu_chronik_start(stelle, bot):
     """Die Gegenprobe: nur wenn wirklich keine Sitzung offen ist, ist der Rat richtig."""
     ctx = FakeCtx(kanal=types.SimpleNamespace(id=8888))
 
-    asyncio.run(chronikbefehl(bot, "fertig")(ctx))
+    asyncio.run(chronikbefehl(bot, "done")(ctx))
 
     (antwort,) = ctx.antworten
     assert chronik.KEINE_SITZUNG in antwort
-    assert "`/chronik start`" in antwort
+    assert "`/session start`" in antwort
     assert ctx.modale == []
 
 
@@ -1573,7 +1583,7 @@ def test_fertig_einer_fremden_gilde_ruehrt_unsere_sitzung_nicht_an(stelle, bot, 
     )
     ctx = FakeCtx(guild_id=FREMDE_GILDE, kanal=types.SimpleNamespace(id=4711))
 
-    asyncio.run(chronikbefehl(bot, "fertig")(ctx))
+    asyncio.run(chronikbefehl(bot, "done")(ctx))
 
     (antwort,) = ctx.antworten
     assert chronik.KEINE_SITZUNG in antwort
@@ -1611,7 +1621,7 @@ class Ausfall:
 
 
 def abgleich_fahren(bot, unsere, *, kanal=None, passwort=PASSWORT):
-    """``/chronik abgleich`` samt Fenster und dem Warten auf den Lauf, den es anstößt."""
+    """``/chronicle abgleich`` samt Fenster und dem Warten auf den Lauf, den es anstößt."""
     ctx = FakeCtx(kanal=kanal if kanal is not None else FakeKanal(910, "Runde"))
     interaktion = FakeInteraction(ctx.channel)
 
@@ -1782,134 +1792,6 @@ def test_ein_altes_abgleichfenster_zeigt_das_passwort_keiner_fremden_runde(stell
     assert jobs.latest(frisch, jobs.ABGLEICH) is None
 
 
-# -- Nacherzählen über Sitzungsgrenzen ---------------------------------------------------
-
-# Was die Attrappe des Laufs meldet — ein echtes Ollama steht hier nicht dahinter.
-NACHERZAEHLT = "Nacherzählung über 2 Sitzungen — 2 davon erzählt."
-
-
-def sitzungen_anlegen(unsere, *daten):
-    return [notes.create_session(unsere, played_on=datum) for datum in daten]
-
-
-def nacherzaehlen_fahren(bot, unsere, *, von="", bis=""):
-    """``/chronik nacherzaehlung`` und das Warten auf den Lauf, den es anstößt."""
-    ctx = FakeCtx(kanal=FakeKanal(910, "Runde"))
-
-    async def ablauf():
-        await chronikbefehl(bot, "nacherzaehlung")(ctx, von, bis)
-        ende = time.monotonic() + GRENZE
-        while time.monotonic() < ende and jobs.running(unsere, jobs.NACHERZAEHLUNG):
-            await asyncio.sleep(0.01)
-        # Der Lauf meldet sich aus seinem eigenen Faden; die Schleife muss ihn abholen.
-        await asyncio.sleep(0.05)
-
-    asyncio.run(ablauf())
-    return ctx
-
-
-def test_nacherzaehlung_stoesst_einen_lauf_an_und_blockiert_den_befehl_nicht(
-    stelle, bot, monkeypatch
-):
-    """Je Sitzung ein Modellaufruf — das ist ein Lauf des Servers, kein wartender Befehl."""
-    _config, unsere = stelle
-    ids = sitzungen_anlegen(unsere, "2026-05-01", "2026-05-02")
-    gesehen = []
-    monkeypatch.setattr(
-        jobs,
-        "nacherzaehlung",
-        lambda config, eine, von, bis, kanal_id: (
-            gesehen.append((von, bis, kanal_id)) or NACHERZAEHLT
-        ),
-    )
-
-    ctx = nacherzaehlen_fahren(bot, unsere)
-
-    assert ctx.aufgeschoben
-    assert ctx.antworten == [chronik.ERZAEHLT.format(von="2026-05-01", bis="2026-05-02")]
-    assert gesehen == [(ids[0], ids[1], "910")]
-    assert ctx.channel.gesendet == [NACHERZAEHLT]
-    assert jobs.latest(unsere, jobs.NACHERZAEHLUNG).result == NACHERZAEHLT
-
-
-def test_der_bereich_folgt_den_genannten_sitzungen(stelle, bot, monkeypatch):
-    _config, unsere = stelle
-    ids = sitzungen_anlegen(unsere, "2026-05-01", "2026-05-02", "2026-05-03")
-    gesehen = []
-    monkeypatch.setattr(
-        jobs,
-        "nacherzaehlung",
-        lambda config, eine, von, bis, kanal_id: gesehen.append((von, bis)) or NACHERZAEHLT,
-    )
-
-    ctx = nacherzaehlen_fahren(bot, unsere, von="2026-05-02", bis="2026-05-03")
-
-    assert gesehen == [(ids[1], ids[2])]
-    assert ctx.antworten == [chronik.ERZAEHLT.format(von="2026-05-02", bis="2026-05-03")]
-
-
-def test_ein_datum_ohne_sitzung_bekommt_eine_ehrliche_auskunft(stelle, bot):
-    _config, unsere = stelle
-    sitzungen_anlegen(unsere, "2026-05-01", "2026-05-02")
-
-    ctx = nacherzaehlen_fahren(bot, unsere, von="2026-09-30")
-
-    (antwort,) = ctx.antworten
-    assert "2026-09-30" in antwort
-    assert "2026-05-01" in antwort and "2026-05-02" in antwort
-    assert jobs.latest(unsere, jobs.NACHERZAEHLUNG) is None
-
-
-def test_ohne_geschriebene_sitzung_gibt_es_nichts_nachzuerzaehlen(stelle, bot):
-    _config, unsere = stelle
-
-    ctx = nacherzaehlen_fahren(bot, unsere)
-
-    (antwort,) = ctx.antworten
-    assert chronik.OHNE_SITZUNGEN in antwort
-    assert jobs.latest(unsere, jobs.NACHERZAEHLUNG) is None
-
-
-def test_vertauschte_daten_nennt_die_antwort_in_gespielter_reihenfolge(stelle, bot):
-    """Wer die Daten verdreht tippt, bekommt sie geordnet zurück — sonst log die Antwort.
-
-    Geordnet wird ohnehin, aber erst beim Holen der Sitzungen; die Antwort im Kanal nennt
-    die beiden Eckpunkte so, wie sie hier herauskommen.
-    """
-    _config, unsere = stelle
-    sitzungen_anlegen(unsere, "2026-05-01", "2026-05-02")
-
-    ctx = nacherzaehlen_fahren(bot, unsere, von="2026-05-02", bis="2026-05-01")
-
-    (antwort, *_) = ctx.antworten
-    assert antwort.index("2026-05-01") < antwort.index("2026-05-02")
-
-
-def test_ein_zweites_nacherzaehlen_stoesst_keinen_zweiten_lauf_an(stelle, bot, monkeypatch):
-    config, unsere = stelle
-    sitzungen_anlegen(unsere, "2026-05-01")
-    monkeypatch.setattr(jobs, "running", lambda eine, kind=None: True)
-
-    meldung = chronik.nacherzaehlung_starten(
-        config, unsere, "", "", "910", melden=lambda text: None
-    )
-
-    assert meldung == chronik.ERZAEHLT_SCHON
-
-
-def test_die_ruhende_runde_erzaehlt_nichts_mehr_nach(stelle, bot):
-    """Dieselbe Sperre wie vor jeder anderen Stufe — sie bekommt nichts und legt nichts ab."""
-    config, unsere = stelle
-    sitzungen_anlegen(unsere, "2026-05-01")
-    lebenszyklus.sperren(config.database_path, GILDE)
-
-    ctx = nacherzaehlen_fahren(bot, unsere)
-
-    (antwort,) = ctx.antworten
-    assert "Diese Runde ruht" in antwort
-    assert jobs.latest(unsere, jobs.NACHERZAEHLUNG) is None
-
-
 # -- Nutzersprache, auch für den Bot ----------------------------------------------------
 
 
@@ -1941,20 +1823,20 @@ def test_keine_systemsprache_in_dem_was_der_bot_sagt():
 
 def test_die_ansage_der_sitzung_sagt_was_zu_tun_ist(stelle, bot):
     _ctx, kanal = sitzung_starten(bot)
-    for satzteil in ("jede Nachricht", "/szene", "/chronik fertig", "Sprachnachricht"):
+    for satzteil in ("jede Nachricht", "/session scene", "/session done", "Sprachnachricht"):
         assert satzteil in kanal.gesendet[0]
 
 
 def test_die_hilfe_nennt_auch_den_weg_in_die_sitzung(stelle, bot):
     ctx = FakeCtx()
 
-    asyncio.run(bot.gruppen[gateway.GRUPPE].befehle["hilfe"](ctx))
+    asyncio.run(bot.gruppen[gateway.GRUPPE].befehle["help"](ctx))
 
-    # Geteilt seit `/aufnahme test`: Discords 2000 Zeichen sind erreicht, und was zählt,
+    # Geteilt seit `/session check`: Discords 2000 Zeichen sind erreicht, und was zählt,
     # ist die Hilfe als Ganzes — angehängt ergeben die Stücke wieder genau sie.
     antwort = "".join(ctx.antworten)
     assert antwort == gateway.HILFE
-    assert "/chronik start" in antwort and "/chronik fertig" in antwort
+    assert "/session start" in antwort and "/session done" in antwort
 
 
 # -- Der Kanal einer Runde schreibt nicht in die andere ---------------------------------
@@ -1976,7 +1858,7 @@ def test_ein_belegter_abgleich_schiebt_die_frist_des_gemerkten_passworts_nicht_w
     """Dieselbe Zusage wie beim Abschluss — der freistehende Abgleich ist der zweite Weg.
 
     Zwei Wege zum selben Merkzettel heißen zwei Gelegenheiten, die Frist aus #64 zu
-    verlängern. Was für ``/chronik fertig`` gilt, muss hier gelten, sonst wandert der
+    verlängern. Was für ``/session done`` gilt, muss hier gelten, sonst wandert der
     Fehler aus #100 einfach in den neuen Befehl.
     """
     _config, unsere = stelle
@@ -2037,218 +1919,10 @@ def test_ein_belegter_lauf_schiebt_die_frist_des_gemerkten_passworts_nicht_weite
     monkeypatch.setattr(jobs, "start", lambda *args, **kwargs: None)
 
     ctx = FakeCtx(kanal=types.SimpleNamespace(id=kanal.id))
-    asyncio.run(chronikbefehl(bot, "fertig")(ctx))
+    asyncio.run(chronikbefehl(bot, "done")(ctx))
 
     assert ctx.modale == [], "wer selbst hinterlegt hat, wird nicht noch einmal gefragt"
     assert zugang._gemerkt[unsere.id].ablauf == faellig
-
-
-# -- Ein vorhandenes Notizdokument einlesen ---------------------------------------------
-
-
-def einlesen_fahren(
-    bot, text=BEISPIEL, *, name="notizen.md", groesse=None, knopf=None, admin=True, am_knopf=None
-):
-    """``/chronik einlesen`` samt dem Knopf, der seit #169 davor steht.
-
-    ``knopf`` wählt, was danach geklickt wird — ``None`` heißt: gar nichts, und dann darf
-    auch nichts entstanden sein. ``admin`` gilt für den Befehl, ``am_knopf`` für den Klick
-    danach; getrennt, weil die Schranke seit #205 an beiden Stellen einzeln steht.
-    """
-    ctx = FakeCtx(admin=admin)
-    datei = FakeAnhang(name, inhalt=text.encode("utf-8"), groesse=groesse)
-    asyncio.run(chronikbefehl(bot, "einlesen")(ctx, datei))
-    klick = FakeInteraction(ctx.channel, admin=admin if am_knopf is None else am_knopf)
-    ansicht = ctx.ansichten[-1]
-    if knopf is not None and ansicht is not None:
-        asyncio.run(ansicht.items[0 if knopf == "ja" else 1].callback(klick))
-    return ctx, klick
-
-
-def abende(runde):
-    return [sitzung.played_on for sitzung in notes.sessions(runde)]
-
-
-def sitzung_vom(runde, datum):
-    return [sitzung for sitzung in notes.sessions(runde) if sitzung.played_on == datum][0].id
-
-
-def test_einlesen_zeigt_erst_die_vorschau_und_legt_nichts_an(stelle, bot):
-    """Ein Dokument kann fünfzehn Abende tragen — ein Fehlgriff legte fünfzehn Sitzungen an."""
-    _config, unsere = stelle
-
-    ctx, _klick = einlesen_fahren(bot)
-
-    (vorschau,) = ctx.antworten
-    for datum in ("2026-03-12", "2026-03-26", "2026-04-09"):
-        assert datum in vorschau
-    assert "Ankunft in Hohenfels" in vorschau
-    assert chronik.DOKUMENT_FRAGE in vorschau
-    assert [knopf.label for knopf in ctx.ansichten[-1].items] == [
-        chronik.DOKUMENT_JA,
-        chronik.DOKUMENT_NEIN,
-    ]
-    # Und bis hierher steht keine Zeile in der Chronik.
-    assert notes.sessions(unsere) == ()
-
-
-def test_erst_der_knopf_legt_die_sitzungen_an(stelle, bot):
-    _config, unsere = stelle
-
-    _ctx, klick = einlesen_fahren(bot, knopf="ja")
-
-    assert abende(unsere) == ["2026-04-09", "2026-03-26", "2026-03-12"]
-    (bearbeitet,) = klick.response.bearbeitet
-    assert bearbeitet["content"] == chronik.DOKUMENT_ANGELEGT.format(sitzungen="3 Sitzungen")
-    assert bearbeitet["view"] is None
-    erste = notes.session(unsere, sitzung_vom(unsere, "2026-03-12"))
-    assert [szene.title for szene in erste.scenes] == [
-        "Der Regen und der Wirt",
-        "Das Gespräch am Kamin",
-    ]
-
-
-def test_ein_dokument_einzulesen_ist_kein_befehl_fuer_jedes_mitglied(stelle, bot):
-    """Dieselbe Schranke wie vor dem Löschen, und an beiden Stellen einzeln gerechnet.
-
-    Es geht nicht um die Menge: wer die Vergangenheit einer Kampagne umschreibt, greift so
-    tief ein wie wer sie fortnimmt. Die Vorschau fängt das Versehen ab, nicht die Absicht —
-    stünde die Schranke nur am Befehl, klickte am Ende irgendwer die Frage weg.
-    """
-    _config, unsere = stelle
-
-    ctx, _klick = einlesen_fahren(bot, admin=False)
-    assert ctx.antworten == [einrichten.NUR_ADMIN]
-    assert ctx.ansichten == [None]
-    assert notes.sessions(unsere) == ()
-
-    _erlaubt, am_knopf = einlesen_fahren(bot, knopf="ja", am_knopf=False)
-    assert am_knopf.response.bearbeitet[-1]["content"] == einrichten.NUR_ADMIN
-    assert notes.sessions(unsere) == ()
-
-
-def test_abbrechen_legt_nichts_an(stelle, bot):
-    _config, unsere = stelle
-
-    _ctx, klick = einlesen_fahren(bot, knopf="nein")
-
-    assert notes.sessions(unsere) == ()
-    assert klick.response.bearbeitet[0]["content"] == chronik.DOKUMENT_ABGEBROCHEN
-
-
-def test_dieselbe_datei_zweimal_verdoppelt_den_bestand_nicht(stelle, bot):
-    _config, unsere = stelle
-    einlesen_fahren(bot, knopf="ja")
-
-    ctx, _klick = einlesen_fahren(bot, knopf="ja")
-
-    assert abende(unsere) == ["2026-04-09", "2026-03-26", "2026-03-12"]
-    (antwort,) = ctx.antworten
-    assert "2026-03-12" in antwort and chronik.DOKUMENT_FRAGE not in antwort
-    assert ctx.ansichten == [None], "ohne neuen Abend gibt es nichts zu bestätigen"
-
-
-def test_zwei_offene_vorschauen_legen_denselben_abend_nicht_zweimal_an(stelle, bot):
-    """Der alltägliche Griff: die Vorschau ist ephemer, also ruft man den Befehl noch einmal.
-
-    Beide Vorschauen halten dieselben eingefrorenen Abende; wer beide bestätigt, hätte jeden
-    Abend zweimal. Eine einzelne Sitzung wieder loszuwerden gibt es nicht — ``/chronik
-    loeschen`` nimmt die ganze Runde. Geprüft wird deshalb beim Schreiben, nicht beim Zeigen.
-    """
-    _config, unsere = stelle
-    erste, _ = einlesen_fahren(bot)
-    zweite, _ = einlesen_fahren(bot)
-
-    zuerst = FakeInteraction(erste.channel)
-    danach = FakeInteraction(zweite.channel)
-    asyncio.run(erste.ansichten[-1].items[0].callback(zuerst))
-    asyncio.run(zweite.ansichten[-1].items[0].callback(danach))
-
-    assert abende(unsere) == ["2026-04-09", "2026-03-26", "2026-03-12"]
-    assert zuerst.response.bearbeitet[0]["content"] == chronik.DOKUMENT_ANGELEGT.format(
-        sitzungen="3 Sitzungen"
-    )
-    assert danach.response.bearbeitet[0]["content"] == chronik.DOKUMENT_NICHTS_NEU
-
-
-def test_derselbe_knopf_zweimal_gedrueckt_schreibt_nur_einmal(stelle, bot):
-    """Ein Doppelklick ist kein zweiter Auftrag — und die Ansicht nimmt danach nichts mehr an."""
-    _config, unsere = stelle
-    ctx, _klick = einlesen_fahren(bot, knopf="ja")
-    ansicht = ctx.ansichten[-1]
-
-    nochmal = FakeInteraction(ctx.channel)
-    asyncio.run(ansicht.items[0].callback(nochmal))
-
-    assert abende(unsere) == ["2026-04-09", "2026-03-26", "2026-03-12"]
-    assert nochmal.response.bearbeitet[0]["content"] == chronik.DOKUMENT_NICHTS_NEU
-    assert ansicht.gestoppt, "nach dem Schreiben stellt Discord der Ansicht nichts mehr zu"
-
-
-def test_ein_dokument_ohne_datum_wird_nicht_geraten(stelle, bot):
-    _config, unsere = stelle
-
-    ctx, _klick = einlesen_fahren(bot, "# Die Sturmklingen\n\n## Der Keller\n\nEs war dunkel.\n")
-
-    (antwort,) = ctx.antworten
-    assert "12.03.2026" in antwort and "2026-03-12" in antwort
-    assert notes.sessions(unsere) == ()
-    assert ctx.ansichten == [None]
-
-
-def test_abende_ohne_text_meldet_die_vorschau_als_uebersprungen(stelle, bot):
-    """#172: was nicht angelegt wird, muss dastehen — sonst hält die Runde es für abgelegt."""
-    _config, unsere = stelle
-
-    ctx, _klick = einlesen_fahren(bot, "## 01.01.2026 — Leer\n\n## 02.01.2026 — Auch leer\n")
-
-    (antwort,) = ctx.antworten
-    assert "»01.01.2026 — Leer«" in antwort and "»02.01.2026 — Auch leer«" in antwort
-    assert chronik.DOKUMENT_NUR_OHNE_TEXT.format(name="notizen.md") in antwort
-    assert chronik.DOKUMENT_FRAGE not in antwort
-    assert ctx.ansichten == [None], "was nicht entsteht, hat nichts zu bestätigen"
-    assert notes.sessions(unsere) == ()
-
-
-def test_eine_zu_grosse_datei_bleibt_liegen(stelle, bot):
-    _config, unsere = stelle
-
-    ctx, _klick = einlesen_fahren(bot, groesse=dokument.MAX_BYTES + 1)
-
-    assert ctx.antworten == [
-        chronik.DOKUMENT_ZU_GROSS.format(
-            name="notizen.md", grenze=dokument.MAX_BYTES // (1024 * 1024)
-        )
-    ]
-    assert notes.sessions(unsere) == ()
-
-
-def test_was_kein_notizdokument_ist_wird_nicht_gelesen(stelle, bot):
-    """Abgewiesen, nicht gelesen — der Dateiname allein belegt das nicht, er steht überall."""
-    _config, unsere = stelle
-
-    ctx, _klick = einlesen_fahren(bot, name="weltkarte.png")
-
-    assert ctx.antworten == [
-        chronik.DOKUMENT_KEINE_DATEI.format(
-            name="weltkarte.png", endungen=", ".join(dokument.SUFFIXES)
-        )
-    ]
-    assert ctx.ansichten == [None], "was nicht gelesen wurde, hat nichts zu bestätigen"
-    assert notes.sessions(unsere) == ()
-
-
-def test_eine_gilde_ohne_runde_liest_nichts_ein(stelle, bot):
-    """Die Gilde bestimmt die Runde — auch hier gibt es keinen Rückfall auf »die erste«."""
-    _config, unsere = stelle
-    ctx = FakeCtx(guild_id=FREMDE_GILDE)
-
-    asyncio.run(
-        chronikbefehl(bot, "einlesen")(ctx, FakeAnhang("notizen.md", inhalt=BEISPIEL.encode()))
-    )
-
-    assert chronik.KEINE_RUNDE in ctx.antworten[0]
-    assert notes.sessions(unsere) == ()
 
 
 def test_ein_dokument_im_kanal_faellt_nicht_mehr_still_durch(stelle, bot):
@@ -2287,22 +1961,41 @@ def _verschriftetes_diktat(unsere, sitzung):
         scope.close()
 
 
+def _gelesen(text: str):
+    async def lesen() -> bytes:
+        return text.encode("utf-8")
+
+    return lesen
+
+
 async def _fertig_und_warten(bot, unsere, ctx):
-    await chronikbefehl(bot, "fertig")(ctx)
+    await chronikbefehl(bot, "done")(ctx)
     await _bis_der_lauf_durch_ist(unsere)
 
 
 def test_ein_zweiter_abschluss_loescht_das_eingelesene_nicht(stelle, bot):
     """Die Falle aus #169: ``merge`` verwirft vor jedem Lauf alles seiner Herkunft.
 
-    Trüge das Eingelesene die Herkunft des Transkripts, wäre es nach ``/chronik fertig``
+    Trüge das Eingelesene die Herkunft des Transkripts, wäre es nach ``/session done``
     fort — und anders als ein Transkript entsteht es nicht neu. Der Lauf läuft hier
     wirklich, zweimal, und mit einer verschrifteten Spur in der Sitzung: ohne sie kehrte
     ``merge.uebernehmen`` vorher um und der Test bliebe grün, egal was hier steht.
     """
     _config, unsere = stelle
     settings.save_foundry_quelle(unsere, settings.TESTWELT)
-    einlesen_fahren(bot, knopf="ja")
+    # Angelegt wird seit #272 unmittelbar: der Befehl ``/chronik einlesen`` ist fort, die
+    # Herkunft dahinter nicht — und genau um sie geht es hier.
+    vorschau = asyncio.run(
+        chronik.dokument_vorschau(
+            unsere,
+            chronik.Notizdatei(
+                filename="notizen.md",
+                size=len(BEISPIEL.encode("utf-8")),
+                lesen=_gelesen(BEISPIEL),
+            ),
+        )
+    )
+    chronik.dokument_anlegen(unsere, vorschau.abende)
     sitzung = notes.latest_session(unsere).id
     _verschriftetes_diktat(unsere, sitzung)
 
@@ -2576,7 +2269,7 @@ def test_der_strom_beginnt_mit_der_sitzung_und_endet_mit_ihr(stelle, bot, monkey
 
     _fenster, kanal = sitzung_starten(bot, passwort=PASSWORT)
     sitzung = chronik.sitzung_im_kanal(unsere, str(kanal.id))
-    asyncio.run(chronikbefehl(bot, "fertig")(FakeCtx(kanal=types.SimpleNamespace(id=kanal.id))))
+    asyncio.run(chronikbefehl(bot, "done")(FakeCtx(kanal=types.SimpleNamespace(id=kanal.id))))
 
     assert gestellt == [(unsere.id, sitzung)]
     assert abbestellt == [sitzung]

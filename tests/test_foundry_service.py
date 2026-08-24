@@ -154,7 +154,7 @@ def test_ohne_konfiguration_meldet_der_abgleich_das_verstaendlich(tmp_path):
     zustand = service.sync(leer, runde(leer), passwort=PASSWORT)
     assert zustand.stale
     assert "die Adresse und der Benutzer" in zustand.message
-    assert "`/setup`" in zustand.message
+    assert "`/chronicle setup`" in zustand.message
     assert "FOUNDRY_" not in zustand.message
 
 
@@ -557,7 +557,7 @@ class NurLesen:
 
 
 def strom(config, welt=None, *, gesehen=frozenset(), fehler=None):
-    """Ein Blick des Stroms, mit hinterlegtem Passwort wie nach ``/chronik start``."""
+    """Ein Blick des Stroms, mit hinterlegtem Passwort wie nach ``/session start``."""
     zugang.merken(runde(config), PASSWORT, wer="7001")
     return service.beobachten(config, runde(config), gesehen=gesehen, client=NurLesen(welt, fehler))
 

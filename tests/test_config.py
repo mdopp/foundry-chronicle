@@ -8,7 +8,7 @@ VOLLSTAENDIG = {
     "DISCORD_BOT_TOKEN": "bot-token-aus-der-umgebung",
     "OLLAMA_URL": "http://ollama.example:11434",
     "OLLAMA_MODEL": "chronist-modell",
-    "CHRONICLE_DATA_DIR": "/srv/chronik",
+    "CHRONICLE_DATA_DIR": "/srv/chronicle",
 }
 
 
@@ -17,7 +17,7 @@ def test_liest_alles_aus_der_umgebung():
     assert config.foundry_url == "https://foundry.example"
     assert config.foundry_user == "chronist"
     assert config.discord_bot_token == "bot-token-aus-der-umgebung"
-    assert config.data_dir == Path("/srv/chronik")
+    assert config.data_dir == Path("/srv/chronicle")
     assert config.foundry_configured
     assert config.discord_configured
 
@@ -127,7 +127,7 @@ def test_die_haustuer_hinterlaesst_keinen_schalter():
     gesetzt = {
         "CHRONICLE_REQUIRE_REMOTE_USER": "1",
         "CHRONICLE_TRUSTED_PROXIES": "192.168.178.100",
-        "CHRONICLE_PUBLIC_URL": "https://chronik.example",
+        "CHRONICLE_PUBLIC_URL": "https://chronicle.example",
     }
     config = Config.from_env(gesetzt)
     for feld in ("require_remote_user", "trusted_proxies", "public_url"):

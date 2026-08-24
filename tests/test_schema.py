@@ -243,7 +243,7 @@ def test_eine_sitzung_von_vor_der_kennung_bekommt_die_spalte_und_ihren_wert(tmp_
     """``CREATE TABLE IF NOT EXISTS`` erreicht eine bestehende Tabelle nicht — ohne den
     Eintrag in ``NACHGETRAGEN`` stünde die laufende Instanz nach dem Aufspielen ohne die
     Spalte da, und schon ``notes.sessions`` fiele über sie. Der Wert muss mitkommen: eine
-    Sitzung ohne Kennung ist über ``/chronik sitzung-loeschen`` nicht mehr erreichbar.
+    Sitzung ohne Kennung ist über ``/chronicle sitzung-loeschen`` nicht mehr erreichbar.
     """
     pfad = tmp_path / "alt.sqlite3"
     verbindung = db.connect(pfad)

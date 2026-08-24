@@ -32,7 +32,7 @@ Drei Sätze tragen alles Weitere:
 
 Die Herkunft der entstehenden Notizen ist **nicht** die des Transkripts: ``merge`` verwirft
 vor jedem Lauf alles Abgeleitete seiner Herkunft und legt es neu. Ein eingelesenes Dokument
-ist nicht wiederherstellbar — der zweite ``/chronik fertig`` löschte es. Sie trägt
+ist nicht wiederherstellbar — der zweite ``/session done`` löschte es. Sie trägt
 stattdessen den **Abdruck des Abends**, aus dem sie stammt: derselbe Abschnitt, zweimal
 hochgeladen, ist daran wiederzuerkennen und wird nicht ein zweites Mal angelegt. Am Abend
 und nicht am ganzen Dokument, weil der wahrscheinliche zweite Anlauf ein **gewachsenes**

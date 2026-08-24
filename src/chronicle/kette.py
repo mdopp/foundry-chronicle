@@ -1,7 +1,7 @@
 """Die Reihenfolge, in der aus Material eine Chronik wird — an einer Stelle.
 
 Verschriften, übernehmen, komponieren, zurückblicken, zustellen, anhängen, vorschlagen:
-diese sieben Schritte standen dreimal im Baum — hinter ``/chronik fertig``, im Nachtlauf
+diese sieben Schritte standen dreimal im Baum — hinter ``/session done``, im Nachtlauf
 und im Stapelaufruf — und die drei liefen auseinander (#221). Zwei von ihnen fehlte die
 **Übernahme**, und damit erreichte kein gesprochenes Wort ihre Chronik: die Komposition
 liest Notizen, und ein Transkript, das erst danach zur Notiz würde, käme eine Chronik zu

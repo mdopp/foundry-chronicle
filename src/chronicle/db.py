@@ -285,7 +285,7 @@ def _sitzungskennung_nachtragen(connection: sqlite3.Connection) -> None:
     Anders als bei ``runde`` ohne Umbau der Tabelle: die Spalte darf leer bleiben, weil
     ``notes.gemeinte_sitzung`` eine leere Kennung ausdrücklich abweist statt sie als
     Übereinstimmung zu lesen. Ein Bestand aus der Zeit davor stünde damit aber ohne
-    Wiedererkennung da, und ``/chronik sitzung-loeschen`` käme an ihn nicht heran.
+    Wiedererkennung da, und ``/chronicle sitzung-loeschen`` käme an ihn nicht heran.
     """
     # Auch der leere String: ``gemeinte_sitzung`` weist ihn ab, eine solche Zeile wäre also
     # nie wieder löschbar und bekäme »schon fort« für einen Abend, der noch dasteht.
