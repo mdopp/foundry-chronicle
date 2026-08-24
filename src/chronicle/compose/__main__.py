@@ -1,6 +1,6 @@
 """python -m chronicle.compose <sitzung> [<runde>] — Chronik, Rückblick, Zustellung, im Stapel.
 
-Gegangen wird ``kette.schreiben``, dieselbe Reihenfolge wie hinter ``/chronik fertig`` und
+Gegangen wird ``kette.schreiben``, dieselbe Reihenfolge wie hinter ``/session done`` und
 im Nachtlauf; hier steht nur, was gedruckt wird. Bis #221 stand sie hier ein zweites Mal
 und ohne die Übernahme der Transkripte — dieser Stapel schrieb damit eine Chronik ohne
 gesprochenes Wort.

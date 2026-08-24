@@ -195,8 +195,8 @@ class DiscordClient:
     def guild_channel_id(self, guild_id: str, kanal: str) -> str | None:
         """Der Textkanal **einer** Gilde — angegeben als Id oder als Name.
 
-        Zwei Formen, weil die Einstellung zwei Herkünfte hat: ``/setup`` schreibt die Id des
-        gewählten Kanals, ältere Runden und ``DISCORD_RECAP_CHANNEL`` tragen den Namen.
+        Zwei Formen, weil die Einstellung zwei Herkünfte hat: ``/chronicle setup`` schreibt
+        die Id des gewählten Kanals, ältere Runden und ``DISCORD_RECAP_CHANNEL`` tragen den Namen.
 
         Gesucht wird nur in dieser einen Gilde, und das ist der Punkt: »chronik« heißt in
         jeder zweiten Gilde ein Kanal, und eine Id aus einer fremden ist hier so wenig

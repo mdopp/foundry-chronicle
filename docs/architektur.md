@@ -8,7 +8,7 @@ Betreiber-Seite ist mit #231 gefallen, der Dienst ist ein einzelner Bot-Prozess.
 
 Der Lebenszyklus einer Runde hängt an der Gilde (#68, `chronicle.lebenszyklus`): Beim
 Betreten sagt der Bot einmal, was er tut und **dass der Betreiber der Box alles lesen
-kann**; `/setup` beansprucht die Runde für den Server oder legt sie an. Discord spielt das
+kann**; `/chronicle setup` beansprucht die Runde für den Server oder legt sie an. Discord spielt das
 Betreten nach einer Wiederverbindung nicht nach — fällt die Autorisierung in einen
 Neustart, holt `on_ready` den Satz nach, **einmal je Gilde** (#270; der Vermerk steht unter
 `begruesst:<gilde>` in `meta`, weil eine Gilde ohne Runde keine eigene Zeile hat). Verlässt der Bot
@@ -16,8 +16,8 @@ die Gilde, wird sie sofort gesperrt und nach 30 Tagen vollständig gelöscht —
 eingeschlossen. Gesperrt heißt in jedem Faden: der nächtliche Lauf überspringt sie,
 Verschriften, Komponieren und Foundry-Abgleich weigern sich (`lebenszyklus.ruht`), und das
 flüchtige Foundry-Passwort ist mit dem Rauswurf vergessen. Eine Wiedereinladung innerhalb
-der Frist stellt sie her, danach wird gelöscht statt wiederbelebt; `/chronik loeschen`
-zieht die Löschung nach Rückfrage vor. Beide Befehle verlangen ein Discord-Recht — `/setup`
+der Frist stellt sie her, danach wird gelöscht statt wiederbelebt; `/chronicle delete`
+zieht die Löschung nach Rückfrage vor. Beide Befehle verlangen ein Discord-Recht — `/chronicle setup`
 die Serververwaltung, das Löschen die Administration.
 
 **Über der Runde steht niemand** (#90). Es gibt keine Instanz-Ebene, über die der Betreiber
@@ -123,7 +123,7 @@ schlicht den Audio-Zweig — es gibt keine zweite Pipeline zu pflegen. Das Dikta
 eine Spur, Ergebnis wird zu Notizen.
 
 Den Übergang vom Transkript zur Notiz geht seit #140 der Abschluss selbst
-(Betreiber-Entscheidung 2026-08-12): `/chronik fertig` legt das zusammengeführte
+(Betreiber-Entscheidung 2026-08-12): `/session done` legt das zusammengeführte
 Gespräch in die Szenen, und zwar über die **Sitzungsuhr** — jede Äußerung fällt in die
 Szene ihres Startzeitpunkts. Voraussetzung ist, dass der Nullpunkt dieser Uhr in
 `recording.started_at` steht; er wird beim Start des Mitschnitts festgehalten, nie
@@ -168,7 +168,7 @@ frühere Fassung sagte, eingeengt sei nur der Weg in den Kanal; das war ungenau 
 **Und der Abschluss trägt nach, was der Strom nicht geholt hat** (#219). Der Strom war
 lange der einzige Schreiber von `scene_foundry_message` — wer beim Sitzungsstart kein
 Passwort hinterlegte, spielte einen Abend, an dessen Ende der Abgleich zwar das ganze
-Chat-Log holte, die Chronik aber keine einzige Zahl trug. Seither hängt `/chronik fertig`
+Chat-Log holte, die Chronik aber keine einzige Zahl trug. Seither hängt `/session done`
 die Würfe dieses Abends über ihre Zeitstempel an die Szenen: durch **denselben** engeren
 Filter wie der Strom, ohne anzufassen, was schon hängt, und ohne Auffanglinie — ein Wurf,
 der in keine Szene dieser Sitzung fällt, wird nicht untergebracht, sondern gar nicht. Das
@@ -252,7 +252,7 @@ passiert ist** — und Teile davon nacherzählen können.
   Reihenfolgen muss danebengehen können, also gilt die, deren Fehlerfall **Schweigen** ist
   und keine Lüge im Kanal. Kommt der Vermerk nicht hinaus, wird die Zuordnung
   zurückgenommen — und zwar **nur, wenn dort noch genau das steht, was eben geschrieben
-  wurde**: dazwischen liegt ein Gang ans Netz, und wer in diesem Fenster über `/zuordnung`
+  wurde**: dazwischen liegt ein Gang ans Netz, und wer in diesem Fenster über `/chronicle zuordnung`
   dieselbe Person umhängt, verlöre seine Entscheidung sonst still. **Scheitert auch die
   Rücknahme, steht eine wahre Zuordnung ohne Ansage da** — selten, Discord muss zweimal
   versagen, während die Datenbank arbeitet; der Fehlerfall ist Schweigen statt einer Lüge,
@@ -268,7 +268,7 @@ passiert ist** — und Teile davon nacherzählen können.
   Über Namen sagt er **nichts**: ins Menü führt auch die Mehrdeutigkeit, und dort ist der
   Name gerade derselbe. Anders als beim 1:1-Vermerk ist der Weg in den Kanal dort keine
   Bedingung: dort entscheidet niemand, hier hat die Person selbst geantwortet.
-- **Korrigiert wird in `/zuordnung`, und nur dort darf ein Konto umgehängt werden.** Der
+- **Korrigiert wird in `/chronicle zuordnung`, und nur dort darf ein Konto umgehängt werden.** Der
   Fall ist echt: benennt sich Brok in »Mira« um, während die echte Mira »Mira am Handy«
   heißt, bekommt Brok beim Betreten Miras Konto. Im **Zwiegespräch** geht das Umhängen
   nicht: dort sitzt eine Person allein vor einer Liste, niemand sieht zu, und ein
@@ -277,13 +277,13 @@ passiert ist** — und Teile davon nacherzählen können.
   Konto frei.
 - **Die Übernahme wird gesagt, nicht bloß getan.** Sie ist der Schritt mit der größten
   Folge und war der stillste: die Antwort auf den Klick sieht nur, wer geklickt hat, und in
-  der Zuordnung bleibt danach genau eine Zeile stehen. Dass `/zuordnung` die Runde
+  der Zuordnung bleibt danach genau eine Zeile stehen. Dass `/chronicle zuordnung` die Runde
   nebeneinander zeigt, trägt das **nicht** — die Ansicht reicht bis `PRO_SEITE`, und ab der
   sechsten Person steht die Vorbesitzerin weder vorher noch nachher darin. Also ein
   **Vermerk im Sitzungskanal**, der beide nennt, und eine **Nachricht an die Vorbesitzerin**.
   Der Kanal ist der belastbare Weg; ein geschlossenes Postfach wird protokolliert und verwirft
   die Übernahme nicht.
-- **`/zuordnung` kennt keinen `_wer`-Abgleich** — jedes Mitglied handelt in jeder Zeile.
+- **`/chronicle zuordnung` kennt keinen `_wer`-Abgleich** — jedes Mitglied handelt in jeder Zeile.
   Das ist so gewollt: nach #62 entscheiden Discords Kanal- und Rollenrechte, wer den Befehl
   überhaupt sieht, und ein zweites Rollenmodell daneben gibt es für Spielinhalte nicht. Seit
   dem Umhängen ist es tragend und steht deshalb ausgeschrieben da statt vorausgesetzt. Beim
@@ -300,7 +300,7 @@ passiert ist** — und Teile davon nacherzählen können.
 - Der Stapel zeigt **ehrlichen Status statt Fortschritt**: „läuft im nächsten Stapel,
   Ergebnis morgen früh" — kein Balken, der Echtzeit vortäuscht, die es nicht gibt.
 - **Den Stapel stößt der Bot-Prozess an** (#229), in einem Faden neben der
-  Gateway-Verbindung, zu einer Uhrzeit aus `/setup`. Kein zweiter Prozess: ein Lauf ist
+  Gateway-Verbindung, zu einer Uhrzeit aus `/chronicle setup`. Kein zweiter Prozess: ein Lauf ist
   eine Zeile in der `job`-Tabelle, und deren Absturzerkennung trägt nur, solange genau
   einer solche Zeilen anlegt. Ohne Bot-Token verbindet er sich zwar nicht, bleibt aber
   liegen und antwortet weiter am Gate — dann gibt es allerdings auch keinen Eingang, für

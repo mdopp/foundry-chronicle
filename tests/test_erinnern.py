@@ -84,6 +84,11 @@ class FakeCtx:
         self.ansichten.append(view)
         self.fluechtig.append(ephemeral)
 
+    # Die Nachfrage zum Register geht seit #272 nicht mehr als Antwort auf einen Befehl
+    # hinaus, sondern in den Kanal des Abends — derselbe Doppelgänger tut beides.
+    async def send(self, text=None, **rest):
+        await self.respond(text, **rest)
+
 
 class FakeInteraction:
     def __init__(self, *, guild_id=GILDE):
@@ -284,11 +289,17 @@ def aufgenommen(runde, sitzung, *mitglieder):
 
 
 def befehl(bot, name):
-    return bot.befehle[name]
+    return bot.gruppen[gateway.GRUPPE_CHRONIK].befehle[name]
 
 
-def registerbefehl(bot, name):
-    return bot.gruppen[gateway.GRUPPE_REGISTER].befehle[name]
+def registerfrage(stelle, ziel):
+    """Was bis #272 ``/register offen`` war: die Frage stellt jetzt der Bot von selbst.
+
+    Sie hängt am Ende des Laufs und geht in den Kanal des Abends — der Befehl davor
+    wartete darauf, dass jemand ihn kennt, und am 2026-08-18 kannte ihn niemand.
+    """
+    config, unsere = stelle
+    asyncio.run(gateway._register_nachfragen(config, unsere, ziel))
 
 
 def knoepfe(view):
@@ -316,20 +327,27 @@ def waehlen(view, user_id, wert):
 
 
 def test_der_bot_bringt_die_erinnern_befehle_mit(bot):
-    assert {gateway.BEFEHL_SUCHE, gateway.BEFEHL_WER, gateway.BEFEHL_ZUORDNUNG} <= set(bot.befehle)
-    assert set(bot.gruppen[gateway.GRUPPE_REGISTER].befehle) == {"offen"}
+    unter_chronicle = set(bot.gruppen[gateway.GRUPPE_CHRONIK].befehle)
+
+    assert {gateway.BEFEHL_SUCHE, gateway.BEFEHL_WER, "zuordnung"} <= unter_chronicle
+    # `/register offen` ist fort: die Vorschläge kommen seit #272 als Nachfrage des Bots.
+    assert "register" not in bot.gruppen
 
 
 def test_die_hilfe_nennt_die_wege_zum_erinnern(bot):
     ctx = FakeCtx()
 
-    asyncio.run(bot.gruppen[gateway.GRUPPE].befehle["hilfe"](ctx))
+    asyncio.run(bot.gruppen[gateway.GRUPPE].befehle["help"](ctx))
 
-    # Geteilt seit `/aufnahme test` — gelesen wird die Hilfe als Ganzes.
+    # Geteilt seit `/session check` — gelesen wird die Hilfe als Ganzes.
     antwort = "".join(ctx.antworten)
     assert antwort == gateway.HILFE
-    for satzteil in ("/suche", "/wer", "/register offen", "/zuordnung"):
+    for satzteil in ("/chronicle search", "/chronicle who"):
         assert satzteil in antwort
+    # Zuordnung und Registervorschläge stehen nicht mehr darin: die Frage danach stellt
+    # der Bot von selbst (#272).
+    for fort in ("/register offen", "/chronicle zuordnung"):
+        assert fort not in antwort
 
 
 def test_ohne_runde_fuer_diesen_server_wird_nichts_gesucht(stelle, bot):
@@ -503,13 +521,60 @@ def test_ein_vorschlag_ist_noch_kein_registereintrag(stelle, bot):
 # -- Bestätigen per Knopf ----------------------------------------------------------------
 
 
-def test_ohne_offene_vorschlaege_gibt_es_nichts_zu_entscheiden(stelle, bot):
+def test_der_lauf_zieht_die_frage_hinter_seine_meldung(stelle, bot):
+    """Die Nachfrage hängt am **Ende des Laufs** und nicht mehr an einem Befehl (#272).
+
+    Am 2026-08-18 warteten zwölf Vorschläge darauf, dass jemand ``/register offen`` kennt.
+    Der Melder des Abschlusses stellt sie jetzt selbst — im Kanal des Abends, hinter dem
+    Satz, mit dem sich der Lauf ohnehin meldet.
+    """
+    config, unsere = stelle
+    sitzung = sitzung_mit_notiz(unsere)
+    eintrag_anlegen(unsere, sitzung, kind=register.FIGUR, name="Joras", satz="Ein Söldner.")
+    ziel = FakeCtx()
+
+    async def ablauf():
+        gateway._melder_mit_register(config, unsere, ziel)("Die Chronik steht.")
+        for _ in range(100):
+            await asyncio.sleep(0)
+            if len(ziel.antworten) > 1:
+                return
+
+    asyncio.run(ablauf())
+
+    assert ziel.antworten[0] == "Die Chronik steht."
+    assert [teil.label for teil in ziel.ansichten[-1].items] == [
+        "Joras",
+        "Figur",
+        "Ort",
+        "Faden",
+        "Nein",
+    ]
+
+
+def test_ohne_kanal_bleibt_der_lauf_stumm_statt_zu_scheitern(stelle):
+    """Der Abschluss von selbst kennt keinen Aufrufer, und der Kanal kann fortgeräumt sein."""
+    config, unsere = stelle
+
+    async def ablauf():
+        gateway._melder_mit_register(config, unsere, None)("Die Chronik steht.")
+
+    asyncio.run(ablauf())
+
+
+def test_ohne_offene_vorschlaege_bleibt_es_still(stelle, bot):
+    """Kein »nichts zu tun« nach jedem Abend (#272).
+
+    Solange es ein Befehl war, gehörte die Antwort dazu: wer fragt, bekommt eine. Jetzt
+    fragt der Bot von selbst — und eine Meldung, die nach jeder Sitzung dasselbe Nichts
+    sagt, ist genau das Rauschen, wegen dem eine Runde aufhört hinzusehen.
+    """
     ctx = FakeCtx()
 
-    asyncio.run(registerbefehl(bot, "offen")(ctx))
+    registerfrage(stelle, ctx)
 
-    assert ctx.antworten == [erinnern.NICHTS_OFFEN]
-    assert ctx.ansichten == [None]
+    assert ctx.antworten == []
+    assert ctx.ansichten == []
 
 
 def test_je_vorschlag_eine_reihe_aus_name_arten_und_nein(stelle, bot):
@@ -518,7 +583,7 @@ def test_je_vorschlag_eine_reihe_aus_name_arten_und_nein(stelle, bot):
     eintrag_anlegen(unsere, sitzung, kind=register.FIGUR, name="Joras", satz="Ein Söldner.")
     ctx = FakeCtx()
 
-    asyncio.run(registerbefehl(bot, "offen")(ctx))
+    registerfrage(stelle, ctx)
 
     (view,) = ctx.ansichten
     assert [teil.label for teil in view.items] == ["Joras", "Figur", "Ort", "Faden", "Nein"]
@@ -533,7 +598,7 @@ def test_ein_knopf_bestaetigt_den_eintrag_in_der_gewaehlten_art(stelle, bot):
         unsere, sitzung, kind=register.FIGUR, name="Joras", satz="Ein Söldner."
     )
     ctx = FakeCtx()
-    asyncio.run(registerbefehl(bot, "offen")(ctx))
+    registerfrage(stelle, ctx)
 
     interaktion = klicken(ctx.ansichten[0], eintrag, register.ORT)
 
@@ -553,7 +618,7 @@ def test_ein_nein_verwirft_den_vorschlag(stelle, bot):
         unsere, sitzung, kind=register.FIGUR, name="Joras", satz="Ein Söldner."
     )
     ctx = FakeCtx()
-    asyncio.run(registerbefehl(bot, "offen")(ctx))
+    registerfrage(stelle, ctx)
 
     interaktion = klicken(ctx.ansichten[0], eintrag, erinnern.VERWERFEN)
 
@@ -581,7 +646,7 @@ def test_derselbe_name_unter_zwei_arten_wird_nur_einmal_bestaetigt(stelle, bot):
         unsere, sitzung, kind=register.FADEN, name=name, satz="Die Schenke der Runde."
     )
     ctx = FakeCtx()
-    asyncio.run(registerbefehl(bot, "offen")(ctx))
+    registerfrage(stelle, ctx)
     view = ctx.ansichten[0]
 
     zuerst = klicken(view, ort, register.ORT)
@@ -607,7 +672,7 @@ def test_ein_vergebener_name_wird_nicht_als_bestaetigt_gemeldet(stelle, bot):
     eintrag_anlegen(unsere, sitzung, kind=register.ORT, name=name, satz="Die Schenke.")
     faden = eintrag_anlegen(unsere, sitzung, kind=register.FADEN, name=name, satz="Die Schenke.")
     ctx = FakeCtx()
-    asyncio.run(registerbefehl(bot, "offen")(ctx))
+    registerfrage(stelle, ctx)
 
     interaktion = klicken(ctx.ansichten[0], faden, register.ORT)
 
@@ -625,7 +690,7 @@ def test_der_zweite_klick_auf_denselben_knopf_aendert_nichts(stelle, bot):
         unsere, sitzung, kind=register.FIGUR, name="Joras", satz="Ein Söldner."
     )
     ctx = FakeCtx()
-    asyncio.run(registerbefehl(bot, "offen")(ctx))
+    registerfrage(stelle, ctx)
     view = ctx.ansichten[0]
     klicken(view, eintrag, register.FIGUR)
 
@@ -644,7 +709,7 @@ def test_eine_alte_ansicht_entscheidet_nicht_neu(stelle, bot):
         unsere, sitzung, kind=register.FIGUR, name="Joras", satz="Ein Söldner."
     )
     ctx = FakeCtx()
-    asyncio.run(registerbefehl(bot, "offen")(ctx))
+    registerfrage(stelle, ctx)
     alte = ctx.ansichten[0]
     register.decide(unsere, {eintrag: register.Entscheidung(ja=True, kind=register.FADEN)})
 
@@ -665,7 +730,7 @@ def test_eine_ansicht_ueberlebt_ihre_runde_nicht(stelle, bot):
         unsere, sitzung, kind=register.FIGUR, name="Joras", satz="Ein Söldner."
     )
     ctx = FakeCtx()
-    asyncio.run(registerbefehl(bot, "offen")(ctx))
+    registerfrage(stelle, ctx)
     alte = ctx.ansichten[0]
 
     lebenszyklus.loeschen(config, unsere)
@@ -687,7 +752,7 @@ def test_mehr_vorschlaege_als_auf_eine_ansicht_passen(stelle, bot):
         )
     ctx = FakeCtx()
 
-    asyncio.run(registerbefehl(bot, "offen")(ctx))
+    registerfrage(stelle, ctx)
 
     (embed,) = ctx.embeds
     assert embed.gebaut["footer"]["text"] == erinnern.OFFEN_WEITERE.format(anzahl=2)
@@ -701,7 +766,7 @@ def test_ein_stolpernder_knopf_antwortet_trotzdem(stelle, bot, monkeypatch):
         unsere, sitzung, kind=register.FIGUR, name="Joras", satz="Ein Söldner."
     )
     ctx = FakeCtx()
-    asyncio.run(registerbefehl(bot, "offen")(ctx))
+    registerfrage(stelle, ctx)
 
     def stolpert(*args, **kwargs):
         raise RuntimeError("irgendwas in der Bibliothek")
@@ -720,7 +785,7 @@ def test_ein_stolpernder_knopf_antwortet_trotzdem(stelle, bot, monkeypatch):
 def test_ohne_aufnahme_gibt_es_niemanden_zuzuordnen(stelle, bot):
     ctx = FakeCtx()
 
-    asyncio.run(befehl(bot, gateway.BEFEHL_ZUORDNUNG)(ctx))
+    asyncio.run(befehl(bot, "zuordnung")(ctx))
 
     assert ctx.antworten == [erinnern.NIEMAND_AUFGENOMMEN]
     assert ctx.ansichten == [None]
@@ -732,7 +797,7 @@ def test_ohne_foundry_spieler_gibt_es_nichts_zu_waehlen(stelle, bot):
     aufgenommen(unsere, sitzung, (MIRA, "Mira"))
     ctx = FakeCtx()
 
-    asyncio.run(befehl(bot, gateway.BEFEHL_ZUORDNUNG)(ctx))
+    asyncio.run(befehl(bot, "zuordnung")(ctx))
 
     assert ctx.antworten == [erinnern.KEINE_SPIELER]
 
@@ -744,7 +809,7 @@ def test_ein_menue_je_person_mit_den_spielern_der_runde(stelle, bot):
     welt_ablegen(unsere)
     ctx = FakeCtx()
 
-    asyncio.run(befehl(bot, gateway.BEFEHL_ZUORDNUNG)(ctx))
+    asyncio.run(befehl(bot, "zuordnung")(ctx))
 
     view = ctx.ansichten[0]
     assert len(view.items) == 2
@@ -759,7 +824,7 @@ def test_die_wahl_im_menue_schreibt_die_zuordnung_fest(stelle, bot):
     aufgenommen(unsere, sitzung, (MIRA, "Mira"))
     welt_ablegen(unsere)
     ctx = FakeCtx()
-    asyncio.run(befehl(bot, gateway.BEFEHL_ZUORDNUNG)(ctx))
+    asyncio.run(befehl(bot, "zuordnung")(ctx))
 
     interaktion = waehlen(ctx.ansichten[0], MIRA, "u-mira")
 
@@ -775,7 +840,7 @@ def test_niemand_nimmt_die_zuordnung_zurueck(stelle, bot):
     welt_ablegen(unsere)
     people.confirm(unsere, {MIRA: "u-mira"})
     ctx = FakeCtx()
-    asyncio.run(befehl(bot, gateway.BEFEHL_ZUORDNUNG)(ctx))
+    asyncio.run(befehl(bot, "zuordnung")(ctx))
 
     interaktion = waehlen(ctx.ansichten[0], MIRA, erinnern.KEINE)
 
@@ -797,7 +862,7 @@ def test_im_zuordnungsmenue_laesst_sich_ein_fremdes_konto_uebernehmen(stelle, bo
     welt_ablegen(unsere)
     people.confirm(unsere, {BROK: "u-mira"})
     ctx = FakeCtx()
-    asyncio.run(befehl(bot, gateway.BEFEHL_ZUORDNUNG)(ctx))
+    asyncio.run(befehl(bot, "zuordnung")(ctx))
 
     (menue,) = [teil for teil in ctx.ansichten[0].items if teil.custom_id.endswith(MIRA)]
     assert "u-mira" in [option.value for option in menue.options]
@@ -829,14 +894,14 @@ def uebernahme_buehne(unsere, bot):
 def test_eine_uebernahme_steht_im_sitzungskanal_und_bei_der_vorbesitzerin(stelle, bot):
     """Der Schritt mit der größten Folge war der stillste — jetzt hat er Tageslicht.
 
-    Getragen wird die Sichtbarkeit **nicht** von der Ansicht: ``/zuordnung`` zeigt nur
+    Getragen wird die Sichtbarkeit **nicht** von der Ansicht: ``/chronicle zuordnung`` zeigt nur
     ``PRO_SEITE`` Personen, und ab der sechsten steht die Vorbesitzerin weder vorher noch
     nachher darin. Also der Kanal der Sitzung für die Runde und ein Wort an sie selbst.
     """
     _config, unsere = stelle
     kanal, vorbesitzerin = uebernahme_buehne(unsere, bot)
     ctx = FakeCtx()
-    asyncio.run(befehl(bot, gateway.BEFEHL_ZUORDNUNG)(ctx))
+    asyncio.run(befehl(bot, "zuordnung")(ctx))
 
     waehlen(ctx.ansichten[0], MIRA, "u-mira")
 
@@ -847,7 +912,7 @@ def test_eine_uebernahme_steht_im_sitzungskanal_und_bei_der_vorbesitzerin(stelle
         erinnern.UEBERNAHME_ANGESAGT.format(runde=unsere.name, name="Mira am Handy", spieler="Mira")
     ]
     # In einer Direktnachricht steht sonst nirgends, welche Runde gemeint ist — eine
-    # Instanz trägt mehrere, und `/zuordnung` zeigt in keine bestimmte Gilde.
+    # Instanz trägt mehrere, und `/chronicle zuordnung` zeigt in keine bestimmte Gilde.
     assert unsere.name in vorbesitzerin.zwiegespraech[0][0]
 
 
@@ -860,7 +925,7 @@ def test_ein_geschlossenes_postfach_verwirft_die_uebernahme_nicht(stelle, bot, c
     kanal, vorbesitzerin = uebernahme_buehne(unsere, bot)
     vorbesitzerin.zwiegespraech_zu = True
     ctx = FakeCtx()
-    asyncio.run(befehl(bot, gateway.BEFEHL_ZUORDNUNG)(ctx))
+    asyncio.run(befehl(bot, "zuordnung")(ctx))
 
     with caplog.at_level(logging.WARNING):
         interaktion = waehlen(ctx.ansichten[0], MIRA, "u-mira")
@@ -891,7 +956,7 @@ def test_ohne_kanal_sagt_das_log_was_wirklich_geschah(stelle, bot, caplog):
     people.confirm(unsere, {BROK: "u-mira"})
     bot.nutzer[int(BROK)] = vorbesitzerin = FakeMitglied(int(BROK), "Mira")
     ctx = FakeCtx()
-    asyncio.run(befehl(bot, gateway.BEFEHL_ZUORDNUNG)(ctx))
+    asyncio.run(befehl(bot, "zuordnung")(ctx))
 
     with caplog.at_level(logging.WARNING):
         waehlen(ctx.ansichten[0], MIRA, "u-mira")
@@ -912,7 +977,7 @@ def test_ohne_uebernahme_wird_nichts_gesagt(stelle, bot):
     kanal = FakeTextkanal()
     bot.kanaele[int(SITZUNGSKANAL)] = kanal
     ctx = FakeCtx()
-    asyncio.run(befehl(bot, gateway.BEFEHL_ZUORDNUNG)(ctx))
+    asyncio.run(befehl(bot, "zuordnung")(ctx))
 
     waehlen(ctx.ansichten[0], MIRA, "u-mira")
 
@@ -926,7 +991,7 @@ def test_ein_verschwundener_spieler_aendert_nichts(stelle, bot):
     aufgenommen(unsere, sitzung, (MIRA, "Mira"))
     welt_ablegen(unsere)
     ctx = FakeCtx()
-    asyncio.run(befehl(bot, gateway.BEFEHL_ZUORDNUNG)(ctx))
+    asyncio.run(befehl(bot, "zuordnung")(ctx))
 
     waehlen(ctx.ansichten[0], MIRA, "u-fort")
 
@@ -942,7 +1007,7 @@ def test_mehr_konten_als_in_ein_menue_passen(stelle, bot):
     people.confirm(unsere, {MIRA: "u-mira"})
     ctx = FakeCtx()
 
-    asyncio.run(befehl(bot, gateway.BEFEHL_ZUORDNUNG)(ctx))
+    asyncio.run(befehl(bot, "zuordnung")(ctx))
 
     (menue,) = ctx.ansichten[0].items
     assert len(menue.options) == erinnern.OPTIONEN_GRENZE
@@ -961,7 +1026,7 @@ def test_ein_altes_zuordnungsmenue_ordnet_nicht_in_die_frische_runde(stelle, bot
     aufgenommen(unsere, sitzung, (MIRA, "Mira"))
     welt_ablegen(unsere)
     ctx = FakeCtx()
-    asyncio.run(befehl(bot, gateway.BEFEHL_ZUORDNUNG)(ctx))
+    asyncio.run(befehl(bot, "zuordnung")(ctx))
     alte = ctx.ansichten[0]
 
     lebenszyklus.loeschen(config, unsere)
@@ -1264,7 +1329,7 @@ def test_in_der_zuordnung_laesst_sich_ein_vergebenes_konto_umhaengen(stelle):
     """Der Fall aus der Prüfung: Brok heißt »Mira« und bekam Miras Konto beim Betreten.
 
     Die echte Mira muss es zurückholen können, und zwar in **einem** Schritt — sonst wäre
-    der Satz im Vermerk (»ändert `/zuordnung` es«) ein Verweis auf einen zugemauerten Weg.
+    der Satz im Vermerk (»ändert `/chronicle zuordnung` es«) ein Verweis auf einen zugemauerten Weg.
     """
     _config, unsere = stelle
     sitzung = sitzung_mit_notiz(unsere)
@@ -1333,7 +1398,7 @@ def test_die_zuordnung_der_fremden_runde_bleibt_unberuehrt(stelle, bot):
     fremde = erste_runde(config)
     assert fremde.id != unsere.id
     ctx = FakeCtx()
-    asyncio.run(befehl(bot, gateway.BEFEHL_ZUORDNUNG)(ctx))
+    asyncio.run(befehl(bot, "zuordnung")(ctx))
 
     waehlen(ctx.ansichten[0], MIRA, "u-mira")
 

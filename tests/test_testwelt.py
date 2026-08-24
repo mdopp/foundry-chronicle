@@ -277,7 +277,7 @@ def test_die_quelle_gehoert_der_runde_und_faellt_auf_den_server_zurueck(config):
 def test_jeder_abgleich_sagt_dass_die_welt_erfunden_ist(auf_testwelt):
     """Das Dauerband der Oberfläche ist mit #157 fort — der Satz steht jetzt an der Meldung.
 
-    Sie geht bei jedem ``/chronik fertig`` und bei jedem nächtlichen Lauf in den Kanal.
+    Sie geht bei jedem ``/session done`` und bei jedem nächtlichen Lauf in den Kanal.
     Wer erfundene Zahlen für echte hält, ist der teuerste Fehler dieses Schalters; dagegen
     hilft nur, es an jeder Stelle zu sagen, an der Zahlen entstehen.
     """
@@ -287,7 +287,7 @@ def test_jeder_abgleich_sagt_dass_die_welt_erfunden_ist(auf_testwelt):
 
 
 def test_die_wahl_selbst_sagt_es_auch(auf_testwelt):
-    """``/setup`` in Discord antwortet auf die Umstellung mit derselben Warnung."""
+    """``/chronicle setup`` in Discord antwortet auf die Umstellung mit derselben Warnung."""
     assert "erfunden" in einrichten.QUELLE_GESETZT_TESTWELT
     assert einrichten.QUELLE_TESTWELT.endswith("erfundene Zahlen")
 

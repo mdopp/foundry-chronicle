@@ -105,7 +105,7 @@ def test_der_durchstich_faehrt_ueber_die_bot_befehle_und_nicht_ueber_routen():
     Ohne diesen Nachzug prüfte ``/verify`` auf der Box nur noch ``/healthz``.
     """
     quelle = SKRIPT.read_text(encoding="utf-8")
-    for fort in ("/sitzungen/", "/szenen/", "/protokolle", "/suche?", "/einrichtung"):
+    for fort in ("/sitzungen/", "/szenen/", "/protokolle", "/chronicle search?", "/einrichtung"):
         assert fort not in quelle, fort
     assert "chronik.aufnehmen" in quelle
     assert "chronik.abschluss_starten" in quelle

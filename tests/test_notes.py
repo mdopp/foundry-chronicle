@@ -1,6 +1,6 @@
 """Der wöchentliche Handgriff: Sitzung öffnen, Szene beginnen, mitschreiben.
 
-Bedient wird das seit #157 in Discord (``/chronik start``, ``/szene``, eine Nachricht im
+Bedient wird das seit #157 in Discord (``/session start``, ``/session scene``, eine Nachricht im
 Thread — geprüft in ``test_chronik``). Was hier steht, ist die Schicht darunter: was
 ``notes`` zusagt, ganz gleich wer es anstößt.
 """

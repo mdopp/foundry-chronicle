@@ -1045,7 +1045,7 @@ def test_der_bot_token_gehoert_der_instanz_und_keiner_runde(zwei_runden):
     """
     config, a, b, _ids = zwei_runden
 
-    # ``/setup`` und die Kanalwahl sind die Wege, die einer Gilde offenstehen; der
+    # ``/chronicle setup`` und die Kanalwahl sind die Wege, die einer Gilde offenstehen; der
     # Schreibversuch mit der Runde als Absender ist der, den ein Formular ihr eröffnen
     # könnte.
     eingerichtet = bot_einrichten.einrichten(

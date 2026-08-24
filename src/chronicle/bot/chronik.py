@@ -1,9 +1,9 @@
 """Die Sitzung ist eine Spanne Zeit in einem Kanal.
 
-``/chronik start`` beginnt sie im Kanal, in dem der Befehl kam — seit #271 im Regelfall
+``/session start`` beginnt sie im Kanal, in dem der Befehl kam — seit #271 im Regelfall
 der Chat des Sprachkanals, an dem die Runde ohnehin sitzt, und kein eigener Thread mehr.
-Danach braucht es kein Formular — **jede Nachricht dort ist eine Notiz**, ``/szene`` zieht
-die Trennlinie zur nächsten, eine Sprachnachricht wird ein Diktat, und ``/chronik fertig``
+Danach braucht es kein Formular — **jede Nachricht dort ist eine Notiz**, ``/session scene`` zieht
+die Trennlinie zur nächsten, eine Sprachnachricht wird ein Diktat, und ``/session done``
 stößt den einen Lauf an, der aus alldem die Chronik macht. Wird der Sprachkanal leer,
 erkennt der Bot den Abschluss selbst.
 
@@ -54,15 +54,15 @@ from chronicle.runde import Runde
 
 logger = logging.getLogger(__name__)
 
-# Genannt wird das Recht und nicht nur der Befehl: ``/setup`` trägt
+# Genannt wird das Recht und nicht nur der Befehl: ``/chronicle setup`` trägt
 # ``default_member_permissions(manage_guild=True)``, und Discord blendet ihn damit für
 # jeden ohne »Server verwalten« vollständig aus (#270). Wer ihn nicht sieht, sucht sonst
 # nach einem Befehl, den es für ihn gar nicht gibt — ein Rat, den der Empfänger nicht
 # befolgen kann, ist schlimmer als keiner.
 KEINE_RUNDE = (
     "Für diesen Server ist noch keine Runde eingerichtet — ich lege hier nichts ab und "
-    "erfinde auch keine. **Jemand mit »Server verwalten«** muss einmal `/setup` aufrufen; "
-    "danach funktioniert alles andere."
+    "erfinde auch keine. **Jemand mit »Server verwalten«** muss einmal `/chronicle setup` "
+    "aufrufen; danach funktioniert alles andere."
 )
 
 # Die Runde ist noch da, sie schweigt nur. Das zu sagen ist wichtiger, als es zu erklären:
@@ -81,7 +81,7 @@ VERALTET = (
 )
 
 NUR_IN_DER_SITZUNG = (
-    "Das geht nur, solange hier eine Sitzung läuft. `/chronik start` beginnt eine — "
+    "Das geht nur, solange hier eine Sitzung läuft. `/session start` beginnt eine — "
     "danach zählt in diesem Kanal alles Getippte."
 )
 
@@ -89,22 +89,22 @@ NUR_IN_DER_SITZUNG = (
 # zwei Ziele für dieselbe getippte Zeile, und der Mitschnitt hinge an der falschen (#271).
 SITZUNG_LAEUFT_SCHON = (
     "Hier läuft schon eine Sitzung — zwei nebeneinander gibt es nicht, sonst wüsste "
-    "niemand, in welche das Getippte gehört. `/chronik fertig` schließt die laufende ab, "
-    "danach beginnt `/chronik start` die nächste."
+    "niemand, in welche das Getippte gehört. `/session done` schließt die laufende ab, "
+    "danach beginnt `/session start` die nächste."
 )
 
 # Was der Abschluss sagt, wenn wirklich keine Sitzung offen ist. Nur dann ist der Rat zu
-# `/chronik start` richtig: steht eine, legte er eine zweite an, und die Aufnahmen der
+# `/session start` richtig: steht eine, legte er eine zweite an, und die Aufnahmen der
 # ersten blieben liegen (#156).
 KEINE_SITZUNG = (
     "Hier läuft gerade keine Sitzung, ich habe also nichts abzuschließen. "
-    "`/chronik start` beginnt eine."
+    "`/session start` beginnt eine."
 )
 
 ANGELEGT = (
     "Die Sitzung läuft. Ab jetzt hier schreiben: **jede Nachricht wird eine Notiz**, eine "
-    "Sprachnachricht oder eine Audiodatei wird ein Diktat. `/szene <Name>` beginnt die "
-    "nächste Szene, `/chronik fertig` schließt die Sitzung ab — und wenn der Sprachkanal "
+    "Sprachnachricht oder eine Audiodatei wird ein Diktat. `/session scene <Name>` beginnt die "
+    "nächste Szene, `/session done` schließt die Sitzung ab — und wenn der Sprachkanal "
     "leer wird, mache ich das von selbst. Wer eine Nachricht ändert oder löscht, ändert "
     "oder löscht damit auch die Notiz."
 )
@@ -116,7 +116,7 @@ SITZUNG_STEHT = "Die Sitzung steht — ab jetzt zählt hier alles Getippte."
 # dem Aufrufer weiß, dass jede Zeile jetzt eine Notiz wird.
 STUMM_ANGELEGT = (
     "Die Sitzung steht — meine Ansage in diesem Kanal ist aber nicht angekommen. Ruf "
-    "`/chronik start` **nicht** noch einmal auf; sag der Runde bitte selbst, dass ab "
+    "`/session start` **nicht** noch einmal auf; sag der Runde bitte selbst, dass ab "
     "jetzt jede Nachricht hier eine Notiz wird."
 )
 
@@ -129,7 +129,7 @@ SZENE_OHNE_NAMEN = "Neue Szene. Was ab jetzt geschrieben wird, gehört dazu."
 # halten können.
 DIKTAT = (
     "Aufnahme angekommen — verschriftet wird sie im Hintergrund, spätestens wenn du "
-    "`/chronik fertig` gibst."
+    "`/session done` gibst."
 )
 
 ZU_GROSS = "»{name}« ist größer als {grenze} MB und bleibt liegen."
@@ -144,9 +144,8 @@ LEER = (
 # Eine Markdown-Datei im Thread ist weder Notiz noch Diktat. Sie fiel bis #169 still
 # durch — und Stille ist hier das Schlechteste: die Runde hält den Altbestand für abgelegt.
 DOKUMENT_IM_THREAD = (
-    "»{name}« sieht nach Notizen aus und nicht nach einer Aufnahme — hier im Thread mache "
-    "ich daraus nichts. `/chronik einlesen` nimmt so eine Datei im Kanal der Runde "
-    "entgegen und legt daraus Sitzungen an; vorher zeigt es, was entstünde."
+    "»{name}« sieht nach Notizen aus und nicht nach einer Aufnahme — daraus mache ich "
+    "nichts. Was in die Chronik soll, tippt ihr hier hinein, solange die Sitzung läuft."
 )
 
 DOKUMENT_KEINE_DATEI = (
@@ -194,7 +193,7 @@ DOKUMENT_JA = "Ja, anlegen"
 DOKUMENT_NEIN = "Abbrechen"
 
 DOKUMENT_ANGELEGT = (
-    "{sitzungen} angelegt. Sie stehen ab jetzt in der Chronik und `/suche` findet, was "
+    "{sitzungen} angelegt. Sie stehen ab jetzt in der Chronik und `/chronicle search` findet, was "
     "darin vorkommt."
 )
 
@@ -209,7 +208,7 @@ DOKUMENT_NICHTS_NEU = (
 
 # -- Eine einzelne Sitzung wieder loswerden ----------------------------------------------
 #
-# Bis #171 gab es darunter nichts: `/chronik loeschen` nahm die ganze Runde, und ein
+# Bis #171 gab es darunter nichts: `/chronicle delete` nahm die ganze Runde, und ein
 # Fehlgriff beim Einlesen war unwiderruflich. Das hier ist der kleine Weg daneben — und er
 # ist genauso endgültig, weil an einer Sitzung Tondateien hängen. Deshalb dieselbe Bauform:
 # erst zeigen, was verschwände, dann fragen, dann löschen.
@@ -220,7 +219,7 @@ SITZUNG_ZUR_WAHL = 25
 
 SITZUNG_KEINE = (
     "Hier ist noch keine Sitzung geschrieben — zu löschen gibt es nichts. "
-    "`/chronik start` beginnt die erste."
+    "`/session start` beginnt die erste."
 )
 
 SITZUNG_WAHL = (
@@ -269,7 +268,7 @@ SITZUNG_ABGEBROCHEN = "Nichts gelöscht. Es bleibt alles, wie es war."
 # — von einer zweiten Ansicht oder von jemand anderem.
 SITZUNG_SCHON_FORT = (
     "Diese Sitzung gibt es nicht mehr; gelöscht habe ich gerade nichts. "
-    "`/chronik sitzung-loeschen` zeigt, was noch da ist."
+    "`/chronicle sitzung-loeschen` zeigt, was noch da ist."
 )
 
 NICHT_ABGELEGT = (
@@ -297,10 +296,10 @@ NOTIZ_NACHGETRAGEN = (
 # sieht — genau das Gedächtnis, gegen das die Zusage im Thread steht.
 CHRONIK_STEHT_SCHON = (
     "Die Chronik dieser Sitzung steht allerdings schon, mit dem alten Stand. "
-    "`/chronik fertig` schreibt sie neu."
+    "`/session done` schreibt sie neu."
 )
 
-# Dieselbe Lage an einer älteren Sitzung: ``/chronik fertig`` meint immer die zuletzt
+# Dieselbe Lage an einer älteren Sitzung: ``/session done`` meint immer die zuletzt
 # angelegte, wäre hier also kein Ausweg, sondern ein falscher.
 CHRONIK_STEHT_SCHON_ALT = (
     "Die Chronik dieser Sitzung steht allerdings schon, mit dem alten Stand — und sie "
@@ -328,7 +327,7 @@ LAEUFT_SCHON = "Ich bin schon dabei — ich melde mich hier, wenn die Chronik st
 # Figur: von welchem Abend bis zu welchem. Ein Datum genügt, ein Anfang davon auch.
 OHNE_SITZUNGEN = (
     "Hier ist noch keine Sitzung geschrieben — nachzuerzählen gibt es nichts. "
-    "`/chronik start` beginnt die erste."
+    "`/session start` beginnt die erste."
 )
 
 BEREICH_UNBEKANNT = (
@@ -362,19 +361,19 @@ START_HINWEIS = "Leer lassen geht: dann eben ohne die Zahlen."
 
 MIT_FOUNDRY = (
     "Das Passwort liegt bis zum Abschluss bereit — gespeichert wird es nirgends, und "
-    "`/chronik fertig` fragt nicht noch einmal. Ab jetzt stelle ich hier ein, was in eurem "
+    "`/session done` fragt nicht noch einmal. Ab jetzt stelle ich hier ein, was in eurem "
     "Foundry **offen** gewürfelt wird, während ihr spielt. Geflüstertes und Verdecktes "
     "nicht: hier liest die ganze Gruppe mit."
 )
 
 OHNE_FOUNDRY = (
     "Ohne Foundry-Passwort: die Sitzung läuft, nur die Zahlen fehlen. Die Würfe kommen "
-    "dann erst beim Abschluss dazu, und `/chronik fertig` fragt noch einmal danach."
+    "dann erst beim Abschluss dazu, und `/session done` fragt noch einmal danach."
 )
 
 KEIN_FOUNDRY = (
     "Nach dem Foundry-Passwort frage ich nicht: für diese Runde ist gerade kein "
-    "Foundry-Server im Spiel. `/setup` trägt Adresse und Benutzer ein, wenn doch einer "
+    "Foundry-Server im Spiel. `/chronicle setup` trägt Adresse und Benutzer ein, wenn doch einer "
     "dazukommt."
 )
 
@@ -597,7 +596,7 @@ def sitzung_verlangen(runde: Runde, kanal_id: str) -> int:
 def laufende_sitzung(runde: Runde) -> int:
     """Die Sitzung, die der Abschluss meint — dieselbe Auskunft, die die Aufnahme nimmt.
 
-    Nicht über den Thread: nach ``/aufnahme stop`` steht man im Sprachkanal, und ein
+    Nicht über den Thread: nach ``/session pause`` steht man im Sprachkanal, und ein
     Abschluss, der dort abwiese, riete zu einer zweiten Sitzung — die Aufnahmen der ersten
     blieben liegen und die Chronik entstünde für die falsche (#156). Je Runde ist genau
     eine offen, also ist die Auskunft eindeutig.
@@ -606,6 +605,17 @@ def laufende_sitzung(runde: Runde) -> int:
     if sitzung is None:
         raise ChronikFehler(KEINE_SITZUNG)
     return sitzung.id
+
+
+def offene_sitzung(runde: Runde) -> int | None:
+    """Die Sitzung, die gerade läuft — oder keine.
+
+    Anders als ``letzte_sitzung``: die gibt auch eine längst abgeschlossene zurück.
+    ``/session start`` unterscheidet daran, ob es anzulegen hat oder nur noch den
+    Mitschnitt nachzuholen (#272).
+    """
+    laufend = notes.running_session(runde)
+    return None if laufend is None else laufend.id
 
 
 def letzte_sitzung(runde: Runde) -> int | None:
@@ -665,7 +675,7 @@ def passwort_merken(runde: Runde, eingabe: str, wer: str) -> bool:
 def passwort_fuer(runde: Runde, wer: str) -> str | None:
     """Das bereitliegende Passwort **dieser Person** — sonst ``None``.
 
-    Nicht bloß »es liegt eines da«: ``/chronik start`` steht jedem Mitglied offen, und
+    Nicht bloß »es liegt eines da«: ``/session start`` steht jedem Mitglied offen, und
     eine fremde Eingabe würde sonst ohne Rückfrage dem Foundry-Konto dieser Runde
     vorgezeigt, ausgelöst von jemandem, der sie nie gesehen hat. Wer nicht selbst
     hinterlegt hat, bekommt darum das Fenster — und damit den Weg zum eigenen Passwort,
@@ -871,7 +881,7 @@ def dokument_anlegen(runde: Runde, abende: Sequence[dokument.Abend]) -> str:
     Gegen den Bestand geprüft wird **hier** und nicht nur in der Vorschau: die Vorschau
     friert ihre Abende ein und ist ephemer, also ruft auf, wer unsicher ist, ob sie durchkam
     — zwei offene Vorschauen desselben Dokuments legten den Abend sonst zweimal an. Einen
-    Abend zu viel wird man seit #171 auch wieder los: ``/chronik sitzung-loeschen`` nimmt
+    Abend zu viel wird man seit #171 auch wieder los: ``/chronicle sitzung-loeschen`` nimmt
     genau ihn, statt der ganzen Runde.
     """
     angelegt = dokument.anlegen(runde, dokument.neu(runde, abende))
@@ -1012,10 +1022,11 @@ def notiz_aendern(runde: Runde, kanal_id: str, nachricht: Nachricht) -> Notizwec
     Geänderter Text zieht die Notiz nach und sagt nichts: die neue Fassung steht im Kanal,
     eine Quittung darunter wäre die zweite Hälfte jedes Satzes. **Geleerter** Text nimmt
     die Notiz fort — Discord schickt ``content: ""``, wenn eine Nachricht mit Anhang ihre
-    Bildunterschrift verliert, und ein so zurückgenommener Wortlaut, der in ``/suche`` und
-    in der komponierten Chronik weiterlebte, wäre genau das Gedächtnis, gegen das die
-    Zusage beim Start steht. **Nachgetragener** Text an einer Nachricht, die nie eine Notiz
-    hatte, legt sie jetzt an; vorher traf er keine Zeile und war still verloren (#184).
+    Bildunterschrift verliert, und ein so zurückgenommener Wortlaut, der in
+    ``/chronicle search`` und in der komponierten Chronik weiterlebte, wäre genau das
+    Gedächtnis, gegen das die Zusage beim Start steht. **Nachgetragener** Text an einer
+    Nachricht, die nie eine Notiz hatte, legt sie jetzt an; vorher traf er keine Zeile und
+    war still verloren (#184).
 
     Gesucht wird zuerst die Sitzung der **Notiz** und erst dann die laufende: eine
     Woche alte Notiz gehört ihrem Abend, nicht dem heutigen. Seit die Grenze auf der Zeit

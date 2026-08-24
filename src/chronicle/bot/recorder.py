@@ -11,7 +11,7 @@ im Speicher: vier Stunden Runde sind je Spur ein knappes Gigabyte.
 
 **Je Sprecher entsteht dabei eine Folge von Häppchen und nicht mehr eine Datei über den
 ganzen Abend** (#217). Jedes wird eingereiht, sobald es voll ist, also läuft die
-Verschriftung schon **während** der Sitzung; wenn `/chronik fertig` kommt, ist das meiste
+Verschriftung schon **während** der Sitzung; wenn `/session done` kommt, ist das meiste
 getan statt alles noch offen. Die Länge steht in ``HAEPPCHEN_MINUTEN`` und ist die
 Abwägung dazu: lang genug, dass die Erkennung den Kontext behält, von dem sie lebt, kurz
 genug, dass am Ende nur ein Häppchen je Sprecher übrig ist.
@@ -68,13 +68,13 @@ NICHT_ANGESAGT = "Es wurde noch nichts angesagt — ohne Ansage wird nichts gesc
 VERSCHOBEN_BEIM_START = (
     "Während der Ansage hat mich jemand in einen anderen Sprachkanal gezogen — gehört hat "
     "sie damit niemand, der gemeint war. Ich habe nichts protokolliert und schneide nicht "
-    "mit. Gebt `/aufnahme start` noch einmal, in dem Kanal, in dem aufgenommen werden soll."
+    "mit. Gebt `/session start` noch einmal, in dem Kanal, in dem aufgenommen werden soll."
 )
 GESTARTET = (
     "Die Ansage ist durch, ich schneide jetzt mit — je Sprecherin und Sprecher eine "
     "eigene Spur. Wer nicht aufgezeichnet werden möchte, verlässt den Sprachkanal; "
-    "außerhalb nehme ich nichts auf. Beendet wird mit `/aufnahme stop`, und "
-    "`/aufnahme hilfe` sagt den Rest."
+    "außerhalb nehme ich nichts auf. Beendet wird mit `/session pause`, und "
+    "`/session help` sagt den Rest."
 )
 NICHTS_GESPROCHEN = "Es hat niemand gesprochen — keine Spur abgelegt."
 
@@ -90,7 +90,7 @@ EINGEREIHT_HAEPPCHEN = (
 # es traf — eine Stimme, die nur im Log fehlt, fehlt niemandem auf.
 NICHT_EINGEREIHT = (
     "Diese Spuren sind nicht eingereiht: {spuren}. Sie liegen noch da — bitte einmal "
-    "`/aufnahme stop` geben, das holt genau sie nach; die übrigen sind schon durch."
+    "`/session pause` geben, das holt genau sie nach; die übrigen sind schon durch."
 )
 
 # Eine Aufnahme läuft Stunden; in der Zeit kann ihre Runde gelöscht und ihre Kennung an
@@ -108,7 +108,7 @@ RUNDE_FORT = (
 RUNDE_FORT_REST = (
     "Die Runde, für die ich mitgeschnitten habe, gibt es nicht mehr — abgelegt wurde "
     "nichts. Einige Spuren ließen sich aber nicht löschen und liegen noch da; bitte "
-    "einmal `/aufnahme stop` geben, das versucht es erneut."
+    "einmal `/session pause` geben, das versucht es erneut."
 )
 
 
@@ -126,7 +126,7 @@ PROBE_SPUR = "• {name}: {bytes} Bytes"
 
 PROBE_TRAEGT = (
     "**Der Empfang trägt.** Der Ton kommt an, lässt sich dekodieren und landet je Sprecher "
-    "in einer eigenen Spur — `/aufnahme start` schneidet hier wirklich mit."
+    "in einer eigenen Spur — `/session start` schneidet hier wirklich mit."
 )
 
 # Der Fall, für den es diesen Befehl gibt: der Empfänger hört in seinem eigenen Faden auf
@@ -480,12 +480,12 @@ class Aufnahme:
         für sich: was sich nicht schließen lässt, wird trotzdem gelöscht, und was sich nicht
         löschen lässt, hält die übrigen nicht auf. Bleibt eine liegen, wird das gesagt statt
         »die Spuren sind gelöscht« zu behaupten, und die Aufnahme behält alle Spuren — ein
-        zweites ``/aufnahme stop`` versucht es erneut.
+        zweites ``/session pause`` versucht es erneut.
 
         Jede Spur steht dabei für sich, vom Schließen an: was scheitert, hält die übrigen
         nicht auf, und was ein voriger Anlauf schon eingereiht hat, wird übersprungen statt
         erneut versucht. Bleibt eine liegen, wird sie beim Namen genannt und die Aufnahme
-        behält alle Spuren — ein zweites ``/aufnahme stop`` holt dann genau die fehlende
+        behält alle Spuren — ein zweites ``/session pause`` holt dann genau die fehlende
         nach.
 
         Scheitert das **Schließen**, wird die Spur im selben Durchgang nicht eingereiht:

@@ -7,7 +7,7 @@ Der Rückblick geht als **Embed** hinaus. Was diese Suite festhält: sein Text w
 nicht umgeschrieben — die Überschriften, die Belegtes von Gedeutetem trennen, stehen im
 Embed genauso wie im abgelegten Protokoll.
 
-Und seit #182: der eingestellte Kanal kommt in **zwei** Formen — als Id aus ``/setup`` und
+Und seit #182: der eingestellte Kanal kommt in **zwei** Formen — als Id aus ``/chronicle setup`` und
 als Name aus der Zeit davor —, beide werden beliefert, keine über die Gilde der Runde
 hinaus, und was nicht ankommt, steht als gescheitert im Ergebnis statt im Nichts.
 """
@@ -287,7 +287,7 @@ def test_nur_der_rueckblick_geht_hinaus_nicht_die_chronik(config, gastgeber):
 
 
 def test_ein_in_setup_gewaehlter_kanal_wird_wirklich_beliefert(config, gastgeber):
-    """Der Fehler aus #182: ``/setup`` legt die Id ab, gesucht wurde nach dem Namen.
+    """Der Fehler aus #182: ``/chronicle setup`` legt die Id ab, gesucht wurde nach dem Namen.
 
     Der Test geht bis zum echten Absenden — eine Zustellung, die nur bis zur Auflösung
     des Kanals käme, hätte den Fehler nicht gezeigt: dort war er ja.

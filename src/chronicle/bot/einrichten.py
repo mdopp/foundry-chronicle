@@ -53,16 +53,16 @@ WILLKOMMEN = (
     "\n"
     f"{OFFENLEGUNG}\n"
     "\n"
-    "So fangt ihr an: **`/setup`** — dort tragt ihr ein, wo euer Foundry steht, unter "
+    "So fangt ihr an: **`/chronicle setup`** — dort tragt ihr ein, wo euer Foundry steht, unter "
     "welchem Namen ich mich dort anmelde und in welchen Kanal ich die fertige Chronik "
-    "lege. Danach beginnt `/chronik start` die erste Sitzung, und `/aufnahme hilfe` zeigt "
+    "lege. Danach beginnt `/session start` die erste Sitzung, und `/session help` zeigt "
     "den Rest. Was von euch hier liegt, könnt ihr jederzeit selbst löschen: "
-    "`/chronik loeschen`."
+    "`/chronicle delete`."
 )
 
 WILLKOMMEN_ZURUECK = (
     "Da bin ich wieder. Die Runde »{name}« ist noch vollständig da — alles, was ihr "
-    "geschrieben habt, steht wieder bereit, und `/chronik start` beginnt die nächste "
+    "geschrieben habt, steht wieder bereit, und `/session start` beginnt die nächste "
     "Sitzung.\n"
     "\n"
     f"{OFFENLEGUNG}"
@@ -186,11 +186,13 @@ KANAL_GRENZE = 25
 # bleibt die Runde still, und das wird gesagt statt verschwiegen.
 STILL_GEBLIEBEN = (
     "Die Offenlegung konnte ich hier in keinen Kanal schreiben — deshalb bleibt die Runde "
-    "still. Gib mir Schreibrecht in diesem Kanal und ruf `/setup` noch einmal auf."
+    "still. Gib mir Schreibrecht in diesem Kanal und ruf `/chronicle setup` noch einmal auf."
 )
 
-FEHLT = "Es fehlt noch: {was}. Ruf `/setup` noch einmal auf, wenn du es nachtragen willst."
-STEHT_BEREIT = "Weiter geht es mit `/chronik start` — das legt die erste Sitzung an."
+FEHLT = (
+    "Es fehlt noch: {was}. Ruf `/chronicle setup` noch einmal auf, wenn du es nachtragen willst."
+)
+STEHT_BEREIT = "Weiter geht es mit `/session start` — das legt die erste Sitzung an."
 
 UHRZEIT_UNLESBAR = "Mit »{wert}« kann ich nichts anfangen — ich bleibe bei {uhrzeit} Uhr."
 
@@ -254,7 +256,7 @@ LOESCHEN_ABGEBROCHEN = "Nichts gelöscht. Es bleibt alles, wie es war."
 # neu vergeben worden sein. Dann wird nicht gelöscht, sondern gefragt.
 LOESCHEN_VERALTET = (
     "Diese Frage ist von vorhin, und seither hat sich hier etwas geändert. Ich habe nichts "
-    "gelöscht — ruf `/chronik loeschen` noch einmal auf, wenn du es immer noch willst."
+    "gelöscht — ruf `/chronicle delete` noch einmal auf, wenn du es immer noch willst."
 )
 
 # Was beim Rauswurf passiert — gesagt wird es vorher, in der Einladung und beim Löschen,

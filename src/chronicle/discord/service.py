@@ -59,7 +59,7 @@ NICHT_EINGERICHTET = "Kein Bot-Token — der Diktat-Kanal ist nicht eingerichtet
 KEIN_KANAL = f"Kein Kanal #{KANAL} in eurer Gilde — der Bot sieht ihn nicht, oder er heißt anders."
 OHNE_GILDE = (
     f"Diese Runde hängt an keiner Discord-Gilde — einen Briefkasten #{KANAL} hat sie damit "
-    "nirgends. Richte sie mit `/setup` in eurer Gilde ein."
+    "nirgends. Richte sie mit `/chronicle setup` in eurer Gilde ein."
 )
 LEER = "Nichts im Briefkasten."
 

@@ -44,13 +44,20 @@ from chronicle.runde import Runde
 
 logger = logging.getLogger(__name__)
 
-GRUPPE = "aufnahme"
-GRUPPE_CHRONIK = "chronik"
-GRUPPE_REGISTER = "register"
-BEFEHL_SZENE = "szene"
-BEFEHL_SUCHE = "suche"
-BEFEHL_WER = "wer"
-BEFEHL_ZUORDNUNG = "zuordnung"
+# Zwei Gruppen und sonst nichts (#272). Die Trennung verläuft zwischen »jetzt gerade«
+# und »später nachsehen«, nicht mehr zwischen Ton und Text — und weil Discord nur die
+# **obersten** Namen kennt, meldet py-cords Sammelaufruf beim Verbinden die acht alten
+# (``aufnahme``, ``chronik``, ``register``, ``setup``, ``suche``, ``wer``, ``zuordnung``,
+# ``szene``) damit von selbst ab: was nicht im Satz steht, den er schreibt, löscht er.
+# Das trägt nur, solange kein Befehl ``guild_ids`` bekommt — ein gildeneigener stünde
+# neben dem globalen Satz und überlebte ihn.
+GRUPPE = "session"
+GRUPPE_CHRONIK = "chronicle"
+BEFEHL_START = "start"
+BEFEHL_PAUSE = "pause"
+BEFEHL_SZENE = "scene"
+BEFEHL_SUCHE = "search"
+BEFEHL_WER = "who"
 BEFEHL_SETUP = "setup"
 
 # Die Kennungen, mit denen ein Knopf oder ein Menü zurückkommt. Sie stehen nur in der
@@ -62,7 +69,6 @@ KENNUNG_BETRETEN = "betreten"
 KENNUNG_KANAL = "kanal"
 KENNUNG_QUELLE = "quelle"
 KENNUNG_LOESCHEN = "loeschen"
-KENNUNG_EINLESEN = "einlesen"
 KENNUNG_SITZUNG = "sitzung"
 
 NICHT_INSTALLIERT = (
@@ -99,6 +105,15 @@ TOKEN_ABGELEHNT = (
 )
 
 NICHT_IM_KANAL = "Du bist in keinem Sprachkanal — geh hinein und ruf mich noch einmal."
+
+# Kein Fehlschlag: die Sitzung steht, es wird nur nichts gesprochen mitgeschnitten. Genau
+# das ist der Fall, den `/session start` nicht mehr zur Reihenfolge macht (#272) — wer im
+# Textkanal anfängt und erst später in den Sprachkanal geht, ruft ihn einfach noch einmal.
+OHNE_SPRACHKANAL = (
+    "Mitgeschnitten wird nichts — du stehst in keinem Sprachkanal. Geh hinein und ruf "
+    "`/session start` noch einmal auf; die Sitzung läuft dann weiter, es kommt nur der "
+    "Ton dazu."
+)
 LAEUFT_SCHON = "Ich schneide schon mit."
 LAEUFT_NICHT = "Es läuft gerade keine Aufnahme."
 
@@ -107,7 +122,7 @@ LAEUFT_NICHT = "Es läuft gerade keine Aufnahme."
 # es geschieht auch nichts.
 PROBE_NICHT_STOEREN = (
     "Ich schneide gerade mit — für einen Empfangstest fasse ich das nicht an; er würde die "
-    "laufende Aufnahme abreißen. Der Mitschnitt läuft weiter. Nach `/aufnahme stop` gerne."
+    "laufende Aufnahme abreißen. Der Mitschnitt läuft weiter. Nach `/session pause` gerne."
 )
 
 PROBE_LAEUFT = (
@@ -120,7 +135,7 @@ PROBE_LAEUFT = (
 # Länger zu warten bringt nichts — wer nach anderthalb Minuten nicht da ist, kommt auch
 # nach zehn nicht — und kostet genau das, wogegen die Frist gebaut ist: Spuren aus Stille
 # und eine Sprachverbindung, die niemand mehr braucht. Falsch zu liegen ist nur in eine
-# Richtung teuer: wer zu spät zurückkommt, ruft ``/aufnahme start`` noch einmal und hört
+# Richtung teuer: wer zu spät zurückkommt, ruft ``/session start`` noch einmal und hört
 # die Ansage dabei — was ohnehin das Richtige ist, denn die vorige galt einer Gruppe, die
 # es zu dem Zeitpunkt nicht mehr gab.
 LEER_FRIST = 90
@@ -130,8 +145,8 @@ LEER_FRIST = 90
 # Das Passwort dafür liegt seit dem Start im Merkzettel — niemand muss es noch eingeben.
 LEER_BEENDET = (
     "Im Sprachkanal war niemand mehr — ich habe den Mitschnitt beendet und bin gegangen. "
-    "Damit schließe ich auch die Sitzung ab. Für einen neuen Abend `/chronik start`; für "
-    "einen neuen Mitschnitt `/aufnahme start` — die Ansage läuft dann noch einmal."
+    "Damit schließe ich auch die Sitzung ab. Für einen neuen Abend `/session start`; für "
+    "einen neuen Mitschnitt `/session start` — die Ansage läuft dann noch einmal."
 )
 
 # Nicht angehalten, sondern gesagt: der Betreiber hat entschieden, dass niemand ungefragt
@@ -140,7 +155,7 @@ LEER_BEENDET = (
 ALLEIN = (
     "Im Sprachkanal ist außer mir nur noch **eine** Person — und ich schneide weiter mit. "
     "Ich sage es, weil die Ansage einer Gruppe galt, die gerade nicht mehr da ist: wer so "
-    "nicht aufgezeichnet werden möchte, gibt `/aufnahme stop` oder verlässt den Kanal. "
+    "nicht aufgezeichnet werden möchte, gibt `/session pause` oder verlässt den Kanal. "
     "Kommen die anderen zurück, läuft dieselbe Aufnahme weiter — wer hereinkommt, hört die "
     "Ansage noch einmal."
 )
@@ -149,7 +164,7 @@ LEER_GESCHEITERT = (
     "Im Sprachkanal war niemand mehr, aber das Beenden ist schiefgegangen — die Aufnahme "
     "gilt weiter als laufend, und ich bin womöglich noch im Kanal. Von selbst sehe ich "
     "erst wieder nach, wenn jemand den Kanal betritt und ihn erneut verlässt. Bitte "
-    "einmal `/aufnahme stop` geben: das nimmt genau diesen Lauf und reiht die Spuren "
+    "einmal `/session pause` geben: das nimmt genau diesen Lauf und reiht die Spuren "
     "nach. Der Grund steht im Log des Bots."
 )
 
@@ -160,14 +175,14 @@ VERSCHOBEN = (
     "Mitschnitt beendet. Angesagt und eingewilligt wurde in #{kanal}; im neuen Kanal hat "
     "das niemand gehört, also nehme ich dort nicht auf. Was nach dem Wechsel noch ankam, "
     "steht in keiner Spur. Die Sitzung bleibt offen: hier weiterzuschreiben geht, und "
-    "`/chronik fertig` bleibt eure Entscheidung. Soll im neuen Kanal mitgeschnitten "
-    "werden, gebt dort `/aufnahme start` — die Ansage läuft dann dort."
+    "`/session done` bleibt eure Entscheidung. Soll im neuen Kanal mitgeschnitten "
+    "werden, gebt dort `/session start` — die Ansage läuft dann dort."
 )
 
 VERSCHOBEN_GESCHEITERT = (
     "Jemand hat mich aus #{kanal} in einen anderen Sprachkanal gezogen, aber das Beenden "
     "ist schiefgegangen — die Aufnahme gilt weiter als laufend, und ich bin womöglich noch "
-    "im falschen Kanal. Geschrieben wird dort nichts. Bitte einmal `/aufnahme stop` geben: "
+    "im falschen Kanal. Geschrieben wird dort nichts. Bitte einmal `/session pause` geben: "
     "das nimmt genau diesen Lauf und reiht die Spuren nach. Der Grund steht im Log des Bots."
 )
 
@@ -178,14 +193,14 @@ GETRENNT = (
     "Meine Verbindung zu #{kanal} ist abgerissen — deshalb ist der Mitschnitt beendet. Ob "
     "mich jemand hinausgeworfen hat oder das Netz zuckte, sehe ich von hier aus nicht. Was "
     "nach dem Abriss gesprochen wurde, steht in keiner Spur. Die Sitzung bleibt offen: hier "
-    "weiterzuschreiben geht, und `/chronik fertig` bleibt eure Entscheidung. Soll weiter "
-    "mitgeschnitten werden, gebt `/aufnahme start` — die Ansage läuft dann noch einmal."
+    "weiterzuschreiben geht, und `/session done` bleibt eure Entscheidung. Soll weiter "
+    "mitgeschnitten werden, gebt `/session start` — die Ansage läuft dann noch einmal."
 )
 
 GETRENNT_GESCHEITERT = (
     "Meine Verbindung zu #{kanal} ist abgerissen, aber das Beenden ist schiefgegangen — die "
     "Aufnahme gilt weiter als laufend. Mitgeschrieben wird nichts mehr. Bitte einmal "
-    "`/aufnahme stop` geben: das nimmt genau diesen Lauf und reiht die Spuren nach. Der "
+    "`/session pause` geben: das nimmt genau diesen Lauf und reiht die Spuren nach. Der "
     "Grund steht im Log des Bots."
 )
 
@@ -212,39 +227,33 @@ ABGERISSEN = (
     "{fehlend} {fehlt}. Was fehlt, steht nicht hier — den Grund nennt das Log des Bots."
 )
 
+# Neun Zeilen, und sie sind die ganze Bedienoberfläche (#272). Was hier fehlt, fehlt mit
+# Absicht: `/session pause` und `/chronicle abgleich` sind Notnägel, `/chronicle
+# sitzung-loeschen` ist der schmale Weg neben `/chronicle delete` — alle drei bleiben
+# aufrufbar, aber eine Liste, die jeden Sonderfall führt, wird nicht mehr gelesen. Die
+# Namen sind englisch, die Sätze noch deutsch: die Übersetzung kommt mit #268, und zwei
+# Brüche für dieselbe Runde wären einer zu viel.
 BEFEHLE = (
-    "• `/chronik start` — ich lege die Sitzung an; ab dann wird in diesem Kanal jede "
-    "Nachricht eine Notiz. Das Fenster davor nimmt das Foundry-Passwort; gebt ihr eines, "
-    "stelle ich die offenen Würfe aus eurem Foundry ein, während ihr spielt.\n"
-    "• `/szene <Name>` — die Trennlinie zur nächsten Szene.\n"
-    "• `/aufnahme start` — ich komme in deinen Sprachkanal, spiele eine hörbare Ansage "
-    "und schneide **erst danach** mit, je Stimme eine eigene Spur.\n"
-    "• `/aufnahme stop` — ich höre auf und gehe wieder; die Spuren werden nachts zu Text. "
-    "Bin ich allein im Kanal, höre ich von selbst auf und sage es hier.\n"
-    f"• `/aufnahme test` — {recorder.PROBE_DAUER} Sekunden lauschen und dir allein sagen, ob "
+    "• `/session start` — ich lege die Sitzung an und komme in deinen Sprachkanal: erst "
+    "eine hörbare Ansage, dann je Stimme eine eigene Spur. Ab jetzt wird in diesem Kanal "
+    "jede Nachricht eine Notiz. Das Fenster davor nimmt das Foundry-Passwort; gebt ihr "
+    "eines, stelle ich die offenen Würfe aus eurem Foundry ein, während ihr spielt.\n"
+    "• `/session scene <Name>` — die Trennlinie zur nächsten Szene.\n"
+    "• `/session done` — Sitzung abschließen: eine laufende Aufnahme beende ich zuerst; "
+    "danach Zahlen holen, verschriften, Chronik schreiben. Nach dem Passwort frage ich "
+    "nur, wenn **du** beim Start keines gabst. Bleibt der Sprachkanal leer, mache ich "
+    "das von selbst.\n"
+    f"• `/session check` — {recorder.PROBE_DAUER} Sekunden lauschen und dir allein sagen, ob "
     "der Ton hier wirklich ankommt. Angesagt wird auch dafür, und alles Mitgeschnittene "
     "wird sofort gelöscht.\n"
-    "• `/chronik fertig` — Sitzung abschließen: eine laufende Aufnahme beende ich zuerst; "
-    "danach Zahlen holen, verschriften, Chronik schreiben. Nach dem Passwort frage ich "
-    "nur, wenn **du** beim Start keines gabst.\n"
-    "• `/chronik abgleich` — nur die Zahlen holen, ohne Sitzung; das Fenster nimmt das "
-    "Passwort.\n"
-    "• `/chronik nacherzaehlung` — mehrere Sitzungen als Prosa; belegt und erzählt bleiben "
-    "getrennt.\n"
-    "• `/chronik einlesen` — ein vorhandenes Notizdokument hängt ihr hier an, ich mache "
-    "Sitzungen und Szenen daraus. Vorher zeige ich, was entstünde.\n"
-    "• `/suche <Wort>` — ich sehe in Notizen, Diktaten, Chroniken und Register nach; jeder "
-    "Treffer führt zurück an seine Stelle.\n"
-    "• `/wer <Name>` — was im Register über einen Namen steht.\n"
-    "• `/register offen` — Registervorschläge bestätigen oder verwerfen.\n"
-    "• `/zuordnung` — wer von euch welchen Foundry-Spieler spielt.\n"
-    "• `/setup` — Foundry, Kanal, Uhrzeit, Zone und Quelle ändern; nur für die "
-    "Verwaltung.\n"
-    "• `/chronik sitzung-loeschen` — **eine** Sitzung samt ihren Aufnahmen löschen, nach "
-    "Rückfrage; nur für die Administration.\n"
-    "• `/chronik loeschen` — alles von dieser Runde löschen, nach Rückfrage; nur für die "
+    "• `/session help` — alles noch einmal in Ruhe.\n"
+    "• `/chronicle search <Wort>` — ich sehe in Notizen, Diktaten, Chroniken und Register "
+    "nach; jeder Treffer führt zurück an seine Stelle.\n"
+    "• `/chronicle who <Name>` — was im Register über einen Namen steht.\n"
+    "• `/chronicle delete` — alles von dieser Runde löschen, nach Rückfrage; nur für die "
     "Administration.\n"
-    "• `/aufnahme hilfe` — alles noch einmal in Ruhe.\n"
+    "• `/chronicle setup` — Foundry, Kanal, Uhrzeit, Zone und Quelle einrichten; nur für "
+    "die Verwaltung.\n"
 )
 
 # Der eine Satz, der rechtlich trägt (§201 StGB): ohne ihn ist die Vorstellung nur noch
@@ -267,7 +276,7 @@ HILFE = (
     # und dieser Fall tritt erst mitten in der Sitzung ein. Gesagt wird er ohnehin,
     # wenn er eintritt.
     "Bleibt eine Person allein im Sprachkanal zurück, schneide ich weiter mit und sage "
-    "ihr das im Kanal der Sitzung; `/aufnahme stop` beendet es. "
+    "ihr das im Kanal der Sitzung; `/session pause` beendet es. "
     f"Die Aufnahmen werden nach {recordings.RETENTION_TAGE} Tagen gelöscht.\n"
     f"{BEFEHLE}"
     "Meine Antworten sieht nur, wer den Befehl gegeben hat."
@@ -276,7 +285,7 @@ HILFE = (
 # Diese Nachricht steht im Kanal, **bevor** die Ansage läuft: wer nicht aufgezeichnet
 # werden will, soll den Ausweg lesen können, solange noch nichts mitgeschnitten wird.
 # Frist und Befehlsliste stehen deshalb nicht als zweite Kopie hier, sondern kommen aus
-# derselben Quelle wie `/aufnahme hilfe` und die Ansage — eine Kopie driftet, und eine
+# derselben Quelle wie `/session help` und die Ansage — eine Kopie driftet, und eine
 # Zusage, die vom Verhalten abweicht, ist schlimmer als keine.
 VORSTELLUNG = (
     "**Ich bin die Chronik dieser Runde.**\n"
@@ -335,7 +344,7 @@ def _sprache_pruefen(discord) -> None:
     """Beim Start prüfen, was sonst erst im Sprachkanal auffällt.
 
     Fehlt PyNaCl oder davey, verbindet sich py-cord anstandslos und schreibt eine einzige
-    Warnzeile ins Log; scheitern würde erst ``/aufnahme start``, mitten im Befehl und für
+    Warnzeile ins Log; scheitern würde erst ``/session start``, mitten im Befehl und für
     den Aufrufer unsichtbar. Ein Bot, der nichts hören kann, soll das beim Start sagen.
     """
     fehlend = discord.utils.get_missing_voice_dependencies()
@@ -598,7 +607,7 @@ class _Lauf:
         self.aufnahme: Aufnahme | None = None
         # Der Empfangstest steht bewusst **neben** der Aufnahme und nicht in ihr: er hält
         # seine Verbindung selbst und räumt sie selbst ab. Läge er in ``aufnahme``, reihte
-        # ``/aufnahme stop`` seine Probespuren ein — genau das, was nie geschehen darf.
+        # ``/session pause`` seine Probespuren ein — genau das, was nie geschehen darf.
         self.probe = False
         self.leer = None
         # Die Aufnahme und die Personen, denen für sie schon gesagt wurde, dass sie allein
@@ -621,7 +630,7 @@ class _Laeufe:
 
     Der Kern der Trennung zwischen Runden an dieser Stelle: ein Befehl bekommt nur den
     Lauf **seiner** Runde zu fassen. Vorher stand hier ein einziger Lauf je Prozess, und
-    damit brach ein ``/aufnahme stop`` der einen Gilde den Abend einer anderen ab.
+    damit brach ein ``/session pause`` der einen Gilde den Abend einer anderen ab.
 
     Prozessweit bleibt allein, was der Box gehört und keiner Gruppe: die beiden täglichen
     Fristen.
@@ -673,7 +682,7 @@ async def _mitschnitt_beenden(lauf: _Lauf, runde: Runde | None = None) -> tuple[
         return tuple(await recorder.stoppen(stimme, aufnahme))
     except BaseException:
         # Ohne diese Rücknahme wäre der Anspruch das Ende: der Bot säße weiter im Kanal,
-        # die Spuren lägen uneingereiht, und ``/aufnahme stop`` antwortete ab jetzt immer
+        # die Spuren lägen uneingereiht, und ``/session pause`` antwortete ab jetzt immer
         # »keine Aufnahme« — zu beenden wäre das nur noch durch einen Neustart.
         # Der abbestellte Wächter kommt dabei **nicht** zurück: einen neuen zu stellen
         # hieße, bei bleibendem Fehler alle neunzig Sekunden denselben Fehlschlag in den
@@ -871,7 +880,7 @@ async def _von_selbst_zuordnen(bot, aufnahme: Aufnahme, runde, kennung: str, sta
 
     Zurückgenommen wird über ``zuruecknehmen`` und nicht über ``zuordnen(…, KEINE)``:
     zwischen dem Schreiben und hier liegt ein Gang ans Netz, und wer in diesem Fenster über
-    ``/zuordnung`` dieselbe Person auf ein anderes Konto legt, verlöre seine Entscheidung
+    ``/chronicle zuordnung`` dieselbe Person auf ein anderes Konto legt, verlöre seine Entscheidung
     still. Genommen wird deshalb nur das eigene Geschriebene.
 
     Scheitert **auch** die Rücknahme, bleibt eine wahre Zuordnung ohne Ansage stehen. Das
@@ -983,7 +992,7 @@ async def _beenden_und_sagen(
         return
     # Die Erfolgsmeldung steht außerhalb: umfasste ein ``try`` beides, machte ein zuckendes
     # ``thread.send`` aus einem gelungenen Ende einen gemeldeten Fehlschlag — und schickte
-    # zu ``/aufnahme stop``, das dann »keine Aufnahme« antwortet. Bleibt sie ungesagt, ist
+    # zu ``/session pause``, das dann »keine Aufnahme« antwortet. Bleibt sie ungesagt, ist
     # das ein fehlender Satz; die Fehlermeldung wäre ein falscher.
     #
     # Was dieser Fang **nicht** mehr verdeckt, ist die eigene Überlänge: eine Runde mit
@@ -1024,7 +1033,7 @@ async def _abschied_bei_leere(config: Config, bot, lauf: _Lauf, aufnahme: Aufnah
 async def _sitzung_von_selbst_abschliessen(
     config: Config, bot, lauf: _Lauf, aufnahme: Aufnahme
 ) -> None:
-    """Den Abschluss anstoßen, den sonst ``/chronik fertig`` anstößt — mit denselben Mitteln.
+    """Den Abschluss anstoßen, den sonst ``/session done`` anstößt — mit denselben Mitteln.
 
     Kein Passwort von hier: ``None`` heißt »keines gegeben«, und der Abgleich liest dann
     den Merkzettel, in dem seit dem Start das Passwort dessen liegt, der die Sitzung
@@ -1224,15 +1233,17 @@ async def _widerrufen(ziel, fehler: BaseException) -> None:
     die Auskunft, auf die der Aufrufer wartet. Dass die Ankündigung ohne ihn stehenblieb,
     steht dann im Log; mehr ist von hier aus nicht zu erreichen.
     """
-    grund = (
-        str(fehler)
-        if isinstance(fehler, BotFehler)
-        else UNERWARTET.format(typ=type(fehler).__name__)
-    )
     try:
-        await _zustellen(ziel.send, WIDERRUF.format(grund=grund))
+        await _zustellen(ziel.send, WIDERRUF.format(grund=_grundtext(fehler)))
     except Exception:  # noqa: BLE001
         logger.exception("Die Vorstellung blieb im Kanal stehen — der Widerruf kam nicht durch")
+
+
+def _grundtext(fehler: BaseException) -> str:
+    """Bei einem erwarteten Fehler sein Satz, sonst nur die Art — der Rest bleibt im Log."""
+    if isinstance(fehler, BotFehler):
+        return str(fehler)
+    return UNERWARTET.format(typ=type(fehler).__name__)
 
 
 def _melder(ziel) -> Callable[[str], None]:
@@ -1244,9 +1255,70 @@ def _melder(ziel) -> Callable[[str], None]:
     schleife = asyncio.get_running_loop()
 
     def melden(text: str) -> None:
-        asyncio.run_coroutine_threadsafe(_zustellen(ziel.send, text), schleife)
+        _anstossen(_zustellen(ziel.send, text), schleife)
 
     return melden
+
+
+def _anstossen(auftrag, schleife) -> None:
+    """Eine Meldung aus dem Auftragsfaden in die Ereignisschleife — oder gar nicht.
+
+    Der Lauf überlebt den Prozess nicht, aber er überlebt die Schleife: fällt der Bot
+    gerade vom Gateway, ist sie zu, wenn die Meldung ankommt. Dann wird sie verworfen und
+    die Nebenläufigkeit sauber abgeräumt — ein liegengebliebener Auftrag meldete sich
+    später als »coroutine was never awaited« im Log und sagte über den Lauf nichts.
+    """
+    try:
+        asyncio.run_coroutine_threadsafe(auftrag, schleife)
+    except RuntimeError:
+        auftrag.close()
+        logger.warning("Die Meldung des Laufs kam nicht mehr an — die Ereignisschleife ist zu.")
+
+
+def _melder_mit_register(config: Config, runde, ziel) -> Callable[[str], None]:
+    """Wie ``_melder``, und danach die Frage, die früher ``/register offen`` war (#272).
+
+    Registervorschläge entstehen im Lauf und warteten bislang darauf, dass jemand einen
+    Befehl kennt, den niemand kannte: am 2026-08-18 lagen zwölf davon still da. Der Bot
+    fragt deshalb selbst, im Kanal des Abends, sobald der Lauf durch ist — der Befehl
+    dafür ist ersatzlos fort.
+    """
+    if ziel is None:
+        return lambda text: None
+    schleife = asyncio.get_running_loop()
+
+    async def sagen(text: str) -> None:
+        await _zustellen(ziel.send, text)
+        await _register_nachfragen(config, runde, ziel)
+
+    def melden(text: str) -> None:
+        _anstossen(sagen(text), schleife)
+
+    return melden
+
+
+async def _register_nachfragen(config: Config, runde, ziel) -> None:
+    """Was auf ein Ja oder Nein wartet, im Kanal des Abends — oder gar nichts.
+
+    Ohne offenen Vorschlag bleibt es still: eine Nachricht »nichts zu tun« nach jedem
+    Abend ist die Sorte Rauschen, wegen der die Liste vorher niemand aufschlug.
+    """
+    gemeint = lebenszyklus.dieselbe(runde)
+    if gemeint is None:
+        return
+    try:
+        stand = erinnern.offen(gemeint)
+        ansicht = _registeransicht(config, gemeint, stand)
+        if ansicht is None:
+            return
+        zuletzt = {"view": ansicht}
+        if stand.antwort.embed is not None:
+            zuletzt["embed"] = _embed(stand.antwort.embed)
+        await _zustellen(ziel.send, stand.antwort.text, zuletzt=zuletzt)
+    except Exception:  # noqa: BLE001
+        # Der Lauf ist durch und gemeldet; dass die Nachfrage nicht kam, macht ihn nicht
+        # zum Fehlschlag — sie ist ein Angebot, kein Ergebnis.
+        logger.exception("Die Nachfrage zum Register kam nicht durch")
 
 
 def _dieselbe(config: Config, interaction, runde):
@@ -1265,6 +1337,12 @@ async def _noch_dieselbe(config: Config, interaction, runde):
     if gemeint is None:
         await interaction.response.edit_message(content=chronik.VERALTET, view=None)
     return gemeint
+
+
+def _sprachkanal(quelle):
+    """Der Sprachkanal dessen, der gerade handelt — oder keiner, wenn er nirgends steht."""
+    person = getattr(quelle, "user", None) or getattr(quelle, "author", None)
+    return getattr(getattr(person, "voice", None), "channel", None)
 
 
 def _wer(quelle) -> str:
@@ -1321,12 +1399,16 @@ def _gefenstert(rueckruf):
 
 async def _sitzung_eroeffnen(
     config: Config, bot, lauf: _Lauf, ziel, runde, titel: str, eingabe: str, wer: str
-) -> str:
+) -> tuple[bool, str]:
     """Sitzung, Passwort, Beobachter — ein Satz, der jeden Ausgang unterscheidbar macht.
+
+    Zurück kommt zweierlei, weil ``/session start`` danach weitermacht: ob die Sitzung
+    wirklich steht, und was dazu zu sagen ist. Ohne das erste finge der Mitschnitt auch
+    dann an, wenn das Anlegen gescheitert ist — und schnitte in nichts hinein.
 
     Die Sitzung hängt seit #271 an dem Kanal, in dem der Befehl kam — im Regelfall der
     Chat des Sprachkanals, an dem die Runde ohnehin sitzt. Kein Thread mehr: damit fällt
-    zugleich der Absturz weg, den ``/chronik start`` in einem Sprachkanal auslöste (#241).
+    zugleich der Absturz weg, den ``/session start`` in einem Sprachkanal auslöste (#241).
 
     Der breite Fang ist das Sicherheitsnetz, das ``@antwortet`` sonst um den Befehlsrumpf
     legt: aus dem Rückruf eines Fensters entkäme eine Ausnahme in py-cords ``on_error``,
@@ -1337,11 +1419,10 @@ async def _sitzung_eroeffnen(
     try:
         sitzung = chronik.sitzung_anlegen(runde, str(ziel.channel.id), titel)
         gemerkt = chronik.passwort_merken(runde, eingabe, wer)
-    except BotFehler as fehler:
-        return GESCHEITERT.format(grund=str(fehler))
     except Exception as fehler:  # noqa: BLE001
-        logger.exception("Sitzungsstart gescheitert")
-        return GESCHEITERT.format(grund=UNERWARTET.format(typ=type(fehler).__name__))
+        if not isinstance(fehler, BotFehler):
+            logger.exception("Sitzungsstart gescheitert")
+        return False, GESCHEITERT.format(grund=_grundtext(fehler))
     hinweis = chronik.starthinweis(config, runde, gemerkt)
     # Nur mit hinterlegtem Passwort: ohne eines käme der Beobachter beim ersten Blick an
     # keinen Server und beendete sich sofort. Der Strom hängt damit an derselben
@@ -1354,8 +1435,72 @@ async def _sitzung_eroeffnen(
         await _zustellen(ziel.channel.send, chronik.ANGELEGT)
     except Exception:  # noqa: BLE001
         logger.exception("Ansage zur neuen Sitzung nicht zugestellt")
-        return f"{chronik.STUMM_ANGELEGT} {hinweis}"
-    return f"{chronik.SITZUNG_STEHT} {hinweis}"
+        return True, f"{chronik.STUMM_ANGELEGT} {hinweis}"
+    return True, f"{chronik.SITZUNG_STEHT} {hinweis}"
+
+
+async def _mitschnitt_beginnen(config: Config, bot, lauf: _Lauf, ziel, runde) -> str:
+    """In den Sprachkanal des Aufrufers, ansagen, mitschneiden — und nur in dieser Folge.
+
+    Die Ansage ist die lesbare Hälfte der Einwilligung: sie nennt den Ausweg, solange noch
+    nichts mitgeschnitten wird. Kam sie nicht durch, wird nicht gestartet, und was von ihr
+    schon dasteht, wird widerrufen.
+
+    Geantwortet wird mit einem Satz statt mit einer Ausnahme: seit #272 steht davor in
+    demselben Befehl das Anlegen der Sitzung. Flöge der Fehler weiter, sagte die Absage
+    »versuch es noch einmal« — und der zweite Anlauf legte eine zweite Sitzung an.
+    """
+    kanal = _sprachkanal(ziel)
+    if kanal is None:
+        return OHNE_SPRACHKANAL
+    try:
+        stimme = Sprachverbindung(await kanal.connect())
+    except Exception as fehler:  # noqa: BLE001
+        if not isinstance(fehler, BotFehler):
+            logger.exception("Der Sprachkanal ließ sich nicht betreten")
+        return GESCHEITERT.format(grund=_grundtext(fehler))
+    ort = _vorstellungsziel(ziel, kanal)
+    try:
+        await _zustellen(ort.send, VORSTELLUNG)
+        lauf.aufnahme = await recorder.starten(config, stimme, runde)
+    except Exception as fehler:  # noqa: BLE001
+        # Erst der Widerruf, dann das Aufräumen: ``trennen`` geht ans Netz und kann selbst
+        # stolpern — danach käme er nie, und die Ankündigung bliebe stehen.
+        await _widerrufen(ort, fehler)
+        await stimme.trennen()
+        if not isinstance(fehler, BotFehler):
+            logger.exception("Der Mitschnitt begann nicht")
+        return GESCHEITERT.format(grund=_grundtext(fehler))
+    lauf.stimme = stimme
+    return recorder.GESTARTET
+
+
+async def _zuordnung_reihum(bot, lauf: _Lauf) -> None:
+    """Die Frage »wer bist du in Foundry« an jede anwesende Person — **nach** der Antwort.
+
+    Nicht davor: sie geht reihum ins Zwiegespräch, und wer den Befehl gab, soll nicht erst
+    danach erfahren, dass mitgeschnitten wird. Scheitern kann sie hier nicht mehr — sie
+    fängt selbst. Läuft nichts, gibt es auch niemanden zu fragen.
+    """
+    if lauf.aufnahme is None or lauf.stimme is None:
+        return
+    for wer in lauf.stimme.anwesende():
+        await _zuordnung_klaeren(bot, lauf, lauf.aufnahme, wer)
+
+
+async def _sitzung_starten(
+    config: Config, bot, lauf: _Lauf, ziel, runde, titel: str, eingabe: str, wer: str
+) -> str:
+    """Ein Befehl statt einer Reihenfolge (#272): Sitzung anlegen **und** mitschneiden.
+
+    Am 2026-08-18 lief eine echte Runde in die Reihenfolge-Falle — erst die Aufnahme, dann
+    die Sitzung, und die vollständige Einwilligungs-Ansage stand schon im Kanal, als sich
+    herausstellte, dass es keine Sitzung gibt. Es gibt jetzt keine Reihenfolge mehr.
+    """
+    steht, antwort = await _sitzung_eroeffnen(config, bot, lauf, ziel, runde, titel, eingabe, wer)
+    if not steht:
+        return antwort
+    return f"{antwort} {await _mitschnitt_beginnen(config, bot, lauf, ziel, runde)}"
 
 
 def _startfenster(config: Config, bot, lauf: _Lauf, runde, titel: str):
@@ -1390,7 +1535,7 @@ def _startfenster(config: Config, bot, lauf: _Lauf, runde, titel: str):
             if gemeint is None:
                 await _sagen(interaction, chronik.VERALTET)
                 return
-            antwort = await _sitzung_eroeffnen(
+            antwort = await _sitzung_starten(
                 config,
                 bot,
                 lauf,
@@ -1401,6 +1546,7 @@ def _startfenster(config: Config, bot, lauf: _Lauf, runde, titel: str):
                 _wer(interaction),
             )
             await _sagen(interaction, antwort)
+            await _zuordnung_reihum(bot, lauf)
 
     return Startfenster()
 
@@ -1429,7 +1575,13 @@ async def _abschliessen(
     try:
         meldungen = await _mitschnitt_beenden(lauf, runde)
         meldung = chronik.abschluss_starten(
-            config, runde, session_id, passwort, wer=wer, merken=merken, melden=_melder(kanal)
+            config,
+            runde,
+            session_id,
+            passwort,
+            wer=wer,
+            merken=merken,
+            melden=_melder_mit_register(config, runde, kanal),
         )
     except BotFehler as fehler:
         meldung = GESCHEITERT.format(grund=str(fehler))
@@ -1526,7 +1678,7 @@ def _rechte(wer):
 
 
 def _darf_verwalten(wer) -> bool:
-    """``/setup`` ist die Schranke vor dem Foundry-Passwort.
+    """``/chronicle setup`` ist die Schranke vor dem Foundry-Passwort.
 
     Wer die Adresse setzt, bestimmt, welchem Server der Bot das Passwort der Spielleitung
     vorzeigt. Discords Vorgabe für einen Befehl ohne Angabe ist
@@ -1960,58 +2112,6 @@ def _sitzungswahlansicht(config: Config, runde, zeilen):
     return Sitzungswahlansicht()
 
 
-def _einleseansicht(config: Config, runde, abende):
-    """Ein Knopf vor fünfzehn Sitzungen: erst zeigen, dann auf Zuruf schreiben.
-
-    Wie die Löschansicht entscheidet auch dieser Knopf gegen den Stand von jetzt: die
-    Ansicht lebt eine Viertelstunde, in der die Runde gelöscht und ihre Kennung neu
-    vergeben sein kann — der Altbestand der einen Gruppe landete sonst bei einer fremden.
-
-    Und er wirkt genau einmal: ``stop`` nimmt die Ansicht aus Discords Zustellung, damit ein
-    zweiter Klick gar nicht erst hier ankommt. Die Löschansicht braucht das nicht, weil die
-    gelöschte Runde jeden weiteren Klick von selbst ins Leere laufen lässt; hier bleibt die
-    Runde stehen, also muss der Knopf es selbst tun.
-
-    Gerechnet wird auch das Recht, und nicht nur am Befehl: die Vorschau steht als Nachricht
-    da, und klicken könnte jeder, der sie sieht.
-    """
-    discord = _discord()
-
-    ja = discord.ui.Button(label=chronik.DOKUMENT_JA, custom_id=f"{KENNUNG_EINLESEN}:{runde.id}:ja")
-    nein = discord.ui.Button(
-        label=chronik.DOKUMENT_NEIN, custom_id=f"{KENNUNG_EINLESEN}:{runde.id}:nein"
-    )
-
-    @_geklickt
-    async def bestaetigt(interaction) -> None:
-        if not _darf_loeschen(getattr(interaction, "user", None)):
-            await interaction.response.edit_message(content=einrichten.NUR_ADMIN, view=None)
-            return
-        gemeint = await _noch_dieselbe(config, interaction, runde)
-        if gemeint is None:
-            return
-        ansicht.stop()
-        meldung = chronik.dokument_anlegen(gemeint, abende)
-        await interaction.response.edit_message(content=meldung, view=None)
-
-    @_geklickt
-    async def verworfen(interaction) -> None:
-        ansicht.stop()
-        await interaction.response.edit_message(content=chronik.DOKUMENT_ABGEBROCHEN, view=None)
-
-    ja.callback = bestaetigt
-    nein.callback = verworfen
-
-    class Einleseansicht(discord.ui.View):
-        def __init__(self) -> None:
-            super().__init__(timeout=erinnern.FRIST)
-            self.add_item(ja)
-            self.add_item(nein)
-
-    ansicht = Einleseansicht()
-    return ansicht
-
-
 def _embed(gebaut: dict | None):
     return None if gebaut is None else _discord().Embed.from_dict(gebaut)
 
@@ -2105,9 +2205,10 @@ async def _uebernahme_sagen(bot, runde, ergebnis: erinnern.Zugeordnet) -> None:
 
     Das Umhängen ist der Schritt mit der größten Folge — jemand nimmt einer anderen ihr
     Konto. Von selbst ist er der stillste: die Antwort auf den Klick sieht nur, wer geklickt
-    hat, und in der Zuordnung bleibt danach genau eine Zeile stehen. Dass ``/zuordnung`` die
-    Runde nebeneinander zeigt, trägt das nicht — die Ansicht reicht bis ``PRO_SEITE``, und
-    ab der sechsten Person steht die Vorbesitzerin weder vorher noch nachher darin.
+    hat, und in der Zuordnung bleibt danach genau eine Zeile stehen. Dass
+    ``/chronicle zuordnung`` die Runde nebeneinander zeigt, trägt das nicht — die Ansicht
+    reicht bis ``PRO_SEITE``, und ab der sechsten Person steht die Vorbesitzerin weder
+    vorher noch nachher darin.
 
     Zwei Wege, und der **Kanal der Sitzung** ist der belastbare: er erreicht die Runde auch
     dann, wenn die Vorbesitzerin keine Direktnachrichten annimmt. Deren Ausbleiben verwirft die
@@ -2220,7 +2321,7 @@ def _betretensansicht(bot, aufnahme: Aufnahme, runde, stand: erinnern.Betreten):
     ein bereits vergebenes anbietet, ist eine Einladung, sich privat und unbeaufsichtigt die
     Identität einer Mitspielerin zu nehmen; ``erinnern.zuordnen`` weist ein vergebenes
     Konto deshalb auch dann ab, wenn es doch einmal in einer alten Ansicht steht — hier
-    ohne ``uebernehmen``, anders als in ``/zuordnung``, wo umgehängt werden darf und die
+    ohne ``uebernehmen``, anders als in ``/chronicle zuordnung``, wo umgehängt werden darf und die
     Übernahme danach im Thread steht.
 
     Und was hier gewählt wird, steht danach im Thread. Das ist der Weg **ohne** Beleg —
@@ -2304,16 +2405,6 @@ def _feld(discord, beschreibung: str):
     return discord.Option(str, description=beschreibung, default="", required=False)
 
 
-def _datei(discord, beschreibung: str):
-    """Ein Pflicht-Anhang eines Slash-Befehls — als Vorgabewert, aus dem Grund aus ``_feld``."""
-    return discord.Option(discord.Attachment, description=beschreibung, required=True)
-
-
-def _notizdatei(anhang) -> chronik.Notizdatei:
-    """Discords Anhang, so weit das Einlesen ihn braucht — gelesen wird erst auf Zuruf."""
-    return chronik.Notizdatei(filename=anhang.filename, size=anhang.size, lesen=anhang.read)
-
-
 def baue(config: Config):
     """Der Bot mit seinen Befehlen und der Sitzung, die im Kanal läuft — ohne Verbindung."""
     discord = _discord()
@@ -2332,17 +2423,30 @@ def baue(config: Config):
     # je Sprecher. Weniger Daten, dieselbe Antwort.
     bot = discord.Bot(intents=absichten)
     laeufe = _Laeufe()
-    gruppe = bot.create_group(GRUPPE, "Die Sitzung mitschneiden")
-    chronikgruppe = bot.create_group(GRUPPE_CHRONIK, "Die Sitzung schreiben")
-    registergruppe = bot.create_group(GRUPPE_REGISTER, "Das Register führen")
+    # Zwei Gruppen: »jetzt gerade« und »später nachsehen«. Das ist die Unterscheidung, die
+    # Spielende im Kopf haben — die alte zwischen Ton und Text war unsere (#272).
+    gruppe = bot.create_group(GRUPPE, "Der Abend, während er läuft")
+    chronikgruppe = bot.create_group(GRUPPE_CHRONIK, "Später nachsehen — und einrichten")
 
-    @gruppe.command(name="start", description="Beitreten, ansagen, je Sprecher mitschneiden")
+    @gruppe.command(
+        name=BEFEHL_START, description="Sitzung beginnen, ansagen, je Sprecher mitschneiden"
+    )
     @antwortet
-    async def start(ctx) -> None:
-        # Dieselbe Schranke wie vor ``/chronik start``, und vor dem Beitreten: eine Gilde
-        # ohne eigene Runde nimmt nicht auf, eine ruhende erst recht nicht. Sie steht vor
-        # den beiden Fragen darunter, weil erst die Runde sagt, wessen Lauf gemeint ist:
-        # »Ich schneide schon mit« galt sonst einer Gruppe, bei der nichts mitläuft.
+    async def start(
+        ctx,
+        titel=_feld(discord, "Titel der Sitzung"),  # noqa: B008
+    ) -> None:
+        """Ein Befehl statt einer Reihenfolge — anlegen und mitschneiden in einem (#272).
+
+        **Warum das ein Befehl bleibt und kein selbst erkannter Moment.** Der Bot sieht,
+        wer im Sprachkanal steht; daraus zu schließen, dass hier gespielt und
+        mitgeschnitten werden soll, hieße Einwilligung zu unterstellen. §201 StGB verlangt
+        einen bewussten Akt, keine Vermutung. Das Gegenstück — das **Ende** — erkennt er
+        sehr wohl selbst (#271): aufzuhören darf er annehmen, anzufangen nicht.
+        """
+        # Zuerst die Runde: eine Gilde ohne eigene nimmt nicht auf, eine ruhende erst
+        # recht nicht. Sie steht vor den Fragen darunter, weil erst sie sagt, wessen Lauf
+        # gemeint ist — »Ich schneide schon mit« galt sonst einer fremden Gruppe.
         runde = chronik.runde_verlangen(config, ctx.guild_id)
         lauf = laeufe.fuer(runde)
         if lauf.aufnahme is not None:
@@ -2353,50 +2457,35 @@ def baue(config: Config):
         if lauf.probe:
             await _zustellen(ctx.respond, PROBE_LAEUFT, ephemeral=True)
             return
-        # Vor dem Beitreten und damit vor jeder Ankündigung: ohne Sitzung bricht
-        # ``recorder.starten`` ohnehin ab — bis dahin stünde die vollständige
-        # Einwilligungs-Ansage im Kanal, und die nächste Zeile nähme sie zurück. Eine
-        # zurückgenommene Einwilligungs-Ansage ist schlimmer als keine (#270).
-        if chronik.letzte_sitzung(runde) is None:
-            await _zustellen(ctx.respond, recorder.OHNE_SITZUNG, ephemeral=True)
+        # Läuft schon eine Sitzung, ist dies kein zweiter Anfang, sondern das Fortsetzen
+        # des Mitschnitts nach ``/session pause``: angelegt wird nichts, gefragt auch nicht.
+        if chronik.offene_sitzung(runde) is not None:
+            await ctx.defer(ephemeral=True)
+            await _zustellen(
+                ctx.respond,
+                await _mitschnitt_beginnen(config, bot, lauf, ctx, runde),
+                ephemeral=True,
+            )
+            await _zuordnung_reihum(bot, lauf)
             return
-        kanal = getattr(getattr(ctx.author, "voice", None), "channel", None)
-        if kanal is None:
-            await _zustellen(ctx.respond, NICHT_IM_KANAL, ephemeral=True)
+        if not chronik.foundry_im_spiel(config, runde):
+            # Ohne Server gäbe es nichts, wo das Passwort vorgezeigt würde — es läge nur
+            # bis zur Frist herum. Ohne Fenster kann der Befehl selbst aufschieben.
+            await ctx.defer(ephemeral=True)
+            await _zustellen(
+                ctx.respond,
+                await _sitzung_starten(config, bot, lauf, ctx, runde, titel, "", _wer(ctx)),
+                ephemeral=True,
+            )
+            await _zuordnung_reihum(bot, lauf)
             return
-        await ctx.defer(ephemeral=True)
-        stimme = Sprachverbindung(await kanal.connect())
-        ziel = _vorstellungsziel(ctx, kanal)
-        try:
-            await _zustellen(ziel.send, VORSTELLUNG)
-        except BaseException as fehler:
-            # Die Vorstellung ist die lesbare Hälfte der Einwilligung: sie nennt den
-            # Ausweg, und zwar solange noch nichts mitgeschnitten wird. Kam sie nicht
-            # durch, wird nicht gestartet. Zurückzunehmen ist trotzdem etwas: sie ist
-            # länger als eine Discord-Nachricht, und scheitert erst das zweite Stück,
-            # steht »gleich schneide ich mit« bereits im Kanal — mit dem Abriss-Hinweis
-            # daneben, der von einer Aufnahme nichts zurücknimmt. Der Widerruf tut es.
-            # Kam wirklich nichts an, ist der Kanal ohnehin zu und er verfällt ins Log.
-            await _widerrufen(ziel, fehler)
-            await stimme.trennen()
-            raise
-        try:
-            lauf.aufnahme = await recorder.starten(config, stimme, runde)
-        except BaseException as fehler:
-            # Erst der Widerruf, dann das Aufräumen: ``trennen`` geht ans Netz und kann
-            # selbst stolpern — danach käme er nie, und die Ankündigung bliebe stehen.
-            await _widerrufen(ziel, fehler)
-            await stimme.trennen()
-            raise
-        lauf.stimme = stimme
-        await _zustellen(ctx.respond, recorder.GESTARTET, ephemeral=True)
-        # Nach der Antwort und nicht davor: die Frage geht an jede anwesende Person
-        # einzeln, und wer den Befehl gab, soll nicht erst danach erfahren, dass
-        # mitgeschnitten wird. Scheitern kann sie hier nicht mehr — sie fängt selbst.
-        for wer in stimme.anwesende():
-            await _zuordnung_klaeren(bot, lauf, lauf.aufnahme, wer)
+        # Kein ``defer`` davor: ein Fenster geht nur als *erste* Antwort auf den Befehl.
+        # Deshalb entsteht die Sitzung erst im Rückruf des Fensters, der selbst aufschiebt.
+        await ctx.send_modal(_startfenster(config, bot, lauf, runde, titel))
 
-    @gruppe.command(name="stop", description="Aufnahme beenden und die Spuren einreihen")
+    # Fehlt bewusst in ``BEFEHLE``: ohne ihn würde die Pause mitgeschnitten, mit ihm in der
+    # Liste stünde neben »so fängt der Abend an« gleich »so hört er auf« (#272).
+    @gruppe.command(name=BEFEHL_PAUSE, description="Aufnahme beenden und die Spuren einreihen")
     @antwortet
     async def stop(ctx) -> None:
         # Auch hier zuerst die Runde: sie sagt, welcher Mitschnitt gemeint ist. Ohne sie
@@ -2412,11 +2501,13 @@ def baue(config: Config):
         # Das ist kein Fehlschlag, und so ausgesprochen zu werden verdient er auch nicht.
         await _zustellen(ctx.respond, " ".join(meldungen) or LAEUFT_NICHT, ephemeral=True)
 
-    @gruppe.command(name="test", description="Kurz lauschen und sagen, ob der Ton wirklich ankommt")
+    @gruppe.command(
+        name="check", description="Kurz lauschen und sagen, ob der Ton wirklich ankommt"
+    )
     @antwortet
     async def empfangstest(ctx) -> None:
         """Die Frage »hört der Bot überhaupt?« — beantwortet in Discord statt im Log."""
-        # Dieselbe Schranke wie vor ``/aufnahme start``: eine Gilde ohne eigene Runde prüft
+        # Dieselbe Schranke wie vor ``/session start``: eine Gilde ohne eigene Runde prüft
         # hier nichts, eine ruhende erst recht nicht — es wird aufgezeichnet. Und wieder
         # zuerst, weil die Aufnahme, die nicht gestört werden darf, die dieser Runde ist.
         runde = chronik.runde_verlangen(config, ctx.guild_id)
@@ -2444,7 +2535,7 @@ def baue(config: Config):
             try:
                 await _zustellen(ziel.send, PROBE_VORSTELLUNG)
             except BaseException as fehler:
-                # Wie bei ``/aufnahme start``: was von einer geteilten Ankündigung schon
+                # Wie bei ``/session start``: was von einer geteilten Ankündigung schon
                 # dasteht, wird zurückgenommen. Heute passt dieser Text in eine Nachricht,
                 # aber er zieht Ausweg und Frist aus denselben Quellen wie die Vorstellung
                 # und wächst mit ihnen.
@@ -2466,42 +2557,17 @@ def baue(config: Config):
             lauf.probe = False
         await _zustellen(ctx.respond, recorder.bericht(ergebnis), ephemeral=True)
 
-    @gruppe.command(name="hilfe", description="Was der Bot tut und wie man ihn bedient")
+    @gruppe.command(name="help", description="Was der Bot tut und wie man ihn bedient")
     @antwortet
     async def hilfe(ctx) -> None:
         await _zustellen(ctx.respond, HILFE, ephemeral=True)
 
-    @chronikgruppe.command(name="start", description="Sitzung in diesem Kanal beginnen")
-    @antwortet
-    async def chronik_start(
-        ctx,
-        titel=_feld(discord, "Titel der Sitzung"),  # noqa: B008
-    ) -> None:
-        runde = chronik.runde_verlangen(config, ctx.guild_id)
-        if not chronik.foundry_im_spiel(config, runde):
-            # Ohne Server gäbe es nichts, wo das Passwort vorgezeigt würde — es läge nur
-            # bis zur Frist herum. Ohne Fenster kann der Befehl selbst aufschieben.
-            await ctx.defer(ephemeral=True)
-            await _zustellen(
-                ctx.respond,
-                await _sitzung_eroeffnen(
-                    config, bot, laeufe.fuer(runde), ctx, runde, titel, "", _wer(ctx)
-                ),
-                ephemeral=True,
-            )
-            return
-        # Kein ``defer`` davor: ein Fenster geht nur als *erste* Antwort auf den Befehl.
-        # Deshalb entsteht die Sitzung erst im Rückruf des Fensters, der selbst aufschiebt.
-        await ctx.send_modal(_startfenster(config, bot, laeufe.fuer(runde), runde, titel))
-
-    @chronikgruppe.command(
-        name="fertig", description="Sitzung abschließen und die Chronik anstoßen"
-    )
+    @gruppe.command(name="done", description="Sitzung abschließen und die Chronik anstoßen")
     @antwortet
     async def chronik_fertig(ctx) -> None:
         runde = chronik.runde_verlangen(config, ctx.guild_id)
-        # Nicht der Kanal, sondern die Runde bestimmt die Sitzung — wie bei ``/aufnahme``.
-        # Nach ``/aufnahme stop`` steht man im Sprachkanal, und dort abzuweisen hieß, zu
+        # Nicht der Kanal, sondern die Runde bestimmt die Sitzung — wie bei ``/session``.
+        # Nach ``/session pause`` steht man im Sprachkanal, und dort abzuweisen hieß, zu
         # einer zweiten Sitzung zu raten (#156). Welche gemeint ist, sagt die Antwort.
         sitzung = chronik.laufende_sitzung(runde)
         wer = _wer(ctx)
@@ -2536,6 +2602,8 @@ def baue(config: Config):
         hinweis = chronik.FREMDES_HINWEIS if fremd else chronik.PASSWORT_HINWEIS
         await ctx.send_modal(_passwortfrage(config, runde, sitzung, laeufe.fuer(runde), hinweis))
 
+    # Notnagel, und deshalb nicht in ``BEFEHLE``: die Zahlen holt sonst der Abschluss oder
+    # der nächtliche Lauf. Aufrufbar bleibt er, weil es Abende gibt, an denen beides fehlt.
     @chronikgruppe.command(
         name="abgleich", description="Die Zahlen aus Foundry holen, ohne eine Sitzung zu führen"
     )
@@ -2567,68 +2635,11 @@ def baue(config: Config):
         await ctx.send_modal(_abgleichfenster(config, runde, hinweis))
 
     @chronikgruppe.command(
-        name="nacherzaehlung", description="Einen Sitzungsbereich als Prosa nacherzählen"
-    )
-    @antwortet
-    async def chronik_nacherzaehlung(
-        ctx,
-        von=_feld(discord, "Ab welcher Sitzung, als Datum"),  # noqa: B008
-        bis=_feld(discord, "Bis zu welcher Sitzung, als Datum"),  # noqa: B008
-    ) -> None:
-        runde = chronik.runde_verlangen(config, ctx.guild_id)
-        # Der Melder wird **hier** gebaut, in der Ereignisschleife: der Lauf trägt sich in
-        # einem eigenen Faden zu und hätte dort keine, an die er sich hängen könnte.
-        melden = _melder(ctx.channel)
-        await ctx.defer(ephemeral=True)
-        await ctx.respond(
-            chronik.nacherzaehlung_starten(
-                config, runde, von, bis, str(ctx.channel_id), melden=melden
-            ),
-            ephemeral=True,
-        )
-
-    @chronikgruppe.command(
-        name="einlesen", description="Ein vorhandenes Notizdokument als Sitzungen anlegen"
-    )
-    @antwortet
-    async def chronik_einlesen(
-        ctx,
-        datei=_datei(discord, "Das Notizdokument, ein Abschnitt je Abend"),  # noqa: B008
-    ) -> None:
-        """Im Kanal der Runde und nicht im Thread: ein Dokument deckt mehrere Abende ab.
-
-        **Die Schranke ist die des Löschens** (Betreiber-Entscheidung, 2026-08-13). Es geht
-        dabei nicht um die Menge — dass ein Dokument fünfzehn Abende trägt, ist der
-        auffällige, aber nicht der tragende Grund. Tragend ist: wer die Chronik einer
-        Kampagne rückwirkend umschreibt, greift genauso tief in sie ein wie wer sie
-        fortnimmt, und rückgängig gibt es das nur einzeln, Sitzung für Sitzung. Ein
-        Eingriff in die Vergangenheit einer Kampagne verdient deshalb dieselbe Schwelle
-        wie ihre Zerstörung.
-
-        Die Vorschau darunter ersetzt sie nicht: sie fängt das **Versehen** ab — ohne
-        Bestätigung entsteht nichts —, aber nicht die **Absicht**. Genau diese
-        Unterscheidung hat schon bei #171 die Schranke bestimmt.
-
-        Angelegt wird hier noch nichts — der Befehl antwortet mit der Vorschau und einem
-        Knopf darunter. Aufgeschoben wird davor: das Herunterladen der Datei geht ans Netz,
-        und die drei Sekunden, die Discord der ersten Antwort lässt, reichen dafür nicht.
-        Gerechnet wird noch einmal am Knopf.
-        """
-        if not _darf_loeschen(getattr(ctx, "author", None)):
-            await _zustellen(ctx.respond, einrichten.NUR_ADMIN, ephemeral=True)
-            return
-        runde = chronik.runde_verlangen(config, ctx.guild_id)
-        await ctx.defer(ephemeral=True)
-        vorschau = await chronik.dokument_vorschau(runde, _notizdatei(datei))
-        ansicht = _einleseansicht(config, runde, vorschau.abende) if vorschau.abende else None
-        await _zustellen(ctx.respond, vorschau.text, zuletzt={"view": ansicht}, ephemeral=True)
-
-    @chronikgruppe.command(
         name="sitzung-loeschen", description="Eine einzelne Sitzung löschen, nach Rückfrage"
     )
     @antwortet
     async def chronik_sitzung_loeschen(ctx) -> None:
-        """Der kleine Weg neben ``/chronik loeschen``: ein Abend statt der ganzen Runde.
+        """Der kleine Weg neben ``/chronicle delete``: ein Abend statt der ganzen Runde.
 
         **Die Schranke ist die der Administration, dieselbe wie vor der ganzen Runde**
         (Operator-Entscheidung, #171/#174) — und das ist nicht die naheliegende Antwort.
@@ -2638,7 +2649,7 @@ def baue(config: Config):
         Alles hier läuft ephemer, der Thread der Sitzung bleibt unverändert stehen, und wer
         geklickt hat, steht mit Absicht in keinem Log. Ein Verwalter nähme so genau den
         einen unbequemen Abend samt seinen Aufnahmen fort, und niemand in der Gruppe
-        erführe es; ``/chronik loeschen`` kann man nicht heimlich drücken. Der Maßstab von
+        erführe es; ``/chronicle delete`` kann man nicht heimlich drücken. Der Maßstab von
         ``_darf_loeschen`` trägt genau das: das Sofortige bekommt die strengere Schranke,
         das Langsame die Umkehrbarkeit — und ein langsames, umkehrbares Gegenstück zu
         dieser Löschung gibt es überhaupt nicht.
@@ -2650,7 +2661,7 @@ def baue(config: Config):
         Gerechnet wird noch einmal am Menü und am Knopf.
 
         Eine ruhende Runde kommt hier nicht durch: sie ist verabschiedet, und wer sie ganz
-        loswerden will, hat dafür ``/chronik loeschen``.
+        loswerden will, hat dafür ``/chronicle delete``.
         """
         if not _darf_loeschen(getattr(ctx, "author", None)):
             await _zustellen(ctx.respond, einrichten.NUR_ADMIN, ephemeral=True)
@@ -2661,12 +2672,12 @@ def baue(config: Config):
         await _zustellen(ctx.respond, wahl.text, zuletzt={"view": ansicht}, ephemeral=True)
 
     @chronikgruppe.command(
-        name="loeschen", description="Alles von dieser Runde löschen, nach Rückfrage"
+        name="delete", description="Alles von dieser Runde löschen, nach Rückfrage"
     )
     @antwortet
     async def chronik_loeschen(ctx) -> None:
         # Discord kennt ``default_member_permissions`` nur für den ganzen Befehl, und
-        # ``/chronik start`` soll jedes Mitglied geben dürfen. Für diesen Unterbefehl steht
+        # ``/session start`` soll jedes Mitglied geben dürfen. Für diesen Unterbefehl steht
         # die Schranke deshalb hier — und noch einmal am Knopf, der wirklich löscht.
         if not _darf_loeschen(getattr(ctx, "author", None)):
             await _zustellen(ctx.respond, einrichten.NUR_ADMIN, ephemeral=True)
@@ -2679,26 +2690,33 @@ def baue(config: Config):
             ephemeral=True,
         )
 
-    @bot.slash_command(
-        name=BEFEHL_SETUP,
-        description="Foundry, Zustellkanal und nächtlichen Lauf einrichten",
-        default_member_permissions=discord.Permissions(manage_guild=True),
+    @chronikgruppe.command(
+        name=BEFEHL_SETUP, description="Foundry, Zustellkanal und nächtlichen Lauf einrichten"
     )
     @antwortet
     async def setup(ctx) -> None:
+        """Kein ``default_member_permissions`` mehr — und das ist der Punkt (#272/#264).
+
+        Die Angabe blendete den Befehl bei allen ohne »Server verwalten« **vollständig**
+        aus. Am 2026-08-18 fand ihn deshalb nicht einmal der Betreiber wieder: der eine
+        Mensch, der ihn hätte aufrufen dürfen, sah stattdessen den gleichnamigen Befehl
+        eines fremden Bots im selben Server. Unter ``/chronicle`` ist der Name eindeutig
+        und der Befehl sichtbar; wer ihn nicht geben darf, bekommt es gesagt statt
+        verschwiegen. Gerechnet wird unverändert hier — sichtbar ist nicht erlaubt.
+        """
         # Ohne Gilde gibt es keine Runde zu beanspruchen — eine im Zwiegespräch angelegte
         # gehörte niemandem und stünde für immer da.
         if ctx.guild_id is None:
             await _zustellen(ctx.respond, einrichten.NUR_IM_SERVER, ephemeral=True)
             return
-        # Die Angabe oben blendet den Befehl bei Discord aus; sie ist eine Vorgabe, die die
-        # Serververwaltung überschreiben kann. Gerechnet wird deshalb auch hier.
         if not _darf_verwalten(getattr(ctx, "author", None)):
             await _zustellen(ctx.respond, einrichten.NUR_VERWALTUNG, ephemeral=True)
             return
         await ctx.send_modal(_einrichtungsfenster(config, ctx))
 
-    @bot.slash_command(name=BEFEHL_SUCHE, description="In allem nachsehen, was geschrieben wurde")
+    @chronikgruppe.command(
+        name=BEFEHL_SUCHE, description="In allem nachsehen, was geschrieben wurde"
+    )
     @antwortet
     async def suche(
         ctx,
@@ -2707,7 +2725,7 @@ def baue(config: Config):
         runde = chronik.runde_verlangen(config, ctx.guild_id)
         await _antworten(ctx, erinnern.suche(runde, begriff))
 
-    @bot.slash_command(name=BEFEHL_WER, description="Was im Register über einen Namen steht")
+    @chronikgruppe.command(name=BEFEHL_WER, description="Was im Register über einen Namen steht")
     @antwortet
     async def wer(
         ctx,
@@ -2716,17 +2734,14 @@ def baue(config: Config):
         runde = chronik.runde_verlangen(config, ctx.guild_id)
         await _antworten(ctx, erinnern.wer(runde, name))
 
-    @registergruppe.command(
-        name="offen", description="Vorschläge fürs Register bestätigen oder verwerfen"
-    )
-    @antwortet
-    async def register_offen(ctx) -> None:
-        runde = chronik.runde_verlangen(config, ctx.guild_id)
-        stand = erinnern.offen(runde)
-        await _antworten(ctx, stand.antwort, _registeransicht(config, runde, stand))
-
-    @bot.slash_command(
-        name=BEFEHL_ZUORDNUNG, description="Festhalten, wer welchen Foundry-Spieler spielt"
+    # Nicht in ``BEFEHLE``, aber aufrufbar: die Frage »wer bist du in Foundry« stellt der
+    # Bot seit #76 von selbst, sobald jemand den Sprachkanal betritt (#272 macht das zum
+    # einzigen Weg **hinein**). Sie kommt aber nur einmal — wer schon zugeordnet ist, wird
+    # nicht noch einmal gefragt. Ohne diesen Befehl gäbe es damit keinen Weg mehr, eine
+    # falsche Zuschreibung zu berichtigen, und das ist die eine Auskunft, die eine Person
+    # über sich selbst geben können muss.
+    @chronikgruppe.command(
+        name="zuordnung", description="Festhalten, wer welchen Foundry-Spieler spielt"
     )
     @antwortet
     async def zuordnung(ctx) -> None:
@@ -2734,7 +2749,7 @@ def baue(config: Config):
         stand = erinnern.zuordnung(runde)
         await _antworten(ctx, stand.antwort, _zuordnungsansicht(bot, config, runde, stand))
 
-    @bot.slash_command(name=BEFEHL_SZENE, description="Die Trennlinie zur nächsten Szene ziehen")
+    @gruppe.command(name=BEFEHL_SZENE, description="Die Trennlinie zur nächsten Szene ziehen")
     @antwortet
     async def szene(
         ctx,
@@ -2799,7 +2814,7 @@ def baue(config: Config):
     async def on_guild_join(gilde) -> None:
         # Erst der Kanal, dann der Satz, und die Freigabe zuletzt: wieder im Dienst zu
         # sein, ohne dass die Gruppe die Offenlegung je gelesen hat, ist genau der Zustand,
-        # für den es sie gibt. Ohne Kanal bleibt die Runde still — ``/setup`` bringt sie
+        # für den es sie gibt. Ohne Kanal bleibt die Runde still — ``/chronicle setup`` bringt sie
         # zurück und sagt die Offenlegung dabei.
         kanal = _begruessungskanal(gilde)
         if kanal is None:

@@ -312,7 +312,7 @@ def austritt(bot, gilde):
 
 
 def einrichtungsfenster(bot, ctx):
-    asyncio.run(bot.befehle[gateway.BEFEHL_SETUP](ctx))
+    asyncio.run(bot.gruppen[gateway.GRUPPE_CHRONIK].befehle[gateway.BEFEHL_SETUP](ctx))
     return ctx.modale[-1]
 
 
@@ -325,13 +325,13 @@ def ausfuellen(fenster, adresse="", benutzer="", uhrzeit="", zone="", *, kanal=N
 
 
 def menues(interaktion):
-    """Die beiden Menüs unter der Antwort von ``/setup`` — Zustellkanal und Quelle."""
+    """Die beiden Menüs unter der Antwort von ``/chronicle setup`` — Zustellkanal und Quelle."""
     kanal, quelle = interaktion.response.gesendet[0]["view"].items
     return kanal, quelle
 
 
 def loeschbefehl(bot, ctx):
-    asyncio.run(bot.gruppen[gateway.GRUPPE_CHRONIK].befehle["loeschen"](ctx))
+    asyncio.run(bot.gruppen[gateway.GRUPPE_CHRONIK].befehle["delete"](ctx))
     return ctx
 
 
@@ -381,7 +381,7 @@ def gilde_von(config, runde_id):
 
 
 def test_die_einzige_runde_ohne_gilde_bekommt_die_einzige_gilde(konfiguration, stiller_bot, caplog):
-    """Der Fall aus #121: sonst legt ``/setup`` eine zweite Runde an, und die alte ist
+    """Der Fall aus #121: sonst legt ``/chronicle setup`` eine zweite Runde an, und die alte ist
     über Discord für immer unerreichbar — samt Sitzungen, Chroniken und Einwilligungen."""
     verwaist = runden.erste(konfiguration.database_path)
     fuellen(konfiguration, verwaist, "alpha")
@@ -391,7 +391,7 @@ def test_die_einzige_runde_ohne_gilde_bekommt_die_einzige_gilde(konfiguration, s
         anmelden(stiller_bot, FakeGilde(system=kanal))
 
     assert gilde_von(konfiguration, verwaist.id) == GILDE
-    # Und damit ist der Weg zurück offen: ``/setup`` findet sie, statt daneben eine zweite
+    # Und damit ist der Weg zurück offen: ``/chronicle setup`` findet sie, statt daneben eine zweite
     # anzulegen.
     beansprucht = lebenszyklus.beanspruchen(konfiguration, GILDE, GILDENAME)
     assert beansprucht.neu is False
@@ -572,7 +572,7 @@ def test_die_einladung_sagt_wem_die_kiste_gehoert(bot):
     assert einrichten.OFFENLEGUNG in gesagt
     assert "jemand anderem gehört" in gesagt
     assert "kommt an alles heran" in gesagt
-    assert "/setup" in gesagt
+    assert "/chronicle setup" in gesagt
 
 
 def test_die_einladung_geht_in_den_ersten_kanal_in_dem_der_bot_reden_darf(bot):
@@ -754,7 +754,7 @@ def test_wer_nur_die_uhrzeit_richtet_hoert_den_satz_nicht_noch_einmal(bot):
 def test_ohne_server_gibt_es_keine_runde_zu_beanspruchen(konfiguration, bot):
     ctx = FakeCtx(guild_id=None)
 
-    asyncio.run(bot.befehle[gateway.BEFEHL_SETUP](ctx))
+    asyncio.run(bot.gruppen[gateway.GRUPPE_CHRONIK].befehle[gateway.BEFEHL_SETUP](ctx))
 
     assert ctx.antworten == [einrichten.NUR_IM_SERVER]
     assert ctx.modale == []
@@ -1142,7 +1142,7 @@ def test_die_loeschfrage_sagt_was_verschwindet(konfiguration, bot):
     runden.anlegen(konfiguration.database_path, GILDENAME, guild_id=GILDE)
     ctx = FakeCtx(gilde=FakeGilde())
 
-    asyncio.run(bot.gruppen[gateway.GRUPPE_CHRONIK].befehle["loeschen"](ctx))
+    asyncio.run(bot.gruppen[gateway.GRUPPE_CHRONIK].befehle["delete"](ctx))
 
     (frage,) = ctx.antworten
     for satzteil in ("Notizen", "Tondateien", "Chroniken", "Register", "Nachweise"):
@@ -1158,7 +1158,7 @@ def test_der_knopf_loescht_dateien_zeilen_und_den_suchindex(konfiguration, bot):
     daneben = fuellen(konfiguration, nachbar, "beta")
 
     ctx = FakeCtx(gilde=FakeGilde())
-    asyncio.run(bot.gruppen[gateway.GRUPPE_CHRONIK].befehle["loeschen"](ctx))
+    asyncio.run(bot.gruppen[gateway.GRUPPE_CHRONIK].befehle["delete"](ctx))
     ja, _nein = ctx.ansichten[0].items
     klick = FakeInteraction()
     asyncio.run(ja.callback(klick))
@@ -1195,7 +1195,7 @@ def test_abbrechen_loescht_nichts(konfiguration, bot):
     ids = fuellen(konfiguration, unsere, "alpha")
 
     ctx = FakeCtx(gilde=FakeGilde())
-    asyncio.run(bot.gruppen[gateway.GRUPPE_CHRONIK].befehle["loeschen"](ctx))
+    asyncio.run(bot.gruppen[gateway.GRUPPE_CHRONIK].befehle["delete"](ctx))
     _ja, nein = ctx.ansichten[0].items
     klick = FakeInteraction()
     asyncio.run(nein.callback(klick))
@@ -1208,7 +1208,7 @@ def test_abbrechen_loescht_nichts(konfiguration, bot):
 def test_ohne_runde_gibt_es_nichts_zu_loeschen(konfiguration, bot):
     ctx = FakeCtx(gilde=FakeGilde())
 
-    asyncio.run(bot.gruppen[gateway.GRUPPE_CHRONIK].befehle["loeschen"](ctx))
+    asyncio.run(bot.gruppen[gateway.GRUPPE_CHRONIK].befehle["delete"](ctx))
 
     (antwort,) = ctx.antworten
     assert chronik.KEINE_RUNDE in antwort
@@ -1453,7 +1453,8 @@ def test_die_geloeschte_sitzung_steht_nicht_mehr_im_suchindex(konfiguration, bot
     """Der Index hängt an keinem Fremdschlüssel — eine fts5-Tabelle kennt keinen —, und die
     Löschtrigger der Quelltabellen feuern bei einer Kaskade nicht.
 
-    Dass `/suche` nichts mehr findet, beweist das **nicht**: sie verbindet über die Sitzung
+    Dass `/chronicle search` nichts mehr findet, beweist das **nicht**: sie verbindet über
+    die Sitzung
     und liefe schon deshalb ins Leere. Stehen bliebe trotzdem der Text — Notizen und Diktate
     eines Abends, der der Gruppe als gelöscht gemeldet wurde. Geprüft wird deshalb die
     Tabelle selbst.
@@ -1564,7 +1565,7 @@ def neu_unter_derselben_nummer(config, runde, alte_nummer):
 
     ``session.id`` ist ein ``INTEGER PRIMARY KEY`` ohne ``AUTOINCREMENT``; SQLite vergibt
     die Nummer der zuletzt gelöschten Zeile wieder. Genau das passiert im Betrieb: die
-    gewählte Sitzung wird anderswo gelöscht, ``/chronik start`` beginnt den nächsten Abend.
+    gewählte Sitzung wird anderswo gelöscht, ``/session start`` beginnt den nächsten Abend.
     """
     notes.delete_session(config, runde, notes.sitzungsmarke(notes.session(runde, alte_nummer)))
     neu = notes.create_session(runde, played_on="2026-05-08", title="Der echte Abend")
@@ -1733,7 +1734,7 @@ def test_die_sitzung_wird_neben_der_ereignisschleife_geloescht(konfiguration, bo
 
 def test_die_ruhende_runde_loescht_keine_einzelne_sitzung(konfiguration, bot):
     """Sie ist verabschiedet und wartet auf ihre Frist. Wer sie ganz loswerden will, hat
-    dafür `/chronik loeschen` — dort ist eine ruhende ausdrücklich zugelassen."""
+    dafür `/chronicle delete` — dort ist eine ruhende ausdrücklich zugelassen."""
     unsere = runden.anlegen(konfiguration.database_path, GILDENAME, guild_id=GILDE)
     ids = fuellen(konfiguration, unsere, "alpha")
     austritt(bot, FakeGilde())
@@ -1753,32 +1754,37 @@ def test_die_ruhende_runde_loescht_keine_einzelne_sitzung(konfiguration, bot):
 
 def test_einrichten_ist_kein_befehl_fuer_jedes_mitglied(konfiguration, bot):
     """Die Kette, die hier abgeschnitten wird: wer die Adresse setzt, bestimmt, welchem
-    Server das nächste ``/chronik fertig`` das Foundry-Passwort vorzeigt."""
+    Server das nächste ``/session done`` das Foundry-Passwort vorzeigt."""
     ctx = FakeCtx(gilde=FakeGilde(), autor=MITGLIED)
 
-    asyncio.run(bot.befehle[gateway.BEFEHL_SETUP](ctx))
+    asyncio.run(bot.gruppen[gateway.GRUPPE_CHRONIK].befehle[gateway.BEFEHL_SETUP](ctx))
 
     assert ctx.antworten == [einrichten.NUR_VERWALTUNG]
     assert ctx.modale == []
     assert runden.fuer_gilde(konfiguration.database_path, GILDE) is None
 
 
-def test_discord_kennt_die_schranke_vor_dem_einrichten(bot):
-    """Nicht nur wir rechnen sie aus — der Befehl trägt sie bei Discord."""
-    assert bot.rechte[gateway.BEFEHL_SETUP].rechte == {"manage_guild": True}
+def test_discord_blendet_das_einrichten_nicht_mehr_aus(bot):
+    """Umgekehrt zu vorher, und mit Absicht (#272).
+
+    ``default_member_permissions(manage_guild=True)`` blendete den Befehl bei allen
+    anderen **vollständig** aus. Genau daran scheiterte der 2026-08-18: der eine Mensch,
+    der ihn hätte geben dürfen, fand ihn nicht wieder und sah stattdessen den
+    gleichnamigen Befehl eines fremden Bots. Sichtbar heißt nicht erlaubt — gerechnet wird
+    weiter im Rumpf, und der Test darüber fährt genau das.
+    """
+    assert bot.rechte == {}
+    assert gateway.BEFEHL_SETUP in bot.gruppen[gateway.GRUPPE_CHRONIK].befehle
 
 
-def test_die_absage_ohne_runde_nennt_das_recht_das_setup_ueberhaupt_sichtbar_macht(bot):
+def test_die_absage_ohne_runde_nennt_das_recht_und_den_neuen_namen(bot):
     """Punkt 2 aus #270: ein Rat, den der Empfänger nicht befolgen kann, ist keiner.
 
-    Genau diese Schranke blendet ``/setup`` bei Discord für jedes Mitglied ohne »Server
-    verwalten« **vollständig** aus. Am 2026-08-18 wurde der Betreiber deshalb zu einem
-    Befehl geschickt, den er nicht einmal sehen konnte. Der Satz wird hier gegen die
-    Schranke selbst geprüft, damit er nicht stehenbleibt, wenn sie sich ändert.
+    Genannt wird deshalb das Recht und nicht nur der Befehl — und seit #272 der Name, den
+    es in Discord wirklich gibt: ``/setup`` allein trafen in derselben Gilde zwei Bots.
     """
-    assert bot.rechte[gateway.BEFEHL_SETUP].rechte == {"manage_guild": True}
     assert "Server verwalten" in chronik.KEINE_RUNDE
-    assert "`/setup`" in chronik.KEINE_RUNDE
+    assert "`/chronicle setup`" in chronik.KEINE_RUNDE
 
 
 def test_loeschen_ist_kein_befehl_fuer_jedes_mitglied(konfiguration, bot):
@@ -2287,8 +2293,8 @@ def _loeschfaeden(monkeypatch) -> list[int]:
 def test_setup_loescht_die_abgelaufene_runde_neben_der_ereignisschleife(
     konfiguration, bot, monkeypatch
 ):
-    """``/setup`` erreicht denselben Löschweg wie das Wiedersehen — und darf es genauso wenig
-    auf der Schleife tun."""
+    """``/chronicle setup`` erreicht denselben Löschweg wie das Wiedersehen — und darf
+    es genauso wenig auf der Schleife tun."""
     abgelaufen = runden.anlegen(konfiguration.database_path, GILDENAME, guild_id=GILDE)
     fuellen(konfiguration, abgelaufen, "alpha")
     frist_setzen(konfiguration, abgelaufen, "2026-05-31T20:00:00+00:00")

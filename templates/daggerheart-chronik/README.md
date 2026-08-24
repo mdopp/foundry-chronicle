@@ -55,7 +55,7 @@ Bis dahin bleibt der Wert liegen und das Log nennt bei jedem Start die fehlende 
 nie den Wert.
 
 **Foundry-Adresse und -Benutzer sind keine Variablen.** Sie gehören der Runde und werden
-in Discord unter `/setup` eingetragen; das Foundry-Passwort wird gar nicht vorgehalten —
+in Discord unter `/chronicle setup` eingetragen; das Foundry-Passwort wird gar nicht vorgehalten —
 es wird beim Abgleich gefragt und danach vergessen. Bis alles gesetzt ist, startet der
 Dienst trotzdem, und der Bot sagt in Discord, was noch fehlt.
 
@@ -90,7 +90,7 @@ hängt seit #229 hier: ohne Bot gibt es keinen Eingang mehr — weder Notiz noch
 noch Runde —, also gibt es auch nichts zu verschriften, wo der Bot nicht läuft. Er sieht in
 einem Faden **neben** der Gateway-Verbindung auf die Uhr, und der Lauf selbst bekommt noch
 einen daneben; auf der Ereignisschleife bliebe während einer Verschriftung der Herzschlag
-zu Discord aus. Die Uhrzeit gehört der Runde und steht in Discord unter `/setup`, Vorgabe
+zu Discord aus. Die Uhrzeit gehört der Runde und steht in Discord unter `/chronicle setup`, Vorgabe
 04:00 nach der Zone der Runde; ein verpasstes Fenster wird nicht nachgeholt.
 
 ## Der Pod hängt im Host-Netz — erklärte Abweichung von ADR 0007
@@ -227,7 +227,7 @@ Nach dem Deploy gehört zur Abnahme:
 - `/healthz` liefert 200 — auf `CHRONICLE_HEALTH_PORT`, aus dem **Bot**-Prozess: es ist
   das Install-Gate der Box (#228). Auf der Box gemessen, denn es hört nur auf
   `127.0.0.1`; von einem anderen Rechner im LAN muss derselbe Port **abgewiesen** werden.
-- Der Bot hängt am Discord-Gateway und antwortet auf `/aufnahme hilfe`.
+- Der Bot hängt am Discord-Gateway und antwortet auf `/session help`.
 - **Auf `CHRONICLE_PORT` hört nichts mehr** — die Variable gibt es nicht, und auf dem
   alten Port (`8700`) darf nichts antworten. Die frühere Subdomain zeigt ins Leere; die
   Proxy-Route gehört nach dem Deploy entfernt, sonst steht ein `auth`-geschützter Host

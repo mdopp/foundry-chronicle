@@ -5,10 +5,18 @@ Sprachkanals notiert, was dort gesprochen wird und was in eurem Foundry VTT gew�
 wird, entsteht nach der Sitzung eine lesbare Chronik — Zahlen kommen ausschließlich
 aus dem Foundry-Chat-Log, erfunden werden sie nie.
 
-Bedient wird alles in Discord: `/chronik start` beginnt die Sitzung im Kanal, in dem ihr
-sie aufruft, jede Nachricht darin wird eine Notiz, `/aufnahme start` schneidet je Sprecher
-eine Spur mit, `/chronik fertig` schließt ab — und wenn der Sprachkanal leer wird, macht
-der Bot das von selbst. Am Morgen liegt der Rückblick im Gruppenkanal und die Chronik als
+Bedient wird alles in Discord, mit **neun Befehlen** in zwei Gruppen — `/session` für den
+Abend, während er läuft, `/chronicle` fürs Nachsehen danach:
+
+```
+/session   start · scene · done · check · help
+/chronicle search · who · delete · setup
+```
+
+`/session start` beginnt die Sitzung im Kanal, in dem ihr sie aufruft, **und** kommt in
+euren Sprachkanal: jede Nachricht dort wird eine Notiz, je Sprecher entsteht eine Spur.
+`/session done` schließt ab — und wenn der Sprachkanal leer wird, macht der Bot das von
+selbst. Am Morgen liegt der Rückblick im Gruppenkanal und die Chronik als
 Markdown-Datei im Kanal der Sitzung. Der ganze Ablauf steht weiter unten unter
 [Erfassen per Discord](#erfassen-per-discord-die-sitzung-ist-eine-spanne-zeit).
 
@@ -46,7 +54,7 @@ antwortet nur noch `/healthz`, das Install-Gate der Box, aus dem Bot-Prozess und
 ausschließlich auf `127.0.0.1` — den Port setzt `CHRONICLE_HEALTH_PORT`, ohne ihn bindet
 der Bot gar nichts (lokal braucht das Gate niemand).
 
-**Angestoßen wird in Discord.** `/chronik fertig` startet einen **server-eigenen Lauf**
+**Angestoßen wird in Discord.** `/session done` startet einen **server-eigenen Lauf**
 nach dem ServiceBay-Standard für lange Prozesse: der Zustand steht in der Tabelle `job`,
 überlebt Neustarts, und ein Neustart mitten im Lauf wird beim nächsten Blick ehrlich als
 unterbrochen vermerkt statt für immer zu laufen. Je Art läuft höchstens einer. Der
@@ -64,8 +72,8 @@ war, sie zu betreten; [#231](../../issues/231) hat sie deshalb ganz genommen. We
 Bot-Token darf, entscheidet jetzt, wer die Template-Variablen dieses Dienstes bearbeiten
 darf — das regelt ServiceBay. Alles Runden-eigene — Foundry-Adresse und -Benutzer,
 Zustellkanal, Uhrzeit des nächtlichen Laufs samt ihrer Zeitzone und die Quelle der
-Spieldaten — wird in Discord mit `/setup` gepflegt; den Foundry-Abgleich stößt
-`/chronik abgleich`, `/chronik fertig` oder der nächtliche Lauf an.
+Spieldaten — wird in Discord mit `/chronicle setup` gepflegt; den Foundry-Abgleich stößt
+`/chronicle abgleich`, `/session done` oder der nächtliche Lauf an.
 **ADR 0001 (Authelia-SSO) bindet den Dienst damit nicht mehr** — er ist nicht
 user-facing: keine Seite, keine Subdomain, kein veröffentlichter Port.
 
@@ -87,7 +95,7 @@ Konten, Figuren und Szenen im Ganzen — die sind Spiegel; die eingespielten **C
 tragen ihre Herkunft** (`foundry_message.aus_testwelt`) und werden beim Zurückschalten aus
 dem Archiv genommen, denn ein erfundener Wurf, den kein Abgleich mehr zurücknimmt, wäre
 später nicht mehr von einem echten zu unterscheiden. Es gehört der Runde (`settings.save_foundry_quelle`) und steht
-seit [#110](../../issues/110) als Menü unter `/setup` in Discord — nicht als Feld im
+seit [#110](../../issues/110) als Menü unter `/chronicle setup` in Discord — nicht als Feld im
 Fenster, denn ein getippter Quellenname ginge beim Vertippen still ins Leere, und die
 falsche Stellung füllt eine Chronik mit erfundenen Zahlen. Der Weg zurück steht daneben:
 die Ansicht bleibt nach der Wahl stehen.
@@ -123,7 +131,7 @@ die Modellwahl über `OLLAMA_MODEL`. Rein aus der Umgebung kommen weiterhin
 des Sprachdienstes, der die Ansage spricht (Vorgabe `http://127.0.0.1:8881`, siehe
 [Aufnahme per Discord](#aufnahme-per-discord)). Fehlt die
 Foundry-Konfiguration, startet der Dienst trotzdem und sagt es dort, wo jemand danach
-fragt: in `/setup` und in der Meldung des Abgleichs.
+fragt: in `/chronicle setup` und in der Meldung des Abgleichs.
 
 **Es gibt keine Haustür mehr, weil es kein Haus mehr gibt.** Bis
 [#231](../../issues/231) stand die Betreiber-Seite hinter Authelia
@@ -156,10 +164,10 @@ python -m chronicle.transcribe 1 mira.ogg --loeschen   # Aufnahme danach entfern
 ```
 
 Von selbst läuft das alles im **nächtlichen Lauf**: abholen, verschriften, abgleichen,
-komponieren — zu einer Uhrzeit, die jede Runde für sich einstellt (`/setup` in Discord,
+komponieren — zu einer Uhrzeit, die jede Runde für sich einstellt (`/chronicle setup` in Discord,
 Vorgabe 04:00). Sie gilt in einer **runden-eigenen Zeitzone**; der Container selbst bleibt
 auf UTC, weil eine Instanz mehrere Runden trägt. **Eingestellt wird die Zone im Feld neben
-der Uhrzeit** (`/setup`, Vorgabe `Europe/Berlin`); ein Name, den die Zonendatenbank nicht
+der Uhrzeit** (`/chronicle setup`, Vorgabe `Europe/Berlin`); ein Name, den die Zonendatenbank nicht
 kennt, wird abgewiesen statt still übernommen — sonst stünde er in der Einstellung und der
 Lauf ginge weiter nach der Vorgabe. Die Stapel-Einstiege oben sind der Weg für Cron,
 Betrieb und Ungeduld.
@@ -231,7 +239,7 @@ ersten Nachricht und nicht im Kleingedruckten: eine Gruppe entscheidet sonst üb
 Sitzungsprotokolle, ohne zu wissen, worüber sie entscheidet. Angelegt wird beim Betreten
 noch nichts.
 
-**`/setup` richtet ein.** Ein Fenster mit vier Feldern — Foundry-Adresse, Benutzer, und
+**`/chronicle setup` richtet ein.** Ein Fenster mit vier Feldern — Foundry-Adresse, Benutzer, und
 wahlweise Uhrzeit und Zeitzone des nächtlichen Laufs —, darunter zwei Menüs: der Kanal, in
 den die fertige Chronik geht, und die Quelle der Spieldaten. Discord nimmt fünf Felder je
 Fenster; die Zone gehört zur Uhrzeit und steht deshalb dort, die Quelle ist ein Schalter
@@ -255,7 +263,7 @@ jeder Löschung. Die Frist prüft derselbe dauerhafte Prozess, der auch die
 Aufbewahrungsfrist der Aufnahmen durchsetzt — zwei Zusagen, zwei Läufe, damit ein Fehler
 in der einen die andere nicht mitnimmt.
 
-**`/chronik loeschen` erzwingt es sofort**, nach einer Rückfrage mit Knopf und einer
+**`/chronicle delete` erzwingt es sofort**, nach einer Rückfrage mit Knopf und einer
 vollständigen Liste dessen, was verschwindet; geben darf ihn die **Administration** des
 Servers, und auch eine hinausgeworfene Runde darf es, ohne den Bot dafür wieder
 einzuladen. Und das heißt vollständig: Sitzungen, Szenen, Notizen, Diktate, Transkripte,
@@ -269,7 +277,7 @@ dabei nicht verschwiegen: eine ausgelieferte Chronik liegt in einem Discord-Kana
 bleibt dort, das Abgeleitete überdauert also den Beleg. Genau das steht in der
 Rückfrage, damit sich holen kann, wer den Beleg braucht.
 
-**`/chronik sitzung-loeschen` nimmt genau einen Abend** — der kleine Weg neben dem
+**`/chronicle sitzung-loeschen` nimmt genau einen Abend** — der kleine Weg neben dem
 großen, für den Fehlgriff beim Einlesen und den Testabend vom Einrichten. Erst ein Menü
 mit den Sitzungen, dann eine Rückfrage, die benennt, was an der gewählten hängt: Szenen,
 Notizen, Verschriftungen, die geschriebenen Texte — und die **Tondateien mit Zahl**, auch
@@ -290,12 +298,24 @@ ist die andere Zusage, und die gibt es hier bewusst nicht.
 
 ## Erfassen per Discord: die Sitzung ist eine Spanne Zeit
 
-`/chronik start [Titel]` beginnt die Sitzung **in dem Kanal, in dem ihr sie aufruft** — im
+`/session start [Titel]` beginnt die Sitzung **in dem Kanal, in dem ihr sie aufruft** — im
 Regelfall der Chat des Sprachkanals, an dem ihr ohnehin sitzt. Einen eigenen Thread gibt
 es seit [#271](../../issues/271) nicht mehr; die Grenze liegt auf der **Zeit**: Notiz ist,
 was zwischen Start und Abschluss dort steht, davor und danach nichts. Zwei Sitzungen
-nebeneinander gibt es nicht — erst abschließen, dann die nächste beginnen. Vor dem Start
-steht ein Fenster für das **Foundry-Passwort**: wer es gibt, hat
+nebeneinander gibt es nicht — erst abschließen, dann die nächste beginnen.
+
+**Ein Befehl statt einer Reihenfolge** ([#272](../../issues/272)): derselbe Aufruf holt den
+Bot in den Sprachkanal, in dem der Aufrufer steht, spielt die Einwilligungs-Ansage und
+schneidet danach mit. Steht er in keinem, entsteht trotzdem die Sitzung — es wird nur kein
+Ton aufgenommen, und der Befehl sagt das. Läuft die Sitzung schon, holt ein zweites
+`/session start` nur den Mitschnitt nach; angelegt wird nichts.
+
+**Warum das überhaupt ein Befehl ist.** Der Bot sieht, wer im Sprachkanal steht — daraus
+zu schließen, dass hier gespielt und mitgeschnitten werden soll, hieße Einwilligung zu
+unterstellen. §201 StGB verlangt einen bewussten Akt, keine Vermutung. Das **Ende** darf
+er dagegen selbst erkennen und tut es seit [#271](../../issues/271); den Anfang nicht.
+
+Vor dem Start steht ein Fenster für das **Foundry-Passwort**: wer es gibt, hat
 Foundry die ganze Sitzung über offen; wer das Feld leer lässt, spielt ohne die Zahlen
 weiter und wird beim Abschluss noch einmal gefragt — **an einem fehlenden Passwort
 scheitert keine Sitzung.** Wo gar kein Foundry-Server eingetragen ist oder die Runde auf
@@ -304,39 +324,33 @@ der Testwelt läuft, kommt das Fenster erst gar nicht. Solange sie läuft, gilt:
 - **Jede Nachricht ist eine Notiz** der laufenden Szene. Eingefügter Text — Log,
   Notizzettel, was auch immer — ist einfach eine Nachricht. Der Bot quittiert sie nicht:
   sie steht im Kanal und *ist* die Notiz.
-- **`/szene <Name>`** zieht die Trennlinie zur nächsten Szene.
+- **`/session scene <Name>`** zieht die Trennlinie zur nächsten Szene.
 - **Eine Sprachnachricht oder ein Audio-Anhang** ist ein Diktat und reiht sich in dieselbe
   Warteschlange ein wie ein Upload — quittiert wird er, weil er den Kanal verlässt.
-- **`/chronik fertig`** schließt die Sitzung ab: Abgleich mit Foundry, Transkription der
+- **`/session done`** schließt die Sitzung ab: Abgleich mit Foundry, Transkription der
   wartenden Spuren, Komposition — **ein** Auftrag, mit Statusmeldung im Kanal. **Vergessen
   kostet nichts mehr:** verlässt die letzte Person den Sprachkanal, schließt der Bot nach
   neunzig Sekunden selbst ab — kommt in der Frist jemand zurück, bleibt der Abend offen.
   Nach dem
   Foundry-Passwort fragt ein Fenster nur, wenn **du selbst** beim Start keines gegeben
-  hast: `/chronik start` steht jedem Mitglied offen, und die Eingabe eines anderen wird
+  hast: `/session start` steht jedem Mitglied offen, und die Eingabe eines anderen wird
   nicht stillschweigend deinem Abschluss untergeschoben. Verwendet und vergessen wird es
   so oder so (siehe *Zugangsdaten*). Ein Befehls-Argument gibt es dafür nicht — es stünde
   als Klartext im Kanalverlauf.
-- **`/chronik abgleich`** holt nur die Zahlen, ganz ohne Sitzung: der Griff für
+- **`/chronicle abgleich`** holt nur die Zahlen, ganz ohne Sitzung: der Griff für
   den Abend, an dem Foundry aus war und der Stand nachgezogen werden soll, statt bis zum
   nächtlichen Lauf zu warten ([#116](../../issues/116)). Dasselbe Fenster fürs Passwort,
   derselbe server-eigene Lauf, dieselbe Meldung im Kanal — ein dritter Auslöser, kein
-  dritter Weg. Eine ruhende Runde bekommt auch hier nichts.
+  dritter Weg. Eine ruhende Runde bekommt auch hier nichts. Er steht seit
+  [#272](../../issues/272) **nicht** in der Hilfe: die Neun sind das, was eine Gruppe
+  kennen muss, und dieser Griff ist ein Notnagel. Aufrufbar bleibt er — wie
+  `/chronicle sitzung-loeschen` und `/session pause`.
 
-**Ein vorhandener Notizbestand kommt nachträglich herein.** Wer schon länger spielt und
-seine Notizen in **einem** Markdown-Dokument hat — ein Abschnitt je Abend —, hängt es an
-`/chronik einlesen` an, **im Kanal der Runde** und nicht in einer Sitzung: ein Dokument deckt
-mehrere Abende ab und gehört in keinen einzelnen. Aufgeteilt wird an den Überschriften,
-und zwar relativ statt fest: die Abende trennt die oberste Ebene, deren Überschriften ein
-**Datum** tragen, alles darunter die Szenen — dasselbe Dokument mit `#` je Abend ergibt
-dieselben Sitzungen wie eines mit `##`-Abenden unter einem `#`-Vorspann. Der Text wird
-übernommen, wie er dasteht: kein Modell, keine Zusammenfassung, kein geratenes Datum — eine
-Überschrift ohne lesbares Datum wird benannt und übersprungen. Ebenso ein Abend, unter dem
-**kein einziger Satz** steht: er trüge nichts in die Chronik und wäre beim nächsten Einlesen
-nicht wiederzuerkennen, also wird auch er benannt und nicht angelegt
-([#172](../../issues/172)). Der Bot zeigt erst, **was
-entstünde**; ohne Bestätigung entsteht nichts, und dieselbe Datei ein zweites Mal
-hochgeladen verdoppelt den Bestand nicht ([#169](../../issues/169)).
+**Was der Bot von selbst fragt, statt darauf zu warten, dass jemand einen Befehl kennt.**
+Registervorschläge kommen nach dem Lauf als Nachfrage in den Kanal des Abends, mit den
+Knöpfen darunter; wer den Sprachkanal betritt und in Foundry noch niemandem gehört, wird
+im Zwiegespräch gefragt. Beides hatte bis [#272](../../issues/272) einen eigenen Befehl —
+und am 2026-08-18 warteten zwölf Vorschläge, weil niemand ihn kannte.
 
 **Nachträgliches Erfassen geht.** Eine bearbeitete Nachricht ändert **ihre** Notiz, auch
 Wochen später und auch dann, wenn längst ein anderer Abend läuft — sie bleibt bei der
@@ -346,10 +360,13 @@ ihre Notiz — Discord meldet beides, und ein Protokoll, das eine zurückgenomme
 festhält, wäre die falsche Sorte Gedächtnis.
 
 **Der Server bestimmt die Runde.** Eine Discord-Gilde gehört genau einer Runde; ist für
-einen Server noch keine eingerichtet, sagt der Bot das und verweist auf `/setup`, statt in
-irgendeine Chronik zu schreiben — samt dem Recht, das dafür nötig ist: Discord blendet
-`/setup` ohne »Server verwalten« vollständig aus, und ein Rat, den der Empfänger nicht
-befolgen kann, ist schlimmer als keiner ([#270](../../issues/270)). Eine gesperrte Runde gilt dabei als keine — sie ist
+einen Server noch keine eingerichtet, sagt der Bot das und verweist auf
+`/chronicle setup`, statt in irgendeine Chronik zu schreiben — samt dem Recht, das dafür
+nötig ist ([#270](../../issues/270)). Der Befehl hieß bis [#272](../../issues/272)
+`/setup` und trug `default_member_permissions(manage_guild=True)`: Discord blendete ihn
+für alle anderen **vollständig** aus, und ein zweiter Bot im selben Server trug denselben
+Namen — am 2026-08-18 fand ihn deshalb nicht einmal der Betreiber. Unter `/chronicle` ist
+der Name eindeutig und der Befehl sichtbar; wer ihn nicht geben darf, bekommt es gesagt. Eine gesperrte Runde gilt dabei als keine — sie ist
 verabschiedet und wartet nur noch auf ihre Frist.
 
 Die Befehle trägt derselbe dauerhafte Prozess wie die Aufnahme (`python -m chronicle.bot`,
@@ -413,12 +430,12 @@ gibt es nicht mehr.)
 
 Gegenrichtung: der Rückblick geht **in den Gruppenkanal**, nicht in den Briefkasten. Er
 wird unmittelbar vor der nächsten Sitzung gelesen, und dort ist die Gruppe ohnehin.
-Welcher Kanal, sagt die Gruppe selbst mit **`/setup` in Discord** (Feld *Zustellkanal*);
+Welcher Kanal, sagt die Gruppe selbst mit **`/chronicle setup` in Discord** (Feld *Zustellkanal*);
 **keiner ist eine gültige Wahl und heißt: keine Zustellung.** Einen Zeitpunkt gibt es
 nicht, auf den sich zielen ließe — das System kennt keinen Sitzungskalender.
 
 **Kommt die Zustellung nicht durch, wird es gesagt** (#182): der Satz hängt an der
-Antwort auf `/chronik fertig` und an der Karte des nächtlichen Laufs, also dort, wo die
+Antwort auf `/session done` und an der Karte des nächtlichen Laufs, also dort, wo die
 Gruppe ohnehin liest. Der nicht auflösbare Wert bleibt aus dieser Nachricht heraus und
 steht nur im Log des Betreibers — eine Kanal-Kennung ist nichts, was in eine
 Gruppennachricht gehört. Bis dahin scheiterte die Zustellung **still**, und niemand in
@@ -471,12 +488,22 @@ Installation hängt, **beendet** er sich ohne Token nicht mehr, sondern bleibt l
 antwortet weiter: bei der Erstinstallation ist der fehlende Token der Normalfall, und der
 Poller fände sonst niemanden. Ein neuer Anmeldeversuch wird daraus trotzdem nicht.
 
-Im Sprachkanal: **`/aufnahme start`** holt den Bot in den Kanal des Aufrufers — eine
-Kanal-Konfiguration braucht es deshalb nicht —, **`/aufnahme stop`** beendet die Aufnahme
-und reiht die Spuren in dieselbe Warteschlange ein wie ein Diktat, **`/aufnahme hilfe`**
-sagt in drei Zeilen, was der Bot tut. Die Befehle registriert der Bot beim Start selbst.
+Im Sprachkanal: **`/session start`** holt den Bot in den Kanal des Aufrufers — eine
+Kanal-Konfiguration braucht es deshalb nicht —, **`/session pause`** beendet die Aufnahme
+und reiht die Spuren in dieselbe Warteschlange ein wie ein Diktat, **`/session help`**
+sagt in drei Zeilen, was der Bot tut. `/session pause` steht bewusst **nicht** in der
+Hilfe: ohne ihn würde die Pause mitgeschnitten, mit ihm stünde neben »so fängt der Abend
+an« gleich »so hört er auf«.
 
-**`/aufnahme test`** beantwortet die eine Frage, die von außen nicht zu sehen ist: kommt
+Die Befehle registriert der Bot beim Start selbst — py-cord schreibt sie beim Verbinden in
+**einem** Sammelaufruf und löscht dabei, was nicht darin steht. Genau daran hängt der
+Umzug von [#272](../../issues/272): die acht alten obersten Namen (`/aufnahme`,
+`/chronik`, `/register`, `/setup`, `/suche`, `/wer`, `/zuordnung`, `/szene`) verschwinden
+bei Discord, weil sie im neuen Satz nicht mehr vorkommen. Das trägt nur, solange kein
+Befehl `guild_ids` bekommt: ein gildeneigener stünde neben dem globalen Satz, und im
+Befehlsmenü stünden beide Sätze nebeneinander.
+
+**`/session check`** beantwortet die eine Frage, die von außen nicht zu sehen ist: kommt
 hier überhaupt lesbarer Ton an? Der Bot folgt in den Sprachkanal, lauscht zehn Sekunden
 und berichtet nur dem Aufrufer, was wirklich ankam — Pakete, je Sprecher eine Spur mit
 ihren Bytes — und was das heißt. Verlorene Rahmen zählt er nicht mit und sagt das auch:
@@ -577,7 +604,7 @@ Paket `discord`; ein daneben installiertes `discord.py` schlägt sich mit ihm.
 Dahinter stecken PyNaCl und `davey`, Discords DAVE-Ende-zu-Ende-Verschlüsselung für
 Sprache. Fehlt eines davon, verbindet sich py-cord anstandslos, schreibt eine einzige
 Warnzeile — `davey is not installed, voice will NOT be supported` — und der Bot hört
-nichts; scheitern würde erst `/aufnahme start`, mitten im Befehl. Genau so ist es einmal
+nichts; scheitern würde erst `/session start`, mitten im Befehl. Genau so ist es einmal
 passiert. Deshalb wird die Liste nicht mehr abgeschrieben, und deshalb **prüft der Bot
 beim Start** (`discord.utils.get_missing_voice_dependencies()`) und beendet sich mit einem
 verständlichen Satz, statt sich taub anzumelden. Beide Pakete bringen fertige
@@ -620,7 +647,7 @@ Der Assistent fragt nach dem Port des Install-Gates, dem Image-Tag — und seit
 [#230](../../issues/230) nach `DISCORD_BOT_TOKEN`, `OLLAMA_URL` und `OLLAMA_MODEL`. Nach
 Subdomain und HTTP-Port fragt er seit [#231](../../issues/231) **nicht** mehr: der Dienst
 veröffentlicht nichts und braucht weder nginx noch Authelia davor. Der **Foundry-Zugang**
-wird weiterhin in Discord unter `/setup` eingerichtet: er gehört der Runde, nicht der
+wird weiterhin in Discord unter `/chronicle setup` eingerichtet: er gehört der Runde, nicht der
 Instanz.
 
 Die drei Instanz-Variablen sind bewusst vom Typ `text` und **nicht** `secret`: für ein

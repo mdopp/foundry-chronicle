@@ -15,7 +15,7 @@ Seine eigenen Überschriften bleiben stehen, und sie sind der Punkt: »Offene F�
 Deutung des Modells, keine Fakten« steht im Embed genauso da wie im abgelegten Text. Wer
 ihn vor der nächsten Sitzung liest, sieht damit, was belegt ist und was gedeutet.
 
-**Welcher Kanal, steht in zwei Formen da.** ``/setup`` schreibt die Id des gewählten
+**Welcher Kanal, steht in zwei Formen da.** ``/chronicle setup`` schreibt die Id des gewählten
 Kanals, ältere Runden und ``DISCORD_RECAP_CHANNEL`` tragen seinen Namen. Beides wird
 angenommen und nichts gewandert: eine Wanderung müsste Namen gegen Discord auflösen, um
 sie in Ids zu übersetzen — zu einem Zeitpunkt, an dem kein Bot läuft und kein Netz zugesagt
@@ -30,12 +30,12 @@ dann wird nicht geraten, sondern gesagt.
 sondern auch, ob er die Gruppe angeht: der Fehler aus #182 war nicht die verwechselte
 Kanalform allein, sondern dass beide Aufrufer die Meldung verwarfen und das Schweigen
 sich wie eine gelungene Zustellung las. Ein gescheiterter Versuch steht jetzt im Ergebnis
-des Laufs — im Nachtbericht und in der Antwort auf ``/chronik`` — und als Warnung im Log.
+des Laufs — im Nachtbericht und in der Antwort auf ``/chronicle`` — und als Warnung im Log.
 
 **Warum das ein anderer Weg ist als der der Chronik** (#261). Beides geht nach Discord und
 im selben Lauf, aber es sind drei Unterschiede auf einmal: ein anderes **Ziel** — die
 Chronik in den Sitzungs-Thread, den der Bot selbst angelegt hat, der Rückblick in den
-Kanal, den ``/setup`` aus der Gildenliste anbietet —, eine andere **Form** — Anhang gegen
+Kanal, den ``/chronicle setup`` aus der Gildenliste anbietet —, eine andere **Form** — Anhang gegen
 Embed —, und damit ein anderes **Recht**, das Discord dafür verlangt. Aus »die Chronik kam
 an« folgt deshalb nichts über den Rückblick; drei Läufe lang sah es trotzdem so aus, als
 müsste es das. Zusammengelegt wird darum nichts: der Rückblick wird vor der nächsten
@@ -79,11 +79,11 @@ KEIN_ZUSTELLKANAL = "Kein Zustellkanal eingetragen — der Rückblick bleibt in 
 # gehört er, dorthin sieht der Betreiber.
 KEIN_KANAL = (
     "Den eingestellten Zustellkanal sehe ich in eurer Gilde nicht — der Rückblick zur "
-    "Sitzung {sitzung} blieb liegen. Wähl den Kanal in `/setup` noch einmal."
+    "Sitzung {sitzung} blieb liegen. Wähl den Kanal in `/chronicle setup` noch einmal."
 )
 OHNE_GILDE = (
     "Diese Runde hängt an keiner Discord-Gilde — den Rückblick zur Sitzung {sitzung} kann "
-    "ich nirgends zustellen. Richte sie mit `/setup` in eurer Gilde ein."
+    "ich nirgends zustellen. Richte sie mit `/chronicle setup` in eurer Gilde ein."
 )
 KEIN_RUECKBLICK = "Sitzung {sitzung} hat keinen Rückblick."
 SCHON_ZUGESTELLT = "Rückblick zur Sitzung {sitzung} war schon zugestellt."

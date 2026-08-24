@@ -248,7 +248,7 @@ def test_kein_zufallswert_fuer_fremde_zugangsdaten(variablen: dict) -> None:
 
 
 def test_der_foundry_zugang_kommt_nicht_aus_der_umgebung(variablen: dict, manifest: dict) -> None:
-    # Der Foundry-Zugang gehört der **Runde** und wird in Discord unter /setup gepflegt;
+    # Der Foundry-Zugang gehört der **Runde** und wird in Discord unter /chronicle setup gepflegt;
     # das Passwort gibt es seit #64 überhaupt nirgends mehr. Deklariert das Template sie
     # trotzdem, rendert es sie bestenfalls leer und schlimmstenfalls falsch.
     # (Bis #230 stand hier auch der Bot-Token — der gehört der **Instanz** und kommt

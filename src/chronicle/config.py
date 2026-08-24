@@ -1,7 +1,7 @@
 """Konfiguration aus der Umgebung — die Vorgabe, nicht das letzte Wort.
 
 Die Umgebung ist der Deploy-Weg und der Stand beim ersten Start; die Werte für Foundry
-lassen sich in Discord unter ``/setup`` überschreiben. Wer sie braucht, nimmt deshalb
+lassen sich in Discord unter ``/chronicle setup`` überschreiben. Wer sie braucht, nimmt deshalb
 ``chronicle.settings.effective`` und nicht dieses Objekt direkt.
 
 **Das Foundry-Passwort steht hier nicht.** Es gibt keine Umgebungsvariable dafür und kein
@@ -26,7 +26,7 @@ MASK = "***"
 
 FOUNDRY_VARIABLES = ("FOUNDRY_URL", "FOUNDRY_USER")
 
-# Dieselben Werte, wie sie in ``/setup`` heißen — mit Artikel, weil daraus ein Satz
+# Dieselben Werte, wie sie in ``/chronicle setup`` heißen — mit Artikel, weil daraus ein Satz
 # für jemanden gebaut wird, der nie eine Umgebungsvariable gesehen hat.
 FOUNDRY_FELDER = ("die Adresse", "der Benutzer")
 

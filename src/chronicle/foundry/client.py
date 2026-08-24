@@ -66,7 +66,7 @@ def _zugang_fehlt(felder: tuple[str, ...]) -> str:
     aufzaehlung = felder[0] if len(felder) == 1 else f"{', '.join(felder[:-1])} und {felder[-1]}"
     return (
         f"Für den Zugang zu Foundry {'fehlt' if len(felder) == 1 else 'fehlen'} noch "
-        f"{aufzaehlung}. Eintragen kannst du das mit `/setup`."
+        f"{aufzaehlung}. Eintragen kannst du das mit `/chronicle setup`."
     )
 
 

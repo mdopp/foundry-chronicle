@@ -111,7 +111,7 @@ def station_1_aufsetzen(tmp_path):
 def station_2_konfigurieren(config, mock_foundry, mock_ollama):
     """Zwei Orte, zwei Zuständigkeiten: die Runde in Discord, die Instanz in der Umgebung.
 
-    Was einer Gilde gehört — Foundry-Zugang, Zustellkanal, Nachtlauf — pflegt ``/setup``
+    Was einer Gilde gehört — Foundry-Zugang, Zustellkanal, Nachtlauf — pflegt ``/chronicle setup``
     (``bot.einrichten``); was der Instanz gehört, kommt seit #230 aus der Umgebung und
     wird beim Start gelesen. Das ``replace`` hier ist deshalb keine Umständlichkeit,
     sondern genau der Handgriff des Betreibers: Wert hinterlegen, Dienst neu starten.
@@ -179,7 +179,7 @@ def station_3_erster_abgleich(config):
 
 
 def station_4_erste_sitzung(config):
-    """Sitzung, Szenen und Notizen — in Discord ``/chronik start``, ``/szene``, der Thread."""
+    """Sitzung, Szenen und Notizen — in Discord ``/session start`` und ``/session scene``."""
     gruppe = runde(config)
     sitzung_id = notes.create_session(gruppe, played_on=GESPIELT_AM, title=TITEL)
 
@@ -221,7 +221,7 @@ def station_5_erste_zusammenfassung(config, sitzung_id, mock_ollama):
 
 
 def station_6_wiederfinden(config, sitzung_id):
-    """Wochen später: ``/suche`` findet den Begriff, die Chronik trennt sichtbar."""
+    """Wochen später: ``/chronicle search`` findet den Begriff, die Chronik trennt sichtbar."""
     ergebnis = search.find(runde(config), SUCHBEGRIFF)
     treffer = [hit for gruppe in ergebnis.groups for hit in gruppe.hits]
     assert treffer, ergebnis

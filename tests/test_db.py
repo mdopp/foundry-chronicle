@@ -337,7 +337,7 @@ def test_nach_der_wanderung_ist_die_kennung_pflicht(tmp_path):
 
 def test_die_wanderung_traegt_jeder_sitzung_eine_eigene_kennung_nach(tmp_path):
     """Ohne Kennung wäre eine Sitzung aus der Zeit davor nicht wiedererkennbar — und damit
-    über ``/chronik sitzung-loeschen`` gar nicht zu löschen. Je Sitzung eine eigene, sonst
+    über ``/chronicle sitzung-loeschen`` gar nicht zu löschen. Je Sitzung eine eigene, sonst
     gälten zwei als dieselbe."""
     pfad = tmp_path / "chronicle.sqlite3"
     db.init(pfad)

@@ -12,7 +12,7 @@ Herzschlag zu Discord aus — der Bot fiele mitten in der Nacht vom Gateway.
 Ein verpasstes Fenster wird nicht nachgeholt. War der Server um vier Uhr aus, ist das
 Material am nächsten Morgen so alt wie vorher — ein Lauf um zehn Uhr vormittags brächte
 niemandem etwas und stünde mitten im Arbeitstag auf der Maschine. Die nächste Nacht
-genügt, und `/setup` sagt das auch so.
+genügt, und `/chronicle setup` sagt das auch so.
 
 Verpasst heißt aber »niemand hat hingesehen«, nicht »die Maschine war besetzt«. Bei
 mehreren Runden mit derselben Uhrzeit — der Vorgabe — kommt nur eine sofort dran; die
@@ -205,7 +205,7 @@ def offen(runde: Runde) -> tuple[tuple[int, str], ...]:
 
 
 def _chronik(config: Config, runde: Runde) -> Schritt:
-    """Jede fällige Sitzung durch dieselbe Kette, die auch ``/chronik fertig`` geht.
+    """Jede fällige Sitzung durch dieselbe Kette, die auch ``/session done`` geht.
 
     Sie schreibt den Satz, den die Karte zeigt — bis #221 stand hier eine eigene
     Reihenfolge, der die Übernahme der Transkripte fehlte, und darüber ein »geschrieben«,

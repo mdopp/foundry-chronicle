@@ -248,7 +248,7 @@ def test_der_nachtlauf_traegt_das_gesprochene_wort_in_die_chronik(stelle):
     Bis #221 fehlte ihm die Übernahme der Transkripte: er verschriftete die Aufnahmen und
     komponierte daraus eine Chronik, in der kein gesprochenes Wort stand. Danach war die
     Sitzung nicht mehr fällig — der Abend blieb dauerhaft stumm, bis jemand von Hand
-    ``/chronik fertig`` gab. Ein Test mit gestubbten Schritten sieht das nie.
+    ``/session done`` gab. Ein Test mit gestubbten Schritten sieht das nie.
     """
     gastgeber = runde(stelle)
     sitzung_id = mit_notiz(stelle)
