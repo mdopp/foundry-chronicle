@@ -47,6 +47,7 @@ L_BUILDING = LABEL + "building"
 L_BLOCKED = LABEL + "blocked"
 L_REFINE = LABEL + "needs-refinement"
 L_REVIEW = LABEL + "review"
+L_WAIVED = LABEL + "draft-waived"
 L_DEVICE = LABEL + "device-test"
 L_UPSTREAM = LABEL + "upstream-wait"
 L_VERIFY_PENDING = LABEL + "verify-pending"
@@ -282,6 +283,80 @@ def v_claim(c: Cache, a) -> None:
     print(f"claimed {a.unit} ({u.get('issues')})")
 
 
+def _fully_waived(u: dict) -> bool:
+    """True only if EVERY member issue of the unit carries an operator waiver.
+
+    Per-issue, not per-unit: the waiver is granted on a GitHub issue, and a
+    cluster with one waived and one un-waived member is still a draft case.
+    """
+    issues = [str(x) for x in u.get("issues") or []]
+    waived = {str(x) for x in u.get("waived") or []}
+    return bool(issues) and all(i in waived for i in issues)
+
+
+def _waive_comment(reason: str) -> str:
+    return (
+        f"**Draft-Gate aufgehoben** (`{L_WAIVED}`) — der Betreiber hat die "
+        "Draft-Pflicht aus `CLAUDE.md` § »Aufnahmen sind personenbezogen« für "
+        "dieses Issue ausdrücklich aufgehoben. Die Unit läuft damit über den "
+        "normalen Batch und wird mit ihm gemergt; es entsteht keine Draft-PR "
+        "und kein `autoloop:review`.\n\n"
+        f"Grund: {reason}\n\n"
+        "<sub>Von einem Agenten (Autoloop) im Auftrag des Betreibers notiert. "
+        "Ohne diesen Vermerk verweigert `queue.py built` die Buchung (#235); "
+        "mit ihm ist die Aufhebung später von einer Umgehung zu "
+        "unterscheiden.</sub>"
+    )
+
+
+def v_waive(c: Cache, a) -> None:
+    """Record that the operator lifted the pre-merge draft gate for one issue."""
+    reason = (a.reason or "").strip()
+    if not reason:
+        sys.exit("queue.py: waive needs --reason — an unexplained waiver is a bypass")
+    d = c.load()
+    touched = []
+    for uid, u in (d.get("units") or {}).items():
+        if str(a.issue) not in [str(x) for x in u.get("issues") or []]:
+            continue
+        waived = [str(x) for x in u.get("waived") or []]
+        if str(a.issue) not in waived:
+            waived.append(str(a.issue))
+        u["waived"] = waived
+        touched.append(uid)
+    c.save(d)
+    if not a.offline:
+        # Without the label the `--add-label` below is silently dropped (gh calls
+        # here are fail-soft) and the waiver would exist nowhere durable — which
+        # is the whole failure this verb exists to prevent. Creating it is a
+        # no-op once it exists.
+        gh(
+            _repo_args(a.repo)
+            + [
+                "label",
+                "create",
+                L_WAIVED,
+                "--color",
+                "FBCA04",
+                "--description",
+                "Operator lifted the pre-merge draft gate for this issue",
+            ],
+            check=False,
+        )
+        gh(
+            _repo_args(a.repo)
+            + ["issue", "edit", str(a.issue), "--add-label", L_WAIVED],
+            check=False,
+        )
+        gh(
+            _repo_args(a.repo)
+            + ["issue", "comment", str(a.issue), "--body", _waive_comment(reason)],
+            check=False,
+        )
+    units = f"; units updated: {','.join(touched)}" if touched else "; no planned unit"
+    print(f"waived #{a.issue} -> {L_WAIVED}{units}")
+
+
 def v_built(c: Cache, a) -> None:
     """Mark a unit built onto the batch (PR attached at seal)."""
     d = c.load()
@@ -290,11 +365,14 @@ def v_built(c: Cache, a) -> None:
         sys.exit(f"queue.py: no unit {a.unit}")
     # A security unit rides its own sec/... branch and never joins the batch, so
     # booking it out here would count a commit `git log main..batch/<id>` cannot
-    # show — and the seal-at-8 check would fire early. It exits via `park`.
-    if u.get("security"):
+    # show — and the seal-at-8 check would fire early. It exits via `park`, or,
+    # if the operator lifted the draft gate, via `waive` first.
+    if u.get("security") and not _fully_waived(u):
         sys.exit(
             f"queue.py: {a.unit} is a security unit — it never joins the batch; "
-            f"exit it with `park <issue> review --comment ...`"
+            f"exit it with `park <issue> review --comment ...`. If the operator "
+            f"lifted the draft gate for it, record that on GitHub first: "
+            f"`waive <issue> --reason ...` (every member issue)."
         )
     u["status"] = "built"
     if a.pr:
@@ -625,6 +703,51 @@ def v_selftest(c: Cache, a) -> None:
             self.assertEqual(back["batch"]["count"], 0)
             self.assertEqual(back["batch"]["unit_ids"], [])
 
+        def test_waive_lets_a_security_unit_onto_the_batch(self):
+            self._plan_security_unit()
+            self._run(v_waive, issue=77777, reason="Betreiber: zieh durch")
+            self._run(v_built, unit="s1", pr=None)
+            back = self.c.load()
+            self.assertEqual(back["batch"]["count"], 1)
+            self.assertEqual(back["batch"]["unit_ids"], ["s1"])
+            # the unit stays visibly a security unit — the waiver is additive
+            self.assertTrue(back["units"]["s1"]["security"])
+            self.assertEqual(back["units"]["s1"]["waived"], ["77777"])
+
+        def test_waive_needs_every_member_issue_of_a_cluster(self):
+            self._run(
+                v_plan,
+                unit='{"id":"s2","kind":"cluster","issues":[555,556],'
+                '"gate":"normal","security":true}',
+            )
+            self._run(v_batch, action="new", branch="batch/x")
+            self._run(v_claim, unit="s2")
+            self._run(v_waive, issue=555, reason="Betreiber: nur dieses")
+            with self.assertRaises(SystemExit):
+                self._run(v_built, unit="s2", pr=None)
+            self._run(v_waive, issue=556, reason="Betreiber: das andere auch")
+            self._run(v_built, unit="s2", pr=None)
+            self.assertEqual(self.c.load()["batch"]["count"], 2)
+
+        def test_waive_refuses_an_unexplained_waiver(self):
+            self._plan_security_unit()
+            with self.assertRaises(SystemExit):
+                self._run(v_waive, issue=77777, reason="  ")
+            with self.assertRaises(SystemExit):
+                self._run(v_built, unit="s1", pr=None)
+            self.assertEqual(self.c.load()["batch"]["count"], 0)
+
+        def test_waive_of_another_issue_does_not_unlock_a_unit(self):
+            self._plan_security_unit()
+            self._run(v_waive, issue=66666, reason="ein fremdes Issue")
+            with self.assertRaises(SystemExit):
+                self._run(v_built, unit="s1", pr=None)
+
+        def test_waive_comment_carries_the_reason_and_the_label(self):
+            body = _waive_comment("Betreiber: zieh durch")
+            self.assertIn("Betreiber: zieh durch", body)
+            self.assertIn(L_WAIVED, body)
+
         def test_park_releases_the_building_claim(self):
             args = _park_edit_args(77777, L_REVIEW)
             self.assertIn(L_BUILDING, args)
@@ -708,6 +831,9 @@ def main() -> None:
     sp.add_argument("issue", type=int)
     sp.add_argument("state", choices=list(PARK_LABELS))
     sp.add_argument("--comment", default="")
+    sp = add("waive", v_waive)
+    sp.add_argument("issue", type=int)
+    sp.add_argument("--reason", default="", help="why the operator lifted the gate")
     sp = add("mirror", v_mirror)
     sp.add_argument("--pr", type=int)
     sp = add("rebuild", v_rebuild)
