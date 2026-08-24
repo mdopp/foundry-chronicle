@@ -453,6 +453,10 @@ def chronik(config: Config, runde: Runde, session_id: int) -> str:
         vorlauf += NICHT_VERSCHRIFTET.format(
             anzahl=lauf.offen, mehr=mehrzahl(lauf.offen), tage=recordings.RETENTION_TAGE
         )
+    # Wörtlich und nicht gezählt: was hier steht, kommt nicht wieder, und ein Zähler daneben
+    # ließe die Runde raten, welche Stunde ihres Abends gemeint ist (#286).
+    for satz in lauf.verlust:
+        vorlauf += f"{satz} "
     stand = STEHT if lauf.chronik.reason is None else STEHT_OHNE_MODELL
     # Der Hinweis auf offene Vorschläge steht bewusst im Ergebnis des Laufs: wird das
     # Bestätigen nicht angestoßen, wird es übersprungen, und das Register verfällt.

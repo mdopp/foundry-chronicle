@@ -51,7 +51,7 @@ import asyncio
 import logging
 import sqlite3
 import threading
-from collections.abc import Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -706,22 +706,40 @@ def sweep(config, runde: Runde, *, tage: int = RETENTION_TAGE) -> tuple[str, ...
     return tuple(meldungen)
 
 
+# Wer erfährt, was die Frist geholt hat. Wer das ist, entscheidet der Aufrufer — diese
+# Datei kennt Discord nicht.
+Melder = Callable[[Runde, tuple[str, ...]], None]
+
+
 @runden.instanzweit
-def sweep_alle(config, *, tage: int = RETENTION_TAGE) -> tuple[str, ...]:
-    """Die Frist gilt jeder Stimme auf dieser Box und nicht nur der einen Runde."""
+def sweep_alle(
+    config, *, tage: int = RETENTION_TAGE, melden: Melder | None = None
+) -> tuple[str, ...]:
+    """Die Frist gilt jeder Stimme auf dieser Box und nicht nur der einen Runde.
+
+    ``melden`` bekommt je Runde, was in **ihr** gelöscht wurde. Gebündelt über alle Runden
+    wäre der Rückgabewert genau das, was er bis #286 war: ein Haufen Sätze ohne Adressat.
+    """
     meldungen: list[str] = []
     for eine in runden.alle(config.database_path):
-        meldungen.extend(sweep(config, eine, tage=tage))
+        eigene = sweep(config, eine, tage=tage)
+        if eigene and melden is not None:
+            melden(eine, eigene)
+        meldungen.extend(eigene)
     return tuple(meldungen)
 
 
 @runden.instanzweit
-async def taeglich(config, *, schlafen=asyncio.sleep) -> None:
+async def taeglich(config, *, schlafen=asyncio.sleep, melden: Melder | None = None) -> None:
     """Die Frist im dauerhaften Bot-Prozess — einmal beim Start, danach täglich.
 
     Der nächtliche Stapel räumt ebenfalls; beides zusammen heißt, dass die Zusage auch
     dann gilt, wenn eines von beidem eine Weile nicht läuft.
+
+    Und dies ist der Weg, auf dem die Frist im Betrieb wirklich läuft — was sie zu sagen
+    hat, darf hier nicht auf dem Boden landen (#286). Wer die Runde erreicht, entscheidet
+    der Aufrufer: diese Datei kennt Discord nicht.
     """
     while True:
-        sweep_alle(config)
+        sweep_alle(config, melden=melden)
         await schlafen(SWEEP_ABSTAND)

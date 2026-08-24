@@ -358,6 +358,74 @@ def test_der_lauf_meldet_keine_verschriftung_die_nicht_stattfand(stelle, monkeyp
     assert f"nach {recordings.RETENTION_TAGE} Tagen gelöscht" in meldung
 
 
+def _altern(stelle, aufnahme_id, tage):
+    zeitpunkt = (datetime.now(UTC) - timedelta(days=tage)).isoformat(timespec="seconds")
+    verbindung = db.connect(stelle.database_path)
+    try:
+        with verbindung:
+            verbindung.execute(
+                "UPDATE recording SET uploaded_at = ? WHERE id = ?", (zeitpunkt, aufnahme_id)
+            )
+    finally:
+        verbindung.close()
+
+
+class Kaputt:
+    """Eine Spur, an der jeder Anlauf scheitert — und der dritte ist der letzte."""
+
+    name = "erfundenes-modell"
+
+    def transcribe(self, audio_path, *, hotwords=()):
+        raise RuntimeError("Die Datei ist kein Ton")
+        yield  # pragma: no cover
+
+
+def test_die_frist_holt_eine_spur_ohne_text_und_die_runde_erfaehrt_es(stelle, monkeypatch):
+    """#286: der Satz aus ``recordings.OHNE_TEXT`` endete in ``kette.py:83``.
+
+    Die Spur verbrennt in **diesem** Lauf ihren letzten Anlauf und wird gleich darauf von
+    der Frist geholt. Danach steht sie in keinem der beiden Zähler: ``verschriftet`` nicht,
+    weil kein Text entstand, ``offen`` nicht, weil kein Lauf mehr kommt. Wer nur die Zahlen
+    liest, sieht eine Stunde gesprochenen Abend verschwinden, ohne dass irgendwo ein Wort
+    darüber steht.
+    """
+    sitzung_id = eine_sitzung_mit_notiz(stelle)
+    eingereiht(stelle, sitzung_id, "Mira.wav")
+    (aufnahme,) = recordings.for_session(runde(stelle), sitzung_id)
+    recordings.mark(runde(stelle), aufnahme.id, recordings.GESCHEITERT, "erster Fehlschlag")
+    recordings.mark(runde(stelle), aufnahme.id, recordings.GESCHEITERT, "zweiter Fehlschlag")
+    _altern(stelle, aufnahme.id, recordings.RETENTION_TAGE + 1)
+    monkeypatch.setattr(transcribe, "model_from_config", lambda _config: Kaputt())
+
+    meldung = jobs.chronik(stelle, runde(stelle), sitzung_id)
+
+    assert recordings.get(runde(stelle), aufnahme.id).versuche == recordings.MAX_VERSUCHE
+    assert "Aufnahmen verschriftet" not in meldung
+    assert "konnte ich nicht verschriften" not in meldung
+    assert (
+        recordings.OHNE_TEXT.format(
+            sitzung=sitzung_id, was="eine Aufnahme", tage=recordings.RETENTION_TAGE
+        )
+        in meldung
+    )
+    assert "stehen bereit" in meldung
+
+
+def test_der_letzte_verbrannte_anlauf_steht_im_satz_an_die_runde(stelle, monkeypatch):
+    """Auch ohne Frist: nach dem dritten Fehlschlag kommt diese Spur nie wieder dran."""
+    sitzung_id = eine_sitzung_mit_notiz(stelle)
+    eingereiht(stelle, sitzung_id, "Mira.wav")
+    (aufnahme,) = recordings.for_session(runde(stelle), sitzung_id)
+    recordings.mark(runde(stelle), aufnahme.id, recordings.GESCHEITERT, "erster Fehlschlag")
+    recordings.mark(runde(stelle), aufnahme.id, recordings.GESCHEITERT, "zweiter Fehlschlag")
+    monkeypatch.setattr(transcribe, "model_from_config", lambda _config: Kaputt())
+
+    meldung = jobs.chronik(stelle, runde(stelle), sitzung_id)
+
+    assert "Die Datei ist kein Ton" in meldung
+    assert "konnte ich nicht verschriften" not in meldung
+
+
 def test_was_wirklich_verschriftet_wurde_steht_auch_so_da(stelle, monkeypatch):
     sitzung_id = eine_sitzung_mit_notiz(stelle)
     eingereiht(stelle, sitzung_id, "Mira.wav")

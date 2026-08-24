@@ -3442,8 +3442,8 @@ def test_ein_ortswechsel_im_selben_kanal_sagt_nichts_noch_einmal(
 def test_der_bot_setzt_die_frist_selbst_durch(konfiguration, sitzung_id, runde, monkeypatch):
     gelaufen = []
 
-    async def frist(config):
-        gelaufen.append(config)
+    async def frist(config, *, melden=None):
+        gelaufen.append((config, melden))
 
     monkeypatch.setattr(recordings, "taeglich", frist)
     bot = gateway.baue(konfiguration)
@@ -3457,7 +3457,10 @@ def test_der_bot_setzt_die_frist_selbst_durch(konfiguration, sitzung_id, runde, 
 
     # Beim zweiten on_ready — Discord schickt es nach jedem Wiederverbinden — darf kein
     # zweiter Aufräumer danebenlaufen.
-    assert gelaufen == [konfiguration]
+    assert [config for config, _melden in gelaufen] == [konfiguration]
+    # Und die Frist bekommt einen Weg zurück in die Runde mit: was sie löscht, darf sie
+    # nicht still löschen (#286).
+    assert gelaufen[0][1] is not None
 
 
 def test_ohne_laufende_aufnahme_bleibt_der_beitritt_folgenlos(konfiguration, sitzung_id, runde):

@@ -7,6 +7,7 @@ ein erfundenes.
 
 from __future__ import annotations
 
+import asyncio
 import itertools
 import logging
 import queue
@@ -551,6 +552,63 @@ def test_eine_absichtlich_uebersprungene_spur_ist_kein_solcher_verlust(config, s
 
 
 # --- Ein Neustart mitten im Verschriften (#181) -------------------------------------
+
+
+def test_die_frist_sagt_jeder_runde_ihr_eigenes(config, sitzung_id):
+    """#286: ``sweep_alle`` bündelte alle Runden in einen Rückgabewert ohne Adressat.
+
+    Über diesen Weg läuft die Frist im Betrieb — ``recordings.taeglich`` warf ihn weg, und
+    damit wurde am siebten Tag die Stimme einer echten Person still gelöscht.
+    """
+    hochladen(config, sitzung_id)
+    (aufnahme,) = recordings.for_session(runde(config), sitzung_id)
+    altern(config, aufnahme.id, recordings.RETENTION_TAGE + 1)
+    erreicht = []
+
+    recordings.sweep_alle(config, melden=lambda eine, saetze: erreicht.append((eine.id, saetze)))
+
+    ((wer, saetze),) = erreicht
+    assert wer == runde(config).id
+    assert saetze == (
+        recordings.OHNE_TEXT.format(
+            sitzung=sitzung_id, was="eine Aufnahme", tage=recordings.RETENTION_TAGE
+        ),
+    )
+
+
+def test_eine_runde_ohne_abgelaufene_spur_hoert_nichts(config, sitzung_id):
+    """Eine Meldung »heute nichts gelöscht« wäre täglicher Lärm im Kanal der Gruppe."""
+    hochladen(config, sitzung_id)
+    erreicht = []
+
+    recordings.sweep_alle(config, melden=lambda eine, saetze: erreicht.append(eine))
+
+    assert erreicht == []
+
+
+def test_der_taegliche_lauf_reicht_den_weg_zurueck_durch(config, sitzung_id):
+    """Nachweisbar ohne auf den nächsten Tag zu warten — der Schlaf gehört dem Test."""
+    hochladen(config, sitzung_id)
+    (aufnahme,) = recordings.for_session(runde(config), sitzung_id)
+    altern(config, aufnahme.id, recordings.RETENTION_TAGE + 1)
+    erreicht = []
+
+    class Schluss(Exception):
+        pass
+
+    async def schlafen(_sekunden):
+        raise Schluss
+
+    with pytest.raises(Schluss):
+        asyncio.run(
+            recordings.taeglich(
+                config,
+                schlafen=schlafen,
+                melden=lambda eine, saetze: erreicht.append(saetze),
+            )
+        )
+
+    assert erreicht and "nie verschriftet" in erreicht[0][0]
 
 
 def laeuft_bei(config, aufnahme_id, besitzer, herzschlag):

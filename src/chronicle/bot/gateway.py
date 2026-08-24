@@ -220,6 +220,14 @@ GESCHEITERT = (
 
 UNERWARTET = "unerwarteter Fehler im Bot ({typ})."
 
+# Der Nachtlauf meldet sich nur, wenn es etwas zu sagen gibt — eine geschriebene Chronik
+# steht ohnehin im Kanal. Gesagt wird also, was **fehlt** (#287).
+NACHTBERICHT = "Aus dem nächtlichen Lauf:\n{zeilen}"
+
+# Und die Frist meldet sich, wenn sie zugreift. Sieben Tage sind in der Ansage zugesagt;
+# der Tag, an dem es so weit ist, darf nicht der stillste des Monats sein (#286).
+FRIST_GERAEUMT = "Die zugesagte Aufbewahrungsfrist hat aufgeräumt:\n{zeilen}"
+
 # Steht schon ein Anfang im Kanal und bricht die Zustellung mittendrin ab, endet er mitten
 # im Satz. Ein zerrissener Text, den niemand als zerrissen erkennt, ist schlimmer als eine
 # fehlende Nachricht — also sagt der Abriss sich selbst an.
@@ -1341,18 +1349,20 @@ def _zustellkanal(config: Config, bot, runde):
     return None
 
 
-async def _nachtvorschlaege_anbieten(config: Config, bot, runde) -> None:
+async def _nacht_zustellen(config: Config, bot, runde, bericht: tuple[str, ...]) -> None:
     kanal = _zustellkanal(config, bot, runde)
     if kanal is None:
         logger.warning(
-            "Kein Zustellkanal in Runde %s — die Vorschläge der Nacht bleiben liegen.", runde.id
+            "Kein Zustellkanal in Runde %s — was die Nacht zu sagen hat, bleibt liegen.", runde.id
         )
         return
+    if bericht:
+        await _zustellen(kanal.send, NACHTBERICHT.format(zeilen="\n".join(bericht)))
     await _register_nachfragen(config, runde, kanal)
 
 
-def _nachtmelder(config: Config, bot) -> Callable[[Runde], None]:
-    """Was der Nachtlauf schreibt, fragt der Bot auch nach (#281).
+def _nachtmelder(config: Config, bot) -> nightly.Meldung:
+    """Was der Nachtlauf schreibt, fragt der Bot auch nach (#281) — und was fehlt, sagt er.
 
     Der Nachtlauf geht dieselbe Kette wie ``/session done`` und erzeugt damit dieselben
     Registervorschläge — nur endete sein Weg in der Datenbank: die Zeile »N Vorschläge
@@ -1360,19 +1370,48 @@ def _nachtmelder(config: Config, bot) -> Callable[[Runde], None]:
     erzeugte so Vorschläge, nach denen niemand je gefragt wurde. Gefragt wird deshalb
     hier, im Zustellkanal aus dem Setup.
 
+    Denselben Weg nimmt seit #287 der Bericht der Nacht: eine bewusst nicht geschriebene
+    Chronik und jeder Ton, der ohne Text liegen blieb. Beides stand vorher allein in
+    ``job.result``, und der wird nirgends mehr gelesen.
+
     Der Faden des Nachtlaufs darf die Ereignisschleife nicht selbst anfassen; hängt der
     Bot gerade nicht am Gateway, bleibt es beim Eintrag in der Datenbank, und der nächste
     Anlass holt die Frage nach.
     """
 
-    def danach(runde: Runde) -> None:
+    def danach(runde: Runde, bericht: tuple[str, ...] = ()) -> None:
         schleife = getattr(bot, "loop", None)
         if schleife is None or not getattr(schleife, "is_running", bool)():
-            logger.warning("Ohne laufende Schleife bleibt die Nachfrage zum Register liegen.")
+            logger.warning("Ohne laufende Schleife bleibt der Bericht der Nacht liegen.")
             return
-        _anstossen(_nachtvorschlaege_anbieten(config, bot, runde), schleife)
+        _anstossen(_nacht_zustellen(config, bot, runde, bericht), schleife)
 
     return danach
+
+
+def _fristmelder(config: Config, bot) -> recordings.Melder:
+    """Was die Frist geholt hat, erfährt die Runde — im Kanal aus dem Setup (#286).
+
+    Die Ansage sagt sieben Tage zu; am siebten Tag verschwindet die Stimme einer echten
+    Person, und besonders die nie verschriftete Spur. ``recordings.sweep`` schreibt dazu
+    seit jeher einen eigenen Satz — der fiel bis hierher in einen Rückgabewert, den
+    niemand las.
+    """
+
+    def melden(runde: Runde, meldungen: tuple[str, ...]) -> None:
+        schleife = getattr(bot, "loop", None)
+        if schleife is None or not getattr(schleife, "is_running", bool)():
+            logger.warning("Ohne laufende Schleife bleibt die Meldung der Frist liegen.")
+            return
+        kanal = _zustellkanal(config, bot, runde)
+        if kanal is None:
+            logger.warning("Kein Zustellkanal in Runde %s — die Frist räumt still auf.", runde.id)
+            return
+        _anstossen(
+            _zustellen(kanal.send, FRIST_GERAEUMT.format(zeilen="\n".join(meldungen))), schleife
+        )
+
+    return melden
 
 
 async def _vorschlaege_wieder_anschliessen(config: Config, bot) -> None:
@@ -2945,7 +2984,9 @@ def baue(config: Config):
         # nach dem ersten Fehlschlag für immer liegen, und ``on_ready`` kommt bei jeder
         # Wiederverbindung noch einmal vorbei.
         if _erledigt(laeufe.frist):
-            laeufe.frist = asyncio.create_task(recordings.taeglich(config))
+            laeufe.frist = asyncio.create_task(
+                recordings.taeglich(config, melden=_fristmelder(config, bot))
+            )
         # Zwei Fristen, zwei Fäden: die eine gilt jeder Audiospur auf dieser Box, die
         # andere einer verabschiedeten Runde. Beide gehören dem Prozess und keiner Runde.
         if _erledigt(laeufe.abschied):

@@ -147,7 +147,7 @@ def test_die_kette_laeuft_in_ihrer_reihenfolge(stelle, monkeypatch):
         return gerufen
 
     monkeypatch.setattr(nightly, "diktat_abholen", merken("diktat", ("nichts",)))
-    monkeypatch.setattr(nightly, "run_queue", merken("transkript", ()))
+    monkeypatch.setattr(nightly, "run_queue", merken("transkript", transcribe.Meldungen()))
     monkeypatch.setattr(nightly, "sync", merken("abgleich", None))
     monkeypatch.setattr(kette, "compose_session", merken("chronik", None))
     monkeypatch.setattr(kette, "recap_session", lambda *a, **k: None)
@@ -170,7 +170,7 @@ def test_mit_foundry_steht_der_abgleich_zwischen_aufnahmen_und_chronik(stelle, m
         return gerufen
 
     monkeypatch.setattr(nightly, "diktat_abholen", merken("diktat", ("nichts",)))
-    monkeypatch.setattr(nightly, "run_queue", merken("transkript", ()))
+    monkeypatch.setattr(nightly, "run_queue", merken("transkript", transcribe.Meldungen()))
     monkeypatch.setattr(nightly, "sync", merken("abgleich", SyncState(message="Stand vom heute.")))
     monkeypatch.setattr(kette, "compose_session", merken("chronik", None))
     monkeypatch.setattr(kette, "recap_session", lambda *a, **k: None)
@@ -294,6 +294,75 @@ def test_ohne_erkenner_bleibt_die_spur_liegen_und_die_chronik_ungeschrieben(stel
     assert protocol.stored(gastgeber, sitzung_id) is None
     assert recordings.pending(gastgeber)[0].status == recordings.WARTET
     assert nightly.offen(gastgeber) != ()
+
+
+def test_die_nacht_sagt_der_runde_was_sie_nicht_geschrieben_hat(stelle, monkeypatch):
+    """#287: der Bericht ging in ``job.result``, und den liest seit #231/#272 niemand mehr.
+
+    Nachweisbar ohne auf 04:00 zu warten (#237): der Lauf bekommt denselben Weg zurück
+    mit, den ihm auch der Faden mitgibt.
+    """
+    gastgeber = runde(stelle)
+    sitzung_id = mit_notiz(stelle)
+    mit_wartender_spur(stelle, sitzung_id)
+
+    class Aus:
+        def post(self, *_args, **_kwargs):
+            raise requests.ConnectionError("connection refused")
+
+    monkeypatch.setattr(erkenner, "_http_session", Aus)
+    gemeldet = []
+
+    nightly.lauf(
+        stelle, gastgeber, danach=lambda eine, bericht: gemeldet.append((eine.id, bericht))
+    )
+
+    ((wer, bericht),) = gemeldet
+    assert wer == gastgeber.id
+    assert any(nightly.OHNE_SPRACHE in zeile for zeile in bericht)
+    assert any("noch keinen Text" in zeile for zeile in bericht)
+
+
+def test_eine_gelungene_nacht_hat_der_runde_nichts_zu_melden(stelle):
+    """Die geschriebene Chronik steht ohnehin im Kanal — der Bericht sagt, was fehlt."""
+    gastgeber = runde(stelle)
+    sitzung_id = mit_notiz(stelle)
+    mit_spur(stelle, sitzung_id)
+    gemeldet = []
+
+    nightly.lauf(stelle, gastgeber, danach=lambda _eine, bericht: gemeldet.append(bericht))
+
+    assert gemeldet == [()]
+    assert protocol.stored(gastgeber, sitzung_id) is not None
+
+
+def test_eine_von_der_frist_geholte_spur_steht_im_bericht_der_nacht(stelle):
+    """Der zweite Weg aus #286: ``run_queue`` räumt am Ende die Frist ab.
+
+    Was sie dabei löscht, meldet ``recordings.sweep`` seit jeher — bis hierher fiel der
+    Satz in einen Rückgabewert, den niemand las.
+    """
+    gastgeber = runde(stelle)
+    sitzung_id = mit_notiz(stelle)
+    aufnahme = mit_wartender_spur(stelle, sitzung_id)
+    veraltet = (datetime.now(UTC) - timedelta(days=recordings.RETENTION_TAGE + 1)).isoformat(
+        timespec="seconds"
+    )
+    scope = db.scoped(gastgeber)
+    try:
+        with scope:
+            scope.execute(
+                "UPDATE recording SET uploaded_at = ? WHERE runde_id = ? AND id = ?",
+                (veraltet, scope.runde_id, aufnahme.id),
+            )
+    finally:
+        scope.close()
+    gemeldet = []
+
+    nightly.lauf(stelle, gastgeber, danach=lambda _eine, bericht: gemeldet.append(bericht))
+
+    (bericht,) = gemeldet
+    assert any("nie verschriftet" in zeile for zeile in bericht)
 
 
 class Antwort:
@@ -444,7 +513,7 @@ def test_die_nacht_meldet_sich_hinterher_zurueck(stelle, monkeypatch):
     mit_notiz(stelle)
     gemeldet = []
 
-    nightly.lauf(stelle, runde(stelle), danach=gemeldet.append)
+    nightly.lauf(stelle, runde(stelle), danach=lambda eine, bericht: gemeldet.append(eine))
 
     assert [eine.id for eine in gemeldet] == [runde(stelle).id]
 
@@ -454,7 +523,7 @@ def test_eine_gescheiterte_nachfrage_macht_die_nacht_nicht_rot(stelle, monkeypat
     monkeypatch.setattr(kette, "compose_session", lambda *a, **k: None)
     mit_notiz(stelle)
 
-    def stolpert(_runde):
+    def stolpert(_runde, _bericht):
         raise RuntimeError("Discord schweigt")
 
     with caplog.at_level(logging.ERROR):

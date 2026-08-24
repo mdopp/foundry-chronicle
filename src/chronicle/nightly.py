@@ -54,8 +54,10 @@ from chronicle.transcribe.service import run_queue
 logger = logging.getLogger(__name__)
 
 # Was der Faden nach einer gelaufenen Nacht ruft, um die Runde zu erreichen. Wer das ist,
-# entscheidet der Aufrufer — diese Datei kennt Discord nicht.
-Meldung = Callable[[Runde], None]
+# entscheidet der Aufrufer — diese Datei kennt Discord nicht. Die zweite Angabe ist der
+# Bericht: die Zeilen, die eine Gruppe lesen muss, weil ihr sonst etwas fehlt, ohne dass
+# sie es je erfährt (#287).
+Meldung = Callable[[Runde, tuple[str, ...]], None]
 
 DIKTAT = "diktat"
 TRANSKRIPT = "transkript"
@@ -100,11 +102,23 @@ OHNE_SPRACHE = (
 )
 
 
+# Was der Nachtlauf sagt, wenn nach ihm immer noch Ton ohne Text daliegt. Der Schritt war
+# dafür seit #247 rot — nur sah das niemand, seit es die Karte nicht mehr gibt (#287).
+NOCH_OHNE_TEXT = (
+    "{anzahl} Aufnahme{mehr} dieser Runde hat noch keinen Text. Die nächste Nacht versucht "
+    "es wieder; nach {tage} Tagen holt die Frist den Ton, verschriftet oder nicht."
+)
+
+
 @dataclass(frozen=True)
 class Schritt:
     name: str
     text: str
     gelungen: bool = True
+    # Was von diesem Schritt der Runde gehört. Nicht ``text``: der ist der ganze Bericht,
+    # und der ist seit #269 zweihundert Erfolgszeilen lang — darin ginge der eine Satz
+    # unter, um den es geht. Der Bericht steht in der Job-Zeile, dies geht nach Discord.
+    bericht: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -139,7 +153,8 @@ def _sammeln(name: str, arbeit) -> Schritt:
         return arbeit()
     except Exception as fehler:  # noqa: BLE001
         logger.warning("Nachtlauf, Schritt %s: %s", name, fehler)
-        return Schritt(name, NICHT_DURCHGEKOMMEN.format(grund=fehler), gelungen=False)
+        text = NICHT_DURCHGEKOMMEN.format(grund=fehler)
+        return Schritt(name, text, gelungen=False, bericht=(text,))
 
 
 def _diktat(config: Config, runde: Runde) -> Schritt:
@@ -160,10 +175,21 @@ def _transkript(config: Config, runde: Runde) -> Schritt:
     ``gelungen: true`` über einem Text, der dreimal HTTP 500 aufzählte (#247).
     """
     meldungen = run_queue(config, runde)
+    liegt = recordings.unverschriftet(runde)
+    bericht = list(meldungen.verlust)
+    if liegt:
+        bericht.append(
+            NOCH_OHNE_TEXT.format(
+                anzahl=len(liegt),
+                mehr=jobs.mehrzahl(len(liegt)),
+                tage=recordings.RETENTION_TAGE,
+            )
+        )
     return Schritt(
         TRANSKRIPT,
         " ".join(meldungen) if meldungen else WARTESCHLANGE_LEER,
-        gelungen=not recordings.unverschriftet(runde),
+        gelungen=not liegt,
+        bericht=tuple(bericht),
     )
 
 
@@ -175,7 +201,12 @@ def _abgleich(config: Config, runde: Runde) -> Schritt:
     if not zugang.ist_gemerkt(runde):
         return Schritt(ABGLEICH, OHNE_PASSWORT)
     zustand = sync(config, runde)
-    return Schritt(ABGLEICH, zustand.message, gelungen=not zustand.stale)
+    return Schritt(
+        ABGLEICH,
+        zustand.message,
+        gelungen=not zustand.stale,
+        bericht=(zustand.message,) if zustand.stale else (),
+    )
 
 
 def offen(runde: Runde) -> tuple[tuple[int, str], ...]:
@@ -227,19 +258,22 @@ def _chronik(config: Config, runde: Runde) -> Schritt:
         return Schritt(CHRONIK, NICHTS_ZU_SCHREIBEN)
     wartend = {aufnahme.session_id for aufnahme in recordings.pending(runde)}
     meldungen = []
+    bericht = []
     gelungen = True
     for sitzung_id, datum in faellig:
         if sitzung_id in wartend:
             gelungen = False
             meldungen.append(VORSPANN.format(datum=datum) + OHNE_SPRACHE)
+            bericht.append(meldungen[-1])
             continue
         try:
             satz = jobs.chronik(config, runde, sitzung_id)
         except jobs.JobError as fehler:
             gelungen = False
             satz = NICHT_GESCHRIEBEN.format(grund=fehler)
+            bericht.append(VORSPANN.format(datum=datum) + satz)
         meldungen.append(VORSPANN.format(datum=datum) + satz)
-    return Schritt(CHRONIK, " ".join(meldungen), gelungen=gelungen)
+    return Schritt(CHRONIK, " ".join(meldungen), gelungen=gelungen, bericht=tuple(bericht))
 
 
 def lauf(config: Config, runde: Runde, *, danach: Meldung | None = None) -> str:
@@ -249,6 +283,11 @@ def lauf(config: Config, runde: Runde, *, danach: Meldung | None = None) -> str:
     Registervorschläge wie ``/session done``, und die warteten bis dahin auf eine Frage,
     die niemand stellte. Wer sie stellt, weiß diese Datei nicht — sie kennt Discord
     nicht und soll es nicht kennen.
+
+    Über denselben Weg geht seit #287 der **Bericht**: was die Nacht nicht geschrieben hat
+    und welcher Ton ohne Text liegen blieb. Das stand vorher nur in ``job.result``, und
+    dessen einziger Leser hat seit #231/#272 keinen Aufrufer mehr — ein Regelweg, der still
+    scheitert, meldet sich erst Wochen später mit einer fehlenden Chronik.
     """
     schritte = (
         _sammeln(DIKTAT, lambda: _diktat(config, runde)),
@@ -262,7 +301,7 @@ def lauf(config: Config, runde: Runde, *, danach: Meldung | None = None) -> str:
     )
     if danach is not None:
         try:
-            danach(runde)
+            danach(runde, tuple(zeile for schritt in schritte for zeile in schritt.bericht))
         # Die Nacht ist gelaufen und ihre Karte geschrieben; dass die Nachfrage nicht
         # hinauskam, macht daraus keinen gescheiterten Lauf.
         except Exception:  # noqa: BLE001
