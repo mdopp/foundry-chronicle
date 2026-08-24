@@ -19,12 +19,15 @@ import requests
 
 from chronicle import db, settings
 from chronicle import runde as runden
+from chronicle.compose.composer import SceneMaterial, SessionMaterial, compose, fact_line
+from chronicle.compose.recap import RecapMaterial, recap
 from chronicle.compose.service import KIND, RUECKBLICK
 from chronicle.config import Config
 from chronicle.discord import rueckblick
 from chronicle.discord.ausgabe import anhaengen
 from chronicle.discord.client import API, DiscordClient
 from chronicle.discord.rueckblick import deliver
+from chronicle.foundry.model import ChatMessage, Die, Roll
 
 TOKEN = "bot-token-nur-fuer-den-test"
 
@@ -523,6 +526,67 @@ def test_ein_zu_langer_rueckblick_wird_ehrlich_gekuerzt_und_zeigt_auf_die_datei(
     assert beschreibung.startswith("Wort Wort")
     assert "5999 Zeichen" in caplog.text
     assert zugestellt_am(gastgeber, sitzung_id) is not None
+
+
+WUERFE = 40
+
+
+def _abend_mit_vierzig_wuerfen() -> tuple[str, str]:
+    """Der gemessene echte Abend vom 2026-08-06: 59 Nachrichten, 40 davon mit Würfen.
+
+    Ohne Sprachmodell — die geordnete Fassung reißt die Embed-Grenze allein aus dem
+    Belegt-Block, und genau der ist hier der Prüfling.
+    """
+    nachrichten = [
+        ChatMessage(
+            id=str(nr),
+            timestamp=nr,
+            speaker_alias="Kraw",
+            roll=Roll(
+                title="Duality Roll",
+                total=25,
+                formula="1d12 + 1d12 + 2",
+                kind="DualityRoll",
+                modifier_total=2,
+                dice=(Die("hope", "d12", 11), Die("fear", "d12", 12)),
+            ),
+        )
+        for nr in range(WUERFE)
+    ]
+    szenen = tuple(
+        SceneMaterial(
+            nr + 1,
+            f"Der Turm {nr}",
+            notes=("Borin: wir gehen weiter",),
+            facts=tuple(nachrichten[nr * 5 : (nr + 1) * 5]),
+        )
+        for nr in range(WUERFE // 5)
+    )
+    chronik = compose(SessionMaterial(1, DATUM, "Der Turm", szenen), None)
+    rueckschau = recap(RecapMaterial(1, DATUM, "Der Turm", chronicle=chronik.text), None)
+    assert rueckschau.fact_count == WUERFE
+    return rueckschau.text, f"- {fact_line(nachrichten[0])}"
+
+
+def test_ein_abend_mit_vierzig_wuerfen_verliert_keine_halbe_faktenzeile(config, gastgeber):
+    """Gekappt wird an der Zeilengrenze — und der Hinweis sagt, wie viele Fakten fehlen."""
+    sitzung_id = sitzung(gastgeber)
+    text, ganze_zeile = _abend_mit_vierzig_wuerfen()
+    assert len(text) > rueckblick.TEXT_GRENZE
+    protokoll(gastgeber, sitzung_id, text=text)
+    api = FakeDiscord()
+
+    zustellen(config, gastgeber, api)
+
+    beschreibung = api.gepostet[0][1]["description"]
+    assert len(beschreibung) <= rueckblick.TEXT_GRENZE
+    zugestellt = [z for z in beschreibung.splitlines() if z.startswith("- Kraw — ")]
+    # Keine geköpfte Faktenzeile: was ankommt, steht ganz da — Formel, Summe und beide Würfel.
+    assert 0 < len(zugestellt) < WUERFE
+    assert all(zeile == ganze_zeile for zeile in zugestellt)
+    assert beschreibung.endswith(
+        rueckblick.GEKUERZT_FAKTEN.format(fehlend=WUERFE - len(zugestellt), gesamt=WUERFE)
+    )
 
 
 def test_ein_zu_langer_titel_wird_gekappt(config, gastgeber):

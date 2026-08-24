@@ -53,10 +53,12 @@ Sitzungs-Thread — dort ist der Ort für Fassungen, siehe ``chronicle.discord.a
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from chronicle import db, settings
+from chronicle.compose.recap import FAKTEN_ZEILE
 from chronicle.compose.service import RUECKBLICK
 from chronicle.config import Config
 from chronicle.discord.client import DiscordClient, DiscordError
@@ -65,10 +67,15 @@ from chronicle.runde import Runde
 
 logger = logging.getLogger(__name__)
 
-# Discords Maße für ein Embed stehen in ``chronicle.discord.grenzen``. Ein Rückblick liegt
-# weit darunter — er ist auf zehn bis fünfzehn Sätze angelegt. Wird er trotzdem länger, ist
-# das ein Fehler des Rückblicks und kein Grund, ihn auf mehrere Nachrichten zu verteilen:
-# gekürzt wird er, und der Hinweis sagt, wo er ganz steht.
+# Discords Maße für ein Embed stehen in ``chronicle.discord.grenzen``. Die Prosa liegt weit
+# darunter — sie ist auf zehn bis fünfzehn Sätze angelegt. ``### Belegt aus der Chronik``
+# ist es nicht: der Block wächst 1:1 mit der Wurfzahl des Abends, und ein gemessener echter
+# Abend brachte vierzig Würfe (``foundry/systems.py``). Ein Rückblick, der die Grenze reißt,
+# ist deshalb der Normalfall und kein Fehler des Rückblicks. Verteilt wird er trotzdem nicht
+# auf mehrere Nachrichten — ein Embed ist ein Feld. Gekürzt wird er, aber nur an einer
+# Zeilengrenze: die Prosa steht oben, der Beleg unten, also frisst die Kürzung ausgerechnet
+# das Belegte, und eine mittendurch geschnittene Faktenzeile sähe aus wie eine vollständige.
+# »Formel 1d12 + 1d12« statt »1d12 + 1d12 + 2« ist eine Zahl, die so nicht im Chat-Log steht.
 TITEL_GRENZE = EMBED_TITEL
 TEXT_GRENZE = EMBED_TEXT
 
@@ -91,6 +98,10 @@ ZUGESTELLT = "Rückblick zur Sitzung {sitzung} zugestellt."
 GESCHEITERT = "Rückblick zur Sitzung {sitzung} nicht zugestellt: {grund}"
 
 GEKUERZT = "\n\n… hier gekürzt. Die ganze Sitzung steht in der Chronik-Datei im Thread."
+GEKUERZT_FAKTEN = (
+    "\n\n… hier gekürzt: {fehlend} von {gesamt} Foundry-Fakten fehlen. Die ganze Sitzung "
+    "steht in der Chronik-Datei im Thread."
+)
 
 
 @dataclass(frozen=True)
@@ -137,6 +148,56 @@ def _merken(runde: Runde, session_id: int, at: str) -> None:
         scope.close()
 
 
+def _fakten(zeilen: Sequence[str]) -> int:
+    """Wie viele belegte Foundry-Fakten in diesen Zeilen stehen.
+
+    Gezählt wird nur, was unter ``Aus dem Foundry-Chat-Log, unverändert:`` steht — die
+    Szenenliste darüber und die offenen Fäden benutzen dieselbe Aufzählungsform, sind aber
+    keine Fakten.
+    """
+    zahl = 0
+    im_beleg = False
+    for rohzeile in zeilen:
+        zeile = rohzeile.strip()
+        if zeile == FAKTEN_ZEILE:
+            im_beleg = True
+        elif im_beleg and zeile.startswith("- "):
+            zahl += 1
+        else:
+            im_beleg = False
+    return zahl
+
+
+def _gekuerzt(rumpf: str) -> str:
+    """Der Rumpf auf Embed-Maß — nur ganze Zeilen fallen weg, und der Hinweis sagt welche.
+
+    Der Platz für den Hinweis wird nach der **Gesamtzahl** der Fakten bemessen; die Zahl der
+    fehlenden steht erst fest, wenn der Schnitt liegt, und sie ist nie länger geschrieben
+    als die Gesamtzahl.
+    """
+    zeilen = rumpf.split("\n")
+    gesamt = _fakten(zeilen)
+    platz = TEXT_GRENZE - max(
+        len(GEKUERZT), len(GEKUERZT_FAKTEN.format(fehlend=gesamt, gesamt=gesamt))
+    )
+    passend: list[str] = []
+    laenge = 0
+    for zeile in zeilen:
+        gewachsen = laenge + len(zeile) + (1 if passend else 0)
+        if gewachsen > platz:
+            break
+        passend.append(zeile)
+        laenge = gewachsen
+    if not passend:
+        # Eine einzige Zeile, die schon allein zu lang ist: hier gibt es keine Zeilengrenze,
+        # an der zu schneiden wäre, und nichts anzuzeigen wäre die schlechtere Antwort.
+        return gekappt(rumpf, TEXT_GRENZE, GEKUERZT)
+    fehlend = gesamt - _fakten(passend)
+    if not fehlend:
+        return "\n".join(passend) + GEKUERZT
+    return "\n".join(passend) + GEKUERZT_FAKTEN.format(fehlend=fehlend, gesamt=gesamt)
+
+
 def embed(text: str) -> dict[str, str]:
     """Der abgelegte Rückblick als Embed: die Titelzeile als Titel, der Rest darunter.
 
@@ -156,7 +217,7 @@ def embed(text: str) -> dict[str, str]:
             len(rumpf),
             TEXT_GRENZE,
         )
-    gebaut = {"description": gekappt(rumpf, TEXT_GRENZE, GEKUERZT)}
+    gebaut = {"description": rumpf if len(rumpf) <= TEXT_GRENZE else _gekuerzt(rumpf)}
     if titel:
         gebaut["title"] = gekappt(titel, TITEL_GRENZE)
     return gebaut
