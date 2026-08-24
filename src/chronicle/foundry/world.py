@@ -8,7 +8,7 @@ werden nur die Konten, denen eine sichtbare Figur gehört.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 
 from chronicle.foundry import permissions, systems
 from chronicle.foundry.model import (
@@ -43,6 +43,49 @@ def identity(raw: Mapping) -> World:
     welt = welt if isinstance(welt, Mapping) else {}
     kennung = str(welt.get("id") or "")
     return World(id=kennung, title=str(welt.get("title") or kennung or UNKNOWN_WORLD))
+
+
+def kernversion(raw: Mapping) -> str | None:
+    """Die Foundry-Hauptversion aus dem ``world``-Block — ``None``, wenn sie fehlt.
+
+    Sie steht in jeder echten Antwort und wird nur für **eine** Frage gebraucht: wenn wir
+    eine Antwort nicht wiedererkennen, ist die Version der einzige Hinweis darauf, warum.
+    """
+    welt = raw.get("world")
+    welt = welt if isinstance(welt, Mapping) else {}
+    version = welt.get("coreVersion")
+    return str(version) if version else None
+
+
+# Die vier Listen, an denen eine Weltantwort wiederzuerkennen ist: sie sind alles, was
+# dieser Adapter aus ihr liest. Ein echter Server schickt sie auch dann, wenn sie leer sind.
+GELESENE_LISTEN = ("users", "actors", "messages", "scenes")
+
+
+def _ist_liste(wert) -> bool:
+    """Eine Folge von Dokumenten — geprüft wird die Form, nicht der genaue Typ.
+
+    Aus JSON kommt immer eine ``list``; darauf zu bestehen hieße nur, dass ein Aufrufer mit
+    einem Tupel als unverständlich gälte. Ausgeschlossen ist, was diese Prüfung sonst still
+    bestünde: eine Zeichenkette ist auch eine Folge, aber keine Dokumentenliste.
+    """
+    return isinstance(wert, Sequence) and not isinstance(wert, str | bytes)
+
+
+def fehlende_listen(raw: Mapping) -> tuple[str, ...]:
+    """Welche der gelesenen Listen diese Antwort nicht an der erwarteten Stelle trägt.
+
+    Zwischen »der Socket hat geantwortet« und »wir schreiben in den Speicher« braucht es
+    eine Plausibilitätsprüfung, sonst wird der dokumentierte Fall des
+    Foundry-Hauptversionssprungs zu einer **gültigen, leeren** Welt (#284): ``_documents``
+    gibt für jeden umbenannten oder verschachtelten Schlüssel still ``[]`` zurück, und der
+    Speicher kann das nicht von »die Spielleitung hat alles gelöscht« unterscheiden. Eine
+    Lücke mit Erklärung ist besser als ein stiller Datenschaden mit grüner Meldung.
+
+    ``project`` selbst bleibt nachsichtig — es ist der Übersetzer, nicht der Türsteher.
+    Geprüft wird davor, wo noch nichts geschrieben ist.
+    """
+    return tuple(name for name in GELESENE_LISTEN if not _ist_liste(raw.get(name)))
 
 
 def _documents(raw: Mapping, name: str) -> list[Mapping]:

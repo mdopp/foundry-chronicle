@@ -13,7 +13,7 @@ from conftest import (
 from chronicle.foundry import permissions
 from chronicle.foundry.model import Scene
 from chronicle.foundry.systems import read_roll
-from chronicle.foundry.world import project
+from chronicle.foundry.world import GELESENE_LISTEN, fehlende_listen, kernversion, project
 
 STAND = "2026-08-05T20:00:00+00:00"
 
@@ -120,7 +120,39 @@ def test_fremdes_regelwerk_liefert_dieselben_zahlen_ohne_benannte_wuerfel(welt):
 def test_regelwerk_aus_dem_abzug(welt):
     assert abzug(welt).system == "daggerheart"
     assert project({"system": "pf2e"}, UNSER_KONTO, fetched_at=STAND).system == "pf2e"
+    # ``project`` bleibt nachsichtig — es ist der Übersetzer, nicht der Türsteher. Dass ein
+    # leerer Abzug hier klaglos durchgeht, ist deshalb in Ordnung und **nur** deshalb: vor
+    # dem Speichern steht seit #284 ``fehlende_listen``, siehe den Test darunter.
     assert project({}, UNSER_KONTO, fetched_at=STAND).system == "unbekannt"
+    assert fehlende_listen({}) == GELESENE_LISTEN
+
+
+def test_die_echte_welt_traegt_alle_gelesenen_listen(welt):
+    assert fehlende_listen(welt) == ()
+
+
+def test_eine_umgehaengte_weltstruktur_wird_nicht_wiedererkannt(welt):
+    """Der dokumentierte Hauptversionssprung: dieselben Daten, ein Schlüssel davor (#284).
+
+    Ohne die Prüfung fällt genau das zu einer gültigen, **leeren** Welt zusammen — und die
+    ist von »die Spielleitung hat alles gelöscht« nicht zu unterscheiden.
+    """
+    umgehaengt = {"world": welt["world"], "documents": {name: welt[name] for name in welt}}
+    assert fehlende_listen(umgehaengt) == GELESENE_LISTEN
+    assert project(umgehaengt, UNSER_KONTO, fetched_at=STAND).messages == ()
+
+
+def test_eine_einzelne_verlorene_liste_faellt_auch_auf(welt):
+    assert fehlende_listen({name: wert for name, wert in welt.items() if name != "scenes"}) == (
+        "scenes",
+    )
+
+
+def test_die_kernversion_wird_gelesen_und_ist_nicht_erfunden(welt):
+    """Der einzige Hinweis darauf, *warum* eine Antwort fremd aussieht — wenn er dasteht."""
+    assert kernversion({"world": {"id": "w", "coreVersion": "14.365"}}) == "14.365"
+    assert kernversion(welt) is None
+    assert kernversion({}) is None
 
 
 def test_beifang_wird_nicht_uebernommen(welt):

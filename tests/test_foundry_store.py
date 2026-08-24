@@ -5,7 +5,15 @@ from conftest import GM_SZENE, UNSER_KONTO, runde
 
 from chronicle import db
 from chronicle.foundry import store
-from chronicle.foundry.model import Character, ChatMessage, Die, Player, Roll, WorldSnapshot
+from chronicle.foundry.model import (
+    Character,
+    ChatMessage,
+    Die,
+    Player,
+    Roll,
+    World,
+    WorldSnapshot,
+)
 from chronicle.foundry.world import project
 
 STAND = "2026-08-05T20:00:00+00:00"
@@ -87,7 +95,13 @@ def test_die_aktive_karte_bleibt_die_aktive(scope, welt):
 
 
 def test_ein_geleertes_chat_log_nimmt_die_belege_nicht_mit(scope, welt):
-    """Der Kern von #61: die Spielleitung leert das Log, der Wurf bleibt trotzdem belegt."""
+    """Der Kern von #61: die Spielleitung leert das Log, der Wurf bleibt trotzdem belegt.
+
+    Der Vermerk hier ist **absichtlich** nicht davon zu unterscheiden, dass wir die Antwort
+    des Servers nicht mehr lesen konnten — der Speicher sieht nur einen leeren Schnappschuss
+    und darf das auch. Unterschieden wird eine Stelle davor: ``world.fehlende_listen``
+    lässt eine unverstandene Antwort gar nicht erst hierher kommen (#284).
+    """
     abzug = project(welt, UNSER_KONTO, fetched_at=STAND)
     store.save(scope, abzug)
     store.save(scope, leer(SPAETER))
@@ -171,3 +185,16 @@ def test_alle_felder_eines_wurfs_kommen_zurueck(scope):
         ),
     )
     assert store.load(scope).messages[0] == nachricht
+
+
+def test_eine_welt_ohne_kennung_wird_nicht_gebunden(scope):
+    """#285: ein Leerstring sähe wie eine Bindung aus und wäre das Ende der Schranke."""
+    store.bind_world(scope, World(id="der-krumme-ast", title="Der Krumme Ast"))
+    store.bind_world(scope, World(id="", title="unbenannte Welt"))
+    assert store.world(scope) == World(id="der-krumme-ast", title="Der Krumme Ast")
+
+
+def test_ohne_bindung_gibt_es_keine_welt(scope):
+    assert store.world(scope) is None
+    store.bind_world(scope, World(id="", title="unbenannte Welt"))
+    assert store.world(scope) is None

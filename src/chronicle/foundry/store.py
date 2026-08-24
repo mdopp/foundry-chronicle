@@ -256,12 +256,23 @@ def world(scope: db.Scope) -> World | None:
         (scope.runde_id, WORLD_ID, WORLD_TITLE),
     ).fetchall()
     werte = {r["key"]: r["value"] for r in rows}
-    if WORLD_ID not in werte:
+    if not werte.get(WORLD_ID):
         return None
     return World(id=werte[WORLD_ID], title=werte.get(WORLD_TITLE) or werte[WORLD_ID])
 
 
 def bind_world(scope: db.Scope, gefunden: World) -> None:
+    """Bindet die Runde an die gezeigte Welt — eine ohne Kennung bindet nicht.
+
+    Ein Leerstring ist keine Bindung, sondern das Ende der Schranke: ``world`` gäbe danach
+    ``World(id='')`` statt ``None`` zurück, und jeder spätere Abgleich käme an der Prüfung
+    vorbei, auch einer gegen eine fremde Kampagne (#285). Eine Antwort ohne ``world.id``
+    wird deshalb nicht als Wechsel gewertet **und** nicht gemerkt: die gute Bindung von
+    vorher bleibt stehen, und ist noch keine da, bleibt es dabei, bis eine Antwort mit
+    Kennung kommt.
+    """
+    if not gefunden.id:
+        return
     with scope:
         scope.executemany(
             "INSERT INTO runde_meta (runde_id, key, value) VALUES (?, ?, ?) "

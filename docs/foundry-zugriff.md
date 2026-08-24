@@ -163,7 +163,11 @@ Nichtübereinstimmung**. Umgehängt wird nur ausdrücklich (`sync(..., umhaengen
 
 Ein Dump ohne `world`-Block lässt sich nicht vergleichen und wird nicht als Wechsel
 gewertet — eine Verweigerung ohne Beleg brächte den Abgleich zum Erliegen, statt vor
-etwas zu schützen.
+etwas zu schützen. Er wird aber auch **nicht gemerkt** (#285): eine Bindung an den leeren
+String sähe wie eine Bindung aus und wäre keine — `store.world` gäbe danach eine Welt
+statt `None` zurück, und jeder spätere Abgleich käme an der Schranke vorbei, auch einer
+gegen eine fremde Kampagne. Ohne Kennung bleibt die gute Bindung von vorher stehen; ist
+noch keine da, bleibt es dabei, bis eine Antwort mit Kennung kommt.
 
 ## Anmeldung ist Benutzer und Passwort
 
@@ -514,4 +518,10 @@ nicht. In die Datenbank geht nichts — sie wird nicht einmal geöffnet.
   von Zeile; die Chronik trägt weiterhin überwiegend auf Notizen und Transkript.
 - **Wie lange hält der Handschlag?** Er ist aus dem Client nachgebaut. Ein
   Foundry-Hauptversionssprung kann ihn brechen; das ist eingeplantes Risiko, kein
-  Versehen.
+  Versehen. **Er fällt seit #284 zu, nicht offen:** vor dem Speichern wird geprüft, ob die
+  Antwort die vier gelesenen Listen — `users`, `actors`, `messages`, `scenes` — an der
+  erwarteten Stelle trägt (`world.fehlende_listen`). Fehlen sie, meldet der Abgleich einen
+  verständlichen Fehler und nennt dabei `world.coreVersion`; gespeichert wird nichts, und
+  keine archivierte Nachricht gilt als verschwunden. Vorher wurde daraus eine gültige,
+  **leere** Welt mit grüner Meldung — der Speicher konnte das nicht von »die Spielleitung
+  hat den Chat geleert« unterscheiden.

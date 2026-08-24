@@ -256,6 +256,63 @@ def test_eine_andere_welt_wird_verweigert(config, welt):
     assert service.current(config, runde(config)).stale
 
 
+def umgehaengte_welt(welt, *, kern="14.365"):
+    """Dieselben Daten, ein Schlüssel davor — der Foundry-Hauptversionssprung von #284."""
+    return {
+        "world": dict(welt["world"], coreVersion=kern),
+        "documents": {name: wert for name, wert in welt.items() if name != "world"},
+    }
+
+
+def test_eine_unlesbare_weltantwort_meldet_einen_fehler_statt_erfolg(config, welt):
+    """#284: sonst wird der Versionssprung zur gültigen, leeren Welt mit grüner Meldung."""
+    service.sync(config, runde(config), client=Abgleich(welt), passwort=PASSWORT)
+    zustand = service.sync(
+        config, runde(config), client=Abgleich(umgehaengte_welt(welt)), passwort=PASSWORT
+    )
+    assert zustand.stale
+    assert "sieht nicht aus wie eine Welt" in zustand.message
+    assert "users" in zustand.message and "messages" in zustand.message
+    assert "14.365" in zustand.message
+
+
+def test_eine_unlesbare_weltantwort_loescht_und_stempelt_nichts(config, welt):
+    service.sync(config, runde(config), client=Abgleich(welt), passwort=PASSWORT)
+    vorher = service.current(config, runde(config)).snapshot
+    service.sync(config, runde(config), client=Abgleich(umgehaengte_welt(welt)), passwort=PASSWORT)
+    nachher = service.current(config, runde(config)).snapshot
+    assert nachher.players == vorher.players
+    assert nachher.characters == vorher.characters
+    assert nachher.scenes == vorher.scenes
+    assert [n.id for n in nachher.messages] == [n.id for n in vorher.messages]
+    assert all(n.vanished_at is None for n in nachher.messages)
+    assert NICHT_MEHR_VORHANDEN not in service.current(config, runde(config)).message
+    assert gebundene_welt(config) == World(id=WELT_ID, title=WELT_TITEL)
+
+
+def test_eine_unlesbare_erste_antwort_hinterlaesst_keinen_stand(config, welt):
+    """Ohne Vorgeschichte gibt es keine Lücke zu füllen — und es wird auch keine erfunden."""
+    zustand = service.sync(
+        config, runde(config), client=Abgleich(umgehaengte_welt(welt)), passwort=PASSWORT
+    )
+    assert zustand.stale and zustand.snapshot is None
+    assert service.current(config, runde(config)).snapshot is None
+    assert gebundene_welt(config) is None
+
+
+def test_umhaengen_rettet_eine_unlesbare_antwort_nicht(config, welt):
+    """Umhängen beantwortet »welche Welt«, nicht »welche Foundry-Fassung«."""
+    zustand = service.sync(
+        config,
+        runde(config),
+        client=Abgleich(umgehaengte_welt(welt)),
+        passwort=PASSWORT,
+        umhaengen=True,
+    )
+    assert zustand.stale
+    assert "sieht nicht aus wie eine Welt" in zustand.message
+
+
 def test_umhaengen_bindet_die_runde_ausdruecklich_um(config, welt):
     service.sync(config, runde(config), client=Abgleich(welt), passwort=PASSWORT)
     zustand = service.sync(
@@ -276,6 +333,34 @@ def test_eine_welt_ohne_kennung_haelt_den_abgleich_nicht_auf(config, welt):
     zustand = service.sync(config, runde(config), client=Abgleich(welt), passwort=PASSWORT)
     assert not zustand.stale
     assert gebundene_welt(config).id == WELT_ID
+
+
+def test_eine_welt_ohne_kennung_wird_nicht_gemerkt(config, welt):
+    """#285: sie lässt sich nicht vergleichen — also darf sie auch nichts überschreiben."""
+    ohne = {name: wert for name, wert in welt.items() if name != "world"}
+    service.sync(config, runde(config), client=Abgleich(welt), passwort=PASSWORT)
+    service.sync(config, runde(config), client=Abgleich(ohne), passwort=PASSWORT)
+    assert gebundene_welt(config) == World(id=WELT_ID, title=WELT_TITEL)
+
+
+def test_nach_einer_welt_ohne_kennung_greift_die_schranke_weiter(config, welt):
+    """Der Kern von #285: die Schranke fiele sonst offen und hinterließe keine Spur."""
+    service.sync(config, runde(config), client=Abgleich(welt), passwort=PASSWORT)
+    ohne = {name: wert for name, wert in welt.items() if name != "world"}
+    service.sync(config, runde(config), client=Abgleich(ohne), passwort=PASSWORT)
+    zustand = service.sync(
+        config, runde(config), client=Abgleich(andere_welt(welt)), passwort=PASSWORT
+    )
+    assert zustand.stale
+    assert "andere Welt" in zustand.message
+    assert gebundene_welt(config) == World(id=WELT_ID, title=WELT_TITEL)
+
+
+def test_ohne_kennung_bleibt_die_runde_ungebunden(config, welt):
+    """Und nicht an den Leerstring gebunden — der sähe wie eine Bindung aus."""
+    ohne = {name: wert for name, wert in welt.items() if name != "world"}
+    service.sync(config, runde(config), client=Abgleich(ohne), passwort=PASSWORT)
+    assert gebundene_welt(config) is None
 
 
 def test_kein_passwort_in_den_logzeilen_eines_abgleichs(config, welt, caplog):
@@ -637,6 +722,18 @@ def test_eine_andere_welt_beendet_den_strom_und_speichert_nichts(config, welt):
     assert not ergebnis.weiter
     assert "andere Welt" in ergebnis.grund
     assert gebundene_welt(config) == World(id=WELT_ID, title=WELT_TITEL)
+
+
+def test_eine_unlesbare_antwort_beendet_den_strom_und_speichert_nichts(config, welt):
+    """Ein Versionssprung heilt nicht im Lauf des Abends — weiterzublicken hieße schweigen."""
+    service.sync(config, runde(config), passwort=PASSWORT, client=Abgleich(welt))
+    vorher = service.current(config, runde(config)).snapshot
+    ergebnis = strom(config, umgehaengte_welt(welt))
+    assert not ergebnis.weiter and ergebnis.neu == ()
+    assert "sieht nicht aus wie eine Welt" in ergebnis.grund
+    nachher = service.current(config, runde(config)).snapshot
+    assert [n.id for n in nachher.messages] == [n.id for n in vorher.messages]
+    assert all(n.vanished_at is None for n in nachher.messages)
 
 
 def test_der_strom_legt_die_zahlen_gleich_ins_archiv(config, welt):
