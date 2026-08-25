@@ -711,7 +711,33 @@ def test_vor_dem_start_und_nach_dem_abschluss_ist_getipptes_keine_notiz(stelle, 
     danach = melden(bot, FakeNachricht(7012, "War ein schöner Abend.", kanal=kanal.id))
 
     assert notizen(unsere, sitzung_id) == [(1, "Wir steigen hinab.")]
-    assert davor.antworten == [] and danach.antworten == []
+    # Davor schweigt der Bot: in diesem Kanal lief noch nie ein Abend, die Zeile ist
+    # Gerede. Danach sagt er es — seit #288 fällt sie nicht mehr stumm in nichts.
+    assert davor.antworten == []
+    assert danach.antworten == [gateway.ABEND_IST_ZU]
+
+
+def test_wer_nach_dem_abschluss_weiterschreibt_erfaehrt_es_und_zwar_einmal(stelle, bot):
+    """#288: das Abmoderieren fiel stumm in nichts — keine Antwort, kein Log, keine Zeile.
+
+    Der Abend schließt seit #271 von selbst, sobald der Sprachkanal leer ist. Danach tippt
+    der Tisch weiter, und genau dann fiel weg, was den Leuten am meisten am Herzen liegt.
+    Der Bot hat den Abschluss selbst ausgelöst, also sagt er ihn auch (#265).
+
+    Einmal je Abend: zehn Minuten Abmoderieren sind zwanzig Zeilen, und zwanzig gleiche
+    Antworten wären selbst der Lärm.
+    """
+    _config, unsere = stelle
+    _ctx, kanal = sitzung_starten(bot)
+    sitzung_id = sitzung_von(unsere, kanal)
+    chronik.sitzung_schliessen(unsere, sitzung_id)
+
+    erste = melden(bot, FakeNachricht(7020, "12 EP für alle.", kanal=kanal.id))
+    zweite = melden(bot, FakeNachricht(7021, "Und der Ring geht an Mira.", kanal=kanal.id))
+
+    assert erste.antworten == [gateway.ABEND_IST_ZU]
+    assert zweite.antworten == []
+    assert notizen(unsere, sitzung_id) == []
 
 
 def test_aus_einem_server_ohne_runde_wird_nichts_abgelegt(stelle, bot):

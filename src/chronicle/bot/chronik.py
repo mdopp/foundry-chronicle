@@ -572,6 +572,11 @@ def sitzung_im_kanal(runde: Runde, kanal_id: str) -> int | None:
     return laufend.id
 
 
+def abgeschlossene_sitzung_im_kanal(runde: Runde, kanal_id: str) -> int | None:
+    """Der Abend, der in diesem Kanal lief und schon zu ist — oder keiner (#288)."""
+    return notes.closed_session_in_channel(runde, kanal_id)
+
+
 def kanal_der_sitzung(runde: Runde, session_id: int) -> str | None:
     return notes.channel_of_session(runde, session_id)
 

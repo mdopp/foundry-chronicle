@@ -21,6 +21,7 @@ import asyncio
 import contextlib
 import functools
 import logging
+import time
 import wave
 from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime
@@ -148,6 +149,17 @@ LEER_BEENDET = (
     "Im Sprachkanal war niemand mehr — ich habe den Mitschnitt beendet und bin gegangen. "
     "Damit schließe ich auch die Sitzung ab. Für einen neuen Abend `/session start`; für "
     "einen neuen Mitschnitt `/session start` — die Ansage läuft dann noch einmal."
+)
+
+# Der Satz an den Tisch, der nach dem Abschluss weitertippt (#288). Ohne ihn fiel jede
+# Zeile hier stumm in nichts: keine Antwort, keine Logzeile, keine Zeile in der Datenbank.
+# Getippte Notizen sind die einzige Eingabe einer Präsenzrunde, und der Moment, in dem sie
+# wegfielen, war ausgerechnet das Abmoderieren — EP, Beute, »nächstes Mal«.
+ABEND_IST_ZU = (
+    "Der Abend ist schon abgeschlossen — ich habe ihn zugemacht, als der Sprachkanal leer "
+    "war. Was ab jetzt hier steht, kommt **nicht** mehr in die Chronik; die fertige "
+    "Fassung hänge ich an den Thread der Sitzung. Soll daraus ein neuer Abend werden, "
+    "gebt `/session start`."
 )
 
 # Nicht angehalten, sondern gesagt: der Betreiber hat entschieden, dass niemand ungefragt
@@ -632,6 +644,15 @@ class _Lauf:
         # Je offener Sitzung dieser Runde ein Beobachter von Foundry. Anders als der
         # Mitschnitt gibt es ihn mehrfach: eine Runde kann mehrere Sitzungen offen haben.
         self.stroeme: dict[int, object] = {}
+        # Wann zuletzt eine Zeile in die laufende Sitzung fiel — die Uhr, an der der
+        # Abschied bei leerem Sprachkanal misst, ob der Tisch noch abmoderiert (#288).
+        # Roh und ohne Aufnahme daneben, anders als ``allein``/``gefragt``: ein alter Wert
+        # verfällt hier von selbst, sobald er älter als die Frist ist.
+        self.getippt: float | None = None
+        # Die abgeschlossene Sitzung, für die schon gesagt wurde, dass der Abend zu ist.
+        # Einmal je Abend und nicht je Zeile: zehn Minuten Abmoderieren sind zwanzig
+        # Zeilen, und zwanzig gleiche Antworten wären selbst der Lärm.
+        self.nachgesagt: int | None = None
 
 
 class _Laeufe:
@@ -1015,6 +1036,35 @@ async def _beenden_und_sagen(
         logger.exception("Das Ende des Mitschnitts blieb ungesagt")
 
 
+async def _sagen_dass_der_abend_zu_ist(lauf: _Lauf, runde: Runde, nachricht) -> None:
+    """Eine Zeile nach dem Abschluss zählt nicht mehr — aber sie verschwindet auch nicht still.
+
+    Bis #288 endete sie hier ohne Antwort, ohne Logzeile und ohne Zeile in der Datenbank,
+    und zwar ausgerechnet beim Abmoderieren. Der Bot führt (#265): den Abschluss hat er
+    selbst ausgelöst, also sagt er auch, dass er ihn ausgelöst hat, statt zu schweigen und
+    darauf zu warten, dass jemand den richtigen Befehl errät.
+
+    Einmal je Abend. Wer danach weiterschreibt, hat es gelesen; jede Zeile zu beantworten
+    machte aus dem Hinweis genau den Lärm, gegen den er gebaut ist.
+    """
+    geschlossen = chronik.abgeschlossene_sitzung_im_kanal(runde, str(nachricht.channel.id))
+    if geschlossen is None or lauf.nachgesagt == geschlossen:
+        return
+    lauf.nachgesagt = geschlossen
+    await _zustellen(nachricht.reply, ABEND_IST_ZU)
+
+
+def _tippfrist(lauf: _Lauf) -> float:
+    """Wie viele Sekunden noch zu warten sind, weil der Tisch gerade noch schreibt.
+
+    ``0`` oder weniger heißt: seit der letzten Zeile ist die volle Frist vergangen. Ein
+    Wert aus einem früheren Abend verfällt damit von selbst — er ist längst zu alt.
+    """
+    if lauf.getippt is None:
+        return 0.0
+    return LEER_FRIST - (time.monotonic() - lauf.getippt)
+
+
 async def _abschied_bei_leere(config: Config, bot, lauf: _Lauf, aufnahme: Aufnahme) -> None:
     """Nach der Frist noch einmal nachsehen — und dann Schluss, für den ganzen Abend.
 
@@ -1026,10 +1076,23 @@ async def _abschied_bei_leere(config: Config, bot, lauf: _Lauf, aufnahme: Aufnah
     verschriften, Chronik schreiben. Der häufigste Fehler war, den Abschluss zu vergessen
     und einen Abend ohne Zahlen zu bekommen — und wer schon gegangen ist, tippt ihn nicht
     mehr. Die zweite Prüfung oben gilt damit auch für den Abschluss.
+
+    Seit #288 fragt sie außerdem, ob im Sitzungskanal noch getippt wird. Der leere
+    Sprachkanal heißt weiterhin »Abend fertig« (#264) — aber das gespielte Ende und das
+    Abmoderieren sind zweierlei: alle fallen aus dem Sprachkanal und der Tisch schreibt
+    noch zehn Minuten EP, Beute und »nächstes Mal«. Wer tippt, ist da; die Frist läuft
+    dann von der letzten Zeile an neu. Deshalb eine Schleife und kein zweites ``if``:
+    zwischen zwei Zeilen liegen keine neunzig Sekunden, und einmal nachzuwarten schlösse
+    den Abend mitten im Absatz.
     """
     await asyncio.sleep(LEER_FRIST)
-    if lauf.aufnahme is not aufnahme or _menschen(lauf):
-        return
+    while True:
+        if lauf.aufnahme is not aufnahme or _menschen(lauf):
+            return
+        rest = _tippfrist(lauf)
+        if rest <= 0:
+            break
+        await asyncio.sleep(rest)
     # Die Sitzung statt des Kanalnamens (#206/#211): der Name beschreibt die Struktur
     # einer fremden Gilde, die Sitzungskennung niemanden. Sie genügt trotzdem, weil an
     # ihr Kanal, Spuren und Einwilligungsnachweis hängen — und im Nachweis steht der
@@ -2913,7 +2976,11 @@ def baue(config: Config):
         # zwischen Start und Abschluss. Davor und danach ist eine Zeile hier Gerede.
         sitzung = chronik.sitzung_im_kanal(runde, str(nachricht.channel.id))
         if sitzung is None:
+            await _sagen_dass_der_abend_zu_ist(laeufe.fuer(runde), runde, nachricht)
             return
+        # Der Tisch ist noch da, auch wenn der Sprachkanal leer ist: der Abschied von
+        # selbst wartet daran ab, statt mitten ins Abmoderieren zu schließen (#288).
+        laeufe.fuer(runde).getippt = time.monotonic()
         try:
             meldungen = await chronik.aufnehmen(config, runde, sitzung, _nachricht(nachricht))
         except Exception as fehler:  # noqa: BLE001
