@@ -322,6 +322,9 @@ ABFRAGEN = {
     "notes.latest_session": lambda c, r, i: notes.latest_session(r),
     "notes.session_of_scene": lambda c, r, i: notes.session_of_scene(r, i["szene"]),
     "notes.running_session": lambda c, r, i: notes.running_session(r),
+    "notes.closed_session_in_channel": lambda c, r, i: notes.closed_session_in_channel(
+        r, i["kanal"]
+    ),
     "notes.session_of_note": lambda c, r, i: notes.session_of_note(r, i["nachricht"]),
     "notes.channel_of_session": lambda c, r, i: notes.channel_of_session(r, i["sitzung"]),
     "dokument.neu": lambda c, r, i: dokument.neu(r, ()),
@@ -721,6 +724,11 @@ def test_der_kanal_der_fremden_runde_ist_keine_sitzung(zwei_runden):
     # den Mitschnitt beendet hat — ein Kanal von nebenan wäre der falsche Server.
     assert notes.channel_of_session(a, ids[2]["sitzung"]) is None
     assert notes.channel_of_session(a, ids[1]["sitzung"]) == ids[1]["kanal"]
+
+    # Der abgeschlossene Abend ebenso (#288): der Satz »der Abend ist zu« geht sonst in
+    # einen Kanal, in dem diese Runde nie einen Abend hatte.
+    assert notes.closed_session_in_channel(a, ids[2]["kanal"]) is None
+    assert notes.closed_session_in_channel(a, ids[1]["kanal"]) == ids[1]["sitzung"]
 
     # Und eine Notiz von nebenan zieht ihre Sitzung nicht in diese Runde.
     assert notes.session_of_note(a, ids[2]["nachricht"]) is None

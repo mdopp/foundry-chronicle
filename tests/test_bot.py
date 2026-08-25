@@ -3771,6 +3771,68 @@ def test_wer_rechtzeitig_zurueckkommt_behaelt_seine_offene_sitzung(
     assert runde.kanal.verbindung.schneidet
 
 
+class FakeZeile:
+    """Eine getippte Zeile im Sitzungskanal, so weit ``on_message`` sie liest."""
+
+    def __init__(self, kanal_id, text="12 EP für alle."):
+        self.id = 9001
+        self.content = text
+        self.attachments = []
+        self.created_at = datetime.now(UTC)
+        self.author = types.SimpleNamespace(id=int(MIRA.id), bot=False)
+        self.guild = types.SimpleNamespace(id=int(KANAL.guild_id))
+        self.channel = types.SimpleNamespace(id=kanal_id)
+        self.antworten: list[str] = []
+
+    async def reply(self, text):
+        self.antworten.append(text)
+
+
+def test_wer_noch_abmoderiert_haelt_den_abend_offen(
+    konfiguration, laufende_sitzung_im_kanal, ohne_espeak, runde, kurze_frist, monkeypatch
+):
+    """#288: das gespielte Ende und das Abmoderieren sind zweierlei.
+
+    Der leere Sprachkanal heißt weiter »Abend fertig« (#264) — aber nach dem letzten Wurf
+    fällt der Tisch aus dem Sprachkanal und tippt noch zehn Minuten EP, Beute und
+    »nächstes Mal« in den Kanal. Wer tippt, ist da; die Frist läuft von der letzten Zeile
+    an neu, und danach schließt der Abend doch.
+
+    Das ist zugleich die Antwort auf die Doppelzustellung aus dem Bericht: bleibt der
+    Abend **eine** Sitzung, gibt es auch nur eine ``protocol``-Zeile — die Tabelle hält
+    ``UNIQUE (session_id, kind)`` — und damit genau einen Rückblick im Gruppenkanal.
+    """
+    gesehen = []
+    monkeypatch.setattr(
+        jobs,
+        "abschluss",
+        lambda config, eine, session_id, *, passwort=None: gesehen.append(session_id) or "steht",
+    )
+    bot = gateway.baue(konfiguration)
+    bot.kanaele[SITZUNGSKANAL] = FakeTextkanal()
+    offen = []
+
+    async def ablauf():
+        await befehl(bot, "start")(FakeCtx(runde.mira))
+        runde.kanal.verbindung.senke.write(sprachdaten(stille(480)), runde.mira)
+        nur_der_bot(runde.kanal)
+        await bot.ereignisse["on_voice_state_update"](runde.mira, zustand(runde.kanal), zustand())
+        # Kurz vor Ablauf der Frist tippt jemand — das stellt sie neu.
+        await asyncio.sleep(FRIST * 0.75)
+        await bot.ereignisse["on_message"](FakeZeile(SITZUNGSKANAL))
+        # Die ursprüngliche Frist ist damit vorbei, die neue läuft noch.
+        await asyncio.sleep(FRIST * 0.5)
+        offen.append(chronik.sitzung_im_kanal(unsere_runde(konfiguration), str(SITZUNGSKANAL)))
+        await ruhen()
+
+    asyncio.run(ablauf())
+
+    unsere = unsere_runde(konfiguration)
+    assert offen == [laufende_sitzung_im_kanal]
+    assert gesehen == [laufende_sitzung_im_kanal]
+    assert [eine.id for eine in notes.sessions(unsere)] == [laufende_sitzung_im_kanal]
+
+
 def einer_bleibt(kanal, wer):
     """Alle gehen bis auf einen — der Bot bleibt, er zählt ohnehin nicht mit."""
     kanal.members = [jemand for jemand in kanal.members if jemand.bot or jemand is wer]

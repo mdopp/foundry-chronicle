@@ -250,6 +250,26 @@ def running_session(runde: Runde) -> Running | None:
     return Running(id=int(row["id"]), kanal_id=row["kanal_id"])
 
 
+def closed_session_in_channel(runde: Runde, kanal_id: str) -> int | None:
+    """Der zuletzt in diesem Kanal geführte Abend, sofern er schon abgeschlossen ist.
+
+    Die Gegenfrage zu ``running_session``: eine Zeile, die hier steht, gehört in keine
+    Sitzung mehr — aber es gab eine, und wer sie schreibt, ist kein Zaungast, sondern
+    jemand, der noch abmoderiert. Nur daran unterscheidet sich der Satz an ihn von einem
+    Satz an jeden beliebigen Kanal der Gilde.
+    """
+    scope = db.scoped(runde)
+    try:
+        row = scope.execute(
+            "SELECT id FROM session WHERE runde_id = ? AND kanal_id = ? AND laeuft = 0 "
+            "ORDER BY id DESC LIMIT 1",
+            (scope.runde_id, str(kanal_id)),
+        ).fetchone()
+    finally:
+        scope.close()
+    return None if row is None else int(row["id"])
+
+
 def close_session(runde: Runde, session_id: int) -> bool:
     """Die Sitzung ist zu — was danach im Kanal steht, ist keine Notiz mehr."""
     scope = db.scoped(runde)
