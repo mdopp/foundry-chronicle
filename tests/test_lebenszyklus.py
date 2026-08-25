@@ -565,6 +565,61 @@ def test_ohne_kanal_zum_reden_gilt_die_gilde_nicht_als_begruesst(konfiguration, 
     assert offen.gesendet == [einrichten.WILLKOMMEN]
 
 
+def hiesige_gilde():
+    return lebenszyklus.Gilde(id=GILDE, name=GILDENAME)
+
+
+def test_die_zurueckgekehrte_gilde_wird_beim_start_begruesst_und_freigegeben(
+    konfiguration, stiller_bot
+):
+    """#283: Rauswurf, Wiedereinladung — und dazwischen stand der Prozess.
+
+    ``on_guild_join`` fällt dann aus, und die Marke vom ersten Mal ließ das Nachholen
+    durchfallen: die Runde blieb gesperrt, jeder Befehl verwies die Gruppe auf eine
+    Einladung, die sie gerade ausgesprochen hatte, und nach der Frist löschte der tägliche
+    Lauf ihre Chronik, während der Bot in ihrer Gilde saß.
+    """
+    kanal = FakeKanal("300", "allgemein")
+    gilde = FakeGilde(system=kanal)
+    eintritt(stiller_bot, gilde)
+    unsere = lebenszyklus.beanspruchen(konfiguration, GILDE, GILDENAME).runde
+    ids = fuellen(konfiguration, unsere, "alpha")
+    austritt(stiller_bot, gilde)
+    assert lebenszyklus.ungegruesst(konfiguration, hiesige_gilde())
+
+    anmelden(stiller_bot, gilde)
+
+    zurueck = runden.get(konfiguration.database_path, unsere.id)
+    assert not zurueck.gesperrt
+    # Und damit ist auch der Tag vom Kalender, an dem alles fort gewesen wäre.
+    assert zurueck.delete_after is None
+    assert kanal.gesendet == [
+        einrichten.WILLKOMMEN,
+        einrichten.WILLKOMMEN_ZURUECK.format(name=GILDENAME),
+    ]
+    assert einrichten.OFFENLEGUNG in kanal.gesendet[1]
+    # Der Befehl, der vorher auf GESPERRT endete, findet seine Runde wieder — samt Inhalt.
+    wieder = chronik.runde_verlangen(konfiguration, GILDE)
+    assert wieder.id == unsere.id
+    assert notes.session(wieder, ids["sitzung"]).title == "Sitzung alpha"
+
+
+def test_die_laengst_begruesste_runde_im_dienst_wird_beim_start_nicht_neu_begruesst(
+    konfiguration, stiller_bot
+):
+    """Die Gegenprobe zu #283 — sonst begrüßte der Bot dieselbe Gruppe bei jedem Neustart."""
+    kanal = FakeKanal("300", "allgemein")
+    gilde = FakeGilde(system=kanal)
+    eintritt(stiller_bot, gilde)
+    lebenszyklus.beanspruchen(konfiguration, GILDE, GILDENAME)
+
+    anmelden(stiller_bot, gilde)
+    anmelden(stiller_bot, gilde)
+
+    assert kanal.gesendet == [einrichten.WILLKOMMEN]
+    assert not lebenszyklus.ungegruesst(konfiguration, hiesige_gilde())
+
+
 # -- Einladen ---------------------------------------------------------------------------
 
 
