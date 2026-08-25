@@ -251,10 +251,17 @@ def ungegruesst(config: Config, gilde: Gilde) -> bool:
 
     Gemeint ist die Gilde ohne Runde **im Dienst** — eine ruhende zählt dazu, denn ihre
     Rückkehr hat dasselbe Ereignis verpasst und wartet ebenso auf die Offenlegung.
+
+    Die Marke entscheidet deshalb nur über die Gilde **ohne** Runde: eine ruhende trägt sie
+    längst vom ersten Mal, und mit ihr fiele die zurückgekehrte Gruppe durch. Sie bliebe
+    gesperrt, jeder Befehl verwiese sie auf eine Einladung, die sie gerade ausgesprochen
+    hat, und nach der Frist löschte der tägliche Lauf ihre Chronik, während der Bot in
+    ihrer Gilde sitzt (#283). Wiederholt wird darum nichts: die Begrüßung gibt die Runde
+    frei, und eine freigegebene ist beim nächsten Start nicht mehr ruhend.
     """
     vorhanden = runden.fuer_gilde(config.database_path, str(gilde.id))
-    if vorhanden is not None and not vorhanden.gesperrt:
-        return False
+    if vorhanden is not None:
+        return vorhanden.gesperrt
     return _vermerk(config.database_path, BEGRUESST.format(gilde=gilde.id)) is None
 
 
