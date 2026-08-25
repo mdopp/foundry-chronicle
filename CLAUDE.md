@@ -15,6 +15,22 @@ Diese Regeln gelten für jede Sitzung, Mensch oder Agent.
   werden eingesetzt, nie rekonstruiert.
 - **Alles nach der Aufnahme läuft im Stapel.** Keine Echtzeit, keine Latenzgrenze,
   keine GPU-Pflicht.
+  **Ergänzt am 2026-08-25 (#294): der Szenenschnitt ist ein Stapellauf, er liegt nur
+  früher.** Schließt die Runde eine Szene, wird *diese* Szene sofort verschriftet,
+  verdichtet und als Zwischenstand in den Thread gestellt, während weitergespielt wird.
+  Das nimmt von den drei Zusagen **keine** zurück: niemand wartet auf das Ergebnis, die
+  nächste Szene läuft bereits — es gibt also weiterhin keine Latenzgrenze und keinen
+  Fortschrittsbalken, der Echtzeit vortäuscht. Verschoben ist allein der *Zeitpunkt* des
+  Laufs, vom Sitzungsende an den Schnitt.
+  Die GPU-Pflicht gilt für diesen einen Weg trotzdem: verschriftet wird währenddessen
+  nur, wo eine Karte steht, und die Sitzung hält das große Modell fest (#295). Ohne
+  Karte fällt der Zwischenstand aus — die Chronik am Ende entsteht wie bisher.
+  **Ein Zeittakt wäre die falsche Grenze gewesen.** Erwogen und verworfen wurde ein
+  Fenster alle zehn Minuten: es endet mitten im Satz, und ein Modell, das über eine
+  unfertige Szene schreibt, erfindet den Abschluss — genau der Fehler, der hier der
+  teuerste ist. Ein Szenenschnitt ist von einem Menschen erklärt.
+  **Und der Zwischenstand ist Deutung, nie Beleg.** Er wird als solcher ausgewiesen und
+  fließt nicht als Fakt in die Endchronik zurück.
 - **Discord ist die Oberfläche** (#62, seit 2026-08-06). Gespielt wird dort, also wird
   dort auch bedient: Erfassen, Auslösen, Einrichten und Bestätigen laufen über Befehle,
   Modals und Knöpfe; Ausgaben kommen als Embed (kurz) oder als Markdown-Datei (lang).

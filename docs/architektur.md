@@ -188,6 +188,20 @@ GPU-Konkurrenz und keine Latenzfrage. Läuft nachts; auf CPU langsam genug, um o
 Grafikkarte auszukommen. Auch die Erfassung folgt dem Prinzip: der Diktat-Kanal ist
 ein Briefkasten — jetzt einwerfen, geholt wird, wenn der Dienst das nächste Mal läuft.
 
+**Der Szenenschnitt ist ein zweiter Stapellauf, kein zweiter Weg** (#294, seit
+2026-08-25). Schließt die Runde eine Szene, läuft für *diese* Szene dieselbe Kette —
+verschriften, ordnen, verdichten — und das Ergebnis geht als Zwischenstand in den
+Thread. Die Latenzfrage stellt sich dabei nicht: es wartet niemand, die nächste Szene
+läuft bereits. Die GPU-Konkurrenz stellt sich schon; deshalb hält die Sitzung das große
+Modell fest (#295), und wo keine Karte steht, fällt der Zwischenstand aus, ohne dass die
+Chronik am Ende darunter leidet.
+
+Der Anlass steht im Abend vom 18.08.: er wurde zu **einer** Szene mit **einer** Notiz
+über 17.806 Zeichen, obwohl der Spielleiter den Schnitt zweimal laut ansagte. Der
+Befehl dafür gab es; benutzt wurde er nicht. Ein Zeittakt statt des Schnitts wäre die
+schlechtere Grenze — er endet mitten im Satz, und über eine unfertige Szene erfindet ein
+Modell den Abschluss.
+
 ## Die Schicht über den Sitzungen
 
 Das Ziel ist nicht das Archiv, sondern **wissen, was zuletzt in der Geschichte
