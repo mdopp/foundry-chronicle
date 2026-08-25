@@ -24,6 +24,11 @@ zu (``chronicle.bot.ansage``), und derselbe Wert setzt sie durch. Ein Verspreche
 im Ansagetext steht, wäre keins — deshalb formatiert die Ansage ihre Frist aus
 ``RETENTION_TAGE``, und ``sweep`` räumt danach. Beide können nicht auseinanderlaufen.
 
+Die Frist gilt der **Datei**, nicht der Zeile: ``sweep`` räumt seit #289 auch die
+Tondateien ab, zu denen es nie eine Zeile gab — ein Neustart mitten in der Sitzung lässt
+je aktivem Sprecher genau so eine liegen. Eine Zusage, die nur die eingereihten erreicht,
+wäre keine.
+
 Gelöscht wird dabei nur die **Audiodatei**; die Zeile bleibt mit ``deleted_at`` stehen.
 Sie ist der ehrliche Teil der Geschichte: dass es die Spur gab, wann sie kam, was aus ihr
 wurde — und dass sie nach Frist entfernt wurde und nicht etwa verlorenging.
@@ -106,6 +111,17 @@ OHNE_TEXT = (
     "Sitzung {sitzung}: {was} nach {tage} Tagen gelöscht — die Frist aus der Ansage — und "
     "nie verschriftet. Von diesem Ton gibt es keinen Text, und nachholen lässt sich das "
     "nicht."
+)
+
+# Und sie gilt auch der Datei, zu der es nie eine Zeile gab. Ein Neustart mitten in der
+# Sitzung lässt je aktivem Sprecher genau ein offenes Häppchen auf der Platte zurück, das
+# nie eingereiht wurde (#289). Für die Frist ist das kein Sonderfall: dort liegt die Stimme
+# einer echten Person. Gemeldet wird es trotzdem eigens — hier ist nicht nur kein Text
+# entstanden, es hat auch nie jemand darauf gewartet.
+OHNE_ZEILE = (
+    "Sitzung {sitzung}: {was} nach {tage} Tagen gelöscht — die Frist aus der Ansage — und "
+    "nie eingereiht. Diese Aufnahme ist nie in der Warteschlange angekommen; es gibt keinen "
+    "Text davon und auch keine Zeile darüber."
 )
 
 # Was an der Zeile stehen bleibt. Ohne diesen Satz sagte sie »wartet« über eine Aufnahme,
@@ -636,6 +652,57 @@ def expired(runde: Runde, *, tage: int = RETENTION_TAGE) -> tuple[Recording, ...
     return tuple(_eintrag(row) for row in rows)
 
 
+def _waisen(config, runde: Runde, *, tage: int = RETENTION_TAGE) -> dict[int, tuple[Path, ...]]:
+    """Abgelaufene Tondateien **ohne** Warteschlangenzeile — je Sitzung dieser Runde.
+
+    ``expired`` liest aus ``recording``, und genau das erreicht diese Dateien nicht: der
+    Mitschnitt schreibt ein Häppchen die ganze Zeit über auf die Platte und reiht es erst
+    ein, wenn es voll ist. Ein Neustart mittendrin lässt je aktivem Sprecher eine ``.wav``
+    ohne Zeile liegen — und die überlebte die zugesagten sieben Tage bisher so lange, wie
+    es die Runde gibt (#289). ``lebenszyklus._dateien`` und ``notes._audio`` sehen für
+    denselben Fall längst ins Verzeichnis; der Aufräumlauf der Frist war der eine
+    Löschpfad, der es nicht tat.
+
+    Gesucht wird über die Sitzungen **dieser** Runde: der Dateiname trägt die
+    Sitzungskennung, und die gehört genau einer Runde. Der ``glob`` selbst sieht nur einen
+    Namen, keine Runde — die Schranke ist die Liste, aus der er gefüttert wird.
+
+    Zwei Dinge bleiben liegen. Eine **laufende** Sitzung: dort schreibt der Mitschnitt
+    gerade in die Datei, und ein Abend, der länger dauert als die Frist, verlöre sonst
+    seinen Ton, während er noch gesprochen wird. Und alles, was jünger ist als die Frist —
+    das Alter kommt hier von der Datei selbst, weil es kein ``uploaded_at`` gibt, das es
+    sagen könnte.
+    """
+    grenze = (datetime.now(UTC) - timedelta(days=tage)).timestamp()
+    scope = db.scoped(runde)
+    try:
+        zeilen = scope.execute(
+            "SELECT filename FROM recording WHERE runde_id = ?", (scope.runde_id,)
+        ).fetchall()
+        sitzungen = scope.execute(
+            "SELECT id FROM session WHERE runde_id = ? AND laeuft = 0 ORDER BY id",
+            (scope.runde_id,),
+        ).fetchall()
+    finally:
+        scope.close()
+    eingereiht = {zeile["filename"] for zeile in zeilen}
+    gefunden: dict[int, tuple[Path, ...]] = {}
+    for sitzung in sitzungen:
+        session_id = int(sitzung["id"])
+        dateien = tuple(
+            sorted(
+                datei
+                for datei in config.recordings_dir.glob(f"sitzung{session_id}-*")
+                if datei.name not in eingereiht
+                and datei.is_file()
+                and datei.stat().st_mtime < grenze
+            )
+        )
+        if dateien:
+            gefunden[session_id] = dateien
+    return gefunden
+
+
 def _als_geloescht_vermerken(runde: Runde, recording_id: int, status: str | None = None) -> None:
     zeitpunkt = _now()
     scope = db.scoped(runde)
@@ -686,6 +753,9 @@ def sweep(config, runde: Runde, *, tage: int = RETENTION_TAGE) -> tuple[str, ...
     240-mal derselbe Satz ist keine Meldung mehr, sondern eine Wand. Die Bündelung je
     Sitzung trägt das kürzere Häppchen ohne Änderung: was wächst, ist die Zahl **in** der
     Zeile, nicht die Zahl der Zeilen.
+
+    Die Frist erreicht seit #289 auch, was nie eine Zeile bekam (``_waisen``). Die Zusage
+    hängt an der Stimme auf der Platte und nicht daran, ob die Warteschlange von ihr weiß.
     """
     geraeumt: dict[tuple[int, bool], int] = {}
     for aufnahme in expired(runde, tage=tage):
@@ -702,6 +772,13 @@ def sweep(config, runde: Runde, *, tage: int = RETENTION_TAGE) -> tuple[str, ...
             logger.info("%s", meldung)
         else:
             logger.warning("%s", meldung)
+        meldungen.append(meldung)
+    for session_id, dateien in _waisen(config, runde, tage=tage).items():
+        for datei in dateien:
+            datei.unlink(missing_ok=True)
+        # Ohne die Dateinamen: ihr Stamm trägt den Anzeigenamen des Sprechers (#194).
+        meldung = OHNE_ZEILE.format(sitzung=session_id, was=_was(len(dateien)), tage=tage)
+        logger.warning("%s", meldung)
         meldungen.append(meldung)
     return tuple(meldungen)
 

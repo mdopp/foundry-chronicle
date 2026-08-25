@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import itertools
 import logging
+import os
 import queue
 import sqlite3
 import threading
@@ -20,6 +21,7 @@ import pytest
 from conftest import GRENZE, runde
 
 from chronicle import db, notes, recordings
+from chronicle import runde as runden
 from chronicle.config import Config
 from chronicle.transcribe import service
 from chronicle.transcribe.client import Segment, TranscriberError, TranscriberUnreachable
@@ -549,6 +551,104 @@ def test_eine_absichtlich_uebersprungene_spur_ist_kein_solcher_verlust(config, s
         sitzung=sitzung_id, was="eine Aufnahme", tage=recordings.RETENTION_TAGE
     )
     assert recordings.get(runde(config), aufnahme.id).status == recordings.FERTIG
+
+
+# --- Eine Datei ohne Warteschlangenzeile (#289) --------------------------------------
+
+
+def waise(config, sitzung_id, *, tage_alt, name="Runa"):
+    """Das offene Häppchen, das ein Neustart mitten in der Sitzung liegen lässt.
+
+    Datei ja, ``recording``-Zeile nein — genau so sieht es auf der Platte aus, wenn der
+    Bot abgeschossen wird, bevor ``_weiterschneiden`` oder ``beenden`` einreihen konnte.
+    """
+    config.recordings_dir.mkdir(parents=True, exist_ok=True)
+    pfad = config.recordings_dir / f"sitzung{sitzung_id}-20260806T201500-{name}.wav"
+    pfad.write_bytes(DIKTAT)
+    alt = (datetime.now(UTC) - timedelta(days=tage_alt)).timestamp()
+    os.utime(pfad, (alt, alt))
+    return pfad
+
+
+def test_eine_datei_ohne_zeile_ueberlebt_die_frist_nicht(config, sitzung_id):
+    """Die Sieben-Tage-Zusage hängt an der Stimme auf der Platte, nicht an der Zeile.
+
+    Bis #289 las der Aufräumlauf nur aus ``recording``; eine ``.wav``, die nie eingereiht
+    wurde, blieb liegen, solange es die Runde gab.
+    """
+    pfad = waise(config, sitzung_id, tage_alt=recordings.RETENTION_TAGE + 1)
+
+    (meldung,) = recordings.sweep(config, runde(config))
+
+    assert not pfad.exists()
+    assert meldung == recordings.OHNE_ZEILE.format(
+        sitzung=sitzung_id, was="eine Aufnahme", tage=recordings.RETENTION_TAGE
+    )
+
+
+def test_der_verlust_ohne_zeile_wird_gemeldet_statt_still_zu_geschehen(config, sitzung_id, caplog):
+    """Hier geht Ton, von dem es nie einen Text gab — und niemand hat darauf gewartet.
+
+    Der Dateiname darf dabei nicht in der Logzeile stehen: sein Stamm ist der
+    Anzeigename des Sprechers (#194).
+    """
+    pfad = waise(config, sitzung_id, tage_alt=recordings.RETENTION_TAGE + 1)
+    erreicht = []
+
+    with caplog.at_level(logging.WARNING, logger="chronicle.recordings"):
+        recordings.sweep_alle(config, melden=lambda _eine, saetze: erreicht.extend(saetze))
+
+    ((satz,), gelogt) = (tuple(erreicht), caplog.text)
+    assert "nie eingereiht" in satz
+    assert satz in gelogt
+    assert pfad.stem not in gelogt
+
+
+def test_zwei_waisen_derselben_sitzung_bleiben_eine_zeile(config, sitzung_id):
+    """Dieselbe Rechnung wie bei den eingereihten: gezählt wird je Sitzung."""
+    for nummer in range(3):
+        waise(config, sitzung_id, tage_alt=recordings.RETENTION_TAGE + 1, name=f"Spur{nummer}")
+
+    meldungen = recordings.sweep(config, runde(config))
+
+    assert meldungen == (
+        recordings.OHNE_ZEILE.format(
+            sitzung=sitzung_id, was="3 Aufnahmen", tage=recordings.RETENTION_TAGE
+        ),
+    )
+    assert list(config.recordings_dir.iterdir()) == []
+
+
+def test_eine_datei_ohne_zeile_vor_der_frist_bleibt_liegen(config, sitzung_id):
+    pfad = waise(config, sitzung_id, tage_alt=recordings.RETENTION_TAGE - 1)
+
+    assert recordings.sweep(config, runde(config)) == ()
+    assert pfad.exists()
+
+
+def test_die_datei_einer_laufenden_sitzung_wird_nicht_fortgenommen(config):
+    """Ein Abend, der länger dauert als die Frist, verlöre sonst seinen Ton beim Sprechen.
+
+    In eine laufende Sitzung schreibt der Mitschnitt gerade hinein; ihre Datei hat noch
+    keine Zeile, *weil* das Häppchen noch offen ist.
+    """
+    db.init(config.database_path)
+    laufend = notes.create_session(
+        runde(config), played_on="2026-08-06", title="Der Keller", laeuft=True
+    )
+    pfad = waise(config, laufend, tage_alt=recordings.RETENTION_TAGE + 1)
+
+    assert recordings.sweep(config, runde(config)) == ()
+    assert pfad.exists()
+
+
+def test_die_waisen_bleiben_bei_ihrer_eigenen_runde(config, sitzung_id):
+    """Der ``glob`` sieht nur einen Namen, keine Runde — die Schranke ist die Sitzungsliste."""
+    fremde = runden.anlegen(config.database_path, "Nachbarrunde", guild_id="99")
+    pfad = waise(config, sitzung_id, tage_alt=recordings.RETENTION_TAGE + 1)
+
+    assert recordings.sweep(config, fremde) == ()
+    assert pfad.exists()
 
 
 # --- Ein Neustart mitten im Verschriften (#181) -------------------------------------
