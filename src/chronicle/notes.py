@@ -321,6 +321,25 @@ def session_of_note(runde: Runde, message_id: str) -> int | None:
     return None if row is None else int(row["session_id"])
 
 
+def latest_scene(runde: Runde, session_id: int) -> int | None:
+    """Die zuletzt gezogene Szene dieser Sitzung — die, die ein Schnitt abschließt.
+
+    Über die Position und nicht über die Kennung: ``add_scene`` hängt die neue an
+    ``MAX(position) + 1``, also ist die höchste Position die laufende. Gefragt wird
+    **vor** dem Schnitt; danach wäre es die neue, die eben erst begonnen hat.
+    """
+    scope = db.scoped(runde)
+    try:
+        row = scope.execute(
+            "SELECT id FROM scene WHERE runde_id = ? AND session_id = ? "
+            "ORDER BY position DESC LIMIT 1",
+            (scope.runde_id, session_id),
+        ).fetchone()
+    finally:
+        scope.close()
+    return None if row is None else int(row["id"])
+
+
 def add_scene(runde: Runde, session_id: int, *, title: str = "", at: str = "") -> int | None:
     scope = db.scoped(runde)
     try:

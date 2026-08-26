@@ -2986,9 +2986,21 @@ def baue(config: Config):
     ) -> None:
         runde = chronik.runde_verlangen(config, ctx.guild_id)
         sitzung = chronik.sitzung_verlangen(runde, str(ctx.channel_id))
+        wechsel = chronik.szene_setzen(runde, sitzung, name)
         # Sichtbar für alle: die Trennlinie gehört in den Kanal, nicht nur zu dem, der
         # sie gezogen hat.
-        await _zustellen(ctx.respond, chronik.szene_setzen(runde, sitzung, name), ephemeral=False)
+        await _zustellen(ctx.respond, wechsel.antwort, ephemeral=False)
+        # Erst antworten, dann anstoßen: der Zwischenstand zur eben geschlossenen Szene
+        # läuft im Hintergrund, während weitergespielt wird (#294). Der Befehl wartet
+        # nicht auf ihn, und wo keine Karte steht, kommt er gar nicht erst.
+        if wechsel.geschlossen is not None:
+            chronik.zwischenstand_starten(
+                config,
+                runde,
+                sitzung,
+                wechsel.geschlossen,
+                melden=_melder(getattr(ctx, "channel", None)),
+            )
 
     @bot.event
     async def on_message(nachricht) -> None:

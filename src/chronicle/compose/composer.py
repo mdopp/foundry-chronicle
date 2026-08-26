@@ -387,13 +387,13 @@ def fact_line(message: ChatMessage, inhaltssprache: str = sprachen.DEFAULT) -> s
     return f"{zeile} [{NICHT_MEHR_VORHANDEN}]"
 
 
-def _fakten(scene: SceneMaterial, inhaltssprache: str) -> tuple[str, ...]:
+def szenenfakten(scene: SceneMaterial, inhaltssprache: str) -> tuple[str, ...]:
     return tuple(
         fact_line(m, inhaltssprache) for m in scene.facts if m.roll is not None or m.content.strip()
     )
 
 
-def _notizen(scene: SceneMaterial) -> tuple[tuple[str, ...], tuple[str, ...]]:
+def szenennotizen(scene: SceneMaterial) -> tuple[tuple[str, ...], tuple[str, ...]]:
     """Getipptes und Verschriftetes getrennt, in der Reihenfolge der Vorlage."""
     getippt: list[str] = []
     verschriftet: list[str] = []
@@ -492,8 +492,8 @@ def compose(
     bloecke = []
 
     for scene in material.scenes:
-        notizen, verschriftet = _notizen(scene)
-        fakten = _fakten(scene, inhaltssprache)
+        notizen, verschriftet = szenennotizen(scene)
+        fakten = szenenfakten(scene, inhaltssprache)
         fakten_gesamt += len(fakten)
         # Je Szene neu, wie in ``nacherzaehlung``: eine Zahl aus Szene 1 belegt nichts in
         # Szene 8. Aufsummiert deckte eine verhörte Achtzig vom Anfang des Abends einen

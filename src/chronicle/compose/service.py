@@ -31,6 +31,7 @@ from chronicle.compose.nacherzaehlung import (
     nacherzaehlen,
 )
 from chronicle.compose.recap import Recap, RecapMaterial, recap
+from chronicle.compose.zwischenstand import Zwischenstand, zwischenstand
 from chronicle.config import Config
 from chronicle.foundry import store
 from chronicle.runde import Runde
@@ -110,6 +111,45 @@ def material(scope: db.Scope, session_id: int) -> SessionMaterial | None:
             )
             for s in szenen
         ),
+    )
+
+
+def szenenstoff(scope: db.Scope, session_id: int, scene_id: int) -> SceneMaterial | None:
+    """Eine einzelne Szene mit allem, was an ihr hängt — die Vorlage des Zwischenstands.
+
+    Dieselben zwei Quellen wie in ``material``, nur auf eine Szene verengt: die Notizen
+    dieser Szene und die Foundry-Ereignisse, die der Strom **während des Spiels** an sie
+    gehängt hat. Ein Abgleich läuft hier ausdrücklich nicht — die Zahlen liegen zu diesem
+    Zeitpunkt schon vor, und ein zweiter Weg zu Foundry verbrauchte das Passwort, das der
+    Abschluss am Abendende noch braucht (#64).
+
+    Die Sitzung steht mit in der Bedingung: eine Szenenkennung aus einer anderen Sitzung
+    holte sonst deren Material unter dem Namen dieser hier.
+    """
+    kopf = scope.execute(
+        "SELECT id, position, title FROM scene WHERE runde_id = ? AND id = ? AND session_id = ?",
+        (scope.runde_id, scene_id, session_id),
+    ).fetchone()
+    if kopf is None:
+        return None
+    notizen = scope.execute(
+        "SELECT text, origin FROM note WHERE runde_id = ? AND scene_id = ? ORDER BY id",
+        (scope.runde_id, scene_id),
+    ).fetchall()
+    fakten = scope.execute(
+        "SELECT m.* FROM scene_foundry_message v "
+        "JOIN foundry_message m ON m.id = v.message_id AND m.runde_id = v.runde_id "
+        "WHERE v.runde_id = ? AND v.scene_id = ? ORDER BY m.timestamp, m.id",
+        (scope.runde_id, scene_id),
+    ).fetchall()
+    return SceneMaterial(
+        position=kopf["position"],
+        title=kopf["title"],
+        notes=tuple(
+            Notiz(text=zeile["text"], verschriftet=zeile["origin"] == TRANSKRIPT)
+            for zeile in notizen
+        ),
+        facts=tuple(store.message(zeile) for zeile in fakten),
     )
 
 
@@ -235,6 +275,36 @@ def erzaehlen(
             model if model is not None else client.from_config(settings.effective(config, runde))
         )
         return nacherzaehlen(stoff, gewaehlt, inhaltssprache=settings.sprache(runde))
+    finally:
+        scope.close()
+
+
+def zwischenstand_der_szene(
+    config: Config,
+    runde: Runde,
+    session_id: int,
+    scene_id: int,
+    *,
+    model: TextModel | None = None,
+) -> Zwischenstand | None:
+    """Die eben geschlossene Szene verdichten — abgelegt wird nichts.
+
+    Kein ``save``, und das ist keine Auslassung: der Zwischenstand ist Deutung, und was
+    hier in ``protocol`` läge, läse die Endkomposition oder der Rückblick eine Stufe
+    später als Vorlage zurück. Er geht in den Thread und sonst nirgendwohin.
+    """
+    db.init(config.database_path)
+    if lebenszyklus.ruht(runde):
+        return None
+    scope = db.scoped(runde)
+    try:
+        stoff = szenenstoff(scope, session_id, scene_id)
+        if stoff is None:
+            return None
+        gewaehlt = (
+            model if model is not None else client.from_config(settings.effective(config, runde))
+        )
+        return zwischenstand(stoff, gewaehlt, inhaltssprache=settings.sprache(runde))
     finally:
         scope.close()
 

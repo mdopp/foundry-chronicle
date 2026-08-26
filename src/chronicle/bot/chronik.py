@@ -714,10 +714,80 @@ def starthinweis(config: Config, runde: Runde, gemerkt: bool) -> str:
     return MIT_FOUNDRY if gemerkt else OHNE_FOUNDRY
 
 
-def szene_setzen(runde: Runde, session_id: int, name: str, *, zeitpunkt: str = "") -> str:
+@dataclass(frozen=True)
+class Szenenwechsel:
+    """Was ein Schnitt hinterlässt: der Satz in den Kanal und die Szene, die er zumachte.
+
+    Die geschlossene Szene steht hier, weil nur der Schnitt selbst sie noch kennt —
+    danach ist die neue die laufende, und wer später fragt, bekäme die falsche (#294).
+    ``None`` heißt: es gab keine davor, der Schnitt kam vor der ersten Notiz.
+    """
+
+    antwort: str
+    geschlossen: int | None = None
+
+
+def szene_setzen(runde: Runde, session_id: int, name: str, *, zeitpunkt: str = "") -> Szenenwechsel:
     sauber = name.strip()
+    # Vor der neuen Szene gefragt: ``add_scene`` hängt sie hinten an, und danach wäre die
+    # zuletzt gezogene die eben begonnene statt der eben geschlossenen.
+    geschlossen = notes.latest_scene(runde, session_id)
     notes.add_scene(runde, session_id, title=sauber, at=zeitpunkt)
-    return SZENE.format(name=sauber) if sauber else SZENE_OHNE_NAMEN
+    return Szenenwechsel(
+        antwort=SZENE.format(name=sauber) if sauber else SZENE_OHNE_NAMEN,
+        geschlossen=geschlossen,
+    )
+
+
+def zwischenstand_starten(
+    config: Config,
+    runde: Runde,
+    session_id: int,
+    scene_id: int,
+    *,
+    melden: Callable[[str], None],
+) -> None:
+    """Den Zwischenstand zur eben geschlossenen Szene anstoßen — und sonst nichts sagen.
+
+    Der Schnitt antwortet vorher und wartet nicht: das hier legt eine Zeile an und kehrt
+    zurück, der Text kommt später von selbst in den Thread. Deshalb gibt es hier auch
+    nichts zurückzugeben — ein Satz »ein Zwischenstand ist unterwegs« wäre der
+    Fortschrittsbalken, den die Stapel-Zusage ausschließt.
+
+    Zwei Fälle bleiben still. **Kein Modell**: dann fällt der Zwischenstand ersatzlos aus,
+    und der Schnitt verhält sich wie vor #294. **Die Maschine ist belegt** — ein
+    Abschluss, ein Abgleich, der Zwischenstand der vorigen Szene: ``jobs.start`` gibt
+    dann ``None``, und das ist die richtige Antwort. Ein Zwischenstand ist der Lauf mit
+    dem kleinsten Wert von allen; er darf keinem anderen die Karte wegnehmen und sich
+    auch nicht selbst überholen.
+    """
+    if not settings.effective(config, runde).ollama_configured:
+        return
+    jobs.start(
+        config,
+        runde,
+        jobs.ZWISCHENSTAND,
+        _still_wenn_leer(lambda: jobs.zwischenstand(config, runde, session_id, scene_id), melden),
+        session_id=session_id,
+    )
+
+
+def _still_wenn_leer(arbeit: Callable[[], str], melden: Callable[[str], None]) -> Callable[[], str]:
+    """Wie ``_mit_meldung``, nur ohne Stimme: gemeldet wird ein Text, kein Fehlschlag.
+
+    Der Unterschied ist Absicht. Ein Abschluss, der nicht durchkommt, muss es sagen — auf
+    ihn wartet die Runde. Ein Zwischenstand, der nicht durchkommt, war ein Vorgriff, den
+    niemand bestellt hat; ihn zu melden hieße, den Thread des Abends mit einer Absage zu
+    füllen, die nichts ändert. Was schiefging, steht in der Zeile des Laufs und im Log.
+    """
+
+    def lauf() -> str:
+        ergebnis = arbeit()
+        if ergebnis:
+            melden(ergebnis)
+        return ergebnis
+
+    return lauf
 
 
 def ist_diktat(dateiname: str) -> bool:
