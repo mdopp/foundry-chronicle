@@ -301,8 +301,18 @@ def zwischenstand_der_szene(
         stoff = szenenstoff(scope, session_id, scene_id)
         if stoff is None:
             return None
+        # Die knappe Zeitgrenze wird **hier** gefädelt und nicht in der Stufe: der
+        # Zwischenstand hat als einziger Weg eine Richtung — ein bis drei Minuten nach dem
+        # Schnitt (#294/#296) —, und mit der großzügigen Grenze des Aufschriebs besetzte
+        # ein hängendes Modell den Job-Platz eine halbe Stunde und schluckte jeden
+        # weiteren Schnitt des Abends (#302). Reißt sie, kommt ``None`` heraus, und im
+        # Thread bleibt es still wie ohne Modell.
         gewaehlt = (
-            model if model is not None else client.from_config(settings.effective(config, runde))
+            model
+            if model is not None
+            else client.from_config(
+                settings.effective(config, runde), timeout=client.ZWISCHENSTAND_TIMEOUT
+            )
         )
         return zwischenstand(stoff, gewaehlt, inhaltssprache=settings.sprache(runde))
     finally:

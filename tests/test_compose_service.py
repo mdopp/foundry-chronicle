@@ -418,7 +418,7 @@ class Ollama:
 
 @pytest.fixture
 def am_draht(config, monkeypatch):
-    """Der Stapellauf mit hinterlegtem Modell, und ohne Haltung aus einem anderen Test."""
+    """Der Stapellauf mit hinterlegtem Modell und einer Gegenstelle auf dem Draht."""
 
     def gegenstelle(fehler=None):
         eines = Ollama(fehler)
@@ -427,7 +427,6 @@ def am_draht(config, monkeypatch):
         monkeypatch.setattr(ollama.requests, "Session", lambda: eines)
         return eines
 
-    monkeypatch.setattr(ollama, "_haltung", None)
     monkeypatch.setenv("CHRONICLE_DATA_DIR", str(config.data_dir))
     monkeypatch.setenv("OLLAMA_URL", "http://ollama.example:11434")
     monkeypatch.setenv("OLLAMA_MODEL", "chronist-test")
@@ -435,7 +434,7 @@ def am_draht(config, monkeypatch):
 
 
 def test_der_stapelaufruf_gibt_die_modellhaltung_hinterher_wieder_her(
-    config, scope, welt, am_draht, monkeypatch
+    config, scope, welt, am_draht
 ):
     """#300: der Aufschrieb neben ``/session done`` besetzte das große Modell bis zur Frist.
 
@@ -445,13 +444,11 @@ def test_der_stapelaufruf_gibt_die_modellhaltung_hinterher_wieder_her(
     """
     sitzung_id = eine_runde(scope, welt)
     gegenstelle = am_draht()
-    monkeypatch.setattr(ollama, "_haltung", ollama.SITZUNGSHALTUNG)
 
     entry.main([str(sitzung_id)])
 
     assert gegenstelle.rumpf[-1]["keep_alive"] == ollama.FREIGABE
     assert ollama.FREIGABE == 0
-    assert ollama.haltung() is None
 
 
 def test_der_stapelaufruf_hinterlaesst_eine_zeile_zu_seiner_sitzung(config, scope, welt, am_draht):

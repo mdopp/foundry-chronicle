@@ -3,19 +3,18 @@
 import pytest
 import requests
 
-from chronicle.compose import client as modell
 from chronicle.compose.client import (
     CHAT_PATH,
+    DEFAULT_TIMEOUT,
     FREIGABE,
-    SITZUNGSHALTUNG,
+    KNAPPE_HALTUNG,
     TAGS_PATH,
+    ZWISCHENSTAND_TIMEOUT,
     ModelNotConfigured,
     ModelUnreachable,
     OllamaClient,
     freigeben,
     from_config,
-    halten,
-    haltung,
     installed_models,
 )
 from chronicle.config import DEFAULT_OLLAMA_URL, Config
@@ -63,12 +62,6 @@ def klient(tmp_path, http, **kwargs):
     return OllamaClient(config(tmp_path, **kwargs), http=lambda: http)
 
 
-@pytest.fixture(autouse=True)
-def ohne_haltung(monkeypatch):
-    """Die Haltung ist Prozesszustand — kein Test erbt die eines anderen."""
-    monkeypatch.setattr(modell, "_haltung", None)
-
-
 def test_baut_den_aufruf_wie_ollama_ihn_erwartet(tmp_path):
     http = Http(Antwort({"message": {"content": "  Ein ruhiger Abend.  "}}))
     text = klient(tmp_path, http).write(system="Ordne.", prompt="Szene 1")
@@ -81,6 +74,7 @@ def test_baut_den_aufruf_wie_ollama_ihn_erwartet(tmp_path):
         {"role": "system", "content": "Ordne."},
         {"role": "user", "content": "Szene 1"},
     ]
+    assert kwargs["json"]["keep_alive"] == KNAPPE_HALTUNG
     assert kwargs["timeout"] > 0
     assert text == "Ein ruhiger Abend."
 
@@ -132,6 +126,22 @@ def test_from_config_liefert_ohne_konfiguration_kein_modell(tmp_path):
     assert from_config(config(tmp_path)).name == MODELL
 
 
+def test_wer_den_klienten_baut_bestimmt_die_zeitgrenze(tmp_path):
+    """#302: der Aufschrieb darf lange rechnen, der Zwischenstand ausdrücklich nicht."""
+    http = Http(Antwort({"message": {"content": "Ein ruhiger Abend."}}))
+
+    OllamaClient(config(tmp_path), http=lambda: http).write(system="", prompt="")
+    assert http.aufrufe[-1][1]["timeout"] == DEFAULT_TIMEOUT
+
+    OllamaClient(config(tmp_path), http=lambda: http, timeout=ZWISCHENSTAND_TIMEOUT).write(
+        system="", prompt=""
+    )
+    assert http.aufrufe[-1][1]["timeout"] == ZWISCHENSTAND_TIMEOUT
+    # »Deutlich knapper« ist die ganze Aussage — eine Grenze, die dem Aufschrieb gleicht,
+    # löste das Problem nicht.
+    assert ZWISCHENSTAND_TIMEOUT * 4 < DEFAULT_TIMEOUT
+
+
 TAGS = {
     "models": [
         {"name": "gemma4:e4b"},
@@ -177,80 +187,73 @@ def test_ein_ollama_ohne_textmodelle_liefert_eine_leere_liste():
     assert installed_models(ADRESSE, http=lambda: http) == ()
 
 
-def test_ohne_laufende_sitzung_bestimmt_ollama_selbst_wie_lange_es_haelt(tmp_path):
-    http = Http(Antwort({"message": {"content": "Ein ruhiger Abend."}}))
-    klient(tmp_path, http).write(system="Ordne.", prompt="Szene 1")
-    assert "keep_alive" not in http.aufrufe[0][1]["json"]
-    assert haltung() is None
+def test_kein_aufruf_laesst_die_frist_weg(tmp_path):
+    """#303: ein Aufruf ohne ``keep_alive`` erbt die Vorgabe der Box — vierundzwanzig Stunden.
 
-
-def test_der_start_haelt_das_modell_und_jeder_aufruf_erneuert_die_haltung(tmp_path):
-    """Die Frist hängt am Aufruf, nicht am Startbefehl — sonst liefe sie mitten im Abend ab."""
+    Deshalb steht das Feld an *jedem* Aufruf und an keiner Bedingung. Der Test läuft die
+    Wege ab, an denen früher ein Zweig hing: mit und ohne eigene Adresse, mit der knappen
+    Zeitgrenze des Zwischenstands, und noch einmal nach einer Freigabe.
+    """
     http = Http(Antwort({"message": {"content": "Ein ruhiger Abend."}}))
 
-    assert halten(config(tmp_path), http=lambda: http) is True
-
-    url, kwargs = http.aufrufe[0]
-    assert url == f"http://ollama.example:11434{CHAT_PATH}"
-    assert kwargs["json"]["model"] == MODELL
-    # Kein Wort schreiben lassen: der Aufruf lädt nur und setzt die Frist.
-    assert kwargs["json"]["messages"] == []
-    assert kwargs["json"]["keep_alive"] == SITZUNGSHALTUNG
-    assert haltung() == SITZUNGSHALTUNG
-
     klient(tmp_path, http).write(system="Ordne.", prompt="Szene 1")
-    assert http.aufrufe[1][1]["json"]["keep_alive"] == SITZUNGSHALTUNG
+    klient(tmp_path, http, url=None).write(system="Ordne.", prompt="Szene 2")
+    OllamaClient(config(tmp_path), http=lambda: http, timeout=ZWISCHENSTAND_TIMEOUT).write(
+        system="Ordne.", prompt="Szene 3"
+    )
+    freigeben(config(tmp_path), http=lambda: http)
+    klient(tmp_path, http).write(system="Ordne.", prompt="Szene 4")
+
+    geschrieben = [kwargs["json"] for _, kwargs in http.aufrufe if kwargs["json"]["messages"]]
+    assert len(geschrieben) == 4
+    assert {rumpf["keep_alive"] for rumpf in geschrieben} == {KNAPPE_HALTUNG}
+
+
+def test_die_frist_am_aufruf_ist_knapp_und_endlich():
+    """Gehalten wird seit #303 nicht mehr — die Frist überbrückt nur noch den nächsten Aufruf.
+
+    Ollama kennt für »für immer« einen negativen Wert; er käme hier einer Sperre gleich.
+    Null wäre die andere Übertreibung: innerhalb eines Aufschriebs folgen Chronik und
+    Rückblick unmittelbar aufeinander, und dazwischen zu entladen kostete den Ladevorgang
+    zweimal.
+    """
+    zahl, einheit = KNAPPE_HALTUNG[:-1], KNAPPE_HALTUNG[-1]
+    assert einheit in {"m", "h"}
+    minuten = float(zahl) if einheit == "m" else float(zahl) * 60
+    assert 0 < minuten <= 15
 
 
 def test_der_abschluss_gibt_das_modell_mit_null_wieder_frei(tmp_path):
     http = Http(Antwort({"message": {"content": "Ein ruhiger Abend."}}))
-    halten(config(tmp_path), http=lambda: http)
 
     assert freigeben(config(tmp_path), http=lambda: http) is True
 
-    assert http.aufrufe[-1][1]["json"]["keep_alive"] == FREIGABE
+    url, kwargs = http.aufrufe[-1]
+    assert url == f"http://ollama.example:11434{CHAT_PATH}"
+    # Kein Wort schreiben lassen: der Aufruf entlädt nur.
+    assert kwargs["json"]["messages"] == []
+    assert kwargs["json"]["keep_alive"] == FREIGABE
     assert FREIGABE == 0
-    assert haltung() is None
-    klient(tmp_path, http).write(system="Ordne.", prompt="Szene 1")
-    assert "keep_alive" not in http.aufrufe[-1][1]["json"]
-
-
-def test_eine_sitzung_die_nicht_ordentlich_endet_laeuft_von_selbst_aus():
-    """Die offene Frage aus #295: eine Sperre, die niemand löst, darf keine Sperre sein.
-
-    Ollama hielte bei einem negativen Wert bis zum nächsten Neustart — und acht Gigabyte
-    festzuhalten sperrte die Nachbardienste dieser Karte aus. Also eine endliche Frist,
-    die jeder Aufruf erneuert: stirbt der Prozess, hört das Erneuern auf, und die Haltung
-    läuft von selbst aus.
-    """
-    zahl, einheit = SITZUNGSHALTUNG[:-1], SITZUNGSHALTUNG[-1]
-    assert einheit in {"m", "h"}
-    stunden = float(zahl) / 60 if einheit == "m" else float(zahl)
-    assert 0 < stunden <= 4
 
 
 def test_ein_abgeschaltetes_ollama_haelt_den_abend_nicht_auf(tmp_path):
+    """Die Freigabe ist bester Wille: ein Abend darf weder daran hängen noch daran scheitern."""
     http = Http(fehler=requests.ConnectionError("weg"))
-    assert halten(config(tmp_path), http=lambda: http) is False
-    # Die Haltung steht trotzdem: der nächste Aufruf, der durchkommt, setzt sie mit.
-    assert haltung() == SITZUNGSHALTUNG
     assert freigeben(config(tmp_path), http=lambda: http) is False
-    assert haltung() is None
 
 
-def test_ein_fehlerstatus_beim_halten_zaehlt_ebenfalls_als_gescheitert(tmp_path):
+def test_ein_fehlerstatus_bei_der_freigabe_zaehlt_ebenfalls_als_gescheitert(tmp_path):
     http = Http(Antwort(fehler=requests.HTTPError("500")))
-    assert halten(config(tmp_path), http=lambda: http) is False
+    assert freigeben(config(tmp_path), http=lambda: http) is False
 
 
-def test_ohne_gewaehltes_modell_gibt_es_nichts_zu_halten(tmp_path):
+def test_ohne_gewaehltes_modell_gibt_es_nichts_freizugeben(tmp_path):
     http = Http()
-    assert halten(Config(data_dir=tmp_path), http=lambda: http) is False
     assert freigeben(Config(data_dir=tmp_path), http=lambda: http) is False
     assert http.aufrufe == []
 
 
-def test_ohne_eigene_adresse_geht_die_haltung_an_das_ollama_dieser_box(tmp_path):
+def test_ohne_eigene_adresse_geht_die_freigabe_an_das_ollama_dieser_box(tmp_path):
     http = Http(Antwort({}))
-    halten(config(tmp_path, url=None), http=lambda: http)
+    freigeben(config(tmp_path, url=None), http=lambda: http)
     assert http.aufrufe[0][0] == f"{DEFAULT_OLLAMA_URL}{CHAT_PATH}"

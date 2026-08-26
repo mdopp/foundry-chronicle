@@ -492,14 +492,12 @@ def test_die_nacht_gibt_die_modellhaltung_hinterher_wieder_her(stelle, monkeypat
     # An ``requests.Session`` und nicht an ``_http_session``: dessen Funktionsobjekt steckt
     # als Vorgabewert in den Signaturen und lässt sich dort nicht mehr austauschen.
     monkeypatch.setattr(ollama.requests, "Session", lambda: draht)
-    monkeypatch.setattr(ollama, "_haltung", ollama.SITZUNGSHALTUNG)
 
     nightly.lauf(mit_modell, gastgeber)
 
     assert protocol.stored(gastgeber, 1) is not None
     assert draht.rumpf[-1]["keep_alive"] == ollama.FREIGABE
     assert ollama.FREIGABE == 0
-    assert ollama.haltung() is None
 
 
 def test_geschrieben_wird_nur_wo_material_juenger_ist_als_die_chronik(stelle):

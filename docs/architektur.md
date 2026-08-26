@@ -195,9 +195,25 @@ nachgeholt: `chronicle.mitlauf` schneidet und verschriftet seit #269 in Häppche
 fünf Minuten, während gespielt wird — der Text liegt am Schnitt bereits vor, und die
 Würfe hängt der Ereignisstrom ohnehin live an ihre Szene. Neu ist allein der Auslöser.
 Die Latenzfrage stellt sich dabei nicht: es wartet niemand, die nächste Szene läuft
-bereits. Die GPU-Konkurrenz stellt sich schon; deshalb hält die Sitzung das große
-Modell fest (#295), und wo keine Karte steht, fällt der Zwischenstand aus, ohne dass die
-Chronik am Ende darunter leidet.
+bereits. Wo keine Karte steht, fällt der Zwischenstand aus, ohne dass die Chronik am Ende
+darunter leidet.
+
+Die GPU-Konkurrenz stellt sich schon — **und sie ist zugunsten des Nachbarn entschieden**
+(#303, seit 2026-08-26). #295 hatte die Sitzung das große Modell festhalten lassen; die
+Messung des Nachbardienstes hat ergeben, dass beide Modelle auf der 16,4-GB-Karte nicht
+koexistieren. Also die verabredete Rückfallebene: gehalten wird nicht, der Tausch je
+Szenenschnitt wird in Kauf genommen. Ersatzlos streichen ginge dabei nicht — der
+Ollama-Dienst dieser Box setzt `OLLAMA_KEEP_ALIVE=24h`, und ein Aufruf ohne eigenes
+`keep_alive` erbt sie. Jeder Aufruf trägt deshalb eine knappe Frist, und am Ende jedes
+Aufschriebs steht die ausdrückliche Freigabe (#300).
+
+**Der Zwischenstand hat als einziger Weg eine Zeitrichtung** (#302). Ein bis drei Minuten
+nach dem Schnitt, sonst ist er zwecklos — während der Aufschrieb am Sitzungsende lange
+rechnen darf. Beide teilten sich bis dahin eine Zeitgrenze, und die muss für eine der
+Seiten falsch sein: mit den 1800 Sekunden des Aufschriebs besetzte ein hängendes Modell
+den Job-Platz eine halbe Stunde und schluckte jeden weiteren Schnitt des Abends. Der
+Zwischenstand läuft deshalb gegen eine eigene, knappe Grenze; reißt sie, fällt er still
+aus wie ohne Modell.
 
 Er ist **Deutung, nie Beleg**, und er sagt das über sich selbst. Abgelegt wird er
 nirgends — keine Notiz, keine Zeile in `protocol` —, also kann die Chronik am Ende ihn
