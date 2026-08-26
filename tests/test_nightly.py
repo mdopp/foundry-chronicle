@@ -3,6 +3,7 @@
 import json
 import logging
 import threading
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -23,6 +24,7 @@ from chronicle import (
     zugang,
 )
 from chronicle import runde as runden
+from chronicle.compose import client as ollama
 from chronicle.config import Config
 from chronicle.discord import rueckblick
 from chronicle.discord import service as diktat
@@ -453,6 +455,51 @@ def test_ohne_sitzung_meldet_die_nacht_keine_chronik(stelle, monkeypatch):
 
 
 # --- Welche Sitzung neues Material hat -----------------------------------------------
+
+
+class Draht:
+    """Ein Ollama am Draht — was die Nacht wirklich hinausschickt, steht in ``rumpf``."""
+
+    def __init__(self):
+        self.rumpf = []
+
+    def post(self, _url, **kwargs):
+        self.rumpf.append(kwargs["json"])
+        return Draht.Antwort()
+
+    class Antwort:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"message": {"content": "Die Runde tastet sich voran."}}
+
+
+def test_die_nacht_gibt_die_modellhaltung_hinterher_wieder_her(stelle, monkeypatch):
+    """#300: die Nacht geht nicht über ``jobs.abschluss`` und ließ die Haltung deshalb stehen.
+
+    Gemessen hat es der Nachbardienst an der Karte dieser Box: 4 h 27 min belegt für rund
+    31 Minuten gerechnete Arbeit. Der Beleg steht hier auf dem Draht und nicht in einer
+    Merkliste — die letzte Anfrage an Ollama trägt ``keep_alive: 0``.
+    """
+    mit_notiz(stelle)
+    gastgeber = runde(stelle)
+    # Die beiden Ollama-Werte kommen seit #230 aus der Umgebung und nicht aus der Datei.
+    mit_modell = replace(
+        stelle, ollama_url="http://ollama.example:11434", ollama_model="chronist-test"
+    )
+    draht = Draht()
+    # An ``requests.Session`` und nicht an ``_http_session``: dessen Funktionsobjekt steckt
+    # als Vorgabewert in den Signaturen und lässt sich dort nicht mehr austauschen.
+    monkeypatch.setattr(ollama.requests, "Session", lambda: draht)
+    monkeypatch.setattr(ollama, "_haltung", ollama.SITZUNGSHALTUNG)
+
+    nightly.lauf(mit_modell, gastgeber)
+
+    assert protocol.stored(gastgeber, 1) is not None
+    assert draht.rumpf[-1]["keep_alive"] == ollama.FREIGABE
+    assert ollama.FREIGABE == 0
+    assert ollama.haltung() is None
 
 
 def test_geschrieben_wird_nur_wo_material_juenger_ist_als_die_chronik(stelle):

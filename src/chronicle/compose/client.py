@@ -22,8 +22,13 @@ CHAT_PATH = "/api/chat"
 
 TAGS_PATH = "/api/tags"
 
-# Stapelbetrieb: ein Modell auf CPU darf für eine Szene Minuten brauchen.
-DEFAULT_TIMEOUT = 600.0
+# Stapelbetrieb: ein Modell darf für eine Szene Minuten brauchen. Zehn waren zu wenig —
+# am 22.08. brach ein Aufschrieb nach exakt dieser Grenze ab, während der Nachbardienst
+# für denselben Text ~31 Minuten reine Rechenzeit maß (#301). Nach oben gibt es hier
+# nichts zu gewinnen und nichts zu verlieren: nach der Aufnahme läuft alles im Stapel,
+# es gibt keine Latenzgrenze. Eine Grenze braucht es trotzdem — ohne sie hinge ein Lauf
+# an einem verstummten Ollama, bis jemand ihn bemerkt.
+DEFAULT_TIMEOUT = 1800.0
 
 # Die Einstellungsseite fragt damit im Request-Pfad: lieber ein Textfeld als eine Seite,
 # die auf ein abgeschaltetes Ollama wartet.

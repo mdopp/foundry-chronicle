@@ -510,6 +510,9 @@ SCHREIBER = frozenset(
         "people.confirm",
         "consent.record",
         "jobs.start",
+        # Derselbe Anstoß im Faden des Aufrufers — der Stapelaufruf legt damit seine
+        # ``job``-Zeile an (#301). Eine verwechselte Runde buchte den Lauf der Nachbarn.
+        "jobs.fuehren",
         "jobs.abgleich",
         "jobs.abschluss",
         "jobs.chronik",

@@ -1684,8 +1684,10 @@ def _modell_halten(config: Config, lauf: _Lauf, runde) -> None:
     auf ``/session start`` und der Beginn des Mitschnitts warten nicht darauf. Scheitert
     es, ist das kein Grund, den Abend nicht zu beginnen — ``halten`` fängt selbst.
 
-    Freigegeben wird am Ende der Sitzung (``jobs.abschluss``). Kommt es dazu nicht, weil
-    der Prozess stirbt, läuft die Haltung von selbst aus; sie ist endlich (#295).
+    Freigegeben wird am Ende des Aufschriebs (``kette.schreiben``) — seit #300 dort und
+    nicht mehr im Abschluss, damit auch der Nachtlauf und der Stapelaufruf die Karte
+    wieder hergeben. Kommt es dazu nicht, weil der Prozess stirbt, läuft die Haltung von
+    selbst aus; sie ist endlich (#295).
     """
     lauf.haltung = asyncio.create_task(
         asyncio.to_thread(modell.halten, settings.effective(config, runde))

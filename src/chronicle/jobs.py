@@ -46,8 +46,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
-from chronicle import db, kette, lebenszyklus, recordings, register, settings
-from chronicle.compose import client as modell
+from chronicle import db, kette, lebenszyklus, recordings, register
 from chronicle.compose.service import erzaehlen, zwischenstand_der_szene
 from chronicle.config import Config
 from chronicle.discord.ausgabe import erzaehlung_zustellen
@@ -277,22 +276,14 @@ def running(runde: Runde, kind: str | None = None) -> bool:
     return offen is not None
 
 
-def start(
-    config: Config,
-    runde: Runde,
-    kind: str,
-    runner: Callable[[], str],
-    *,
-    session_id: int | None = None,
-) -> Job | None:
-    """Stößt einen Lauf an und kehrt sofort zurück.
+def _anlegen(
+    config: Config, runde: Runde, kind: str, session_id: int | None
+) -> tuple[Job | None, bool]:
+    """Die Zeile für einen neuen Lauf — oder die, die schon läuft.
 
-    Läuft in dieser Runde schon einer derselben Art, kommt der zurück — ein zweiter Klick
-    ist keine zweite Chronik. Läuft irgendwo sonst einer, beginnt hier keiner: es gibt eine
-    CPU und ein Ollama, und zwei Läufe nebeneinander machen beide langsam. Der Aufrufer
-    bekommt dann ``None``, holt sich mit ``belegt`` den passenden Satz und sagt es ehrlich
-    statt eine Warteschlange zu erfinden — es wird hier **nichts** gemerkt und nichts
-    nachgeholt.
+    Zurück kommt, was der Anstoß vorgefunden hat: eine eben angelegte Zeile und ``True``,
+    der laufende Auftrag derselben Art in dieser Runde und ``False``, oder gar nichts,
+    weil anderswo einer läuft.
     """
     _aufraeumen(config.database_path)
     connection = db.connect(config.database_path)
@@ -303,7 +294,7 @@ def start(
             ).fetchone()
             if offen is not None:
                 gleicher = offen["runde_id"] == runde.id and offen["kind"] == kind
-                return _job(offen) if gleicher else None
+                return (_job(offen), False) if gleicher else (None, False)
             zeitpunkt = _now()
             with connection:
                 zeiger = connection.execute(
@@ -323,21 +314,73 @@ def start(
             _laufend.add(job_id)
     finally:
         connection.close()
+    return (
+        Job(
+            id=job_id,
+            runde_id=runde.id,
+            kind=kind,
+            session_id=session_id,
+            state=LAEUFT,
+            started_at=zeitpunkt,
+        ),
+        True,
+    )
 
+
+def start(
+    config: Config,
+    runde: Runde,
+    kind: str,
+    runner: Callable[[], str],
+    *,
+    session_id: int | None = None,
+) -> Job | None:
+    """Stößt einen Lauf an und kehrt sofort zurück.
+
+    Läuft in dieser Runde schon einer derselben Art, kommt der zurück — ein zweiter Klick
+    ist keine zweite Chronik. Läuft irgendwo sonst einer, beginnt hier keiner: es gibt eine
+    CPU und ein Ollama, und zwei Läufe nebeneinander machen beide langsam. Der Aufrufer
+    bekommt dann ``None``, holt sich mit ``belegt`` den passenden Satz und sagt es ehrlich
+    statt eine Warteschlange zu erfinden — es wird hier **nichts** gemerkt und nichts
+    nachgeholt.
+    """
+    zeile, neu = _anlegen(config, runde, kind, session_id)
+    if not neu:
+        return zeile
     threading.Thread(
         target=_ausfuehren,
-        args=(config, job_id, runner),
-        name=f"{FADEN}{job_id}",
+        args=(config, zeile.id, runner),
+        name=f"{FADEN}{zeile.id}",
         daemon=True,
     ).start()
-    return Job(
-        id=job_id,
-        runde_id=runde.id,
-        kind=kind,
-        session_id=session_id,
-        state=LAEUFT,
-        started_at=zeitpunkt,
-    )
+    return zeile
+
+
+def fuehren(
+    config: Config,
+    runde: Runde,
+    kind: str,
+    runner: Callable[[], str],
+    *,
+    session_id: int | None = None,
+) -> Job | None:
+    """Derselbe Lauf wie ``start``, nur im Faden des Aufrufers — zurück, wenn er durch ist.
+
+    Für den Stapelaufruf. Der wartet ohnehin auf sein Ergebnis; ihn in einen zweiten Faden
+    zu schicken hieße, hinterher auf ihn zu warten. Gebucht wird mit derselben Zeile und
+    demselben Abschluss wie hinter jedem Knopf — bis #301 buchte dieser Weg **gar nichts**,
+    und so konnte ein Aufschrieb einen Tag lang fehlgeschlagen sein, ohne dass irgendwo
+    etwas davon stand; erfahren haben wir davon aus dem Journal eines fremden Dienstes.
+
+    ``None`` heißt: hier lief nichts, weil die Maschine belegt war — den Satz dazu hat
+    ``belegt``. Sonst kommt die abgeschlossene Zeile zurück, die gelungene wie die
+    gescheiterte.
+    """
+    zeile, neu = _anlegen(config, runde, kind, session_id)
+    if not neu:
+        return None
+    _ausfuehren(config, zeile.id, runner)
+    return _lesen(config.database_path, zeile.id)
 
 
 def belegt(runde: Runde) -> str:
@@ -394,6 +437,16 @@ def _abschliessen(
         _laufend.discard(job_id)
 
 
+def _lesen(database_path: Path, job_id: int) -> Job | None:
+    """Die eine Zeile, wie sie jetzt dasteht — für den, der auf seinen eigenen Lauf wartet."""
+    connection = db.connect(database_path)
+    try:
+        zeile = connection.execute("SELECT * FROM job WHERE id = ?", (job_id,)).fetchone()
+    finally:
+        connection.close()
+    return None if zeile is None else _job(zeile)
+
+
 def _ausfuehren(config: Config, job_id: int, runner: Callable[[], str]) -> None:
     halt = threading.Event()
     threading.Thread(
@@ -444,6 +497,15 @@ def chronik(config: Config, runde: Runde, session_id: int) -> str:
     lauf = kette.schreiben(config, runde, session_id)
     if lauf is None:
         raise JobError(kette.warum_nicht(runde))
+    return satz(lauf)
+
+
+def satz(lauf: kette.Lauf) -> str:
+    """Was ein Durchgang hinterlassen hat, in einem Satz — für die Zeile und für die Runde.
+
+    Steht neben ``chronik`` und nicht darin, weil der Stapelaufruf denselben Satz bucht:
+    eine zweite Fassung liefe auseinander wie die drei Reihenfolgen vor #221.
+    """
     zustellung, ausgabe = lauf.zustellung, lauf.ausgabe
     vorschlaege = lauf.vorschlaege
     vorlauf = ""
@@ -455,8 +517,8 @@ def chronik(config: Config, runde: Runde, session_id: int) -> str:
         )
     # Wörtlich und nicht gezählt: was hier steht, kommt nicht wieder, und ein Zähler daneben
     # ließe die Runde raten, welche Stunde ihres Abends gemeint ist (#286).
-    for satz in lauf.verlust:
-        vorlauf += f"{satz} "
+    for verloren in lauf.verlust:
+        vorlauf += f"{verloren} "
     stand = STEHT if lauf.chronik.reason is None else STEHT_OHNE_MODELL
     # Der Hinweis auf offene Vorschläge steht bewusst im Ergebnis des Laufs: wird das
     # Bestätigen nicht angestoßen, wird es übersprungen, und das Register verfällt.
@@ -513,24 +575,22 @@ def abschluss(config: Config, runde: Runde, session_id: int, *, passwort: str | 
     er die Würfe dieses Abends auch an ihre Szenen. Vorher tat das allein der
     Ereignisstrom, und ein Abend ohne Strom bekam eine Chronik ohne eine einzige Zahl.
     Kommt der Abgleich nicht durch, kommt auch keine Zahl — und dann steht das im Satz.
+
+    Die Modellhaltung aus #295 gibt dieser Lauf nicht selbst wieder her: sie endet seit
+    #300 am Ende von ``kette.schreiben`` und damit dort, wo **jeder** Aufschrieb endet —
+    der Nachtlauf und der Stapelaufruf ebenso. Stand sie hier, hielt jeder Weg neben
+    ``/session done`` das große Modell bis zum Ablauf der Frist fest.
     """
-    try:
-        zustand = sync(config, runde, passwort=passwort, session_id=session_id)
-        if zustand.stale:
-            vorlauf = f"{zustand.message} {OHNE_ZAHLEN}"
-        elif zustand.nachgetragen == 1:
-            vorlauf = NACHGETRAGEN_EINER
-        elif zustand.nachgetragen:
-            vorlauf = NACHGETRAGEN.format(anzahl=zustand.nachgetragen)
-        else:
-            vorlauf = ""
-        return vorlauf + chronik(config, runde, session_id)
-    finally:
-        # Hier und nicht schon beim Befehl: dieser Lauf ist der größte Modellaufruf des
-        # Abends, und ihn mit einem eben entladenen Modell zu beginnen kostete genau den
-        # Wechsel, den die Haltung vermeiden soll (#295). Im ``finally``, weil ein
-        # gescheiterter Abschluss die Karte ebenso wieder hergeben muss.
-        modell.freigeben(settings.effective(config, runde))
+    zustand = sync(config, runde, passwort=passwort, session_id=session_id)
+    if zustand.stale:
+        vorlauf = f"{zustand.message} {OHNE_ZAHLEN}"
+    elif zustand.nachgetragen == 1:
+        vorlauf = NACHGETRAGEN_EINER
+    elif zustand.nachgetragen:
+        vorlauf = NACHGETRAGEN.format(anzahl=zustand.nachgetragen)
+    else:
+        vorlauf = ""
+    return vorlauf + chronik(config, runde, session_id)
 
 
 def mehrzahl(anzahl: int) -> str:

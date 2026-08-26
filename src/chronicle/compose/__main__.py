@@ -18,6 +18,15 @@ geht denselben Weg als Datei in den Thread der Sitzung — eine neue Fassung als
 Rückgabewert 1 heißt: die Protokolle stehen, aber ohne Sprachmodell — geordnet statt
 formuliert. Das ist ein Zustand, den ein Aufrufer sehen soll, kein Absturz.
 
+**Gebucht wird der Lauf wie jeder andere** (#301): eine ``job``-Zeile derselben Art, die
+``/session done`` anlegt, mit der Sitzung daran — und am Ende steht dort, was
+herauskam, im Erfolgs- wie im Fehlerfall. Bis dahin hinterließ dieser Weg **nichts**: ein
+Aufschrieb, der am 22.08. an der Zeitgrenze des Modells scheiterte, kam in unseren
+eigenen Aufzeichnungen nicht vor, und erfahren haben wir davon aus dem Journal eines
+fremden Dienstes. Gebucht wird hier und nicht in ``jobs.chronik``: dort liefe der
+Nachtlauf gegen seine eigene ``nachtlauf``-Zeile, und ein zweiter Lauf beginnt nicht,
+solange einer offen ist.
+
 **In welcher Runde gesucht wird, sagt der Aufrufer.** Bis #245 nahm der Stapel immer die
 erste — »wie die Oberfläche«, aus der Zeit, als eine Instanz genau eine Runde trug (die
 Oberfläche selbst ist mit #157 fort). Alles außerhalb von Runde 1 war damit von hier aus
@@ -33,7 +42,7 @@ from __future__ import annotations
 import logging
 import sys
 
-from chronicle import db, kette
+from chronicle import db, jobs, kette, notes
 from chronicle import runde as runden
 from chronicle.config import Config
 
@@ -71,10 +80,29 @@ def main(argv: list[str] | None = None) -> int:
         # Eine einzige Runde lässt keine Wahl offen; auf einer frischen Datenbank legt
         # ``erste`` sie an, wie es dieser Aufruf immer getan hat.
         runde = runden.erste(config.database_path)
-    lauf = kette.schreiben(config, runde, sitzung)
-    if lauf is None:
+    if notes.session(runde, sitzung) is None:
+        # Vor dem Buchen, weil die ``job``-Zeile an der Sitzung hängt: was es in dieser
+        # Runde nicht gibt, ist auch nicht zuzuordnen. Gesagt wird es trotzdem, und zwar
+        # hier — dieser Aufruf hat einen Aufrufer, der die Antwort liest.
         print(kette.warum_nicht(runde))
         return 2
+    durchgang: list[kette.Lauf] = []
+
+    def aufschreiben() -> str:
+        lauf = kette.schreiben(config, runde, sitzung)
+        if lauf is None:
+            raise jobs.JobError(kette.warum_nicht(runde))
+        durchgang.append(lauf)
+        return jobs.satz(lauf)
+
+    gebucht = jobs.fuehren(config, runde, jobs.CHRONIK, aufschreiben, session_id=sitzung)
+    if gebucht is None:
+        print(jobs.belegt(runde))
+        return 2
+    if not durchgang:
+        print(gebucht.error)
+        return 2
+    lauf = durchgang[0]
     print(lauf.chronik.message)
     if lauf.rueckblick is not None:
         print(lauf.rueckblick.message)
