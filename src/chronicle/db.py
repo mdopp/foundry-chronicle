@@ -167,7 +167,7 @@ NACHGETRAGEN = (
 )
 
 # Woran erkannt wird, ob die Prüfbedingung von ``job`` die jüngste Art Lauf schon kennt.
-NEUE_LAUFART = "nacherzaehlung"
+NEUE_LAUFART = "zwischenstand"
 
 _TABELLENWORT = re.compile(r"\b(?:from|join|into|update)\s+([a-z_][a-z0-9_]*)", re.IGNORECASE)
 

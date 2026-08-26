@@ -48,7 +48,7 @@ from uuid import uuid4
 
 from chronicle import db, kette, lebenszyklus, recordings, register, settings
 from chronicle.compose import client as modell
-from chronicle.compose.service import erzaehlen
+from chronicle.compose.service import erzaehlen, zwischenstand_der_szene
 from chronicle.config import Config
 from chronicle.discord.ausgabe import erzaehlung_zustellen
 from chronicle.foundry.service import sync
@@ -60,6 +60,7 @@ ABGLEICH = "abgleich"
 CHRONIK = "chronik"
 NACHTLAUF = "nachtlauf"
 NACHERZAEHLUNG = "nacherzaehlung"
+ZWISCHENSTAND = "zwischenstand"
 
 LAEUFT = "laeuft"
 FERTIG = "fertig"
@@ -479,6 +480,22 @@ def nacherzaehlung(config: Config, runde: Runde, von: int, bis: int, kanal_id: s
         config, runde, kanal_id, ergebnis.text, ergebnis.von, ergebnis.bis
     )
     return ergebnis.message + (f" {ausgabe}" if ausgabe else "")
+
+
+def zwischenstand(config: Config, runde: Runde, session_id: int, scene_id: int) -> str:
+    """Die eben geschlossene Szene verdichten — der Lauf am Szenenschnitt (#294).
+
+    Der kürzeste Lauf dieses Systems, und der einzige, der **während** der Sitzung
+    schreibt. Was er nicht tut, ist die halbe Begründung: kein Abgleich mit Foundry und
+    damit kein Passwort — die Zahlen hat der Ereignisstrom längst an die Szene gehängt,
+    und der Merkzettel aus #64 wird genau einmal eingelöst, vom Abschluss am Abendende.
+    Wer ihn hier verbrauchte, ließe die Chronik ohne Zahlen dastehen.
+
+    Leer heißt still: ohne Modell, ohne Antwort oder ohne Material erscheint im Thread
+    nichts, und der Abend läuft weiter, als hätte es diesen Lauf nicht gegeben.
+    """
+    ergebnis = zwischenstand_der_szene(config, runde, session_id, scene_id)
+    return "" if ergebnis is None else ergebnis.text
 
 
 def abschluss(config: Config, runde: Runde, session_id: int, *, passwort: str | None = None) -> str:

@@ -22,6 +22,7 @@ Gleichnamig ist Absicht: eine Trennung, die nur über verschiedene Texte hält, 
 from __future__ import annotations
 
 import inspect
+import re
 import sqlite3
 from dataclasses import replace
 
@@ -302,6 +303,20 @@ def zwei_runden(tmp_path):
     return config, a, b, ids
 
 
+class Nachhall:
+    """Ein Modell, das die Vorlage zurückgibt — damit im Ergebnis steht, was hineinging.
+
+    Ein Modell, das etwas Eigenes schriebe, ließe die Schranke jedes Leck übersehen: geprüft
+    wird, ob die Marke der fremden Runde in der Antwort auftaucht. Ziffern und ``#`` fallen
+    heraus, sonst verwirft der Zwischenstand seinen eigenen Widerhall.
+    """
+
+    name = "nachhall"
+
+    def write(self, *, system, prompt):
+        return re.sub(r"[#\d]", "", prompt)
+
+
 def _mit_scope(runde, arbeit):
     scope = db.scoped(runde)
     try:
@@ -322,6 +337,7 @@ ABFRAGEN = {
     "notes.session": lambda c, r, i: notes.session(r, i["sitzung"]),
     "notes.latest_session": lambda c, r, i: notes.latest_session(r),
     "notes.session_of_scene": lambda c, r, i: notes.session_of_scene(r, i["szene"]),
+    "notes.latest_scene": lambda c, r, i: notes.latest_scene(r, i["sitzung"]),
     "notes.running_session": lambda c, r, i: notes.running_session(r),
     "notes.closed_session_in_channel": lambda c, r, i: notes.closed_session_in_channel(
         r, i["kanal"]
@@ -397,6 +413,18 @@ ABFRAGEN = {
     "service.recap_material": lambda c, r, i: _mit_scope(
         r, lambda s: compose_service.recap_material(s, i["sitzung"])
     ),
+    # Die Vorlage des Zwischenstands (#294): eine einzelne Szene mit ihren Notizen und
+    # ihren Foundry-Fakten. Beide Wege gehen an der Szenenkennung entlang, und die ist eine
+    # Zahl wie jede andere — ohne die Runde holte sie das Material des Nachbarabends.
+    "service.szenenstoff": lambda c, r, i: _mit_scope(
+        r, lambda s: compose_service.szenenstoff(s, i["sitzung"], i["szene"])
+    ),
+    "service.zwischenstand_der_szene": lambda c, r, i: compose_service.zwischenstand_der_szene(
+        c, r, i["sitzung"], i["szene"], model=Nachhall()
+    ),
+    # Der Lauf darum herum. Ohne hinterlegtes Modell kommt nichts zurück — geprüft ist hier
+    # der Weg an die Runde, das Material prüft ``service.szenenstoff`` eine Zeile höher.
+    "jobs.zwischenstand": lambda c, r, i: jobs.zwischenstand(c, r, i["sitzung"], i["szene"]),
     # Die Nacherzählung läuft über einen Sitzungsbereich und das Register — zwei Wege in
     # eine fremde Kampagne, wenn einer davon die Runde vergisst. Der Bereich geht deshalb
     # über **beide** Abende: eine Abfrage von einer Sitzung zu sich selbst kann eine fremde

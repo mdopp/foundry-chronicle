@@ -189,12 +189,21 @@ Grafikkarte auszukommen. Auch die Erfassung folgt dem Prinzip: der Diktat-Kanal 
 ein Briefkasten — jetzt einwerfen, geholt wird, wenn der Dienst das nächste Mal läuft.
 
 **Der Szenenschnitt ist ein zweiter Stapellauf, kein zweiter Weg** (#294, seit
-2026-08-25). Schließt die Runde eine Szene, läuft für *diese* Szene dieselbe Kette —
-verschriften, ordnen, verdichten — und das Ergebnis geht als Zwischenstand in den
-Thread. Die Latenzfrage stellt sich dabei nicht: es wartet niemand, die nächste Szene
-läuft bereits. Die GPU-Konkurrenz stellt sich schon; deshalb hält die Sitzung das große
+2026-08-25). Schließt die Runde eine Szene, wird *diese* Szene verdichtet, und das
+Ergebnis geht als Zwischenstand in den Thread. Verschriftet wird dafür **nichts**
+nachgeholt: `chronicle.mitlauf` schneidet und verschriftet seit #269 in Häppchen von
+fünf Minuten, während gespielt wird — der Text liegt am Schnitt bereits vor, und die
+Würfe hängt der Ereignisstrom ohnehin live an ihre Szene. Neu ist allein der Auslöser.
+Die Latenzfrage stellt sich dabei nicht: es wartet niemand, die nächste Szene läuft
+bereits. Die GPU-Konkurrenz stellt sich schon; deshalb hält die Sitzung das große
 Modell fest (#295), und wo keine Karte steht, fällt der Zwischenstand aus, ohne dass die
 Chronik am Ende darunter leidet.
+
+Er ist **Deutung, nie Beleg**, und er sagt das über sich selbst. Abgelegt wird er
+nirgends — keine Notiz, keine Zeile in `protocol` —, also kann die Chronik am Ende ihn
+strukturell nicht als Fakt zurücklesen. Und er fasst den Merkzettel aus #64 nicht an:
+das Foundry-Passwort gehört dem Abschluss am Abendende, und ein Schnitt, der es
+verbrauchte, ließe die Chronik ohne ihre Zahlen dastehen.
 
 Der Anlass steht im Abend vom 18.08.: er wurde zu **einer** Szene mit **einer** Notiz
 über 17.806 Zeichen, obwohl der Spielleiter den Schnitt zweimal laut ansagte. Der

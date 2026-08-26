@@ -352,7 +352,7 @@ CREATE TABLE IF NOT EXISTS job (
     id          INTEGER PRIMARY KEY,
     runde_id    INTEGER NOT NULL REFERENCES runde (id) ON DELETE CASCADE,
     kind        TEXT NOT NULL CHECK (kind IN ('abgleich', 'chronik', 'nachtlauf',
-                                              'nacherzaehlung')),
+                                              'nacherzaehlung', 'zwischenstand')),
     session_id  INTEGER,
     state       TEXT NOT NULL CHECK (state IN ('laeuft', 'fertig', 'gescheitert')),
     started_at  TEXT NOT NULL,

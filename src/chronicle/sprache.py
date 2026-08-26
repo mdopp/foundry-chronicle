@@ -664,3 +664,89 @@ REGISTER = {
 
 def register(wert: str | None) -> Registertexte:
     return REGISTER[zurechtgelegt(wert)]
+
+
+# -- Der Zwischenstand -------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Zwischenstandtexte:
+    """Die Verdichtung einer eben geschlossenen Szene, während weitergespielt wird (#294).
+
+    Sie hat **eine** Aufgabe, die die Chronik nicht hat: sich selbst als Deutung
+    auszuweisen. Der Text steht Wochen später im Thread neben der Chronik, und dort ist
+    ``hinweis`` das Einzige, woran ein Leser sieht, dass hier nichts belegt ist und dass
+    dieser Text in die Chronik am Ende nicht eingeht. Ein Belegblock fehlt deshalb ganz:
+    was belegt ist, steht in der Chronik, und zwei Belegblöcke, von denen einer keiner
+    ist, wären genau die Verwechslung, gegen die diese Stufe gebaut ist.
+    """
+
+    kopf: str
+    hinweis: str
+    system: str
+    auftrag: str
+    verworfen: str
+    verworfen_ueberschrift: str
+
+
+ZWISCHENSTAND = {
+    ENGLISCH: Zwischenstandtexte(
+        kopf="## Interim reading — scene {position}",
+        hinweis=(
+            "_Interpretation, never evidence. The language model `{name}` condensed the "
+            "scene you just closed, while you play on. Nothing of this goes into the "
+            "chronicle: that one is written at the end of the session, from the material "
+            "itself._"
+        ),
+        system=(
+            "You are the chronicler of a tabletop roleplaying group and report on the "
+            "scene that has just ended, while the group plays on. You order and connect, "
+            "you invent nothing. Write in English.\n"
+            f"{ZITAT_REGEL[ENGLISCH]}\n"
+            "- Five sentences at most, in the past tense.\n"
+            "- Name no digit and no number.\n"
+            "- Invent no events, names, places, rolls or outcomes.\n"
+            "- Invent no ending. Write only what the material carries.\n"
+            "- If the material is thin, write correspondingly little.\n"
+            "- Answer with the text itself, without a heading and without a preamble."
+        ),
+        auftrag="Report on this scene, which has just ended.",
+        verworfen=("_Discarded: the paragraph named a number that does not appear in this scene._"),
+        verworfen_ueberschrift=(
+            "_Discarded: the paragraph opened a heading of its own. What is interpretation "
+            "and what is not is what the headings say here — and nobody sets them but this "
+            "stage._"
+        ),
+    ),
+    DEUTSCH: Zwischenstandtexte(
+        kopf="## Zwischenstand — Szene {position}",
+        hinweis=(
+            "_Deutung, nie Beleg. Das Sprachmodell `{name}` hat die eben geschlossene "
+            "Szene verdichtet, während ihr weiterspielt. Nichts davon geht in die Chronik "
+            "ein: die entsteht am Ende der Sitzung, aus dem Material selbst._"
+        ),
+        system=(
+            "Du bist Chronist für eine Tisch-Rollenspiel-Runde und berichtest über die "
+            "Szene, die eben zu Ende ging, während die Runde weiterspielt. Du ordnest und "
+            "verknüpfst, du erfindest nichts. Schreibe auf Deutsch.\n"
+            f"{ZITAT_REGEL[DEUTSCH]}\n"
+            "- Höchstens fünf Sätze, in der Vergangenheitsform.\n"
+            "- Nenne keine Ziffer und keine Zahl.\n"
+            "- Erfinde keine Ereignisse, Namen, Orte, Würfe oder Ergebnisse.\n"
+            "- Erfinde keinen Abschluss. Schreibe nur, was die Vorlage hergibt.\n"
+            "- Ist die Vorlage dünn, schreibe entsprechend wenig.\n"
+            "- Antworte mit dem Text selbst, ohne Überschrift und ohne Vorrede."
+        ),
+        auftrag="Berichte über diese Szene, die eben zu Ende ging.",
+        verworfen=("_Verworfen: der Absatz nannte eine Zahl, die in dieser Szene nicht vorkommt._"),
+        verworfen_ueberschrift=(
+            "_Verworfen: der Absatz machte eine eigene Überschrift auf. Was Deutung ist "
+            "und was nicht, sagen hier die Überschriften — die setzt niemand außer dieser "
+            "Stufe._"
+        ),
+    ),
+}
+
+
+def zwischenstand(wert: str | None) -> Zwischenstandtexte:
+    return ZWISCHENSTAND[zurechtgelegt(wert)]
