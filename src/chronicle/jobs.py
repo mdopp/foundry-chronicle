@@ -46,7 +46,8 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
-from chronicle import db, kette, lebenszyklus, recordings, register
+from chronicle import db, kette, lebenszyklus, recordings, register, settings
+from chronicle.compose import client as modell
 from chronicle.compose.service import erzaehlen
 from chronicle.config import Config
 from chronicle.discord.ausgabe import erzaehlung_zustellen
@@ -496,16 +497,23 @@ def abschluss(config: Config, runde: Runde, session_id: int, *, passwort: str | 
     Ereignisstrom, und ein Abend ohne Strom bekam eine Chronik ohne eine einzige Zahl.
     Kommt der Abgleich nicht durch, kommt auch keine Zahl — und dann steht das im Satz.
     """
-    zustand = sync(config, runde, passwort=passwort, session_id=session_id)
-    if zustand.stale:
-        vorlauf = f"{zustand.message} {OHNE_ZAHLEN}"
-    elif zustand.nachgetragen == 1:
-        vorlauf = NACHGETRAGEN_EINER
-    elif zustand.nachgetragen:
-        vorlauf = NACHGETRAGEN.format(anzahl=zustand.nachgetragen)
-    else:
-        vorlauf = ""
-    return vorlauf + chronik(config, runde, session_id)
+    try:
+        zustand = sync(config, runde, passwort=passwort, session_id=session_id)
+        if zustand.stale:
+            vorlauf = f"{zustand.message} {OHNE_ZAHLEN}"
+        elif zustand.nachgetragen == 1:
+            vorlauf = NACHGETRAGEN_EINER
+        elif zustand.nachgetragen:
+            vorlauf = NACHGETRAGEN.format(anzahl=zustand.nachgetragen)
+        else:
+            vorlauf = ""
+        return vorlauf + chronik(config, runde, session_id)
+    finally:
+        # Hier und nicht schon beim Befehl: dieser Lauf ist der größte Modellaufruf des
+        # Abends, und ihn mit einem eben entladenen Modell zu beginnen kostete genau den
+        # Wechsel, den die Haltung vermeiden soll (#295). Im ``finally``, weil ein
+        # gescheiterter Abschluss die Karte ebenso wieder hergeben muss.
+        modell.freigeben(settings.effective(config, runde))
 
 
 def mehrzahl(anzahl: int) -> str:

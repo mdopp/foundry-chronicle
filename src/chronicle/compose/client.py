@@ -31,7 +31,29 @@ TAGS_TIMEOUT = 2.0
 
 EMBEDDING_MARKER = "embed"
 
+# Wie lange Ollama das Modell nach einem Aufruf im Speicher behält, solange eine Sitzung
+# läuft. Auf der Box passen das große Chronik-Modell und die Nachbarn dieser Karte nicht
+# nebeneinander (#295), also ist jede Verdrängung ein Tausch hin und zurück — die Haltung
+# macht ihn seltener. Ollama kennt für »für immer« einen negativen Wert; den nehmen wir
+# bewusst **nicht**: eine Sitzung, die nicht ordentlich endet — Absturz, Neustart, der
+# leere Sprachkanal —, hielte damit acht Gigabyte bis zum nächsten Neustart fest und
+# sperrte die Nachbardienste aus. Endlich und selbst erneuernd ist beides zugleich: jeder
+# Aufruf setzt die Frist neu, und läuft nichts mehr, läuft sie von selbst ab.
+SITZUNGSHALTUNG = "2h"
+
+# Sofort entladen — das ausdrückliche Ende der Haltung.
+FREIGABE = 0
+
+# Das Laden eines großen Modells dauert; wer die Haltung setzt, wartet nicht darauf.
+HALTUNG_TIMEOUT = 300.0
+
 KEIN_MODELL = "Noch kein Modell gewählt — ein Modell hinterlegt der Betreiber dieser Box."
+
+# Die Haltung gehört der Grafikkarte dieser Box und keiner Runde: es gibt eine, und wer
+# sie hält, hält sie für alle. Deshalb steht sie im Prozess und in keiner Zeile der
+# Datenbank — ein Neustart soll sie ausdrücklich **nicht** überleben, denn nach ihm weiß
+# niemand mehr, ob der Abend noch läuft.
+_haltung: str | int | None = None
 
 
 class ModelError(RuntimeError):
@@ -80,17 +102,24 @@ class OllamaClient:
 
     def write(self, *, system: str, prompt: str) -> str:
         logger.info("Sprachmodell %s auf %s", self._model, self._base)
+        # Die Haltung reist am Aufruf mit und wird nicht einmalig gesetzt: Ollama liest
+        # ``keep_alive`` je Anfrage, ein Aufruf ohne das Feld setzte die Frist auf die
+        # Vorgabe von fünf Minuten zurück — und nähme der laufenden Sitzung genau die
+        # Haltung wieder weg, die ihr Start gesetzt hat.
+        rumpf: dict[str, object] = {
+            "model": self._model,
+            "stream": False,
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": prompt},
+            ],
+        }
+        if _haltung is not None:
+            rumpf["keep_alive"] = _haltung
         try:
             antwort = self._http.post(
                 self._base + CHAT_PATH,
-                json={
-                    "model": self._model,
-                    "stream": False,
-                    "messages": [
-                        {"role": "system", "content": system},
-                        {"role": "user", "content": prompt},
-                    ],
-                },
+                json=rumpf,
                 timeout=self._timeout,
             )
             antwort.raise_for_status()
@@ -114,6 +143,76 @@ class OllamaClient:
 
 def from_config(config: Config) -> OllamaClient | None:
     return OllamaClient(config) if config.ollama_configured else None
+
+
+def haltung() -> str | int | None:
+    """Was der nächste Aufruf mitschickt — ``None`` heißt: Ollamas eigene Vorgabe."""
+    return _haltung
+
+
+def halten(
+    config: Config,
+    *,
+    http: Callable[[], object] = _http_session,
+    timeout: float = HALTUNG_TIMEOUT,
+) -> bool:
+    """Das Modell für die Dauer einer Sitzung im Speicher festhalten."""
+    global _haltung
+    _haltung = SITZUNGSHALTUNG
+    return _anweisen(config, SITZUNGSHALTUNG, http=http, timeout=timeout)
+
+
+def freigeben(
+    config: Config,
+    *,
+    http: Callable[[], object] = _http_session,
+    timeout: float = HALTUNG_TIMEOUT,
+) -> bool:
+    """Die Haltung ausdrücklich beenden und das Modell sofort entladen.
+
+    Ohne Rücksicht darauf, ob dieser Prozess sie gesetzt hat: nach einem Neustart mitten
+    im Abend weiß er nichts mehr davon, und Ollama hielte trotzdem noch. Freigeben ist
+    dann genau richtig, und ohne geladenes Modell kostet es nichts.
+    """
+    global _haltung
+    _haltung = None
+    return _anweisen(config, FREIGABE, http=http, timeout=timeout)
+
+
+def _anweisen(
+    config: Config,
+    wert: str | int,
+    *,
+    http: Callable[[], object],
+    timeout: float,
+) -> bool:
+    """Ollama sagen, wie lange es das Modell halten soll — ohne es schreiben zu lassen.
+
+    Ein Aufruf ohne Nachrichten lädt oder entlädt nur. Scheitert er, bleibt es dabei: eine
+    Sitzung darf weder daran hängen zu beginnen noch daran, abzuschließen.
+    """
+    if not config.ollama_configured:
+        return False
+    basis = (config.ollama_url or DEFAULT_OLLAMA_URL).rstrip("/")
+    try:
+        antwort = http().post(
+            basis + CHAT_PATH,
+            json={
+                "model": str(config.ollama_model),
+                "stream": False,
+                "messages": [],
+                "keep_alive": wert,
+            },
+            timeout=timeout,
+        )
+        antwort.raise_for_status()
+    except requests.RequestException as fehler:
+        logger.warning(
+            "Die Haltung des Modells kam nicht durch (%s) — der Abend läuft trotzdem.",
+            type(fehler).__name__,
+        )
+        return False
+    return True
 
 
 def installed_models(

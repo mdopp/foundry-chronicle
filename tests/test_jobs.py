@@ -456,6 +456,57 @@ def test_der_abschluss_holt_erst_die_zahlen_und_schreibt_dann(stelle, welt, monk
     assert protokollarten(stelle, sitzung_id) == {"chronik", "rueckblick"}
 
 
+def test_der_abschluss_gibt_das_grosse_modell_erst_am_ende_wieder_frei(stelle, welt, monkeypatch):
+    """#295: entladen wird **nach** dem größten Modellaufruf des Abends, nicht davor.
+
+    Die Haltung setzt ``/session start``; hier endet sie. Käme die Freigabe schon beim
+    Befehl, begönne die Chronik mit einem eben entladenen Modell — genau der Wechsel, den
+    die Haltung vermeiden soll. Der Beleg ist, was zum Zeitpunkt der Freigabe schon
+    geschrieben stand.
+    """
+    monkeypatch.setattr(
+        jobs,
+        "sync",
+        lambda config, eine, passwort=None, session_id=None: foundry.sync(
+            config, eine, client=Abgleich(welt), session_id=session_id
+        ),
+    )
+    sitzung_id = eine_sitzung_mit_notiz(stelle)
+    gesehen = []
+    monkeypatch.setattr(
+        jobs.modell,
+        "freigeben",
+        lambda config: gesehen.append(protokollarten(stelle, sitzung_id)),
+    )
+
+    jobs.abschluss(stelle, runde(stelle), sitzung_id)
+
+    assert gesehen == [{"chronik", "rueckblick"}]
+
+
+def test_auch_ein_gescheiterter_abschluss_gibt_die_karte_wieder_her(stelle, monkeypatch):
+    """Sonst hielte ausgerechnet der schiefgegangene Abend das Modell bis zur Frist fest."""
+    gesehen = []
+    monkeypatch.setattr(jobs.modell, "freigeben", lambda config: gesehen.append(config))
+
+    def stolpert(config, eine, session_id):
+        raise jobs.JobError("die Chronik blieb aus")
+
+    monkeypatch.setattr(jobs, "chronik", stolpert)
+    monkeypatch.setattr(
+        jobs,
+        "sync",
+        lambda config, eine, passwort=None, session_id=None: foundry.sync(
+            config, eine, client=Abgleich(fehler=FoundryUnreachable("keine Antwort"))
+        ),
+    )
+
+    with pytest.raises(jobs.JobError):
+        jobs.abschluss(stelle, runde(stelle), eine_sitzung_mit_notiz(stelle))
+
+    assert len(gesehen) == 1
+
+
 def test_ein_ausgefallenes_foundry_kostet_nicht_die_ganze_chronik(stelle, monkeypatch):
     """Notizen und Aufnahmen ergeben auch ohne die Zahlen eine Chronik — mit Hinweis."""
     ausfall = Abgleich(fehler=FoundryUnreachable("keine Antwort"))
