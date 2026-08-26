@@ -12,11 +12,13 @@ Vier Zusagen hält diese Datei fest (#294, Carve-out aus PR #296):
 """
 
 import pytest
+import requests
 from conftest import PASSWORT, deutsche_runde, runde, warte_auf_laeufe
 
 from chronicle import db, jobs, notes, settings, zugang
 from chronicle import sprache as sprachen
 from chronicle.bot import chronik
+from chronicle.compose import client as ollama
 from chronicle.compose import service as compose_service
 from chronicle.compose.client import ModelUnreachable
 from chronicle.compose.composer import SceneMaterial, compose
@@ -221,7 +223,10 @@ def test_der_schnitt_nennt_die_geschlossene_szene(stelle):
 def test_der_schnitt_stoesst_genau_einen_lauf_an(stelle, monkeypatch):
     gewaehlt, sitzung, erste = sitzung_mit_szenen(stelle)
     monkeypatch.setattr(
-        compose_service.client, "from_config", lambda konfiguration: Modell(), raising=True
+        compose_service.client,
+        "from_config",
+        lambda konfiguration, *, timeout=None: Modell(),
+        raising=True,
     )
     gesagt = []
 
@@ -251,7 +256,10 @@ def test_ohne_modell_geschieht_am_schnitt_nichts(tmp_path):
 def test_kein_zweiter_lauf_solange_einer_laeuft(stelle, monkeypatch):
     gewaehlt, sitzung, erste = sitzung_mit_szenen(stelle)
     monkeypatch.setattr(
-        compose_service.client, "from_config", lambda konfiguration: Modell(), raising=True
+        compose_service.client,
+        "from_config",
+        lambda konfiguration, *, timeout=None: Modell(),
+        raising=True,
     )
     scope = db.scoped(gewaehlt)
     try:
@@ -281,7 +289,7 @@ def test_ein_stiller_lauf_meldet_nichts_in_den_thread(stelle, monkeypatch):
     monkeypatch.setattr(
         compose_service.client,
         "from_config",
-        lambda konfiguration: Modell(ModelUnreachable("Ollama schweigt")),
+        lambda konfiguration, *, timeout=None: Modell(ModelUnreachable("Ollama schweigt")),
         raising=True,
     )
     gesagt = []
@@ -300,7 +308,10 @@ def test_der_schnitt_geht_nicht_nach_foundry_und_verbraucht_kein_passwort(stelle
     settings.save(gewaehlt, {"foundry_url": "https://foundry.example", "foundry_user": "Chronist"})
     zugang.merken(gewaehlt, PASSWORT, wer="d-1")
     monkeypatch.setattr(
-        compose_service.client, "from_config", lambda konfiguration: Modell(), raising=True
+        compose_service.client,
+        "from_config",
+        lambda konfiguration, *, timeout=None: Modell(),
+        raising=True,
     )
 
     def nie(*args, **kwargs):
@@ -324,3 +335,86 @@ def test_die_zuletzt_gezogene_szene_ist_die_laufende(stelle):
     zweite = notes.add_scene(gewaehlt, sitzung, title="Auf dem Dach")
     assert notes.latest_scene(gewaehlt, sitzung) == zweite
     assert notes.latest_scene(runde(stelle), 999) is None
+
+
+# -- Die Karte und die Uhr ---------------------------------------------------------------
+
+
+class Draht:
+    """Eine Ollama-Gegenstelle auf dem Draht — der Beleg steht in der Anfrage, nicht in einer
+    Merkliste."""
+
+    def __init__(self, fehler=None):
+        self.anfragen = []
+        self._fehler = fehler
+
+    def post(self, url, **kwargs):
+        self.anfragen.append(kwargs)
+        if self._fehler is not None:
+            raise self._fehler
+        return self
+
+    def raise_for_status(self):
+        return None
+
+    def json(self):
+        return {"message": {"content": GEDEUTET}}
+
+
+@pytest.fixture
+def am_draht(monkeypatch):
+    def gegenstelle(fehler=None):
+        eines = Draht(fehler)
+        # An ``requests.Session`` und nicht an ``_http_session``: dessen Funktionsobjekt
+        # steckt als Vorgabewert in den Signaturen und lässt sich dort nicht austauschen.
+        monkeypatch.setattr(ollama.requests, "Session", lambda: eines)
+        return eines
+
+    return gegenstelle
+
+
+def test_ein_schnitt_haelt_das_modell_nur_knapp(stelle, am_draht):
+    """#303: dieser Weg läuft nicht durch ``kette.schreiben`` und wird von dessen Freigabe
+    deshalb nicht erfasst.
+
+    Ohne ausdrückliche Frist erbte er die Vorgabe des Ollama-Dienstes dieser Box — 24
+    Stunden nach *jedem* Szenenschnitt. Der Beleg steht auf dem Draht.
+    """
+    gewaehlt, sitzung, erste = sitzung_mit_szenen(stelle)
+    draht = am_draht()
+
+    ergebnis = zwischenstand_der_szene(stelle, gewaehlt, sitzung, erste)
+
+    assert ergebnis is not None and GEDEUTET in ergebnis.text
+    assert draht.anfragen[-1]["json"]["keep_alive"] == ollama.KNAPPE_HALTUNG
+    assert ollama.KNAPPE_HALTUNG != "24h"
+
+
+def test_der_schnitt_laeuft_gegen_seine_eigene_knappe_zeitgrenze(stelle, am_draht):
+    """#302: die großzügige Grenze des Aufschriebs besetzte den Job-Platz eine halbe Stunde."""
+    gewaehlt, sitzung, erste = sitzung_mit_szenen(stelle)
+    draht = am_draht()
+
+    zwischenstand_der_szene(stelle, gewaehlt, sitzung, erste)
+
+    assert draht.anfragen[-1]["timeout"] == ollama.ZWISCHENSTAND_TIMEOUT
+    assert ollama.ZWISCHENSTAND_TIMEOUT < ollama.DEFAULT_TIMEOUT
+
+
+def test_eine_gerissene_zeitgrenze_bleibt_still(stelle, am_draht):
+    """Derselbe Fall wie ein Ollama, das gar nicht antwortet — kein Fehler im Thread."""
+    gewaehlt, sitzung, erste = sitzung_mit_szenen(stelle)
+    am_draht(requests.Timeout("zu lange"))
+
+    assert zwischenstand_der_szene(stelle, gewaehlt, sitzung, erste) is None
+
+
+def test_der_aufschrieb_behaelt_seine_grosszuegige_grenze(stelle, am_draht):
+    """Die Gegenprobe zu #301: für den Aufschrieb bleiben die 1800 Sekunden richtig."""
+    gewaehlt, sitzung, _ = sitzung_mit_szenen(stelle)
+    draht = am_draht()
+
+    compose_service.compose_session(stelle, gewaehlt, sitzung)
+
+    assert draht.anfragen[-1]["timeout"] == ollama.DEFAULT_TIMEOUT
+    assert ollama.DEFAULT_TIMEOUT == 1800.0

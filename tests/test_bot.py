@@ -63,7 +63,6 @@ from chronicle.bot import (
 )
 from chronicle.bot.ansage import AnsageFehlt
 from chronicle.bot.recorder import Aufnahme, Kanal, NichtAngesagt
-from chronicle.compose import client as ollama
 from chronicle.config import DEFAULT_TTS_URL, Config
 from chronicle.discord import grenzen
 from chronicle.foundry import store as foundry_store
@@ -2434,30 +2433,6 @@ def test_start_tritt_bei_sagt_an_und_schneidet_dann_mit(
     assert ctx.antworten == [recorder.GESTARTET]
     (eintrag,) = consent.for_session(unsere_runde(konfiguration), sitzung_id)
     assert {wer.name for wer in eintrag.members} == {MIRA.name, BROK.name}
-
-
-def test_der_start_haelt_das_grosse_modell_fuer_den_abend_fest(
-    konfiguration, sitzung_id, ohne_espeak, runde, monkeypatch
-):
-    """#295: die Karte dieser Box trägt Chronik-Modell und Nachbardienste nicht nebeneinander.
-
-    Gehalten wird in einem Faden daneben — das Laden von acht Gigabyte dauert, und die
-    Runde schneidet inzwischen längst mit. Freigegeben wird am Ende der Sitzung; endet
-    sie nicht ordentlich, läuft die Haltung von selbst aus.
-    """
-    monkeypatch.setattr(ollama, "_haltung", None)
-    gehalten = []
-    monkeypatch.setattr(ollama, "halten", lambda config: gehalten.append(config.ollama_model))
-    mit_modell = replace(konfiguration, ollama_model="gemma4:12b")
-    bot = gateway.baue(mit_modell)
-
-    async def start_und_haltung():
-        await befehl(bot, "start")(FakeCtx(runde.mira))
-        await der_lauf(bot, mit_modell).haltung
-
-    asyncio.run(start_und_haltung())
-
-    assert gehalten == ["gemma4:12b"]
 
 
 def test_die_vorstellung_steht_im_kanal_bevor_die_ansage_laeuft(

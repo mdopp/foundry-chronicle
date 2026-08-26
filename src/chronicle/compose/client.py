@@ -36,29 +36,32 @@ TAGS_TIMEOUT = 2.0
 
 EMBEDDING_MARKER = "embed"
 
-# Wie lange Ollama das Modell nach einem Aufruf im Speicher behält, solange eine Sitzung
-# läuft. Auf der Box passen das große Chronik-Modell und die Nachbarn dieser Karte nicht
-# nebeneinander (#295), also ist jede Verdrängung ein Tausch hin und zurück — die Haltung
-# macht ihn seltener. Ollama kennt für »für immer« einen negativen Wert; den nehmen wir
-# bewusst **nicht**: eine Sitzung, die nicht ordentlich endet — Absturz, Neustart, der
-# leere Sprachkanal —, hielte damit acht Gigabyte bis zum nächsten Neustart fest und
-# sperrte die Nachbardienste aus. Endlich und selbst erneuernd ist beides zugleich: jeder
-# Aufruf setzt die Frist neu, und läuft nichts mehr, läuft sie von selbst ab.
-SITZUNGSHALTUNG = "2h"
+# Der Zwischenstand je Szene ist der eine Weg mit ausdrücklicher Richtung: ein bis drei
+# Minuten nach dem Szenenschnitt, sonst verliert er seinen Zweck (#294/#296). Mit der
+# großzügigen Grenze des Aufschriebs besetzte ein hängendes Modell seinen Job-Platz eine
+# halbe Stunde und schluckte damit jeden weiteren Schnitt des Abends (#302). Reißt sie,
+# fällt der Zwischenstand still aus — derselbe Fall wie ein Ollama, das nicht antwortet,
+# und kein neuer.
+ZWISCHENSTAND_TIMEOUT = 240.0
+
+# Wie lange Ollama das Modell nach einem Aufruf im Speicher behält. Dass hier überhaupt
+# eine Zahl steht, ist der Punkt: auf dieser Box setzt der Ollama-Dienst
+# ``OLLAMA_KEEP_ALIVE=24h``, und ein Aufruf **ohne** das Feld erbt diese vierundzwanzig
+# Stunden (#303). Gehalten wird nichts mehr — die Messung des Nachbardienstes vom
+# 2026-08-26 hat entschieden, dass unser großes Modell und seines auf dieser Karte nicht
+# nebeneinander passen, und damit greift die verabredete Rückfallebene: wir halten nicht
+# und nehmen den Tausch je Szenenschnitt in Kauf. Knapp, aber nicht null: innerhalb eines
+# Aufschriebs folgen Chronik, Rückblick und Nacherzählung unmittelbar aufeinander, und das
+# Modell zwischen ihnen zu entladen kostete jedes Mal den Ladevorgang neu.
+KNAPPE_HALTUNG = "5m"
 
 # Sofort entladen — das ausdrückliche Ende der Haltung.
 FREIGABE = 0
 
-# Das Laden eines großen Modells dauert; wer die Haltung setzt, wartet nicht darauf.
+# Das Entladen eines großen Modells dauert; wer es freigibt, wartet nicht ewig darauf.
 HALTUNG_TIMEOUT = 300.0
 
 KEIN_MODELL = "Noch kein Modell gewählt — ein Modell hinterlegt der Betreiber dieser Box."
-
-# Die Haltung gehört der Grafikkarte dieser Box und keiner Runde: es gibt eine, und wer
-# sie hält, hält sie für alle. Deshalb steht sie im Prozess und in keiner Zeile der
-# Datenbank — ein Neustart soll sie ausdrücklich **nicht** überleben, denn nach ihm weiß
-# niemand mehr, ob der Abend noch läuft.
-_haltung: str | int | None = None
 
 
 class ModelError(RuntimeError):
@@ -107,10 +110,10 @@ class OllamaClient:
 
     def write(self, *, system: str, prompt: str) -> str:
         logger.info("Sprachmodell %s auf %s", self._model, self._base)
-        # Die Haltung reist am Aufruf mit und wird nicht einmalig gesetzt: Ollama liest
-        # ``keep_alive`` je Anfrage, ein Aufruf ohne das Feld setzte die Frist auf die
-        # Vorgabe von fünf Minuten zurück — und nähme der laufenden Sitzung genau die
-        # Haltung wieder weg, die ihr Start gesetzt hat.
+        # ``keep_alive`` reist an **jedem** Aufruf mit und hängt an keiner Bedingung: Ollama
+        # liest es je Anfrage, und wo das Feld fehlt, gilt die Vorgabe des Dienstes — auf
+        # dieser Box vierundzwanzig Stunden. Ein Pfad ohne das Feld wäre also kein
+        # »neutraler« Aufruf, sondern der längste von allen (#303).
         rumpf: dict[str, object] = {
             "model": self._model,
             "stream": False,
@@ -118,9 +121,8 @@ class OllamaClient:
                 {"role": "system", "content": system},
                 {"role": "user", "content": prompt},
             ],
+            "keep_alive": KNAPPE_HALTUNG,
         }
-        if _haltung is not None:
-            rumpf["keep_alive"] = _haltung
         try:
             antwort = self._http.post(
                 self._base + CHAT_PATH,
@@ -146,25 +148,13 @@ class OllamaClient:
         return inhalt.strip()
 
 
-def from_config(config: Config) -> OllamaClient | None:
-    return OllamaClient(config) if config.ollama_configured else None
+def from_config(config: Config, *, timeout: float = DEFAULT_TIMEOUT) -> OllamaClient | None:
+    """Der Klient zur Konfiguration — mit der Zeitgrenze des Weges, der ihn baut.
 
-
-def haltung() -> str | int | None:
-    """Was der nächste Aufruf mitschickt — ``None`` heißt: Ollamas eigene Vorgabe."""
-    return _haltung
-
-
-def halten(
-    config: Config,
-    *,
-    http: Callable[[], object] = _http_session,
-    timeout: float = HALTUNG_TIMEOUT,
-) -> bool:
-    """Das Modell für die Dauer einer Sitzung im Speicher festhalten."""
-    global _haltung
-    _haltung = SITZUNGSHALTUNG
-    return _anweisen(config, SITZUNGSHALTUNG, http=http, timeout=timeout)
+    Die Vorgabe gehört dem Aufschrieb: er darf lange rechnen. Der Zwischenstand reicht
+    ``ZWISCHENSTAND_TIMEOUT`` herein, weil für ihn das Gegenteil gilt (#302).
+    """
+    return OllamaClient(config, timeout=timeout) if config.ollama_configured else None
 
 
 def freigeben(
@@ -179,8 +169,6 @@ def freigeben(
     im Abend weiß er nichts mehr davon, und Ollama hielte trotzdem noch. Freigeben ist
     dann genau richtig, und ohne geladenes Modell kostet es nichts.
     """
-    global _haltung
-    _haltung = None
     return _anweisen(config, FREIGABE, http=http, timeout=timeout)
 
 

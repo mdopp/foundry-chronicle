@@ -40,7 +40,6 @@ from chronicle.bot import (
     recorder,
 )
 from chronicle.bot.recorder import Aufnahme, Kanal
-from chronicle.compose import client as modell
 from chronicle.config import Config
 from chronicle.discord import grenzen
 from chronicle.runde import Runde
@@ -644,9 +643,6 @@ class _Lauf:
         # Roh und ohne Aufnahme daneben, anders als ``allein``/``gefragt``: ein alter Wert
         # verfällt hier von selbst, sobald er älter als die Frist ist.
         self.getippt: float | None = None
-        # Der Faden, der das Sprachmodell für diesen Abend festhält. Er hängt hier, damit
-        # ihn niemand einsammelt, solange er läuft — abzuwarten ist er nicht.
-        self.haltung = None
         # Die abgeschlossene Sitzung, für die schon gesagt wurde, dass der Abend zu ist.
         # Einmal je Abend und nicht je Zeile: zehn Minuten Abmoderieren sind zwanzig
         # Zeilen, und zwanzig gleiche Antworten wären selbst der Lärm.
@@ -1677,23 +1673,6 @@ async def _sitzung_starten(
     return f"{antwort} {await _mitschnitt_beginnen(config, bot, lauf, ziel, runde)}"
 
 
-def _modell_halten(config: Config, lauf: _Lauf, runde) -> None:
-    """Das große Modell für den Abend festhalten — nebenher, nicht im Weg.
-
-    Ein eigener Faden, weil das Laden von acht Gigabyte Minuten dauern kann: die Antwort
-    auf ``/session start`` und der Beginn des Mitschnitts warten nicht darauf. Scheitert
-    es, ist das kein Grund, den Abend nicht zu beginnen — ``halten`` fängt selbst.
-
-    Freigegeben wird am Ende des Aufschriebs (``kette.schreiben``) — seit #300 dort und
-    nicht mehr im Abschluss, damit auch der Nachtlauf und der Stapelaufruf die Karte
-    wieder hergeben. Kommt es dazu nicht, weil der Prozess stirbt, läuft die Haltung von
-    selbst aus; sie ist endlich (#295).
-    """
-    lauf.haltung = asyncio.create_task(
-        asyncio.to_thread(modell.halten, settings.effective(config, runde))
-    )
-
-
 def _startfenster(config: Config, bot, lauf: _Lauf, runde, titel: str):
     """Das Passwort wird beim Start erfragt — freiwillig, damit Foundry den Abend über offen ist.
 
@@ -2685,10 +2664,6 @@ def baue(config: Config):
         if lauf.probe:
             await _zustellen(ctx.respond, PROBE_LAEUFT, ephemeral=True)
             return
-        # Vor allen Zweigen darunter: ab hier wird gespielt, und das große Modell soll für
-        # den Abend im Grafikspeicher bleiben (#295). Auch beim Fortsetzen nach
-        # ``/session pause`` — ein Neustart dazwischen hat die Haltung mitgenommen.
-        _modell_halten(config, lauf, runde)
         # Läuft schon eine Sitzung, ist dies kein zweiter Anfang, sondern das Fortsetzen
         # des Mitschnitts nach ``/session pause``: angelegt wird nichts, gefragt auch nicht.
         if chronik.offene_sitzung(runde) is not None:

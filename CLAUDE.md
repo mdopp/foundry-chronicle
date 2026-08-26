@@ -23,8 +23,18 @@ Diese Regeln gelten für jede Sitzung, Mensch oder Agent.
   Fortschrittsbalken, der Echtzeit vortäuscht. Verschoben ist allein der *Zeitpunkt* des
   Laufs, vom Sitzungsende an den Schnitt.
   Die GPU-Pflicht gilt für diesen einen Weg trotzdem: verschriftet wird währenddessen
-  nur, wo eine Karte steht, und die Sitzung hält das große Modell fest (#295). Ohne
-  Karte fällt der Zwischenstand aus — die Chronik am Ende entsteht wie bisher.
+  nur, wo eine Karte steht (#295). Ohne Karte fällt der Zwischenstand aus — die Chronik
+  am Ende entsteht wie bisher.
+  **Gehalten wird das Modell dafür nicht mehr** (#303, seit 2026-08-26). #295 hatte die
+  Sitzung das große Modell festhalten lassen, damit der Szenenschnitt es nicht jedes Mal
+  neu lädt. Die Messung des Nachbardienstes hat das entschieden: unser Chronik-Modell und
+  seines passen auf der Karte dieser Box **nicht** nebeneinander, jedes Laden verdrängt
+  ihn. Damit greift die vorab verabredete Rückfallebene — wir halten nicht, der Nachbar
+  behält sein Modell, und wir nehmen den Tausch je Szenenschnitt in Kauf. **Ersatzlos
+  streichen wäre das Gegenteil gewesen:** der Ollama-Dienst dieser Box setzt
+  `OLLAMA_KEEP_ALIVE=24h`, und ein Aufruf ohne ausdrückliches `keep_alive` erbt diese
+  vierundzwanzig Stunden statt unserer zwei. Jeder Aufruf schickt deshalb eine knappe
+  Frist mit, und am Ende jedes Aufschriebs wird ausdrücklich freigegeben (#300).
   **Ein Zeittakt wäre die falsche Grenze gewesen.** Erwogen und verworfen wurde ein
   Fenster alle zehn Minuten: es endet mitten im Satz, und ein Modell, das über eine
   unfertige Szene schreibt, erfindet den Abschluss — genau der Fehler, der hier der
