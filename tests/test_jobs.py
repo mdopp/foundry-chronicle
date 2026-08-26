@@ -463,6 +463,9 @@ def test_der_abschluss_gibt_das_grosse_modell_erst_am_ende_wieder_frei(stelle, w
     Befehl, begönne die Chronik mit einem eben entladenen Modell — genau der Wechsel, den
     die Haltung vermeiden soll. Der Beleg ist, was zum Zeitpunkt der Freigabe schon
     geschrieben stand.
+
+    Beobachtet wird seit #300 ``kette``: dort liegt die Freigabe, damit sie jeden
+    Aufschrieb erreicht und nicht nur den über ``/session done``.
     """
     monkeypatch.setattr(
         jobs,
@@ -474,7 +477,7 @@ def test_der_abschluss_gibt_das_grosse_modell_erst_am_ende_wieder_frei(stelle, w
     sitzung_id = eine_sitzung_mit_notiz(stelle)
     gesehen = []
     monkeypatch.setattr(
-        jobs.modell,
+        kette.modell,
         "freigeben",
         lambda config: gesehen.append(protokollarten(stelle, sitzung_id)),
     )
@@ -487,12 +490,8 @@ def test_der_abschluss_gibt_das_grosse_modell_erst_am_ende_wieder_frei(stelle, w
 def test_auch_ein_gescheiterter_abschluss_gibt_die_karte_wieder_her(stelle, monkeypatch):
     """Sonst hielte ausgerechnet der schiefgegangene Abend das Modell bis zur Frist fest."""
     gesehen = []
-    monkeypatch.setattr(jobs.modell, "freigeben", lambda config: gesehen.append(config))
-
-    def stolpert(config, eine, session_id):
-        raise jobs.JobError("die Chronik blieb aus")
-
-    monkeypatch.setattr(jobs, "chronik", stolpert)
+    monkeypatch.setattr(kette.modell, "freigeben", lambda config: gesehen.append(config))
+    monkeypatch.setattr(kette, "compose_session", lambda *args, **kwargs: None)
     monkeypatch.setattr(
         jobs,
         "sync",

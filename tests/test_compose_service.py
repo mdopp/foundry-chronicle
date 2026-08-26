@@ -1,12 +1,14 @@
 """Vom Speicher bis zum abgelegten Protokoll — der Stapellauf am Stück."""
 
 import pytest
-from conftest import UNSER_KONTO, deutsche_runde, runde
+import requests
+from conftest import UNSER_KONTO, deutsche_runde, laufender_job, runde
 
 import chronicle.compose.__main__ as entry
-from chronicle import db, settings
+from chronicle import db, jobs, lebenszyklus, settings
 from chronicle import runde as runden
 from chronicle import sprache as sprachen
+from chronicle.compose import client as ollama
 from chronicle.compose.service import KIND, RUECKBLICK, compose_session, recap_session
 from chronicle.discord import rueckblick
 from chronicle.foundry import store
@@ -387,3 +389,135 @@ def test_der_stapelaufruf_greift_nicht_in_die_nicht_genannte_runde(
     assert "no longer exists" in capsys.readouterr().out
     assert protokolle(scope, sitzung_id) == []
     assert _fremde_protokolle(zweite, sitzung_id) == []
+
+
+# --- Was der Stapellauf hinterlässt: eine Zeile und eine freie Karte -------------------
+
+
+class Antwort:
+    def raise_for_status(self):
+        return None
+
+    def json(self):
+        return {"message": {"content": "Die Runde tastet sich voran."}}
+
+
+class Ollama:
+    """Ein Ollama am Draht — was der Stapellauf wirklich hinausschickt, steht in ``rumpf``."""
+
+    def __init__(self, fehler=None):
+        self.rumpf = []
+        self._fehler = fehler
+
+    def post(self, url, **kwargs):
+        self.rumpf.append(kwargs["json"])
+        if self._fehler is not None:
+            raise self._fehler
+        return Antwort()
+
+
+@pytest.fixture
+def am_draht(config, monkeypatch):
+    """Der Stapellauf mit hinterlegtem Modell, und ohne Haltung aus einem anderen Test."""
+
+    def gegenstelle(fehler=None):
+        eines = Ollama(fehler)
+        # An ``requests.Session`` und nicht an ``_http_session``: dessen Funktionsobjekt
+        # steckt als Vorgabewert in den Signaturen und lässt sich nicht mehr austauschen.
+        monkeypatch.setattr(ollama.requests, "Session", lambda: eines)
+        return eines
+
+    monkeypatch.setattr(ollama, "_haltung", None)
+    monkeypatch.setenv("CHRONICLE_DATA_DIR", str(config.data_dir))
+    monkeypatch.setenv("OLLAMA_URL", "http://ollama.example:11434")
+    monkeypatch.setenv("OLLAMA_MODEL", "chronist-test")
+    return gegenstelle
+
+
+def test_der_stapelaufruf_gibt_die_modellhaltung_hinterher_wieder_her(
+    config, scope, welt, am_draht, monkeypatch
+):
+    """#300: der Aufschrieb neben ``/session done`` besetzte das große Modell bis zur Frist.
+
+    Freigegeben wurde bis dahin allein in ``jobs.abschluss``; dieser Weg geht dort nicht
+    vorbei. Der Beleg steht auf dem Draht und nicht in einer Merkliste: die letzte Anfrage
+    an Ollama trägt ``keep_alive: 0``.
+    """
+    sitzung_id = eine_runde(scope, welt)
+    gegenstelle = am_draht()
+    monkeypatch.setattr(ollama, "_haltung", ollama.SITZUNGSHALTUNG)
+
+    entry.main([str(sitzung_id)])
+
+    assert gegenstelle.rumpf[-1]["keep_alive"] == ollama.FREIGABE
+    assert ollama.FREIGABE == 0
+    assert ollama.haltung() is None
+
+
+def test_der_stapelaufruf_hinterlaesst_eine_zeile_zu_seiner_sitzung(config, scope, welt, am_draht):
+    """#301: bis dahin wusste der Dienst hinterher nicht, dass dieser Lauf stattfand."""
+    sitzung_id = eine_runde(scope, welt)
+    am_draht()
+
+    assert entry.main([str(sitzung_id)]) == 0
+
+    zeile = jobs.latest(runde(config), jobs.CHRONIK, sitzung_id)
+    assert zeile is not None
+    assert zeile.session_id == sitzung_id
+    assert zeile.fertig
+    assert zeile.result
+
+
+def test_ein_gescheiterter_stapelaufruf_steht_ebenfalls_in_der_zeile(
+    config, scope, welt, am_draht, capsys
+):
+    """Der Fehlschlag ist der Fall, um den es ging — er verschwand am 22.08. spurlos.
+
+    Die Sitzung gibt es, die Runde ruht seit dem Rauswurf: aus der Kette kommt nichts
+    zurück. Vorher endete das in einer gedruckten Zeile und sonst nirgends.
+    """
+    sitzung_id = eine_runde(scope, welt)
+    _gilde_setzen(config, "g-ruhend")
+    lebenszyklus.sperren(config.database_path, "g-ruhend")
+    am_draht()
+
+    assert entry.main([str(sitzung_id)]) == 2
+
+    zeile = jobs.latest(runde(config), jobs.CHRONIK, sitzung_id)
+    assert zeile is not None
+    assert zeile.gescheitert
+    assert lebenszyklus.RUHT == zeile.error
+    assert lebenszyklus.RUHT in capsys.readouterr().out
+
+
+def test_ein_modell_an_der_zeitgrenze_verschwindet_nicht_mehr_spurlos(
+    config, scope, welt, am_draht
+):
+    """Genau der Lauf vom 22.08.: Ollama antwortet nicht, und niemand erfuhr davon.
+
+    Die Chronik entsteht trotzdem — geordnet statt formuliert —, und **das** steht jetzt
+    in der Zeile. Vorher stand dort nichts, und wiederholt wurde der Lauf erst einen Tag
+    später.
+    """
+    sitzung_id = eine_runde(scope, welt)
+    am_draht(requests.ReadTimeout("zu lange"))
+
+    assert entry.main([str(sitzung_id)]) == 1
+
+    zeile = jobs.latest(runde(config), jobs.CHRONIK, sitzung_id)
+    assert zeile is not None and zeile.fertig
+    assert "without a language model" in zeile.result
+
+
+def test_der_stapelaufruf_beginnt_nicht_neben_einem_laufenden_lauf(
+    config, scope, welt, am_draht, capsys
+):
+    """Eine CPU, ein Ollama — dieselbe Schranke wie hinter jedem Knopf, jetzt auch hier."""
+    sitzung_id = eine_runde(scope, welt)
+    am_draht()
+    laufender_job(config, kind=jobs.ABGLEICH)
+
+    assert entry.main([str(sitzung_id)]) == 2
+
+    assert "already going" in capsys.readouterr().out
+    assert protokolle(scope, sitzung_id) == []

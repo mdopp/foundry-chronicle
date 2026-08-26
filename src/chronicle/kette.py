@@ -17,7 +17,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from chronicle import lebenszyklus, recordings, register
+from chronicle import lebenszyklus, recordings, register, settings
+from chronicle.compose import client as modell
 from chronicle.compose.composer import Composition
 from chronicle.compose.recap import Recap
 from chronicle.compose.service import compose_session, recap_session
@@ -82,25 +83,37 @@ def schreiben(config: Config, runde: Runde, session_id: int) -> Lauf | None:
 
     Die Übernahme steht zwischen beidem und nicht daneben — siehe den Kopf dieser Datei.
     ``None`` heißt: es ist nichts entstanden; ``warum_nicht`` sagt, warum.
+
+    Am Ende gibt der Durchgang die Modellhaltung aus #295 wieder her, und zwar **hier**:
+    dies ist die Stelle, an der jeder Aufschrieb endet. Bis #300 tat das allein
+    ``jobs.abschluss``, also nur ``/session done``; der Nachtlauf und der Stapelaufruf
+    ließen die Haltung stehen und besetzten das große Modell danach bis zum Ablauf der
+    Frist — gemessen 4 h 27 min gehalten für ~31 min gerechnete Arbeit. Im ``finally``,
+    weil auch ein Durchgang ohne Ergebnis die Karte wieder hergeben muss; scheitert die
+    Freigabe selbst, bleibt es dabei (``modell.freigeben`` fängt) und die Frist läuft von
+    allein ab.
     """
-    wartende = recordings.pending(runde)
-    meldungen = run_queue(config, runde)
-    verschriftet, offen = _stand(runde, wartende)
-    uebernehmen(runde, session_id)
-    chronik = compose_session(config, runde, session_id)
-    if chronik is None:
-        return None
-    rueckblick = recap_session(config, runde, session_id)
-    zustellung = deliver(config, runde, session_id)
-    ausgabe = anhaengen(config, runde, session_id)
-    vorschlaege = register.suggest(config, runde, session_id)
-    return Lauf(
-        verschriftet=verschriftet,
-        offen=offen,
-        chronik=chronik,
-        rueckblick=rueckblick,
-        zustellung=zustellung,
-        ausgabe=ausgabe,
-        vorschlaege=vorschlaege,
-        verlust=meldungen.verlust,
-    )
+    try:
+        wartende = recordings.pending(runde)
+        meldungen = run_queue(config, runde)
+        verschriftet, offen = _stand(runde, wartende)
+        uebernehmen(runde, session_id)
+        chronik = compose_session(config, runde, session_id)
+        if chronik is None:
+            return None
+        rueckblick = recap_session(config, runde, session_id)
+        zustellung = deliver(config, runde, session_id)
+        ausgabe = anhaengen(config, runde, session_id)
+        vorschlaege = register.suggest(config, runde, session_id)
+        return Lauf(
+            verschriftet=verschriftet,
+            offen=offen,
+            chronik=chronik,
+            rueckblick=rueckblick,
+            zustellung=zustellung,
+            ausgabe=ausgabe,
+            vorschlaege=vorschlaege,
+            verlust=meldungen.verlust,
+        )
+    finally:
+        modell.freigeben(settings.effective(config, runde))
