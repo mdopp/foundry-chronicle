@@ -1,5 +1,45 @@
 # Changelog
 
+## [0.3.0](https://github.com/mdopp/foundry-chronicle/compare/v0.2.0...v0.3.0) (2026-08-27)
+
+
+### Features
+
+* **autoloop:** eine aufgehobene Draft-Pflicht steht jetzt am Issue ([9dc729e](https://github.com/mdopp/foundry-chronicle/commit/9dc729e31b3c5bfe4cb5d8f77e7d7a9eee5794d9)), closes [#273](https://github.com/mdopp/foundry-chronicle/issues/273)
+* **compose:** das grosse Modell bleibt waehrend der Sitzung im Speicher ([06c1a84](https://github.com/mdopp/foundry-chronicle/commit/06c1a846e419ddc78958789e3751e468d1f2f634)), closes [#295](https://github.com/mdopp/foundry-chronicle/issues/295)
+* **compose:** das Sitzungsfenster wird beim Nachbarn angemeldet ([c635451](https://github.com/mdopp/foundry-chronicle/commit/c63545158d369938733f6a2a2bc6616ae0446843)), closes [#299](https://github.com/mdopp/foundry-chronicle/issues/299)
+* **compose:** ein Zwischenstand je Szene, waehrend die Runde weiterspielt ([1faa004](https://github.com/mdopp/foundry-chronicle/commit/1faa0045d8592c478df000621488b304f264fe3c)), closes [#294](https://github.com/mdopp/foundry-chronicle/issues/294)
+* **discord:** der Bot sagt von selbst, was fehlt und wer es tun kann ([10acbee](https://github.com/mdopp/foundry-chronicle/commit/10acbee0f5d1c36386bbe59245417efc5f0abcc6)), closes [#270](https://github.com/mdopp/foundry-chronicle/issues/270)
+* **discord:** die Bedienung spricht Englisch, der Inhalt die Sprache der Runde ([5a92810](https://github.com/mdopp/foundry-chronicle/commit/5a92810b20b140c57e9cdc9fbf4b716e519f76d3)), closes [#268](https://github.com/mdopp/foundry-chronicle/issues/268)
+* **discord:** die Sitzungsgrenze wandert vom Ort auf die Zeit ([3ad05eb](https://github.com/mdopp/foundry-chronicle/commit/3ad05ebf99f8df9501b1853dc26ecd286fb6f6c9)), closes [#271](https://github.com/mdopp/foundry-chronicle/issues/271)
+* **discord:** neun englische Befehle statt siebzehn ([1c0898f](https://github.com/mdopp/foundry-chronicle/commit/1c0898f3b68b0851641be8b60b2251e991e48b18)), closes [#272](https://github.com/mdopp/foundry-chronicle/issues/272)
+* **transcribe:** waehrend der Sitzung verschriften, Haeppchen auf fuenf Minuten ([81f8e66](https://github.com/mdopp/foundry-chronicle/commit/81f8e667fb2932fab1c04e9c892d3ad245aa6344)), closes [#269](https://github.com/mdopp/foundry-chronicle/issues/269)
+
+
+### Bug Fixes
+
+* **anonymisierer:** ein Zeitstempel ueberlebt nur noch als Abstand ([d8944f4](https://github.com/mdopp/foundry-chronicle/commit/d8944f4521c5933e6b961167e29172b596848e06)), closes [#255](https://github.com/mdopp/foundry-chronicle/issues/255)
+* **compose:** jeder Aufschrieb gibt das Modell her und hinterlaesst eine Zeile ([71a2523](https://github.com/mdopp/foundry-chronicle/commit/71a2523bf24e197228eaf061040df6b84960b618)), closes [#300](https://github.com/mdopp/foundry-chronicle/issues/300) [#301](https://github.com/mdopp/foundry-chronicle/issues/301)
+* **compose:** keine Sitzungshaltung mehr, aber eine knappe Frist an jedem Aufruf ([05f5fba](https://github.com/mdopp/foundry-chronicle/commit/05f5fba354933f5f9f38c117bdc4d5b9d921deb4)), closes [#303](https://github.com/mdopp/foundry-chronicle/issues/303) [#302](https://github.com/mdopp/foundry-chronicle/issues/302)
+* **compose:** verschriftet steht getrennt und deckt keine fremde Szene ([2e1d762](https://github.com/mdopp/foundry-chronicle/commit/2e1d762a14feb0e06ced5bfaea565c6c453edff2)), closes [#279](https://github.com/mdopp/foundry-chronicle/issues/279) [#280](https://github.com/mdopp/foundry-chronicle/issues/280)
+* **discord:** der gekürzte Rückblick bricht keine Faktenzeile mehr auf ([67f9172](https://github.com/mdopp/foundry-chronicle/commit/67f91728bfdf353101c78926b8bb13caab7c8c76)), closes [#278](https://github.com/mdopp/foundry-chronicle/issues/278)
+* **discord:** der geschlossene Abend verschluckt das Abmoderieren nicht mehr ([7b2558d](https://github.com/mdopp/foundry-chronicle/commit/7b2558d6ff67fe761f62d006bbd56fb21356b8af)), closes [#288](https://github.com/mdopp/foundry-chronicle/issues/288)
+* **discord:** die Knoepfe im Kanal laufen nicht mehr ins Leere ([0165a11](https://github.com/mdopp/foundry-chronicle/commit/0165a11de8cb89ff3d450248761ebf7f15fd4bad)), closes [#281](https://github.com/mdopp/foundry-chronicle/issues/281) [#282](https://github.com/mdopp/foundry-chronicle/issues/282)
+* **discord:** die zurückgekehrte Gilde wird beim Start wieder begrüßt ([8a2523a](https://github.com/mdopp/foundry-chronicle/commit/8a2523aea3a0a8e0d686f2a0aedcc3dab6d7829b)), closes [#283](https://github.com/mdopp/foundry-chronicle/issues/283)
+* **discord:** ein erkannter Verlust erreicht die Runde statt den Boden ([8b14de3](https://github.com/mdopp/foundry-chronicle/commit/8b14de34756889b81606dfeb7de6bc3390d98616)), closes [#286](https://github.com/mdopp/foundry-chronicle/issues/286) [#287](https://github.com/mdopp/foundry-chronicle/issues/287)
+* **discord:** ein Zustellfehler nennt Statuscode und Antwortrumpf ([c571533](https://github.com/mdopp/foundry-chronicle/commit/c57153371a63c89301e8a2738a96797cbe0a48ae)), closes [#261](https://github.com/mdopp/foundry-chronicle/issues/261)
+* **foundry:** der Adapter faellt zu statt offen ([d09fd1f](https://github.com/mdopp/foundry-chronicle/commit/d09fd1f5bd22b04638cbaf2d2978fc0590cb2d47)), closes [#284](https://github.com/mdopp/foundry-chronicle/issues/284) [#285](https://github.com/mdopp/foundry-chronicle/issues/285)
+* **recordings:** der Dienst bringt seinen Dateinamen-Bereiniger selbst mit ([51b3dbf](https://github.com/mdopp/foundry-chronicle/commit/51b3dbfbd6de608057fa9b34a5ce42055c2989bd)), closes [#259](https://github.com/mdopp/foundry-chronicle/issues/259)
+* **recordings:** die Frist erreicht auch den Ton ohne Warteschlangenzeile ([5e2a9f9](https://github.com/mdopp/foundry-chronicle/commit/5e2a9f9e0f0211defbc8155fd66ba7fb98af643b)), closes [#289](https://github.com/mdopp/foundry-chronicle/issues/289)
+* **transcribe:** das vorgespannte Register kommt nicht mehr als Transkript zurueck ([d1089c2](https://github.com/mdopp/foundry-chronicle/commit/d1089c25c16a32aacbe895da195af877464fcb20)), closes [#262](https://github.com/mdopp/foundry-chronicle/issues/262)
+
+
+### Documentation
+
+* der Szenenschnitt ist ein Stapellauf, er liegt nur frueher ([ff24d5e](https://github.com/mdopp/foundry-chronicle/commit/ff24d5e360dbd53a4f892a0bee9a29d9b7493979))
+* die Vokabulargrenze zeigt wieder auf die echte Konstante ([64a7175](https://github.com/mdopp/foundry-chronicle/commit/64a7175daab84c8e3acb3890f0ddcdf688390393)), closes [#267](https://github.com/mdopp/foundry-chronicle/issues/267)
+* keine Seite mehr in der Doku, und der Bot fuehrt statt zu warten ([9272ba2](https://github.com/mdopp/foundry-chronicle/commit/9272ba29b001a06ff937ec4bc22b43286c1bd48e)), closes [#232](https://github.com/mdopp/foundry-chronicle/issues/232) [#265](https://github.com/mdopp/foundry-chronicle/issues/265)
+
 ## [0.2.0](https://github.com/mdopp/foundry-chronicle/compare/v0.1.0...v0.2.0) (2026-08-23)
 
 
