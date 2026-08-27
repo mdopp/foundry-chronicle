@@ -207,6 +207,24 @@ Ollama-Dienst dieser Box setzt `OLLAMA_KEEP_ALIVE=24h`, und ein Aufruf ohne eige
 `keep_alive` erbt sie. Jeder Aufruf trägt deshalb eine knappe Frist, und am Ende jedes
 Aufschriebs steht die ausdrückliche Freigabe (#300).
 
+**Seit #299 gibt es dazu eine benannte Ausnahme: das Sitzungsfenster** (2026-08-27,
+ausgehandelt mit `mdopp/solarisbay#1260`, von beiden Betreibern entschieden). Der Beginn
+eines Abends wird beim Nachbarn angemeldet — `POST /napi/gpu-lease {model, ttl_s}` über
+die Schleife, fünfzehn Minuten, alle fünf erneuert —, und am Ende jedes Aufschriebs
+schließt dieselbe Stelle, die das Modell freigibt, das Fenster mit einem `DELETE` wieder.
+Solange es steht, antwortet der Nachbar mit unserem Modell, statt seines bei jeder
+Haushaltsanfrage zurückzuholen; die Rechnung dahinter ist, dass eine langsamere Antwort
+billiger ist als zwei Ladevorgänge zu je rund 56 s. Dass die beiden Modelle nicht
+nebeneinander passen, ist dabei die **Prämisse** des Vertrags und nicht der Einwand
+dagegen. Die knappe Frist bleibt die Norm — Fensterfrist und `keep_alive` kommen aus
+**derselben Konstante**, damit nicht zwei Zahlen auseinanderlaufen —, und der Aufruf ist
+in beide Richtungen bester Wille: scheitert er, beginnt und endet die Sitzung trotzdem.
+Er trägt kein Geheimnis (seit #230 hat diese Instanz keines) und **keine Runden-, Gilden-
+oder Sitzungskennung**: welches Modell, wie lange — mehr braucht der Nachbar nicht.
+Die Anmeldung lädt das Modell gleich mit; damit zahlt der erste Szenenschnitt des Abends
+den Ladevorgang nicht mehr, und das tut sie **nach** der Zusage, nicht davor. Abschalten
+lässt sich der Vertrag ohne Neubau mit `CHRONICLE_GPU_LEASE`.
+
 **Der Zwischenstand hat als einziger Weg eine Zeitrichtung** (#302). Ein bis drei Minuten
 nach dem Schnitt, sonst ist er zwecklos — während der Aufschrieb am Sitzungsende lange
 rechnen darf. Beide teilten sich bis dahin eine Zeitgrenze, und die muss für eine der
