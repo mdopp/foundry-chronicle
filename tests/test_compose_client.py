@@ -10,6 +10,7 @@ from chronicle.compose.client import (
     DEFAULT_TIMEOUT,
     FREIGABE,
     KNAPPE_HALTUNG,
+    LEASE_ERNEUERUNG_FELD,
     LEASE_ERNEUERUNG_S,
     LEASE_HALTUNG,
     LEASE_PATH,
@@ -19,6 +20,7 @@ from chronicle.compose.client import (
     ModelNotConfigured,
     ModelUnreachable,
     OllamaClient,
+    erneuerung,
     fenster_oeffnen,
     freigeben,
     from_config,
@@ -291,6 +293,7 @@ class Fenster(Http):
 def ohne_offenes_fenster(monkeypatch):
     """Kein Test erbt das Fenster eines anderen — und keiner lässt eines stehen."""
     monkeypatch.setattr("chronicle.compose.client._lease_bis", 0.0)
+    monkeypatch.setattr("chronicle.compose.client._lease_erneuerung_s", LEASE_ERNEUERUNG_S)
 
 
 def anmeldungen(http):
@@ -348,6 +351,46 @@ def test_die_frist_des_fensters_und_das_keep_alive_kommen_aus_derselben_konstant
     assert LEASE_ERNEUERUNG_S == LEASE_TTL_S / 3 == 5 * 60
     assert LEASE_HALTUNG != "24h"
     assert KNAPPE_HALTUNG != LEASE_HALTUNG
+
+
+def test_der_pfad_liegt_nicht_im_token_pflichtigen_praefix_des_nachbarn():
+    """#306: ``/napi/*`` ist beim Nachbarn Authelia-umgangen und deshalb token-pflichtig.
+
+    Ein token-freier Endpunkt darin schlüge ein Loch in genau das Präfix, über das seine
+    App echte Geräte schaltet. Er hat den eigenen Vorschlag darum zurückgezogen.
+    """
+    assert LEASE_PATH == "/api/model-lease"
+    assert not LEASE_PATH.startswith("/napi/")
+
+
+def test_der_erneuerungstakt_kommt_aus_der_antwort_des_nachbarn(tmp_path):
+    """#306: abgeleitet stimmte er nur, solange beide Seiten zufällig dieselbe Zahl halten."""
+    http = Fenster(Antwort({LEASE_ERNEUERUNG_FELD: 120}))
+    assert fenster_oeffnen(config(tmp_path), http=lambda: http) is True
+    assert erneuerung() == 120
+
+
+@pytest.mark.parametrize(
+    "antwort",
+    [
+        Antwort({}),
+        Antwort({LEASE_ERNEUERUNG_FELD: None}),
+        Antwort({LEASE_ERNEUERUNG_FELD: "bald"}),
+        Antwort({LEASE_ERNEUERUNG_FELD: True}),
+        Antwort({LEASE_ERNEUERUNG_FELD: 0}),
+        Antwort({LEASE_ERNEUERUNG_FELD: -60}),
+        Antwort({LEASE_ERNEUERUNG_FELD: LEASE_TTL_S + 1}),
+        Antwort(["kein Rumpf"]),
+        Antwort(),
+    ],
+)
+def test_ein_fehlender_oder_unsinniger_takt_faellt_auf_die_eigene_ableitung_zurueck(
+    tmp_path, antwort
+):
+    """Bester Wille in beide Richtungen (#299/#306): das kostet den Takt, nie das Fenster."""
+    http = Fenster(antwort)
+    assert fenster_oeffnen(config(tmp_path), http=lambda: http) is True
+    assert erneuerung() == LEASE_ERNEUERUNG_S
 
 
 def test_die_anmeldung_laedt_das_modell_gleich_mit(tmp_path):

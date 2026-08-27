@@ -2473,8 +2473,8 @@ def test_der_start_meldet_das_sitzungsfenster_beim_nachbarn_an(
 def test_das_fenster_wird_erneuert_solange_es_gilt(
     konfiguration, sitzung_id, ohne_espeak, runde, monkeypatch
 ):
-    """Erneuert wird im Takt der einen Konstante — und nur, solange das Fenster offen ist."""
-    monkeypatch.setattr(ollama, "LEASE_ERNEUERUNG_S", 0)
+    """Erneuert wird im Takt, den der Nachbar nennt — und nur, solange das Fenster offen ist."""
+    monkeypatch.setattr(ollama, "erneuerung", lambda: 0)
     monkeypatch.setattr(ollama, "fenster_oeffnen", lambda config: angemeldet.append(1) is None)
     gilt = iter([True, True, False])
     monkeypatch.setattr(ollama, "lease_offen", lambda: next(gilt))

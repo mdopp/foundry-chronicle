@@ -68,12 +68,24 @@ LEASE_TTL_S = 900
 # solange der Nachbar zugesagt hat, das Modell nicht wegzuziehen.
 LEASE_HALTUNG = f"{LEASE_TTL_S}s"
 
-# Erneuert wird dreimal je Frist. Abgeleitet und nicht danebengeschrieben: zwei Zahlen
-# liefen auseinander, sobald jemand eine von beiden anfasst, und das Fenster fiele
-# mitten im Abend zu.
+# Erneuert wird dreimal je Frist — die **Rückfallebene**, falls der Nachbar keinen Takt
+# nennt (#306). Abgeleitet und nicht danebengeschrieben: zwei Zahlen liefen auseinander,
+# sobald jemand eine von beiden anfasst, und das Fenster fiele mitten im Abend zu.
 LEASE_ERNEUERUNG_S = LEASE_TTL_S / 3
 
-LEASE_PATH = "/napi/gpu-lease"
+# Der Nachbar nennt den Takt in seiner Antwort; genau deshalb steht er dort. Aus der
+# eigenen Frist abgeleitet stimmte er nur, solange beide Seiten dieselbe Zahl halten —
+# heute zufällig 900 —, und liefe stumm auseinander, sobald einer sie anfasst (#306).
+LEASE_ERNEUERUNG_FELD = "renew_after"
+
+# **Nicht** ``/napi/*``: dieses Präfix ist beim Nachbarn Authelia-umgangen und deshalb
+# token-pflichtig und fail-closed. Ein token-freier Endpunkt darin hieße »alles hier
+# braucht ein Token, außer dem einen« — und zwar vor dem Präfix, über das seine App echte
+# Geräte schaltet. Er hat seinen eigenen Vorschlag darum zurückgezogen; wir folgen (#306).
+# ``/api/model-lease`` ist stattdessen peer-gebunden auf die Schleife und weist
+# proxy-weitergeleitete Aufrufe ab: dieselbe Zusage »nur von der Box«, ohne ein fremdes
+# Sicherheitsversprechen aufzuweichen. Der Feldname ``ttl_s`` blieb dagegen unserer.
+LEASE_PATH = "/api/model-lease"
 
 # Der Nachbar steht auf derselben Box, an derselben Schleife. Wartet er länger, hat der
 # Abend schon begonnen — eine Anmeldung, die sich Zeit lässt, hält niemanden auf.
@@ -84,6 +96,9 @@ LEASE_TIMEOUT = 5.0
 # und der Nachbar lässt es ohnehin nach ``LEASE_TTL_S`` verfallen. Läuft es hier ab, ohne
 # dass jemand erneuert, fallen unsere Aufrufe von selbst auf die knappe Frist zurück.
 _lease_bis = 0.0
+
+# Der Takt, in dem das offene Fenster erneuert wird — gesagt vom Nachbarn, sonst abgeleitet.
+_lease_erneuerung_s = LEASE_ERNEUERUNG_S
 
 # Sofort entladen — das ausdrückliche Ende der Haltung.
 FREIGABE = 0
@@ -122,6 +137,11 @@ def _http_session() -> requests.Session:
 def lease_offen() -> bool:
     """Ob gerade ein Sitzungsfenster beim Nachbarn angemeldet ist — und noch gilt."""
     return time.monotonic() < _lease_bis
+
+
+def erneuerung() -> float:
+    """Der Takt, in dem das offene Fenster erneuert wird — in Sekunden (#306)."""
+    return _lease_erneuerung_s
 
 
 def haltung() -> str:
@@ -242,10 +262,30 @@ def fenster_oeffnen(
             type(fehler).__name__,
         )
         return False
-    global _lease_bis
+    global _lease_bis, _lease_erneuerung_s
     _lease_bis = time.monotonic() + LEASE_TTL_S
+    _lease_erneuerung_s = _genannter_takt(antwort)
     _anweisen(config, LEASE_HALTUNG, http=http, timeout=HALTUNG_TIMEOUT)
     return True
+
+
+def _genannter_takt(antwort) -> float:
+    """Der Erneuerungstakt aus der Antwort des Nachbarn — oder die eigene Ableitung (#306).
+
+    Bester Wille auch hier: eine Antwort ohne JSON, ohne das Feld oder mit einer Zahl, die
+    außerhalb der angemeldeten Frist liegt, kostet kein Fenster. Sie kostet nur den
+    genannten Takt, und den ersetzt die Ableitung, die vor #306 die einzige Quelle war.
+    """
+    try:
+        rumpf = antwort.json()
+    except ValueError:
+        return LEASE_ERNEUERUNG_S
+    wert = rumpf.get(LEASE_ERNEUERUNG_FELD) if isinstance(rumpf, Mapping) else None
+    # ``bool`` ist in Python ein ``int``; ein ``True`` als Takt wäre eine Sekunde.
+    if isinstance(wert, bool) or not isinstance(wert, (int, float)):
+        return LEASE_ERNEUERUNG_S
+    # Ein Takt jenseits der Frist erneuert erst, wenn das Fenster längst zu ist.
+    return float(wert) if 0 < wert <= LEASE_TTL_S else LEASE_ERNEUERUNG_S
 
 
 def freigeben(
