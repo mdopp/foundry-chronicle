@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.1](https://github.com/mdopp/foundry-chronicle/compare/v0.3.0...v0.3.1) (2026-08-27)
+
+
+### Bug Fixes
+
+* **compose:** das Sitzungsfenster geht an den Pfad, den der Nachbar gebaut hat ([68ec54f](https://github.com/mdopp/foundry-chronicle/commit/68ec54ffeb25987ca95874b4901b555136f3b2ef)), closes [#306](https://github.com/mdopp/foundry-chronicle/issues/306)
+
 ## [0.3.0](https://github.com/mdopp/foundry-chronicle/compare/v0.2.0...v0.3.0) (2026-08-27)
 
 
