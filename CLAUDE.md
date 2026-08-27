@@ -35,6 +35,23 @@ Diese Regeln gelten für jede Sitzung, Mensch oder Agent.
   `OLLAMA_KEEP_ALIVE=24h`, und ein Aufruf ohne ausdrückliches `keep_alive` erbt diese
   vierundzwanzig Stunden statt unserer zwei. Jeder Aufruf schickt deshalb eine knappe
   Frist mit, und am Ende jedes Aufschriebs wird ausdrücklich freigegeben (#300).
+  **Die benannte Ausnahme dazu ist das Sitzungsfenster** (#299, seit 2026-08-27,
+  Gegenstück `mdopp/solarisbay#1260`). Beginnt ein Abend, meldet der Bot ihn beim
+  Nachbardienst über die Schleife an — `POST /napi/gpu-lease {model, ttl_s}`, fünfzehn
+  Minuten, alle fünf erneuert; am Ende jedes Aufschriebs, an derselben einen Freigabestelle,
+  geht ein `DELETE` hinaus. Solange das Fenster steht, antwortet der Nachbar mit *unserem*
+  Modell, statt seines bei jeder Anfrage zurückzuholen — auf dieser Karte kostet jeder
+  Wechsel rund 56 s, in beide Richtungen. **Das nimmt #303 nicht zurück:** die knappe
+  Frist bleibt die Norm, das Fenster ist die Ausnahme, und beide Zahlen kommen aus
+  **derselben Konstante** — was wir dem Nachbarn zusagen, ist genau das `keep_alive`, das
+  unsere Aufrufe tragen. Dass die beiden Modelle nicht nebeneinander passen, ist die
+  *Prämisse* des Vertrags und nicht der Einwand dagegen; passten sie, bräuchte es ihn
+  nicht. Der Aufruf geht über die Schleife, ohne Token und ausdrücklich **ohne gemeinsames
+  Geheimnis** (seit #230 hat diese Instanz keines mehr), er ist in beide Richtungen bester
+  Wille — ein gescheitertes Fenster hält weder den Beginn noch den Abschluss einer Sitzung
+  auf —, und **die Nutzlast trägt keine Runden-, Gilden- oder Sitzungskennung**: der
+  Nachbar muss nicht wissen, wer spielt. Verlassen wird der Vertrag ohne Neubau über
+  `CHRONICLE_GPU_LEASE`.
   **Ein Zeittakt wäre die falsche Grenze gewesen.** Erwogen und verworfen wurde ein
   Fenster alle zehn Minuten: es endet mitten im Satz, und ein Modell, das über eine
   unfertige Szene schreibt, erfindet den Abschluss — genau der Fehler, der hier der

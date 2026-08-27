@@ -35,6 +35,7 @@ Dienst ein zweites Mal installiert.
 |---|---|---|
 | `CHRONICLE_HEALTH_PORT` | Port des Install-Gates, nur auf `127.0.0.1` | `8701` |
 | `CHRONICLE_IMAGE_TAG` | Image-Tag für den Rollout | `latest` |
+| `CHRONICLE_GPU_LEASE` | Sitzungsfenster bei `solaris` an-/abmelden (#299); `aus` verlässt den Vertrag | `an` |
 | `DISCORD_BOT_TOKEN` | Token des Bots — ohne ihn bleibt der Bot aus | *(leer)* |
 | `OLLAMA_URL` | Ollama, das die Chronik formuliert; leer = `127.0.0.1:11434` | *(leer)* |
 | `OLLAMA_MODEL` | Textmodell dort; leer = geordnet statt formuliert | *(leer)* |
@@ -100,7 +101,10 @@ in einen eigenen Netz-Namensraum stellen will (#165). Der Grund sind die Nachbar
 derselben Box, die dieser Dienst über die Schleife anspricht: **Ollama** auf
 `127.0.0.1:11434` schreibt die Chronik, **`solaris-tts`** auf `127.0.0.1:8881` spricht die
 Ansage im Sprachkanal, **`solaris-whisper-batch`** auf `127.0.0.1:10301` verschriftet die
-Spuren. Alle drei binden nur an Loopback — aus einem eigenen Namensraum wären sie nicht
+Spuren, und **`solaris`** auf `127.0.0.1:8787` nimmt das Sitzungsfenster entgegen (#299:
+`POST`/`DELETE /napi/gpu-lease`, damit der Nachbar das große Modell während eines
+Spielabends nicht wegzieht — abschaltbar mit `CHRONICLE_GPU_LEASE`). Alle vier binden nur
+an Loopback — aus einem eigenen Namensraum wären sie nicht
 erreichbar, auch nicht über `host.containers.internal`: das führt an das Gateway der Box
 und nicht an ihre Schleife.
 
@@ -115,7 +119,7 @@ einzige Horcher dieses Pods ist `/healthz` auf `127.0.0.1`. Es bleibt nichts, wa
 Host-Netz freilegen könnte — deshalb ist `chronicle.herkunft` mit derselben Änderung
 gefallen, als Prüfung ohne Prüfling.
 
-**Sie fällt, sobald die drei Nachbarn auch aus einem eigenen Netz-Namensraum
+**Sie fällt, sobald diese Nachbarn auch aus einem eigenen Netz-Namensraum
 erreichbar sind** — das liegt in deren Vorlagen, nicht in dieser. Bis dahin gilt: an der
 Netzkonfiguration dieses Dienstes wird nichts ohne Verify auf der Box geändert. Falsch
 gemacht legt sie eine laufende Discord-Gilde still.

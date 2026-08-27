@@ -40,6 +40,7 @@ from chronicle.bot import (
     recorder,
 )
 from chronicle.bot.recorder import Aufnahme, Kanal
+from chronicle.compose import client as modell
 from chronicle.config import Config
 from chronicle.discord import grenzen
 from chronicle.runde import Runde
@@ -647,6 +648,9 @@ class _Lauf:
         # Einmal je Abend und nicht je Zeile: zehn Minuten Abmoderieren sind zwanzig
         # Zeilen, und zwanzig gleiche Antworten wären selbst der Lärm.
         self.nachgesagt: int | None = None
+        # Der Faden, der das Sitzungsfenster beim Nachbardienst offen hält (#299). Er hängt
+        # hier, damit ihn niemand einsammelt, solange er läuft — abzuwarten ist er nicht.
+        self.lease = None
 
 
 class _Laeufe:
@@ -1673,6 +1677,31 @@ async def _sitzung_starten(
     return f"{antwort} {await _mitschnitt_beginnen(config, bot, lauf, ziel, runde)}"
 
 
+async def _fenster_halten(config: Config, runde) -> None:
+    """Das Sitzungsfenster anmelden und alle fünf Minuten erneuern, solange es gilt (#299).
+
+    In einem Faden daneben, weil die Anmeldung das große Modell gleich mit lädt und das
+    Minuten dauern kann: die Antwort auf ``/session start`` und der Beginn des Mitschnitts
+    warten nicht darauf.
+
+    Kam die erste Anmeldung nicht durch, wird nicht erneuert — dann gibt es kein Fenster,
+    das man verlängern könnte, und der Abend läuft wie ohne Vertrag. Geschlossen wird es
+    an der einen Freigabestelle (``kette.schreiben``); diese Schleife merkt es daran, dass
+    das Fenster nicht mehr offen ist, und endet von selbst.
+    """
+    while await asyncio.to_thread(modell.fenster_oeffnen, settings.effective(config, runde)):
+        await asyncio.sleep(modell.LEASE_ERNEUERUNG_S)
+        if not modell.lease_offen():
+            return
+
+
+def _fenster_anmelden(config: Config, lauf: _Lauf, runde) -> None:
+    """Den Erneuerer für diesen Abend stellen — höchstens einen je Runde."""
+    if lauf.lease is not None and not lauf.lease.done():
+        return
+    lauf.lease = asyncio.create_task(_fenster_halten(config, runde))
+
+
 def _startfenster(config: Config, bot, lauf: _Lauf, runde, titel: str):
     """Das Passwort wird beim Start erfragt — freiwillig, damit Foundry den Abend über offen ist.
 
@@ -2664,6 +2693,11 @@ def baue(config: Config):
         if lauf.probe:
             await _zustellen(ctx.respond, PROBE_LAEUFT, ephemeral=True)
             return
+        # Vor allen Zweigen darunter: ab hier wird gespielt, und der Nachbar auf dieser
+        # Karte soll für die Dauer des Abends mit unserem Modell antworten, statt es bei
+        # jeder Haushaltsanfrage zu verdrängen (#299). Auch beim Fortsetzen nach
+        # ``/session pause`` — ein Neustart dazwischen hat das Fenster mitgenommen.
+        _fenster_anmelden(config, lauf, runde)
         # Läuft schon eine Sitzung, ist dies kein zweiter Anfang, sondern das Fortsetzen
         # des Mitschnitts nach ``/session pause``: angelegt wird nichts, gefragt auch nicht.
         if chronik.offene_sitzung(runde) is not None:

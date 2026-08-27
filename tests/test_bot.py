@@ -63,6 +63,7 @@ from chronicle.bot import (
 )
 from chronicle.bot.ansage import AnsageFehlt
 from chronicle.bot.recorder import Aufnahme, Kanal, NichtAngesagt
+from chronicle.compose import client as ollama
 from chronicle.config import DEFAULT_TTS_URL, Config
 from chronicle.discord import grenzen
 from chronicle.foundry import store as foundry_store
@@ -2433,6 +2434,60 @@ def test_start_tritt_bei_sagt_an_und_schneidet_dann_mit(
     assert ctx.antworten == [recorder.GESTARTET]
     (eintrag,) = consent.for_session(unsere_runde(konfiguration), sitzung_id)
     assert {wer.name for wer in eintrag.members} == {MIRA.name, BROK.name}
+
+
+def test_der_start_meldet_das_sitzungsfenster_beim_nachbarn_an(
+    konfiguration, sitzung_id, ohne_espeak, runde, monkeypatch
+):
+    """#299: der Nachbar auf dieser Karte soll waehrend des Abends nicht hin und her laden.
+
+    Angemeldet wird in einem Faden daneben — die Anmeldung laedt das grosse Modell gleich
+    mit, und die Runde schneidet inzwischen laengst mit. Kein neuer Slash-Befehl: den
+    Beginn des Fensters kennt der Bot schon, es ist der Beginn der Sitzung (#265).
+    """
+    angemeldet = []
+
+    def anmelden(config):
+        angemeldet.append(config.ollama_model)
+        return False
+
+    monkeypatch.setattr(ollama, "fenster_oeffnen", anmelden)
+    mit_modell = replace(konfiguration, ollama_model="gemma4:12b")
+    bot = gateway.baue(mit_modell)
+
+    ctx = FakeCtx(runde.mira)
+
+    async def start_und_fenster():
+        await befehl(bot, "start")(ctx)
+        await der_lauf(bot, mit_modell).lease
+
+    asyncio.run(start_und_fenster())
+
+    assert angemeldet == ["gemma4:12b"]
+    # Der Nachbar hat nicht zugesagt (``False``) — der Abend beginnt trotzdem und wird
+    # auch nicht erneut angefragt: es gibt kein Fenster, das zu verlaengern waere.
+    assert ctx.antworten == [recorder.GESTARTET]
+    assert runde.kanal.verbindung.schneidet
+
+
+def test_das_fenster_wird_erneuert_solange_es_gilt(
+    konfiguration, sitzung_id, ohne_espeak, runde, monkeypatch
+):
+    """Erneuert wird im Takt der einen Konstante — und nur, solange das Fenster offen ist."""
+    monkeypatch.setattr(ollama, "LEASE_ERNEUERUNG_S", 0)
+    monkeypatch.setattr(ollama, "fenster_oeffnen", lambda config: angemeldet.append(1) is None)
+    gilt = iter([True, True, False])
+    monkeypatch.setattr(ollama, "lease_offen", lambda: next(gilt))
+    angemeldet = []
+    bot = gateway.baue(konfiguration)
+
+    async def start_und_fenster():
+        await befehl(bot, "start")(FakeCtx(runde.mira))
+        await der_lauf(bot, konfiguration).lease
+
+    asyncio.run(start_und_fenster())
+
+    assert len(angemeldet) == 3
 
 
 def test_die_vorstellung_steht_im_kanal_bevor_die_ansage_laeuft(

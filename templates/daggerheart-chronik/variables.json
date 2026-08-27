@@ -9,6 +9,11 @@
     "description": "Image-Tag von ghcr.io/mdopp/foundry-chronicle. Für den Rollout auf einen festen Tag setzen, nicht auf 'latest': 'python scripts/bestimme_image_tag.py' nennt den aktuellen, '--zurueck 1' den Stand davor — das ist der Weg zurück, wenn ein Deployment misslingt. Nach dem Neustart den laufenden Digest gegen den erwarteten prüfen. 'latest' ist nur die Erstinstallation, solange die Box noch kein Repo zur Hand hat.",
     "default": "latest"
   },
+  "CHRONICLE_GPU_LEASE": {
+    "type": "text",
+    "description": "Schalter fuer das Sitzungsfenster gegen den Nachbardienst solaris (#299, Gegenstueck mdopp/solarisbay#1260). 'an' (Vorgabe) meldet den Beginn eines Spielabends ueber die Schleife bei 127.0.0.1:8787 an und am Ende wieder ab; solaris antwortet dann fuer eine Viertelstunde mit dem grossen Modell, statt es bei jeder Haushaltsanfrage zu verdraengen — jeder Wechsel kostet auf dieser Karte rund 56 s. Die Anmeldung traegt nur Modellname und Frist, kein Geheimnis und keine Runden-, Gilden- oder Sitzungskennung. 'aus' verlaesst den Vertrag ohne Neubau: es geht kein Aufruf mehr hinaus, und unsere eigenen Aufrufe tragen wieder die knappe Frist. Leer heisst 'an' — eine Box, die die Variable nicht kennt, soll den Vertrag nicht stillschweigend abschalten.",
+    "default": "an"
+  },
   "DISCORD_BOT_TOKEN": {
     "type": "text",
     "description": "Der Token unseres Discord-Bots aus dem Developer Portal — er meldet den Bot an, und ohne ihn bleibt der Bot aus (Diktat, Aufnahme, Zustellung). Er ist unser Token und nicht der einer Gruppe: eine Instanz traegt mehrere Runden, alle sprechen mit demselben Bot. Bis #230 wurde er auf der Betreiber-Seite gepflegt und lag im Klartext in chronicle.sqlite3 — und damit im Backup; seit #230 steht er hier und nirgends sonst. Bewusst 'text' und nicht 'secret': der Assistent wuerfelt fuer ein Geheimnis einen Wert aus, und ein ausgewuerfelter Bot-Token meldet sich bei Discord an und wird abgelehnt (#33). Ein Wert, den nur die Gegenstelle kennt, hat keinen sinnvollen Zufallswert — leer heisst hier ehrlich 'nicht gesetzt'. Nachtragen mit install_template(variables={...}); der uebergebene Wert gewinnt (Assist recipe-rotate-a-service-secret).",

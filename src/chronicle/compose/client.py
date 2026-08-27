@@ -9,12 +9,13 @@ die geordnete Fassung; deshalb hat jeder Fehler einen Satz, den man anzeigen kan
 from __future__ import annotations
 
 import logging
+import time
 from collections.abc import Callable, Mapping
 from typing import Protocol
 
 import requests
 
-from chronicle.config import DEFAULT_OLLAMA_URL, Config
+from chronicle.config import DEFAULT_OLLAMA_URL, DEFAULT_SOLARIS_URL, Config
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +56,35 @@ ZWISCHENSTAND_TIMEOUT = 240.0
 # Modell zwischen ihnen zu entladen kostete jedes Mal den Ladevorgang neu.
 KNAPPE_HALTUNG = "5m"
 
+# **Die eine Konstante des Vertrags mit ``solaris`` (#299).** Solange ein Sitzungsfenster
+# angemeldet ist, antwortet der Nachbar mit *unserem* großen Modell, statt bei jeder
+# Haushaltsanfrage seines zurückzuholen — ein Tausch, der auf dieser Karte ~56 s kostet,
+# in beide Richtungen. Damit das zusammenpasst, muss die Frist, die wir dem Nachbarn
+# nennen, dieselbe sein wie die, die Ollama von uns hört: eine Zahl, zwei Verwendungen.
+LEASE_TTL_S = 900
+
+# Die zweite Frist, die unsere Aufrufe tragen können — die benannte Ausnahme zur knappen
+# Vorgabe darüber und **keine** Rücknahme von #303. Knapp bleibt die Norm; lang gilt nur,
+# solange der Nachbar zugesagt hat, das Modell nicht wegzuziehen.
+LEASE_HALTUNG = f"{LEASE_TTL_S}s"
+
+# Erneuert wird dreimal je Frist. Abgeleitet und nicht danebengeschrieben: zwei Zahlen
+# liefen auseinander, sobald jemand eine von beiden anfasst, und das Fenster fiele
+# mitten im Abend zu.
+LEASE_ERNEUERUNG_S = LEASE_TTL_S / 3
+
+LEASE_PATH = "/napi/gpu-lease"
+
+# Der Nachbar steht auf derselben Box, an derselben Schleife. Wartet er länger, hat der
+# Abend schon begonnen — eine Anmeldung, die sich Zeit lässt, hält niemanden auf.
+LEASE_TIMEOUT = 5.0
+
+# Wann das angemeldete Fenster von selbst ausläuft, gemessen an der monotonen Uhr dieses
+# Prozesses. Kein Wert in der Datenbank: ein Neustart erbt das Fenster ausdrücklich nicht,
+# und der Nachbar lässt es ohnehin nach ``LEASE_TTL_S`` verfallen. Läuft es hier ab, ohne
+# dass jemand erneuert, fallen unsere Aufrufe von selbst auf die knappe Frist zurück.
+_lease_bis = 0.0
+
 # Sofort entladen — das ausdrückliche Ende der Haltung.
 FREIGABE = 0
 
@@ -89,6 +119,21 @@ def _http_session() -> requests.Session:
     return requests.Session()
 
 
+def lease_offen() -> bool:
+    """Ob gerade ein Sitzungsfenster beim Nachbarn angemeldet ist — und noch gilt."""
+    return time.monotonic() < _lease_bis
+
+
+def haltung() -> str:
+    """Die Frist, die der nächste Aufruf mitbringt: knapp, oder die des offenen Fensters.
+
+    Eine Konstante, zwei Werte (#299). Die knappe ist die Norm (#303); die lange gilt nur,
+    solange der Nachbar zugesagt hat, das Modell stehen zu lassen. Läuft das Fenster ab,
+    fällt der nächste Aufruf ohne Zutun auf die knappe zurück.
+    """
+    return LEASE_HALTUNG if lease_offen() else KNAPPE_HALTUNG
+
+
 class OllamaClient:
     def __init__(
         self,
@@ -121,7 +166,7 @@ class OllamaClient:
                 {"role": "system", "content": system},
                 {"role": "user", "content": prompt},
             ],
-            "keep_alive": KNAPPE_HALTUNG,
+            "keep_alive": haltung(),
         }
         try:
             antwort = self._http.post(
@@ -157,6 +202,52 @@ def from_config(config: Config, *, timeout: float = DEFAULT_TIMEOUT) -> OllamaCl
     return OllamaClient(config, timeout=timeout) if config.ollama_configured else None
 
 
+def fenster_oeffnen(
+    config: Config,
+    *,
+    http: Callable[[], object] = _http_session,
+    timeout: float = LEASE_TIMEOUT,
+) -> bool:
+    """Das Sitzungsfenster beim Nachbarn anmelden — und das Modell gleich mit laden (#299).
+
+    Die Nutzlast trägt **nur** Modellname und Frist. Wer spielt, gehört nicht dazu: der
+    Nachbar entscheidet daran nichts, und eine Runden-, Gilden- oder Sitzungskennung wäre
+    eine Preisgabe an einen Dienst, der ohne sie auskommt. Ein Geheimnis reist auch keines
+    mit — der Aufruf geht über die Schleife dieser Box, und seit #230 hat diese Instanz
+    keines mehr.
+
+    **Der Aufwärm-Aufruf gehört dazu und ist die Antwort auf den offenen Punkt aus #299.**
+    Mit dem Wegfall von ``halten`` (#303) zahlte der erste Szenenschnitt eines Abends den
+    Ladevorgang — ~56 s, genau die Zahl, gegen die dieses Fenster gekauft wird. Die
+    Zusage, die es einholt, ist ja gerade, dass der Nachbar sein Modell in dieser
+    Viertelstunde nicht zurückholt; unmittelbar danach zu laden kostet ihn also nichts,
+    was er nicht schon zugesagt hätte. Geladen wird erst **nach** der Zusage: scheitert
+    die Anmeldung, bleibt es beim knappen Aufruf, und wir verdrängen ihn nicht ungefragt.
+
+    Bester Wille, wie alles auf diesem Weg: scheitert es, beginnt der Abend trotzdem.
+    """
+    if not config.gpu_lease or not config.ollama_configured:
+        return False
+    basis = DEFAULT_SOLARIS_URL.rstrip("/")
+    try:
+        antwort = http().post(
+            basis + LEASE_PATH,
+            json={"model": str(config.ollama_model), "ttl_s": LEASE_TTL_S},
+            timeout=timeout,
+        )
+        antwort.raise_for_status()
+    except requests.RequestException as fehler:
+        logger.warning(
+            "Das Sitzungsfenster kam beim Nachbarn nicht an (%s) — der Abend läuft trotzdem.",
+            type(fehler).__name__,
+        )
+        return False
+    global _lease_bis
+    _lease_bis = time.monotonic() + LEASE_TTL_S
+    _anweisen(config, LEASE_HALTUNG, http=http, timeout=HALTUNG_TIMEOUT)
+    return True
+
+
 def freigeben(
     config: Config,
     *,
@@ -168,8 +259,36 @@ def freigeben(
     Ohne Rücksicht darauf, ob dieser Prozess sie gesetzt hat: nach einem Neustart mitten
     im Abend weiß er nichts mehr davon, und Ollama hielte trotzdem noch. Freigeben ist
     dann genau richtig, und ohne geladenes Modell kostet es nichts.
+
+    **Hier geht auch das Sitzungsfenster wieder zu** (#299). Nicht an einer zweiten
+    Stelle: dies ist die eine, an der jeder Aufschrieb endet (``kette.schreiben``,
+    ``finally``), und ein zweiter Schließer liefe irgendwann gegen den ersten. Erst
+    entladen, dann abmelden — in dieser Reihenfolge ist die Karte frei, sobald der Nachbar
+    davon erfährt.
     """
-    return _anweisen(config, FREIGABE, http=http, timeout=timeout)
+    ergebnis = _anweisen(config, FREIGABE, http=http, timeout=timeout)
+    _fenster_schliessen(config, http=http)
+    return ergebnis
+
+
+def _fenster_schliessen(config: Config, *, http: Callable[[], object]) -> None:
+    """Das angemeldete Fenster abmelden — ohne offenes Fenster geschieht nichts.
+
+    Der Vermerk fällt zuerst: ob der Nachbar es erfährt, ändert nichts daran, dass unsere
+    eigenen Aufrufe ab jetzt wieder die knappe Frist tragen.
+    """
+    global _lease_bis
+    if not lease_offen():
+        return
+    _lease_bis = 0.0
+    try:
+        antwort = http().delete(DEFAULT_SOLARIS_URL.rstrip("/") + LEASE_PATH, timeout=LEASE_TIMEOUT)
+        antwort.raise_for_status()
+    except requests.RequestException as fehler:
+        logger.warning(
+            "Das Sitzungsfenster ließ sich nicht abmelden (%s) — es verfällt von selbst.",
+            type(fehler).__name__,
+        )
 
 
 def _anweisen(

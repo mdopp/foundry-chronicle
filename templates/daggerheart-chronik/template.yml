@@ -102,6 +102,13 @@ spec:
         value: "{{OLLAMA_URL}}"
       - name: OLLAMA_MODEL
         value: "{{OLLAMA_MODEL}}"
+      # Der Abschalter für das Sitzungsfenster gegen den Nachbardienst solaris (#299,
+      # Gegenstück mdopp/solarisbay#1260). »an« ist die Vorgabe, weil der Vertrag von
+      # beiden Betreibern entschieden ist; er steht hier, damit eine Seite ihn ohne
+      # Neubau verlassen kann. Eine Adresse gibt es dazu nicht: der Vertrag gilt für den
+      # Nachbarn auf *dieser* Schleife (127.0.0.1:8787) oder gar nicht.
+      - name: CHRONICLE_GPU_LEASE
+        value: "{{CHRONICLE_GPU_LEASE}}"
       # Der Foundry-Zugang steht bewusst nicht hier: den pflegt die Gruppe selbst in
       # Discord unter /chronicle setup, er gehört ihrer Runde und nicht der Instanz. Das Passwort
       # gibt es seit #64 überhaupt nirgends.

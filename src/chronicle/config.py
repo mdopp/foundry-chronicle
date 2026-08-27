@@ -68,6 +68,20 @@ DEFAULT_TTS_URL = "http://127.0.0.1:8881"
 # nichts zu wählen: welches Modell rechnet, entscheidet seine eigene Unit.
 DEFAULT_WHISPER_URL = "http://127.0.0.1:10301"
 
+# Und die vierte: der Nachbardienst ``solaris`` teilt sich die Karte dieser Box mit uns
+# und nimmt unter ``/napi`` Anmeldungen entgegen — im Host-Netz auf 8787. Dorthin geht das
+# Sitzungsfenster (#299): »dieses Modell ist für die nächste Viertelstunde geladen«.
+# Auch er bekommt keine eigene Template-Variable, denn es gibt nichts zu wählen: der
+# Vertrag gilt für den Nachbarn auf *dieser* Schleife oder gar nicht. Was es gibt, ist der
+# Abschalter darunter.
+DEFAULT_SOLARIS_URL = "http://127.0.0.1:8787"
+
+# Ob das Sitzungsfenster überhaupt angemeldet wird (#299). An, weil der Vertrag mit
+# ``mdopp/solarisbay#1260`` von beiden Betreibern entschieden ist. Der Schalter steht
+# daneben, damit die eine Seite ihn ohne Neubau verlassen kann — aus heißt: kein Aufruf
+# geht hinaus, und unsere eigenen Aufrufe tragen wieder die knappe Frist.
+GPU_LEASE_VARIABLE = "CHRONICLE_GPU_LEASE"
+
 DEFAULT_DATA_DIR = "data"
 
 # Bewusst ein Geschwister von ``data`` und nicht darin: die SQLite geht ins Backup, die
@@ -94,6 +108,16 @@ def _flag(env: Mapping[str, str], name: str) -> bool:
     return (env.get(name) or "").strip().lower() in ("1", "true", "yes", "on")
 
 
+def _schalter(env: Mapping[str, str], name: str, *, vorgabe: bool) -> bool:
+    """Wie ``_flag``, nur für einen Schalter, dessen Vorgabe **an** ist.
+
+    Leer heißt hier nicht »aus«, sondern »unverändert« — sonst schaltete jede Box, die die
+    Variable nicht kennt, den Vertrag stillschweigend ab.
+    """
+    roh = (env.get(name) or "").strip().lower()
+    return vorgabe if not roh else roh in ("1", "true", "yes", "on", "an")
+
+
 @dataclass(frozen=True, repr=False)
 class Config:
     foundry_url: str | None = None
@@ -108,6 +132,7 @@ class Config:
     whisper_url: str | None = None
     health_port: int | None = None
     foundry_mitschnitt: bool = False
+    gpu_lease: bool = True
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> Config:
@@ -125,6 +150,7 @@ class Config:
             whisper_url=_value(env, "CHRONICLE_WHISPER_URL"),
             health_port=_port(env, HEALTH_PORT_VARIABLE),
             foundry_mitschnitt=_flag(env, MITSCHNITT_VARIABLE),
+            gpu_lease=_schalter(env, GPU_LEASE_VARIABLE, vorgabe=True),
         )
 
     @property
@@ -173,5 +199,6 @@ class Config:
             f"recordings_dir={str(self.recordings_dir)!r}, "
             f"whisper_url={self.whisper_url!r}, "
             f"health_port={self.health_port!r}, "
-            f"foundry_mitschnitt={self.foundry_mitschnitt!r})"
+            f"foundry_mitschnitt={self.foundry_mitschnitt!r}, "
+            f"gpu_lease={self.gpu_lease!r})"
         )

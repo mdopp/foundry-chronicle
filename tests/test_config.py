@@ -1,6 +1,11 @@
 from pathlib import Path
 
-from chronicle.config import DEFAULT_TTS_URL, FOUNDRY_VARIABLES, Config
+from chronicle.config import (
+    DEFAULT_SOLARIS_URL,
+    DEFAULT_TTS_URL,
+    FOUNDRY_VARIABLES,
+    Config,
+)
 
 VOLLSTAENDIG = {
     "FOUNDRY_URL": "https://foundry.example",
@@ -147,6 +152,24 @@ def test_der_mitschnitt_ist_aus_bis_ihn_jemand_einschaltet():
     # Was so etwas anlegt, fängt nicht von selbst damit an.
     assert Config.from_env({}).foundry_mitschnitt is False
     assert Config.from_env({"CHRONICLE_FOUNDRY_MITSCHNITT": "1"}).foundry_mitschnitt is True
+
+
+def test_das_sitzungsfenster_ist_an_bis_es_jemand_abschaltet():
+    # Umgekehrt als beim Mitschnitt (#299): der Vertrag mit dem Nachbardienst ist von
+    # beiden Betreibern entschieden, der Schalter ist der Weg **heraus**. Eine leere
+    # Variable heißt deshalb »an« — sonst schaltete jede Box ohne die Variable stumm ab.
+    assert Config.from_env({}).gpu_lease is True
+    assert Config.from_env({"CHRONICLE_GPU_LEASE": ""}).gpu_lease is True
+    assert Config.from_env({"CHRONICLE_GPU_LEASE": "an"}).gpu_lease is True
+    assert Config.from_env({"CHRONICLE_GPU_LEASE": "true"}).gpu_lease is True
+    assert Config.from_env({"CHRONICLE_GPU_LEASE": "aus"}).gpu_lease is False
+    assert Config.from_env({"CHRONICLE_GPU_LEASE": "0"}).gpu_lease is False
+
+
+def test_der_nachbardienst_wird_nur_ueber_die_schleife_angesprochen():
+    # Kein Token, kein Geheimnis, kein Weg ins LAN — der Vertrag gilt für den Nachbarn
+    # auf dieser Box (#299).
+    assert DEFAULT_SOLARIS_URL.startswith("http://127.0.0.1:")
 
 
 def test_repr_maskiert_den_token():
