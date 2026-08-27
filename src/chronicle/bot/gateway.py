@@ -1678,7 +1678,7 @@ async def _sitzung_starten(
 
 
 async def _fenster_halten(config: Config, runde) -> None:
-    """Das Sitzungsfenster anmelden und alle fünf Minuten erneuern, solange es gilt (#299).
+    """Das Sitzungsfenster anmelden und im genannten Takt erneuern, solange es gilt (#299).
 
     In einem Faden daneben, weil die Anmeldung das große Modell gleich mit lädt und das
     Minuten dauern kann: die Antwort auf ``/session start`` und der Beginn des Mitschnitts
@@ -1688,9 +1688,12 @@ async def _fenster_halten(config: Config, runde) -> None:
     das man verlängern könnte, und der Abend läuft wie ohne Vertrag. Geschlossen wird es
     an der einen Freigabestelle (``kette.schreiben``); diese Schleife merkt es daran, dass
     das Fenster nicht mehr offen ist, und endet von selbst.
+
+    Den Takt nennt der Nachbar in seiner Antwort (#306); nennt er keinen, gilt die eigene
+    Ableitung. Gefragt wird nach jeder Anmeldung neu — er darf ihn ändern.
     """
     while await asyncio.to_thread(modell.fenster_oeffnen, settings.effective(config, runde)):
-        await asyncio.sleep(modell.LEASE_ERNEUERUNG_S)
+        await asyncio.sleep(modell.erneuerung())
         if not modell.lease_offen():
             return
 
