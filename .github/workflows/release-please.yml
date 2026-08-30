@@ -11,8 +11,26 @@ permissions:
 jobs:
   release-please:
     runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.release.outputs.releases_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
     steps:
       - uses: googleapis/release-please-action@v4
+        id: release
         with:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+
+  # Der Release-Bau hängt hier und nicht an einem Tag-Push (#309): den Tag setzt
+  # release-please mit dem `GITHUB_TOKEN`, und ein davon ausgelöstes Ereignis startet
+  # laut GitHub keinen neuen Lauf. Gebaut wird deshalb im selben Lauf, der den Tag
+  # gesetzt hat — mit dem Tag als Eingabe, weil der Ref hier auf `main` zeigt.
+  image:
+    needs: release-please
+    if: needs.release-please.outputs.release_created == 'true'
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/build-images.yml
+    with:
+      release_tag: ${{ needs.release-please.outputs.tag_name }}

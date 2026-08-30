@@ -15,7 +15,6 @@ on:
       - '.github/workflows/build-images.yml'
   push:
     branches: [main]
-    tags: ['v*']
     # Muss denselben Eingabesatz abdecken wie der Pull-Request-Filter darüber — GitHub
     # Actions kennt keine YAML-Anker, die Liste steht deshalb zweimal da. Läuft sie hier
     # auf einem kleineren Satz, überspringt der PR einen Bruch, der erst nach dem Merge
@@ -27,6 +26,19 @@ on:
       - 'Dockerfile'
       - '.dockerignore'
       - '.github/workflows/build-images.yml'
+  # Kein `tags: ['v*']` hier (#309). Ein Release-Tag käme auf diesem Weg aus zwei
+  # unabhängigen Gründen nie an: der `paths`-Filter oben gilt für den ganzen `push`-Block
+  # und damit auch für Tag-Pushes, und release-please schneidet den Tag mit dem
+  # `GITHUB_TOKEN` — von diesem Token ausgelöste Ereignisse starten laut GitHub
+  # ausdrücklich keinen neuen Lauf. Der Release-Bau kommt deshalb als `workflow_call`
+  # aus `release-please.yml`, direkt aus dem Lauf, der den Tag gesetzt hat.
+  workflow_call:
+    inputs:
+      release_tag:
+        description: 'Der geschnittene Tag, z. B. v0.3.1 — leer heißt: kein Versions-Tag.'
+        type: string
+        required: false
+        default: ''
   workflow_dispatch:
 
 permissions:
@@ -71,14 +83,16 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ghcr.io/${{ github.repository }}
-          # sha-<kurz> ist der feste Tag für den Rollout; :latest zeigt auf main. Sobald
-          # release-please ein v-Tag schneidet, entsteht daraus zusätzlich der
-          # Versions-Tag, auf den das Template dann gepinnt wird.
+          # sha-<kurz> ist der feste Tag für den Rollout; :latest zeigt auf main. Der
+          # Versions-Tag kommt aus `release_tag`, nicht aus `github.ref`: beim Aufruf aus
+          # release-please.yml zeigt der Ref auf `main`, der Tag steht nur im Input
+          # (#309). Erzeugt wird die Versionsnummer **ohne** führendes `v` — aus
+          # `v0.3.1` wird `0.3.1`, plus `0.3`. Genau so steht es in der Template-Doku.
           tags: |
             type=raw,value=latest,enable=${{ github.ref == format('refs/heads/{0}', 'main') }}
             type=sha,prefix=sha-,format=short
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{version}},value=${{ inputs.release_tag }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ inputs.release_tag }}
             type=ref,event=pr
           labels: |
             org.opencontainers.image.title=foundry-chronicle

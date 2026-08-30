@@ -666,7 +666,8 @@ der übergebene Wert gewinnt (ServiceBay-Rezept *rotate-a-service-secret*).
 Das Image baut [`.github/workflows/build-images.yml`](.github/workflows/build-images.yml)
 und veröffentlicht es nach GHCR — der Publish-Job hängt an `needs: test`, es wird also
 nichts veröffentlicht, was nicht grün war. Für den Rollout wird ein fester Tag gepinnt
-(`sha-<kurz>` oder die Release-Version), nicht `:latest`.
+(`sha-<kurz>` oder die Release-Version — die ist die bloße Nummer ohne `v`, aus dem
+Tag `v0.3.1` wird `0.3.1`), nicht `:latest`.
 
 Im Container läuft `python -m chronicle.bot` — **kein Webserver**: Flask, Jinja2 und
 waitress sind mit [#231](../../issues/231) aus dem Abhängigkeitsbaum verschwunden.

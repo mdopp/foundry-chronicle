@@ -217,6 +217,12 @@ Skript das: entweder als Hinweis, dass der ältere Tag inhaltlich derselbe Stand
 — wenn seither Bau-Pfade geändert wurden — mit einer Verweigerung, denn dann fehlt ein
 Image, das es geben müsste.
 
+**Ein Release ist der andere feste Tag — und heißt nicht wie der Git-Tag.** Aus
+`v0.3.1` entsteht das Image `0.3.1`, ohne führendes `v`, daneben `0.3`. Wer `v0.3.1`
+einträgt, greift ins Leere. Gebaut wird der Release-Stand im selben Lauf, der den Tag
+schneidet — `release-please.yml` ruft `build-images.yml` auf, sobald ein Release steht
+(#309); ein Tag-Push für sich löst nichts aus.
+
 **`latest` ist keine Einstellung, sondern eine fehlende.** Damit gibt es keinen Tag, der
 den Stand von vorgestern benennt — ein misslungenes Rollout wäre nur über einen Revert
 auf `main` und einen neuen Bau zu heilen. Mit einem festen Tag ist der Weg zurück eine
