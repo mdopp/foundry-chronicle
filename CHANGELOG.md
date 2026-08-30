@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.3.2](https://github.com/mdopp/foundry-chronicle/compare/v0.3.1...v0.3.2) (2026-08-30)
+
+
+### Bug Fixes
+
+* **ci:** ein Release baut ein Image, und es heisst wie die Doku sagt ([dcf429c](https://github.com/mdopp/foundry-chronicle/commit/dcf429c3a781d66e69adb4493e06dbf1a7cf0ce9)), closes [#309](https://github.com/mdopp/foundry-chronicle/issues/309)
+
+
+### Documentation
+
+* im Issue steht, was gemessen und was geraten ist ([3e5c0e8](https://github.com/mdopp/foundry-chronicle/commit/3e5c0e8f8542ce13af0b62746bf2f14f103406aa)), closes [#309](https://github.com/mdopp/foundry-chronicle/issues/309)
+
 ## [0.3.1](https://github.com/mdopp/foundry-chronicle/compare/v0.3.0...v0.3.1) (2026-08-27)
 
 
