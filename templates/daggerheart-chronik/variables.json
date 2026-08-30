@@ -6,7 +6,7 @@
   },
   "CHRONICLE_IMAGE_TAG": {
     "type": "text",
-    "description": "Image-Tag von ghcr.io/mdopp/foundry-chronicle. Für den Rollout auf einen festen Tag setzen, nicht auf 'latest': 'python scripts/bestimme_image_tag.py' nennt den aktuellen, '--zurueck 1' den Stand davor — das ist der Weg zurück, wenn ein Deployment misslingt. Nach dem Neustart den laufenden Digest gegen den erwarteten prüfen. 'latest' ist nur die Erstinstallation, solange die Box noch kein Repo zur Hand hat.",
+    "description": "Image-Tag von ghcr.io/mdopp/foundry-chronicle. Für den Rollout auf einen festen Tag setzen, nicht auf 'latest': 'python scripts/bestimme_image_tag.py' nennt den aktuellen, '--zurueck 1' den Stand davor — das ist der Weg zurück, wenn ein Deployment misslingt. Nach dem Neustart den laufenden Digest gegen den erwarteten prüfen. Ein Release ist ebenfalls ein fester Tag, und zwar die bloße Versionsnummer ohne führendes 'v': aus dem Git-Tag 'v0.3.1' wird der Image-Tag '0.3.1' (daneben '0.3'). 'v0.3.1' einzutragen greift ins Leere. 'latest' ist nur die Erstinstallation, solange die Box noch kein Repo zur Hand hat.",
     "default": "latest"
   },
   "CHRONICLE_GPU_LEASE": {
