@@ -424,6 +424,21 @@ Symptom + Repro + Startpunkt-Dateien — kein Fix-Plan. Der Fix wird im PR entsc
 **Ausnahme:** die Aufbau-Issues aus Epic #1 beschreiben ein *Ergebnis*, weil es bei
 einem leeren Repo weder Symptome noch Startpunkte gibt.
 
+**Und die schärfere Grenze daneben: Befund gegen Vermutung** (2026-08-30, aus dem Abgleich
+mit `mdopp/solaris-android`). »Kein Fix-Plan« reicht nicht, weil man ihn einhalten und
+trotzdem falsch liegen kann. Ein **Befund** ist gemessen und gehört ins Ticket — er erspart
+dem Bauenden echte Arbeit, der jede Stufe hier kalt startet und die Diagnose sonst neu
+herleitet. Eine **Vermutung** gehört ebenfalls hinein, aber **als Vermutung gekennzeichnet**,
+damit sie verworfen werden darf, ohne sich gegen das Ticket zu stellen.
+
+Der Anlass ist #309, geschrieben am selben Tag. Dort stand unter der Überschrift
+»Ursache«, dass ein `paths`-Filter die Tag-Auslösung verschluckt. Das war geraten und sah
+aus wie gemessen. Der tatsächliche, davon unabhängige Grund war ein anderer: release-please
+setzt den Tag mit `GITHUB_TOKEN`, und daraus startet GitHub grundsätzlich keinen Lauf. Wer
+der Überschrift geglaubt hätte, hätte den Filter entfernt, einen grünen PR gemergt — und das
+nächste Release hätte wieder kein Image gebaut, diesmal mit einem »ist doch behoben« davor.
+Eine Hypothese im Ticket verhindert den Fehler nicht, sie verbreitet ihn schneller.
+
 ## Autoloop
 
 `.claude/skills/autoloop-issues/` orchestriert Planner → Builder → Verify. Zustand
