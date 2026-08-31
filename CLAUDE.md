@@ -152,8 +152,27 @@ ehrlich, eine mit falscher nicht.
 
 - Automatisiert über **release-please**: es pflegt einen Release-PR, der Version und
   `CHANGELOG.md` aus den Commits ableitet. **Diesen PR zu mergen** schneidet das Release.
-- **Niemals** von Hand Versionen bumpen oder Tags setzen. Ein Release zu schneiden ist
-  eine menschliche Entscheidung.
+- **Niemals** von Hand Versionen bumpen oder Tags setzen — das tut release-please, und
+  daran vorbei zu arbeiten macht das Changelog unehrlich.
+- **Wer den Release-PR mergen darf, entscheidet die Umkehrbarkeit** (Betreiber-Entscheidung
+  2026-08-30). Ist alles darin zurückrollbar, schneidet die Schleife das Release selbst.
+  Ist es das nicht — eine Wanderung, die Daten umschreibt, eine einwilligungsrelevante
+  Änderung, alles, was sich nach dem Ausrollen nicht mehr zurücknehmen lässt —, entscheidet
+  ein Mensch.
+  **Abgelöst wird damit »ein Release zu schneiden ist eine menschliche Entscheidung«**, und
+  die Begründung von damals war falsch: sie lautete, auf der Box lägen Stimmaufnahmen
+  fremder Menschen, also sei jedes Release heikel. Das macht eine Eigenschaft des *Repos*
+  zur Eigenschaft *jeder Änderung darin*. §201 regelt das Aufzeichnen, nicht das Ausliefern
+  eines Bugfixes; eine Kappungsregel für einen Discord-Embed ändert nichts daran, was
+  aufgenommen oder eingewilligt wird.
+  Das Ärgerliche daran: **dieses Haus hatte die richtige Achse bereits** — der Draft-Gate
+  weiter unten trennt seit #212 ausdrücklich danach, *was eine Änderung tut, nicht in welcher
+  Datei sie steht*. Gelernt für das eine Tor, nicht übertragen auf das andere. Im Abgleich
+  mit `mdopp/solaris-android` und `mdopp/servicebay` ist dieselbe Verwechslung in drei
+  Häusern unabhängig aufgetreten, jedes Mal mit der richtigen Achse anderswo im eigenen
+  Regelwerk. Die Prüffrage dagegen: **trennt dieses Tor nach Ort oder nach Wirkung?**
+  Die beiden Tore hier tragen deshalb **zwei verschiedene** Wirkungsachsen: der Draft-Gate
+  fragt nach *Preisgabe*, der Release-Gate nach *Umkehrbarkeit*.
 - Eingerichtet in `release-please-config.json` mit `release-type: python` gegen
   `pyproject.toml`; der Workflow läuft bei jedem Push nach `main`.
 - **`main` bleibt linear: PRs werden rebase-gemergt, nie mit Merge-Commit** (#70).
