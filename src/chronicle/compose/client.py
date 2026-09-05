@@ -13,6 +13,12 @@ gewählt; die Vorgabe bleibt Ollama, denn das ist, was die Box **heute** fährt.
 beiden gemeinsam ist — Adresse, Modellname, Zeitgrenze, und dass jeder Fehler als
 ``ModelUnreachable`` endet —, steht in ``_ChatClient``; verschieden sind nur die Nutzlast
 und die Stelle, an der der Text in der Antwort liegt.
+
+**Wer geantwortet hat, sagt die Antwort — nie die Einstellung** (#320). ``llama-server``
+ignoriert den Modellnamen der Anfrage und antwortet mit dem Modell, das gerade geladen
+ist; die Einstellung wäre dort eine Behauptung über einen fremden Prozess. Beide Dienste
+tragen den Namen des antwortenden Modells oben in der Antwort, und genau der — und nur
+der — wird weitergereicht.
 """
 
 from __future__ import annotations
@@ -42,6 +48,14 @@ CHAT_PATH = "/api/chat"
 OPENAI_CHAT_PATH = "/v1/chat/completions"
 
 TAGS_PATH = "/api/tags"
+
+# Das Feld, in dem beide Dienste den Namen des Modells nennen, das **geantwortet** hat
+# (#320). Bei Ollama ist das der angefragte Name; bei ``llama-server`` der Name des
+# geladenen Modells — heute der GGUF-Pfad, gemessen am 2026-09-05 auf dieser Box
+# (``/models/…gguf``), nach ``mdopp/solarisbay#1333`` der Alias des Profils. Hässlich,
+# aber wahr, und wahr schlägt hier schön: der Herkunftsvermerk der Chronik wird Wochen
+# später als Gedächtnisstütze gelesen.
+ANTWORT_MODELL = "model"
 
 # Stapelbetrieb: ein Modell darf für eine Szene Minuten brauchen. Zehn waren zu wenig —
 # am 22.08. brach ein Aufschrieb nach exakt dieser Grenze ab, während der Nachbardienst
@@ -145,7 +159,15 @@ class TextModel(Protocol):
     """Die ganze Abhängigkeit der Komposition zum Sprachmodell."""
 
     @property
-    def name(self) -> str: ...
+    def name(self) -> str | None:
+        """Das Modell, das **geantwortet** hat — ``None``, solange keines etwas sagte.
+
+        Nicht das eingestellte: die Einstellung ist eine Bitte, kein Beleg (#320). Wer den
+        Namen in einen Text schreibt, liest ihn deshalb **nach** dem Schreiben, und wo
+        ``None`` steht, entfällt er — eine Chronik ohne Herkunftsangabe ist ehrlich, eine
+        mit falscher nicht.
+        """
+        ...
 
     def write(self, *, system: str, prompt: str) -> str: ...
 
@@ -197,10 +219,11 @@ class _ChatClient:
         self._model = str(config.ollama_model)
         self._http = http()
         self._timeout = timeout
+        self._geantwortet: str | None = None
 
     @property
-    def name(self) -> str:
-        return self._model
+    def name(self) -> str | None:
+        return self._geantwortet
 
     def write(self, *, system: str, prompt: str) -> str:
         logger.info("Sprachmodell %s auf %s%s", self._model, self._base, self.PFAD)
@@ -231,6 +254,11 @@ class _ChatClient:
             rumpf = antwort.json()
         except ValueError:
             raise ModelUnreachable(f"{self._base}{self.PFAD} hat kein JSON geliefert") from None
+        if isinstance(rumpf, Mapping):
+            # Ohne Gedächtnis über die Antwort hinaus: was die letzte Antwort nicht nennt,
+            # nennt der Kopf nicht. Ein gemerkter Name aus einer früheren Antwort wäre
+            # wieder eine Behauptung, nur eine ältere.
+            self._geantwortet = _antwortname(rumpf)
         inhalt = self._text(rumpf) if isinstance(rumpf, Mapping) else None
         if not isinstance(inhalt, str) or not inhalt.strip():
             raise ModelUnreachable(f"Das Modell {self._model} hat nichts geschrieben")
@@ -238,6 +266,12 @@ class _ChatClient:
 
     def _text(self, rumpf: Mapping) -> object:
         raise NotImplementedError
+
+
+def _antwortname(rumpf: Mapping) -> str | None:
+    """Der Name aus der Antwort — oder ``None``, und dann bleibt der Kopf ohne Namen."""
+    wert = rumpf.get(ANTWORT_MODELL)
+    return wert.strip() if isinstance(wert, str) and wert.strip() else None
 
 
 class OllamaClient(_ChatClient):

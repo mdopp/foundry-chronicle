@@ -468,7 +468,8 @@ def _kopf(
         # aus einem Whisper-Transkript, wo eine verhörte Zahl alltäglich ist. Wer das
         # Protokoll Wochen später liest, muss das wissen; das Chat-Log hat hier nichts belegt.
         herkunft = texte.herkunft_mit_fakten if fakten else texte.herkunft_ohne_fakten
-        stand = texte.stand.format(name=name, herkunft=herkunft)
+        vorlage = texte.stand if name else texte.stand_ohne_namen
+        stand = vorlage.format(name=name, herkunft=herkunft)
     elif prosa:
         stand = f"_{texte.teilweise.format(grund=reason)}_"
     else:
@@ -484,7 +485,6 @@ def compose(
 ) -> Composition:
     texte = sprachen.chronik(inhaltssprache)
     schreiber = model
-    name = None if model is None else model.name
     grund = None if model is not None else texte.ohne_modell
     stand = ""
     prosa = 0
@@ -547,6 +547,9 @@ def compose(
 
         bloecke.append("\n\n".join(teile))
 
+    # **Nach** den Szenen gelesen, nicht davor (#320): der Name gehört der Antwort,
+    # und vor dem ersten Aufruf hat noch nichts geantwortet.
+    name = None if model is None else model.name
     kopf = _kopf(material, name, grund, prosa, fakten_gesamt, texte)
     return Composition(
         text="\n\n".join([kopf, *bloecke]) + "\n",

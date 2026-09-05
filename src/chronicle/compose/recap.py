@@ -137,7 +137,8 @@ def _kopf(
         titel += f": {material.title}"
     if grund is None:
         quelle = texte.quelle_mit_vorigen if material.previous else texte.quelle
-        stand = texte.stand.format(quelle=quelle, name=name)
+        vorlage = texte.stand if name else texte.stand_ohne_namen
+        stand = vorlage.format(quelle=quelle, name=name)
     else:
         stand = f"_{grund}_"
     return f"{titel}\n\n{stand}"
@@ -156,7 +157,6 @@ def recap(
     belegt = numbers(material.chronicle, inhaltssprache) | numbers(
         "\n".join(material.previous), inhaltssprache
     )
-    name = None if model is None else model.name
     grund = None if model is not None else texte.ohne_modell
     hergang = ""
     hergang_grund = ""
@@ -181,6 +181,8 @@ def recap(
             geprueft, faeden_grund = _geprueft(rohe_faeden.strip(), belegt, texte, inhaltssprache)
             faeden = _faeden(geprueft)
 
+    # Erst jetzt, aus der Antwort statt aus der Einstellung (#320).
+    name = None if model is None else model.name
     bloecke = [_kopf(material, name, grund, texte)]
     if hergang:
         bloecke.append(f"{texte.hergang_titel}\n{hergang}")

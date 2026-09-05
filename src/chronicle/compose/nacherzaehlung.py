@@ -121,7 +121,8 @@ def _kopf(
     stoff: ErzaehlStoff, name: str | None, grund: str | None, texte: sprachen.Erzaehltexte
 ) -> str:
     titel = texte.kopf.format(von=stoff.von, bis=stoff.bis)
-    stand = texte.stand.format(name=name) if grund is None else f"_{grund}_"
+    vorlage = texte.stand if name else texte.stand_ohne_namen
+    stand = vorlage.format(name=name) if grund is None else f"_{grund}_"
     return f"{titel}\n\n{stand}"
 
 
@@ -133,7 +134,6 @@ def nacherzaehlen(
 ) -> Nacherzaehlung:
     texte = sprachen.erzaehlung(inhaltssprache)
     schreiber = model
-    name = None if model is None else model.name
     grund = None if model is not None else texte.ohne_modell
     stand = ""
     erzaehlt = 0
@@ -186,6 +186,8 @@ def nacherzaehlen(
         teile.append(f"{texte.register_titel}\n{_liste(abschnitt.entries)}")
         bloecke.append("\n\n".join(teile))
 
+    # Erst jetzt, aus der Antwort statt aus der Einstellung (#320).
+    name = None if model is None else model.name
     kopf = _kopf(stoff, name, grund, texte)
     return Nacherzaehlung(
         text="\n\n".join([kopf, *bloecke]) + "\n",

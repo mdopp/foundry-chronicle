@@ -542,6 +542,15 @@ def test_die_nacherzaehlung_geht_als_markdown_datei_in_den_kanal(config):
     assert "traced from the register" in begleitung["payload_json"]
 
 
+def test_ohne_namen_in_der_antwort_bleibt_der_kopf_der_nacherzaehlung_ohne_namen():
+    """#320: der Vermerk kommt aus der Antwort — und keine Stufe setzt die Einstellung ein."""
+    ergebnis = nacherzaehlen(ErzaehlStoff((abschnitt(1, MIRA),)), Modell(name=None))
+
+    assert _ERZAEHLUNG.stand_ohne_namen in ergebnis.text
+    assert "None" not in ergebnis.text
+    assert ergebnis.model_name is None
+
+
 def test_eine_zu_grosse_nacherzaehlung_wird_gesagt_statt_abgeschnitten(config, monkeypatch):
     unsere = erste_runde(config)
     monkeypatch.setattr(ausgabe, "MAX_BYTES", 10)

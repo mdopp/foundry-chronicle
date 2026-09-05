@@ -51,7 +51,7 @@ logger = logging.getLogger(__name__)
 @dataclass(frozen=True)
 class Zwischenstand:
     text: str
-    model_name: str
+    model_name: str | None
     position: int = 0
     inhaltssprache: str = sprachen.DEFAULT
 
@@ -60,11 +60,12 @@ def _liste(zeilen: tuple[str, ...]) -> str:
     return "\n".join(f"- {zeile}" for zeile in zeilen)
 
 
-def _kopf(scene: SceneMaterial, name: str, texte: sprachen.Zwischenstandtexte) -> str:
+def _kopf(scene: SceneMaterial, name: str | None, texte: sprachen.Zwischenstandtexte) -> str:
     titel = texte.kopf.format(position=scene.position)
     if scene.title:
         titel += f" — {scene.title}"
-    return f"{titel}\n\n{texte.hinweis.format(name=name)}"
+    vorlage = texte.hinweis if name else texte.hinweis_ohne_namen
+    return f"{titel}\n\n{vorlage.format(name=name)}"
 
 
 def _prompt(
@@ -144,6 +145,7 @@ def zwischenstand(
         absatz = texte.verworfen_ueberschrift
 
     return Zwischenstand(
+        # Nach dem Schreiben gelesen: der Name gehört der Antwort (#320).
         text=f"{_kopf(scene, model.name, texte)}\n\n{absatz}\n",
         model_name=model.name,
         position=scene.position,

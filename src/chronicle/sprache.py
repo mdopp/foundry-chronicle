@@ -137,6 +137,7 @@ class Chroniktexte:
     herkunft_mit_fakten: str
     herkunft_ohne_fakten: str
     stand: str
+    stand_ohne_namen: str
     teilweise: str
     system: str
     stand_bisher: str
@@ -234,6 +235,10 @@ CHRONIK = {
             "and are not traced by the chat log."
         ),
         stand="_Connecting texts come from the language model `{name}`. {herkunft}_",
+        stand_ohne_namen=(
+            "_Connecting texts come from the language model; which one, the service does "
+            "not say. {herkunft}_"
+        ),
         teilweise="{grund} The scenes up to that point are narrated.",
         system=_SYSTEM_EN,
         stand_bisher="So far:\n{stand}",
@@ -283,6 +288,10 @@ CHRONIK = {
             "und sind durch das Chat-Log nicht belegt."
         ),
         stand="_Verbindungstexte stammen vom Sprachmodell `{name}`. {herkunft}_",
+        stand_ohne_namen=(
+            "_Verbindungstexte stammen vom Sprachmodell; welches, sagt der Dienst nicht. "
+            "{herkunft}_"
+        ),
         teilweise="{grund} Die Szenen bis dahin sind erzählt.",
         system=_SYSTEM_DE,
         stand_bisher="Stand bisher:\n{stand}",
@@ -330,6 +339,7 @@ class Rueckblicktexte:
     keine: str
     kopf: str
     stand: str
+    stand_ohne_namen: str
     quelle: str
     quelle_mit_vorigen: str
     vorige: str
@@ -391,6 +401,11 @@ RUECKBLICK = {
             "_Condensed from {quelle} by the language model `{name}`. What is narrated is "
             "interpretation; only what stands under “Traced from the chronicle” is traced._"
         ),
+        stand_ohne_namen=(
+            "_Condensed from {quelle} by the language model; which one, the service does "
+            "not say. What is narrated is interpretation; only what stands under “Traced "
+            "from the chronicle” is traced._"
+        ),
         quelle="this session's chronicle",
         quelle_mit_vorigen="this session's chronicle and the previous recaps",
         vorige="Recaps of the previous sessions, most recent first:\n\n{texte}",
@@ -447,6 +462,11 @@ RUECKBLICK = {
             "_Verdichtet aus {quelle} vom Sprachmodell `{name}`. Erzähltes ist gedeutet; "
             "belegt ist nur, was unter »Belegt aus der Chronik« steht._"
         ),
+        stand_ohne_namen=(
+            "_Verdichtet aus {quelle} vom Sprachmodell; welches, sagt der Dienst nicht. "
+            "Erzähltes ist gedeutet; belegt ist nur, was unter »Belegt aus der Chronik« "
+            "steht._"
+        ),
         quelle="der Chronik dieser Sitzung",
         quelle_mit_vorigen="der Chronik dieser Sitzung und den vorigen Rückblicken",
         vorige="Rückblicke der vorigen Sitzungen, jüngster zuerst:\n\n{texte}",
@@ -469,6 +489,7 @@ def rueckblick(wert: str | None) -> Rueckblicktexte:
 class Erzaehltexte:
     kopf: str
     stand: str
+    stand_ohne_namen: str
     sitzung: str
     erzaehlt_titel: str
     register_titel: str
@@ -496,6 +517,12 @@ ERZAEHLUNG = {
             "_Narrated by the language model `{name}` along the register. Only what stands "
             "under “Traced from the register” is traced; the paragraphs above it are "
             "interpretation. Sessions without a confirmed entry stand there as a gap._"
+        ),
+        stand_ohne_namen=(
+            "_Narrated by the language model along the register; which one, the service "
+            "does not say. Only what stands under “Traced from the register” is traced; the "
+            "paragraphs above it are interpretation. Sessions without a confirmed entry "
+            "stand there as a gap._"
         ),
         sitzung="## Session of {datum}",
         erzaehlt_titel="### Retold — by the language model, not traced",
@@ -548,6 +575,11 @@ ERZAEHLUNG = {
             "_Erzählt vom Sprachmodell `{name}` entlang des Registers. Belegt ist nur, was "
             "unter »Belegt aus dem Register« steht; die Absätze darüber sind gedeutet. "
             "Sitzungen ohne bestätigten Eintrag stehen als Lücke da._"
+        ),
+        stand_ohne_namen=(
+            "_Erzählt vom Sprachmodell entlang des Registers; welches, sagt der Dienst "
+            "nicht. Belegt ist nur, was unter »Belegt aus dem Register« steht; die Absätze "
+            "darüber sind gedeutet. Sitzungen ohne bestätigten Eintrag stehen als Lücke da._"
         ),
         sitzung="## Sitzung vom {datum}",
         erzaehlt_titel="### Nacherzählt — vom Sprachmodell, nicht belegt",
@@ -683,6 +715,7 @@ class Zwischenstandtexte:
 
     kopf: str
     hinweis: str
+    hinweis_ohne_namen: str
     system: str
     auftrag: str
     verworfen: str
@@ -697,6 +730,12 @@ ZWISCHENSTAND = {
             "scene you just closed, while you play on. Nothing of this goes into the "
             "chronicle: that one is written at the end of the session, from the material "
             "itself._"
+        ),
+        hinweis_ohne_namen=(
+            "_Interpretation, never evidence. The language model — which one, the service "
+            "does not say — condensed the scene you just closed, while you play on. Nothing "
+            "of this goes into the chronicle: that one is written at the end of the "
+            "session, from the material itself._"
         ),
         system=(
             "You are the chronicler of a tabletop roleplaying group and report on the "
@@ -724,6 +763,12 @@ ZWISCHENSTAND = {
             "_Deutung, nie Beleg. Das Sprachmodell `{name}` hat die eben geschlossene "
             "Szene verdichtet, während ihr weiterspielt. Nichts davon geht in die Chronik "
             "ein: die entsteht am Ende der Sitzung, aus dem Material selbst._"
+        ),
+        hinweis_ohne_namen=(
+            "_Deutung, nie Beleg. Das Sprachmodell — welches, sagt der Dienst nicht — hat "
+            "die eben geschlossene Szene verdichtet, während ihr weiterspielt. Nichts davon "
+            "geht in die Chronik ein: die entsteht am Ende der Sitzung, aus dem Material "
+            "selbst._"
         ),
         system=(
             "Du bist Chronist für eine Tisch-Rollenspiel-Runde und berichtest über die "
