@@ -312,13 +312,70 @@ Deterministische, wiederholbare Schritte gehören in ein eingechecktes Skript, n
 Prosa, die ein Agent bei jedem Lauf neu auslegt. Menschliches Urteil ist für *was* zu
 prüfen ist und *warum* etwas fehlschlug — die Mechanik macht ein Skript.
 
+## Der Zeiger auf die Standards ist erzeugt, nicht abgeschrieben
+
+Der folgende Block steht **wörtlich und auf Englisch** hier, weil er erzeugt ist: er kommt
+aus `get_service_standards(flavor="servicebay")` → `repoBootstrap.claudeMdBlock` und wird
+drüben mit `npm run standards:bootstrap -- --flavor servicebay --check <repo>` gegen
+Abweichung geprüft. Übernommen statt nachgeschrieben, damit er nicht wieder altert.
+
+Denn genau das war er: unsere eigene Fassung sagte »`get_service_standards` abrufen« **ohne
+Varianten-Angabe** (#313). Wer ihr folgte, bekam die servicebay-Variante — und ging damit an
+den gemeinsamen Arbeitsverabredungen der Sitzungen vorbei, die an der **generischen**
+Variante hängen, im Block `workingAgreements`. Eine Anweisung, der man wörtlich folgen und
+die Hälfte trotzdem verfehlen kann, ist die unangenehmste Sorte: sie sieht befolgt aus.
+Schritt 2 unten holt sie nach.
+
+Die **generische** Fassung desselben Blocks passt uns nicht: sie beginnt mit »This project
+does not run on a ServiceBay box«, und das ist für uns falsch (#12). Wir nehmen die
+servicebay-Fassung — die zeigt von sich aus auf beide Varianten.
+
+<!-- BEGIN SERVICEBAY STANDARDS POINTER (generated — do not edit by hand) -->
+
+## Standards: fetch them, never re-derive them
+
+This repo is built for a ServiceBay box, so **ServiceBay's standards catalog is
+the binding source of its architecture decisions** — this file only points at it.
+
+1. **Before the first stack, CI, storage, or auth decision**, call the ServiceBay
+   MCP tool `get_service_standards(flavor="servicebay")` and fetch every id it
+   lists under `assistsToRead` via `get_assist(id)`. Read first, design second —
+   a stack chosen before reading is a stack chosen against the ADRs by accident.
+2. **Then call `get_service_standards(flavor="generic")` and read every id under
+   `workingAgreements`.** They are the cross-repo agreements on how work enters,
+   how it is gated, when to ask the operator, and how sessions hand over — they
+   are platform-agnostic, so they hang off the *generic* flavor and the
+   servicebay index does NOT repeat them. Fetching only one flavor is how a repo
+   follows this file exactly and still never hears about them.
+   Start with `get_assist("footgun-importing-a-working-agreement-from-another-repo")`:
+   the questions and mechanisms port between repos, the thresholds and autonomy
+   levels do not.
+3. **If the ServiceBay MCP is not connected in this session, stop and say so.**
+   An unconnected session cannot see the ADRs, so anything it decides about auth,
+   health, storage, or CI is a guess. Connecting it is the first task, not an
+   optional extra.
+4. **The catalog wins.** Where this file and the catalog disagree, this file is
+   the stale one — fix it here, not in your head. The catalog is read from the
+   box at runtime, so it can be newer than any release you are running.
+5. **Report gaps back.** A missing, ambiguous, or wrong standard is itself a
+   finding: file a `standards-gap` issue on `mdopp/servicebay` and propose the
+   assist/docs fix. See `get_assist("report-standards-gaps")`.
+
+This block is generated. Regenerate or verify it from a `mdopp/servicebay`
+checkout: `npm run standards:bootstrap -- --flavor servicebay --write <repo>` /
+`-- --flavor servicebay --check <repo>`.
+
+<!-- END SERVICEBAY STANDARDS POINTER -->
+
 ## ServiceBay ist die Zielplattform — ihre ADRs binden uns
 
 Deployt wird auf eine ServiceBay-Box (#12). Deren ADRs und Bau-Standards liegen
 **nicht** in diesem Repo, sondern auf dem ServiceBay-MCP (Server `servicebay` in der
-lokalen Claude-Konfiguration; Adresse und Token gehören nicht ins Repo). **Vor jeder
-Architekturentscheidung:** `get_service_standards` abrufen und die dort verlinkten
-Assists (`get_assist`) lesen. Dieser Abschnitt ist der Extrakt, nicht der Ersatz.
+lokalen Claude-Konfiguration; Adresse und Token gehören nicht ins Repo). Abgerufen werden
+sie über den Zeiger oben, und zwar in **beiden** Varianten — die servicebay-Variante trägt
+die ADRs, die generische die Arbeitsverabredungen. Dieser Abschnitt ist der Extrakt, nicht
+der Ersatz: er sagt, was von den Standards diesen Dienst bindet und **warum** — die
+Volltexte stehen im Katalog.
 
 - **ADR 0001 — SSO: bindet diesen Dienst seit #231 nicht mehr.** Der ADR gilt für
   *user-facing* Dienste, und dieser ist keiner: keine Seite, keine Subdomain, kein
