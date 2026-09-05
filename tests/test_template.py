@@ -269,6 +269,19 @@ def test_die_instanz_werte_kommen_aus_template_variablen(variablen: dict, manife
     assert {"DISCORD_BOT_TOKEN", "OLLAMA_URL", "OLLAMA_MODEL"} <= bot
 
 
+def test_das_modell_backend_faehrt_ohne_ansage_weiter_ollama(
+    variablen: dict, manifest: dict
+) -> None:
+    # #316: der Schalter steht im Template, damit der Umzug auf llama-server eine
+    # Einstellung ist und kein Neubau. Seine Vorgabe muss der Weg bleiben, den die Box
+    # heute fährt — eine Box, die frisch installiert wird, spräche sonst ins Leere.
+    assert variablen["CHRONICLE_LLM_BACKEND"]["default"] == "ollama"
+    bot = {
+        eintrag["name"]: eintrag["value"] for eintrag in manifest["spec"]["containers"][0]["env"]
+    }
+    assert bot["CHRONICLE_LLM_BACKEND"] == "ollama"
+
+
 def test_keine_echte_adresse_im_manifest(rohtext: str) -> None:
     # Host und Domain kommen zur Installationszeit; im Repo stehen nur Platzhalter.
     fundstellen = re.findall(r"https?://([A-Za-z0-9.-]+)", rohtext)

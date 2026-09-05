@@ -28,5 +28,10 @@
     "type": "text",
     "description": "Name des Textmodells, das die Chronik formuliert — es muss auf dem oben genannten Ollama bereits liegen ('ollama list' auf der Box). Leer heisst: die Chronik entsteht trotzdem, dann geordnet statt formuliert. Eine Auswahlliste der installierten Modelle gab es bis #230 auf der Betreiber-Seite; sie ist der eine bewusst in Kauf genommene Verlust dieses Umbaus.",
     "default": ""
+  },
+  "CHRONICLE_LLM_BACKEND": {
+    "type": "text",
+    "description": "Welche Sprache der Modelldienst oben spricht (#316). 'ollama' (Vorgabe) ruft Ollamas eigenes /api/chat auf — das faehrt diese Box heute. 'openai' ruft /v1/chat/completions auf und ist der Weg zu llama.cpps llama-server, der Ollama abloesen soll: er kennt /api/chat nicht und antwortet darauf mit 404. Beide Wege stehen nebeneinander, damit der Umzug den Dienst nicht vorher verstummen laesst; umgestellt wird hier, wenn der neue Dienst auf OLLAMA_URL antwortet. Auf dem 'openai'-Weg gibt es kein keep_alive und kein Sitzungsfenster gegen solaris (CHRONICLE_GPU_LEASE bleibt dann wirkungslos) — der Abloeser haelt nichts, was wir anweisen koennten, und ein Vertrag dafuer ist noch nicht verabredet. Ein unbekannter Wert gilt als 'ollama'.",
+    "default": "ollama"
   }
 }

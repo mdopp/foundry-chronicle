@@ -1,10 +1,12 @@
-"""Der Ollama-Aufruf — ohne Netz, gegen eine nachgebaute HTTP-Sitzung."""
+"""Der Aufruf des Modelldienstes — ohne Netz, gegen eine nachgebaute HTTP-Sitzung."""
 
 import pathlib
+from dataclasses import replace
 
 import pytest
 import requests
 
+from chronicle import sprache as sprachen
 from chronicle.compose.client import (
     CHAT_PATH,
     DEFAULT_TIMEOUT,
@@ -15,11 +17,13 @@ from chronicle.compose.client import (
     LEASE_HALTUNG,
     LEASE_PATH,
     LEASE_TTL_S,
+    OPENAI_CHAT_PATH,
     TAGS_PATH,
     ZWISCHENSTAND_TIMEOUT,
     ModelNotConfigured,
     ModelUnreachable,
     OllamaClient,
+    OpenAIClient,
     erneuerung,
     fenster_oeffnen,
     freigeben,
@@ -27,7 +31,14 @@ from chronicle.compose.client import (
     installed_models,
     lease_offen,
 )
-from chronicle.config import DEFAULT_OLLAMA_URL, DEFAULT_SOLARIS_URL, Config
+from chronicle.compose.composer import SceneMaterial, SessionMaterial, compose
+from chronicle.config import (
+    BACKEND_OLLAMA,
+    BACKEND_OPENAI,
+    DEFAULT_OLLAMA_URL,
+    DEFAULT_SOLARIS_URL,
+    Config,
+)
 
 ADRESSE = "http://ollama.example:11434/"
 MODELL = "chronist-modell"
@@ -500,3 +511,141 @@ def test_es_gibt_weiterhin_nur_eine_freigabestelle():
         if "modell.freigeben(" in pfad.read_text(encoding="utf-8")
     }
     assert rufer == {"src/chronicle/kette.py"}
+
+
+# --------------------------------------------------------------------------------------
+# Der zweite Weg: ``llama-server`` in der OpenAI-Form (#316). Ollama bleibt die Vorgabe;
+# beide Wege stehen nebeneinander, weil die Box heute noch den ersten fährt.
+# --------------------------------------------------------------------------------------
+
+
+def openai_config(tmp_path, **kwargs):
+    return replace(config(tmp_path, **kwargs), llm_backend=BACKEND_OPENAI)
+
+
+def openai_klient(tmp_path, http, **kwargs):
+    return OpenAIClient(openai_config(tmp_path, **kwargs), http=lambda: http)
+
+
+def v1_antwort(text="Ein ruhiger Abend."):
+    return Antwort({"choices": [{"message": {"content": text}}]})
+
+
+def test_der_v1_weg_ruft_den_pfad_des_abloesers_und_traegt_keine_frist(tmp_path):
+    """``keep_alive`` ist Ollamas Feld — der Ablöser hat keines, und wir erfinden keines."""
+    http = Http(v1_antwort("  Ein ruhiger Abend.  "))
+    text = openai_klient(tmp_path, http).write(system="Ordne.", prompt="Szene 1")
+
+    url, kwargs = http.aufrufe[0]
+    assert OPENAI_CHAT_PATH == "/v1/chat/completions"
+    assert url == f"http://ollama.example:11434{OPENAI_CHAT_PATH}"
+    assert kwargs["json"]["model"] == MODELL
+    assert kwargs["json"]["stream"] is False
+    assert kwargs["json"]["messages"] == [
+        {"role": "system", "content": "Ordne."},
+        {"role": "user", "content": "Szene 1"},
+    ]
+    assert "keep_alive" not in kwargs["json"]
+    assert kwargs["timeout"] > 0
+    assert text == "Ein ruhiger Abend."
+
+
+def test_ohne_eigene_adresse_redet_auch_der_v1_klient_mit_dieser_box(tmp_path):
+    http = Http(v1_antwort())
+    openai_klient(tmp_path, http, url=None).write(system="Ordne.", prompt="Szene 1")
+    assert http.aufrufe[0][0] == f"{DEFAULT_OLLAMA_URL}{OPENAI_CHAT_PATH}"
+
+
+def test_ohne_ansage_antwortet_weiterhin_ollama(tmp_path):
+    """Die Naht ist ``from_config`` und sonst nichts — und ihre Vorgabe ist der alte Weg.
+
+    Ein Umbau, der nur noch den neuen Weg spräche, legte den Dienst still, bevor die
+    Plattform überhaupt umzieht.
+    """
+    assert Config().llm_backend == BACKEND_OLLAMA
+    assert isinstance(from_config(config(tmp_path)), OllamaClient)
+    assert isinstance(from_config(openai_config(tmp_path)), OpenAIClient)
+    assert from_config(Config(data_dir=tmp_path)) is None
+
+
+@pytest.mark.parametrize(
+    "antwort",
+    [
+        # Der gemessene Fall: ``llama-server`` kennt ``/api/chat`` nicht — hier umgekehrt,
+        # ein Server, der auch den neuen Pfad nicht bedient.
+        Antwort(fehler=requests.HTTPError("404")),
+        Antwort(),
+        Antwort({"choices": []}),
+        Antwort({"choices": ["kein Rumpf"]}),
+        Antwort({"choices": [{"message": {"content": "   "}}]}),
+        # Ollamas Form auf dem neuen Pfad: eine Antwort, aber nicht unsere.
+        Antwort({"message": {"content": "Ein ruhiger Abend."}}),
+    ],
+)
+def test_eine_unbrauchbare_v1_antwort_ist_dieselbe_verstaendliche_meldung(tmp_path, antwort):
+    with pytest.raises(ModelUnreachable):
+        openai_klient(tmp_path, Http(antwort)).write(system="", prompt="")
+
+
+def test_auf_dem_v1_weg_bleibt_das_sitzungsfenster_still(tmp_path, caplog):
+    """#316: die andere Hälfte gehört dem Nachbarn, und die ist noch nicht verabredet.
+
+    ``mdopp/solarisbay#1320`` steht als Hypothese da — Sperrdatei oder HTTP ist offen, ein
+    ``acquire``/``release``-Vertrag fehlt. Also ein ausgesprochener No-op statt einer
+    erfundenen Form: wer im Log nach dem Fenster sucht, liest dort, warum keines aufgeht.
+    """
+    http = Fenster(v1_antwort())
+    aufbau = openai_config(tmp_path)
+
+    with caplog.at_level("INFO"):
+        assert fenster_oeffnen(aufbau, http=lambda: http) is False
+        assert freigeben(aufbau, http=lambda: http) is False
+
+    assert http.aufrufe == []
+    assert http.abmeldungen == []
+    assert not lease_offen()
+    gemeldet = " ".join(eintrag.getMessage() for eintrag in caplog.records)
+    assert BACKEND_OPENAI in gemeldet
+    assert "127.0.0.1" not in gemeldet and MODELL not in gemeldet
+
+
+@pytest.mark.parametrize(
+    ("bauart", "openai", "antwort"),
+    [
+        (OllamaClient, False, Antwort({"message": {"content": "Ein ruhiger Abend."}})),
+        (OpenAIClient, True, v1_antwort()),
+    ],
+)
+def test_der_zwischenstand_behaelt_auf_beiden_wegen_seine_kuerzere_frist(
+    tmp_path, bauart, openai, antwort
+):
+    """#302: die eigene Grenze des Zwischenstands hängt am Klienten, nicht am Backend."""
+    assert ZWISCHENSTAND_TIMEOUT < DEFAULT_TIMEOUT
+    http = Http(antwort)
+    aufbau = openai_config(tmp_path) if openai else config(tmp_path)
+    bauart(aufbau, http=lambda: http, timeout=ZWISCHENSTAND_TIMEOUT).write(system="", prompt="")
+    assert http.aufrufe[-1][1]["timeout"] == ZWISCHENSTAND_TIMEOUT
+
+
+def material():
+    return SessionMaterial(
+        session_id=1,
+        played_on="2026-09-05",
+        title="Der Keller",
+        scenes=(SceneMaterial(position=1, title="Aufbruch", notes=("Erste Notiz.",), facts=()),),
+    )
+
+
+def test_ein_scheiterndes_v1_modell_liefert_geordnet_statt_erzaehlt(tmp_path):
+    """Der Fehler bleibt im Klienten: keine Ausnahme schlägt bis zur Komposition durch."""
+    http = Http(Antwort(fehler=requests.HTTPError("404")))
+    ergebnis = compose(material(), openai_klient(tmp_path, http), inhaltssprache=sprachen.DEUTSCH)
+    assert "Erste Notiz." in ergebnis.text
+    assert ergebnis.prose_count == 0
+
+
+def test_die_zahlensperre_greift_auch_auf_dem_v1_weg(tmp_path):
+    """Mechanisch und vor der Ausgabe — der Weg des Aufrufs ändert daran nichts."""
+    http = Http(v1_antwort("Es waren 42 Ratten."))
+    ergebnis = compose(material(), openai_klient(tmp_path, http), inhaltssprache=sprachen.DEUTSCH)
+    assert "42" not in ergebnis.text
