@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.4.0](https://github.com/mdopp/foundry-chronicle/compare/v0.3.2...v0.4.0) (2026-09-05)
+
+
+### Features
+
+* **compose:** llama-server spricht neben Ollama, gewaehlt per Einstellung ([1cde905](https://github.com/mdopp/foundry-chronicle/commit/1cde90518922100f7805ef486d5b4ba25dd9d52c)), closes [#316](https://github.com/mdopp/foundry-chronicle/issues/316)
+
+
+### Documentation
+
+* der Zeiger auf die Standards nennt die Variante und wird erzeugt ([00ad4ad](https://github.com/mdopp/foundry-chronicle/commit/00ad4adc459de0811adb1eff5bd60d75de35e8b6)), closes [#313](https://github.com/mdopp/foundry-chronicle/issues/313)
+
 ## [0.3.2](https://github.com/mdopp/foundry-chronicle/compare/v0.3.1...v0.3.2) (2026-08-30)
 
 
