@@ -82,6 +82,20 @@ DEFAULT_SOLARIS_URL = "http://127.0.0.1:8787"
 # geht hinaus, und unsere eigenen Aufrufe tragen wieder die knappe Frist.
 GPU_LEASE_VARIABLE = "CHRONICLE_GPU_LEASE"
 
+# Welche Sprache der Modelldienst spricht (#316). Ollama antwortet auf sein eigenes
+# ``/api/chat``, llama.cpps ``llama-server`` kennt diesen Pfad nicht und antwortet mit 404;
+# er spricht das OpenAI-förmige ``/v1/chat/completions``. Die Box fährt **heute** Ollama,
+# deshalb ist das die Vorgabe: ein Dienst, der nur noch den neuen Weg kennt, verstummte,
+# bevor die Plattform umzieht. Ein unbekannter Wert fällt auf die Vorgabe zurück — der
+# Betreiber tippt ihn in ein Textfeld, und ein Tippfehler soll die Chronik nicht anhalten.
+LLM_BACKEND_VARIABLE = "CHRONICLE_LLM_BACKEND"
+
+BACKEND_OLLAMA = "ollama"
+
+BACKEND_OPENAI = "openai"
+
+LLM_BACKENDS = (BACKEND_OLLAMA, BACKEND_OPENAI)
+
 DEFAULT_DATA_DIR = "data"
 
 # Bewusst ein Geschwister von ``data`` und nicht darin: die SQLite geht ins Backup, die
@@ -118,6 +132,11 @@ def _schalter(env: Mapping[str, str], name: str, *, vorgabe: bool) -> bool:
     return vorgabe if not roh else roh in ("1", "true", "yes", "on", "an")
 
 
+def _backend(env: Mapping[str, str], name: str) -> str:
+    roh = (env.get(name) or "").strip().lower()
+    return roh if roh in LLM_BACKENDS else BACKEND_OLLAMA
+
+
 @dataclass(frozen=True, repr=False)
 class Config:
     foundry_url: str | None = None
@@ -133,6 +152,7 @@ class Config:
     health_port: int | None = None
     foundry_mitschnitt: bool = False
     gpu_lease: bool = True
+    llm_backend: str = BACKEND_OLLAMA
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> Config:
@@ -151,6 +171,7 @@ class Config:
             health_port=_port(env, HEALTH_PORT_VARIABLE),
             foundry_mitschnitt=_flag(env, MITSCHNITT_VARIABLE),
             gpu_lease=_schalter(env, GPU_LEASE_VARIABLE, vorgabe=True),
+            llm_backend=_backend(env, LLM_BACKEND_VARIABLE),
         )
 
     @property
@@ -200,5 +221,6 @@ class Config:
             f"whisper_url={self.whisper_url!r}, "
             f"health_port={self.health_port!r}, "
             f"foundry_mitschnitt={self.foundry_mitschnitt!r}, "
-            f"gpu_lease={self.gpu_lease!r})"
+            f"gpu_lease={self.gpu_lease!r}, "
+            f"llm_backend={self.llm_backend!r})"
         )

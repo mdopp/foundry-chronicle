@@ -1,6 +1,8 @@
 from pathlib import Path
 
 from chronicle.config import (
+    BACKEND_OLLAMA,
+    BACKEND_OPENAI,
     DEFAULT_SOLARIS_URL,
     DEFAULT_TTS_URL,
     FOUNDRY_VARIABLES,
@@ -164,6 +166,18 @@ def test_das_sitzungsfenster_ist_an_bis_es_jemand_abschaltet():
     assert Config.from_env({"CHRONICLE_GPU_LEASE": "true"}).gpu_lease is True
     assert Config.from_env({"CHRONICLE_GPU_LEASE": "aus"}).gpu_lease is False
     assert Config.from_env({"CHRONICLE_GPU_LEASE": "0"}).gpu_lease is False
+
+
+def test_das_backend_ist_ohne_ansage_das_der_box():
+    # #316: llama-server kennt Ollamas /api/chat nicht. Beide Wege stehen nebeneinander,
+    # und die Vorgabe ist der, den die Box **heute** fährt — sonst verstummte der Dienst,
+    # bevor die Plattform umzieht. Ein Tippfehler in einem Textfeld hält die Chronik
+    # ebenfalls nicht an: was nicht erkannt wird, gilt als der alte Weg.
+    assert Config.from_env({}).llm_backend == BACKEND_OLLAMA
+    assert Config.from_env({"CHRONICLE_LLM_BACKEND": ""}).llm_backend == BACKEND_OLLAMA
+    assert Config.from_env({"CHRONICLE_LLM_BACKEND": "llama.cpp"}).llm_backend == BACKEND_OLLAMA
+    assert Config.from_env({"CHRONICLE_LLM_BACKEND": "openai"}).llm_backend == BACKEND_OPENAI
+    assert Config.from_env({"CHRONICLE_LLM_BACKEND": " OpenAI "}).llm_backend == BACKEND_OPENAI
 
 
 def test_der_nachbardienst_wird_nur_ueber_die_schleife_angesprochen():

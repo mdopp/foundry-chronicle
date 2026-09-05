@@ -1,9 +1,18 @@
-"""Der Zugang zum Sprachmodell: ein HTTP-Aufruf gegen Ollama, mehr nicht.
+"""Der Zugang zum Sprachmodell: ein HTTP-Aufruf gegen den Modelldienst, mehr nicht.
 
-Wir bauen kein Modell nach und halten keines im Prozess — die Zielplattform stellt
-Ollama, wir reden mit ihm. Die Schnittstelle ist absichtlich schmal: ein Aufruf, ein
+Wir bauen kein Modell nach und halten keines im Prozess — die Zielplattform stellt den
+Dienst, wir reden mit ihm. Die Schnittstelle ist absichtlich schmal: ein Aufruf, ein
 Text zurück. Was daran scheitert, ist kein Fehler des Laufs, sondern ein Rückfall auf
 die geordnete Fassung; deshalb hat jeder Fehler einen Satz, den man anzeigen kann.
+
+**Zwei Dienste sprechen hier, nicht einer** (#316). Ollama antwortet auf sein eigenes
+``/api/chat``; llama.cpps ``llama-server``, der es auf der Box ablösen soll, kennt diesen
+Pfad nicht — er antwortet mit 404 und spricht stattdessen ``/v1/chat/completions``.
+Beide Wege stehen deshalb nebeneinander und werden über ``CHRONICLE_LLM_BACKEND``
+gewählt; die Vorgabe bleibt Ollama, denn das ist, was die Box **heute** fährt. Was den
+beiden gemeinsam ist — Adresse, Modellname, Zeitgrenze, und dass jeder Fehler als
+``ModelUnreachable`` endet —, steht in ``_ChatClient``; verschieden sind nur die Nutzlast
+und die Stelle, an der der Text in der Antwort liegt.
 """
 
 from __future__ import annotations
@@ -15,11 +24,22 @@ from typing import Protocol
 
 import requests
 
-from chronicle.config import DEFAULT_OLLAMA_URL, DEFAULT_SOLARIS_URL, Config
+from chronicle.config import (
+    BACKEND_OLLAMA,
+    BACKEND_OPENAI,
+    DEFAULT_OLLAMA_URL,
+    DEFAULT_SOLARIS_URL,
+    Config,
+)
 
 logger = logging.getLogger(__name__)
 
 CHAT_PATH = "/api/chat"
+
+# Der Weg des Ablösers (#316). ``llama-server`` spricht die OpenAI-Form; ein ``keep_alive``
+# gibt es dort **nicht** und wird auch nicht erfunden — es ist ein Ollama-Feld, und ein
+# ausgedachtes Gegenstück wäre eine Zusage, die niemand einlöst.
+OPENAI_CHAT_PATH = "/v1/chat/completions"
 
 TAGS_PATH = "/api/tags"
 
@@ -154,7 +174,16 @@ def haltung() -> str:
     return LEASE_HALTUNG if lease_offen() else KNAPPE_HALTUNG
 
 
-class OllamaClient:
+class _ChatClient:
+    """Was beide Modelldienste teilen: ein POST hin, ein Text zurück, sonst ein Satz.
+
+    Der Pfad und die Nutzlast gehören der Unterklasse — alles andere ist für Ollama und
+    ``llama-server`` dasselbe, und die Fehlerbehandlung zweimal zu schreiben hieße, sie
+    beim nächsten Mal einmal zu ändern.
+    """
+
+    PFAD = CHAT_PATH
+
     def __init__(
         self,
         config: Config,
@@ -174,52 +203,104 @@ class OllamaClient:
         return self._model
 
     def write(self, *, system: str, prompt: str) -> str:
-        logger.info("Sprachmodell %s auf %s", self._model, self._base)
-        # ``keep_alive`` reist an **jedem** Aufruf mit und hängt an keiner Bedingung: Ollama
-        # liest es je Anfrage, und wo das Feld fehlt, gilt die Vorgabe des Dienstes — auf
-        # dieser Box vierundzwanzig Stunden. Ein Pfad ohne das Feld wäre also kein
-        # »neutraler« Aufruf, sondern der längste von allen (#303).
-        rumpf: dict[str, object] = {
-            "model": self._model,
-            "stream": False,
-            "messages": [
-                {"role": "system", "content": system},
-                {"role": "user", "content": prompt},
-            ],
-            "keep_alive": haltung(),
-        }
+        logger.info("Sprachmodell %s auf %s%s", self._model, self._base, self.PFAD)
         try:
             antwort = self._http.post(
-                self._base + CHAT_PATH,
-                json=rumpf,
+                self._base + self.PFAD,
+                json=self._rumpf(system=system, prompt=prompt),
                 timeout=self._timeout,
             )
             antwort.raise_for_status()
         except requests.RequestException as fehler:
             raise ModelUnreachable(
-                f"{self._base}{CHAT_PATH} nicht erreichbar: {type(fehler).__name__}"
+                f"{self._base}{self.PFAD} nicht erreichbar: {type(fehler).__name__}"
             ) from None
         return self._content(antwort)
+
+    def _nachrichten(self, *, system: str, prompt: str) -> list[dict[str, str]]:
+        return [
+            {"role": "system", "content": system},
+            {"role": "user", "content": prompt},
+        ]
+
+    def _rumpf(self, *, system: str, prompt: str) -> dict[str, object]:
+        raise NotImplementedError
 
     def _content(self, antwort) -> str:
         try:
             rumpf = antwort.json()
         except ValueError:
-            raise ModelUnreachable(f"{self._base}{CHAT_PATH} hat kein JSON geliefert") from None
-        block = rumpf.get("message") if isinstance(rumpf, Mapping) else None
-        inhalt = block.get("content") if isinstance(block, Mapping) else None
+            raise ModelUnreachable(f"{self._base}{self.PFAD} hat kein JSON geliefert") from None
+        inhalt = self._text(rumpf) if isinstance(rumpf, Mapping) else None
         if not isinstance(inhalt, str) or not inhalt.strip():
             raise ModelUnreachable(f"Das Modell {self._model} hat nichts geschrieben")
         return inhalt.strip()
 
+    def _text(self, rumpf: Mapping) -> object:
+        raise NotImplementedError
 
-def from_config(config: Config, *, timeout: float = DEFAULT_TIMEOUT) -> OllamaClient | None:
+
+class OllamaClient(_ChatClient):
+    PFAD = CHAT_PATH
+
+    def _rumpf(self, *, system: str, prompt: str) -> dict[str, object]:
+        # ``keep_alive`` reist an **jedem** Aufruf mit und hängt an keiner Bedingung: Ollama
+        # liest es je Anfrage, und wo das Feld fehlt, gilt die Vorgabe des Dienstes — auf
+        # dieser Box vierundzwanzig Stunden. Ein Pfad ohne das Feld wäre also kein
+        # »neutraler« Aufruf, sondern der längste von allen (#303).
+        return {
+            "model": self._model,
+            "stream": False,
+            "messages": self._nachrichten(system=system, prompt=prompt),
+            "keep_alive": haltung(),
+        }
+
+    def _text(self, rumpf: Mapping) -> object:
+        block = rumpf.get("message")
+        return block.get("content") if isinstance(block, Mapping) else None
+
+
+class OpenAIClient(_ChatClient):
+    """``llama-server`` in der OpenAI-Form (#316) — derselbe Auftrag, andere Nutzlast.
+
+    **Kein ``keep_alive``.** Das Feld ist Ollamas, der Ablöser hat keines, und wir denken
+    ihm keines aus: was hier stünde, wäre eine Zusage über die Karte, die niemand einlöst.
+    Aus demselben Grund bleibt auch das Sitzungsfenster auf diesem Weg still (siehe
+    ``fenster_oeffnen``).
+
+    Was der Server über sich selbst entscheidet, steht nicht hier: das Abschalten des
+    Denkens ist ein Startparameter des Dienstes, kein Feld dieser Anfrage.
+    """
+
+    PFAD = OPENAI_CHAT_PATH
+
+    def _rumpf(self, *, system: str, prompt: str) -> dict[str, object]:
+        return {
+            "model": self._model,
+            "stream": False,
+            "messages": self._nachrichten(system=system, prompt=prompt),
+        }
+
+    def _text(self, rumpf: Mapping) -> object:
+        wahlen = rumpf.get("choices")
+        erste = wahlen[0] if isinstance(wahlen, list) and wahlen else None
+        block = erste.get("message") if isinstance(erste, Mapping) else None
+        return block.get("content") if isinstance(block, Mapping) else None
+
+
+def from_config(config: Config, *, timeout: float = DEFAULT_TIMEOUT) -> TextModel | None:
     """Der Klient zur Konfiguration — mit der Zeitgrenze des Weges, der ihn baut.
 
     Die Vorgabe gehört dem Aufschrieb: er darf lange rechnen. Der Zwischenstand reicht
     ``ZWISCHENSTAND_TIMEOUT`` herein, weil für ihn das Gegenteil gilt (#302).
+
+    **Dies ist die einzige Naht zwischen den beiden Backends** (#316). Die Aufrufer sehen
+    nur ``TextModel``; welcher Dienst antwortet, entscheidet sich hier und sonst nirgends.
     """
-    return OllamaClient(config, timeout=timeout) if config.ollama_configured else None
+    if not config.ollama_configured:
+        return None
+    bauart = OpenAIClient if config.llm_backend == BACKEND_OPENAI else OllamaClient
+    return bauart(config, timeout=timeout)
 
 
 def fenster_oeffnen(
@@ -245,8 +326,11 @@ def fenster_oeffnen(
     die Anmeldung, bleibt es beim knappen Aufruf, und wir verdrängen ihn nicht ungefragt.
 
     Bester Wille, wie alles auf diesem Weg: scheitert es, beginnt der Abend trotzdem.
+
+    **Auf dem ``/v1``-Weg geschieht hier nichts** (#316) — ausgesprochen, siehe
+    ``_modellfenster_gilt``.
     """
-    if not config.gpu_lease or not config.ollama_configured:
+    if not config.gpu_lease or not config.ollama_configured or not _modellfenster_gilt(config):
         return False
     basis = DEFAULT_SOLARIS_URL.rstrip("/")
     try:
@@ -305,10 +389,38 @@ def freigeben(
     ``finally``), und ein zweiter Schließer liefe irgendwann gegen den ersten. Erst
     entladen, dann abmelden — in dieser Reihenfolge ist die Karte frei, sobald der Nachbar
     davon erfährt.
+
+    **Auf dem ``/v1``-Weg geschieht auch hier nichts** (#316): es gibt keine Haltung, die
+    zu beenden wäre, und kein Fenster, das offen stünde.
     """
+    if not _modellfenster_gilt(config):
+        return False
     ergebnis = _anweisen(config, FREIGABE, http=http, timeout=timeout)
     _fenster_schliessen(config, http=http)
     return ergebnis
+
+
+def _modellfenster_gilt(config: Config) -> bool:
+    """Ob der gewählte Weg ein Modellfenster überhaupt kennt (#316).
+
+    Nur Ollama kennt eines. ``llama-server`` nimmt kein ``keep_alive`` entgegen, und mit
+    dem Nachbarn ist für ihn noch nichts verabredet: ``mdopp/solarisbay#1320`` steht am
+    2026-09-05 ausdrücklich als Hypothese da — ob Sperrdatei oder HTTP, ist dort offen,
+    und einen ``acquire``/``release``-Vertrag gibt es noch nicht. Die andere Hälfte zu
+    erfinden hieße, sich auf eine Form festzulegen, die der Nachbar nie zugesagt hat;
+    nachverdrahtet wird, sobald seine Seite steht.
+
+    Ein **ausgesprochener** No-op und kein stilles Nichts: wer im Log nach dem Fenster
+    sucht, soll dort lesen, warum keines aufgeht, statt es für einen Fehler zu halten.
+    """
+    if config.llm_backend == BACKEND_OLLAMA:
+        return True
+    logger.info(
+        "Backend %s: kein Modellfenster und keine Freigabe — der Ablöser hält nichts, was "
+        "wir anweisen könnten, und der Vertrag dafür ist noch nicht verabredet.",
+        config.llm_backend,
+    )
+    return False
 
 
 def _fenster_schliessen(config: Config, *, http: Callable[[], object]) -> None:

@@ -133,6 +133,17 @@ des Sprachdienstes, der die Ansage spricht (Vorgabe `http://127.0.0.1:8881`, sie
 Foundry-Konfiguration, startet der Dienst trotzdem und sagt es dort, wo jemand danach
 fragt: in `/chronicle setup` und in der Meldung des Abgleichs.
 
+**Welche Sprache der Modelldienst spricht, ist seit [#316](../../issues/316) eine
+Einstellung:** `CHRONICLE_LLM_BACKEND=ollama` (Vorgabe) ruft Ollamas eigenes `/api/chat`
+auf, `openai` ruft `/v1/chat/completions` — den Weg zu llama.cpps `llama-server`, der
+Ollama auf der Box ablösen soll und `/api/chat` mit 404 beantwortet. Beide Wege stehen
+nebeneinander, damit der Umzug den Dienst nicht verstummen lässt, bevor die Plattform
+umgezogen ist; Adresse und Modellname bleiben `OLLAMA_URL` und `OLLAMA_MODEL`. Auf dem
+`openai`-Weg gibt es **kein** `keep_alive` — das Feld ist Ollamas, und ein erfundenes
+Gegenstück wäre eine Zusage über die Karte, die niemand einlöst — und aus demselben Grund
+auch kein Sitzungsfenster: der Vertrag dafür ist mit dem Nachbarn noch nicht verabredet,
+also bleibt es dort ein ausgesprochener Leerlauf im Log statt einer geratenen Form.
+
 **Es gibt keine Haustür mehr, weil es kein Haus mehr gibt.** Bis
 [#231](../../issues/231) stand die Betreiber-Seite hinter Authelia
 (ServiceBay-ADR 0001): `CHRONICLE_REQUIRE_REMOTE_USER=1` wies jeden Request ohne

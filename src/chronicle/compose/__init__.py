@@ -6,6 +6,7 @@ from chronicle.compose.client import (
     ModelNotConfigured,
     ModelUnreachable,
     OllamaClient,
+    OpenAIClient,
     TextModel,
 )
 from chronicle.compose.composer import (
@@ -34,6 +35,7 @@ __all__ = [
     "Nacherzaehlung",
     "Notiz",
     "OllamaClient",
+    "OpenAIClient",
     "Recap",
     "RecapMaterial",
     "SceneMaterial",
