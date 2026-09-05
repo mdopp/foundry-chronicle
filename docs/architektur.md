@@ -209,8 +209,9 @@ Aufschriebs steht die ausdrückliche Freigabe (#300).
 
 **Seit #299 gibt es dazu eine benannte Ausnahme: das Sitzungsfenster** (2026-08-27,
 ausgehandelt mit `mdopp/solarisbay#1260`, von beiden Betreibern entschieden). Der Beginn
-eines Abends wird beim Nachbarn angemeldet — `POST /napi/gpu-lease {model, ttl_s}` über
-die Schleife, fünfzehn Minuten, alle fünf erneuert —, und am Ende jedes Aufschriebs
+eines Abends wird beim Nachbarn angemeldet — `POST /api/model-lease {model, ttl_s}` über
+die Schleife, fünfzehn Minuten, alle fünf erneuert (**nicht** unter `/napi/`: dort ist der
+Nachbar token-pflichtig, #306) —, und am Ende jedes Aufschriebs
 schließt dieselbe Stelle, die das Modell freigibt, das Fenster mit einem `DELETE` wieder.
 Solange es steht, antwortet der Nachbar mit unserem Modell, statt seines bei jeder
 Haushaltsanfrage zurückzuholen; die Rechnung dahinter ist, dass eine langsamere Antwort
@@ -224,6 +225,18 @@ oder Sitzungskennung**: welches Modell, wie lange — mehr braucht der Nachbar n
 Die Anmeldung lädt das Modell gleich mit; damit zahlt der erste Szenenschnitt des Abends
 den Ladevorgang nicht mehr, und das tut sie **nach** der Zusage, nicht davor. Abschalten
 lässt sich der Vertrag ohne Neubau mit `CHRONICLE_GPU_LEASE`.
+
+**Seit #321 gilt das Fenster auf beiden Modellwegen.** Auf dem `/v1`-Weg nennt die Nutzlast
+ein **Profil** (`foundry`) statt eines Modellnamens: `llama-server` ignoriert den Namen der
+Anfrage, und der Nachbar schaltet am Profil, welches Modell er geladen hält — die Zusage
+»keine Runden-, Gilden- oder Sitzungskennung« bleibt damit wörtlich erfüllt, denn ein Profil
+benennt die Arbeit und nicht die Runde. Die Paarung aus einer Konstante gilt dabei nur für
+den Ollama-Weg; der Ablöser kennt kein `keep_alive`, dort trägt allein die Frist des
+Fensters. Sagt der Nachbar `202 preparing`, wird **nicht** erneut angemeldet, sondern
+gefragt — frühestens nach der von ihm genannten Wartezeit, mit Obergrenze nach oben und
+einer Untergrenze gegen die enge Schleife —, und die Frist beginnt erst mit `ready`. Der
+Leerlauf, den #316 dort gelassen hatte, hieß am Ende nicht »wir warten auf einen Vertrag«,
+sondern »still schreibt das Haushaltsmodell«.
 
 **Der Zwischenstand hat als einziger Weg eine Zeitrichtung** (#302). Ein bis drei Minuten
 nach dem Schnitt, sonst ist er zwecklos — während der Aufschrieb am Sitzungsende lange

@@ -11,7 +11,7 @@
   },
   "CHRONICLE_GPU_LEASE": {
     "type": "text",
-    "description": "Schalter fuer das Sitzungsfenster gegen den Nachbardienst solaris (#299, Gegenstueck mdopp/solarisbay#1260). 'an' (Vorgabe) meldet den Beginn eines Spielabends ueber die Schleife bei 127.0.0.1:8787 an und am Ende wieder ab; solaris antwortet dann fuer eine Viertelstunde mit dem grossen Modell, statt es bei jeder Haushaltsanfrage zu verdraengen — jeder Wechsel kostet auf dieser Karte rund 56 s. Die Anmeldung traegt nur Modellname und Frist, kein Geheimnis und keine Runden-, Gilden- oder Sitzungskennung. 'aus' verlaesst den Vertrag ohne Neubau: es geht kein Aufruf mehr hinaus, und unsere eigenen Aufrufe tragen wieder die knappe Frist. Leer heisst 'an' — eine Box, die die Variable nicht kennt, soll den Vertrag nicht stillschweigend abschalten.",
+    "description": "Schalter fuer das Sitzungsfenster gegen den Nachbardienst solaris (#299, Gegenstueck mdopp/solarisbay#1260). 'an' (Vorgabe) meldet den Beginn eines Spielabends ueber die Schleife bei 127.0.0.1:8787 an und am Ende wieder ab; solaris antwortet dann fuer eine Viertelstunde mit dem grossen Modell, statt es bei jeder Haushaltsanfrage zu verdraengen — jeder Wechsel kostet auf dieser Karte rund 56 s. Die Anmeldung traegt nur Frist und Modell — auf dem 'openai'-Weg das Profil 'foundry' —, kein Geheimnis und keine Runden-, Gilden- oder Sitzungskennung. 'aus' verlaesst den Vertrag ohne Neubau: es geht kein Aufruf mehr hinaus, und unsere eigenen Aufrufe tragen wieder die knappe Frist. Leer heisst 'an' — eine Box, die die Variable nicht kennt, soll den Vertrag nicht stillschweigend abschalten.",
     "default": "an"
   },
   "DISCORD_BOT_TOKEN": {
@@ -31,7 +31,7 @@
   },
   "CHRONICLE_LLM_BACKEND": {
     "type": "text",
-    "description": "Welche Sprache der Modelldienst oben spricht (#316). 'ollama' (Vorgabe) ruft Ollamas eigenes /api/chat auf — das faehrt diese Box heute. 'openai' ruft /v1/chat/completions auf und ist der Weg zu llama.cpps llama-server, der Ollama abloesen soll: er kennt /api/chat nicht und antwortet darauf mit 404. Beide Wege stehen nebeneinander, damit der Umzug den Dienst nicht vorher verstummen laesst; umgestellt wird hier, wenn der neue Dienst auf OLLAMA_URL antwortet. Auf dem 'openai'-Weg gibt es kein keep_alive und kein Sitzungsfenster gegen solaris (CHRONICLE_GPU_LEASE bleibt dann wirkungslos) — der Abloeser haelt nichts, was wir anweisen koennten, und ein Vertrag dafuer ist noch nicht verabredet. Ein unbekannter Wert gilt als 'ollama'.",
+    "description": "Welche Sprache der Modelldienst oben spricht (#316). 'ollama' (Vorgabe) ruft Ollamas eigenes /api/chat auf — das faehrt diese Box heute. 'openai' ruft /v1/chat/completions auf und ist der Weg zu llama.cpps llama-server, der Ollama abloesen soll: er kennt /api/chat nicht und antwortet darauf mit 404. Beide Wege stehen nebeneinander, damit der Umzug den Dienst nicht vorher verstummen laesst; umgestellt wird hier, wenn der neue Dienst auf OLLAMA_URL antwortet. Auf dem 'openai'-Weg gibt es kein keep_alive — der Abloeser haelt nichts, was wir anweisen koennten. Das Sitzungsfenster gegen solaris gilt dort trotzdem (#321) und meldet das Profil 'foundry' an, statt einen Modellnamen; CHRONICLE_GPU_LEASE wirkt also auf beiden Wegen. Ein unbekannter Wert gilt als 'ollama'.",
     "default": "ollama"
   }
 }

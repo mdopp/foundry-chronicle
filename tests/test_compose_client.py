@@ -15,8 +15,13 @@ from chronicle.compose.client import (
     LEASE_ERNEUERUNG_FELD,
     LEASE_ERNEUERUNG_S,
     LEASE_HALTUNG,
+    LEASE_MINDESTPAUSE_S,
     LEASE_PATH,
+    LEASE_PROFIL,
     LEASE_TTL_S,
+    LEASE_VORBEREITUNG,
+    LEASE_VORBEREITUNG_S,
+    LEASE_WARTEZEIT_S,
     OPENAI_CHAT_PATH,
     TAGS_PATH,
     ZWISCHENSTAND_TIMEOUT,
@@ -45,9 +50,10 @@ MODELL = "chronist-modell"
 
 
 class Antwort:
-    def __init__(self, payload=None, fehler=None):
+    def __init__(self, payload=None, fehler=None, status_code=200):
         self._payload = payload
         self._fehler = fehler
+        self.status_code = status_code
 
     def raise_for_status(self):
         if self._fehler is not None:
@@ -504,10 +510,30 @@ def test_ein_gescheitertes_fenster_haelt_den_beginn_nicht_auf(tmp_path, caplog):
     assert "127.0.0.1" not in gemeldet and MODELL not in gemeldet
 
 
-def test_ein_fehlerstatus_beim_fenster_zaehlt_ebenfalls_als_gescheitert(tmp_path):
-    http = Fenster(Antwort(fehler=requests.HTTPError("500")))
-    assert fenster_oeffnen(config(tmp_path), http=lambda: http) is False
+@pytest.mark.parametrize(
+    ("status", "rumpf"),
+    [
+        (400, {"ok": False, "reason": "ttl_s out of range"}),
+        (409, {"ok": False, "reason": "held", "holder": "coding", "expires_at": 1_000}),
+        (503, {"ok": False, "reason": "disabled"}),
+        (500, None),
+    ],
+)
+def test_eine_abgelehnte_anmeldung_zaehlt_als_gescheitert(tmp_path, caplog, status, rumpf):
+    """400, 409, 503 — jeder Ausgang außer ``ready`` ist derselbe: kein Fenster, kein Fehler.
+
+    Der Grund steht in der einen Logzeile, damit später erklärbar ist, warum eine Chronik
+    mit dem Haushaltsmodell geschrieben wurde — sagen tut das ohnehin ihr Kopf (#320).
+    """
+    http = Fenster(Antwort(rumpf, status_code=status))
+
+    with caplog.at_level("WARNING"):
+        assert fenster_oeffnen(config(tmp_path), http=lambda: http) is False
+
     assert not lease_offen()
+    gemeldet = " ".join(eintrag.getMessage() for eintrag in caplog.records)
+    assert str(status) in gemeldet
+    assert "127.0.0.1" not in gemeldet
 
 
 def test_ohne_gewaehltes_modell_gibt_es_nichts_anzumelden(tmp_path):
@@ -532,6 +558,135 @@ def test_der_abschalter_laesst_keinen_einzigen_aufruf_hinausgehen(tmp_path):
 
     freigeben(aus, http=lambda: http)
     assert http.abmeldungen == []
+
+
+class Uhr:
+    """Eine Uhr, die nur durch Warten vorgeht — sonst liefe die Wartezeit in echt ab."""
+
+    def __init__(self) -> None:
+        self.jetzt = 1000.0
+        self.pausen: list[float] = []
+
+    def monotonic(self) -> float:
+        return self.jetzt
+
+    def warten(self, sekunden: float) -> None:
+        self.pausen.append(sekunden)
+        self.jetzt += sekunden
+
+
+class Vorbereitung(Fenster):
+    """Ein Nachbar, der erst vorbereitet und auf Nachfrage seinen Zustand nennt."""
+
+    def __init__(self, anmeldung, *staende):
+        super().__init__(anmeldung)
+        self._staende = list(staende)
+        self.fragen = []
+
+    def get(self, url, **kwargs):
+        self.fragen.append((url, kwargs))
+        return self._staende.pop(0) if len(self._staende) > 1 else self._staende[0]
+
+
+@pytest.fixture
+def uhr(monkeypatch):
+    gestellt = Uhr()
+    monkeypatch.setattr("chronicle.compose.client.time", gestellt)
+    return gestellt
+
+
+def test_ein_vorbereitetes_fenster_wird_gefragt_und_nicht_neu_angemeldet(tmp_path, uhr):
+    """202 ist kein Fehlschlag: der Nachbar lädt, und ein zweites POST setzte ihn zurück.
+
+    Beim ersten Mal dauert das Minuten — ein 12b will heruntergeladen werden. Gefragt wird
+    deshalb per GET, frühestens nach der genannten Wartezeit.
+    """
+    http = Vorbereitung(
+        Antwort({"state": "preparing", "retry_after": 30}, status_code=LEASE_VORBEREITUNG),
+        Antwort({"state": "preparing", "retry_after": 45}),
+        Antwort({"state": "ready", "alias": "gemma-4-12b"}),
+    )
+
+    assert fenster_oeffnen(config(tmp_path), http=lambda: http, warten=uhr.warten) is True
+
+    assert len(anmeldungen(http)) == 1
+    assert [url for url, _ in http.fragen] == [f"{DEFAULT_SOLARIS_URL}{LEASE_PATH}"] * 2
+    assert uhr.pausen == [30, 45]
+
+
+def test_die_frist_beginnt_erst_mit_ready(tmp_path, uhr):
+    """Der Vertrag ist ausdrücklich: gezählt wird ab ``ready``, nicht ab der Anmeldung."""
+    http = Vorbereitung(
+        Antwort({"state": "preparing", "retry_after": 600}, status_code=LEASE_VORBEREITUNG),
+        Antwort({"state": "ready"}),
+    )
+
+    fenster_oeffnen(config(tmp_path), http=lambda: http, warten=uhr.warten)
+    assert lease_offen()
+
+    uhr.jetzt += LEASE_TTL_S - 1
+    assert lease_offen()
+    uhr.jetzt += 2
+    assert not lease_offen()
+
+
+def test_ein_nachbar_der_nie_fertig_wird_bindet_den_abend_nicht_ewig(tmp_path, uhr, caplog):
+    """Ein Budget, und keine enge Schleife: gefragt wird selten, und irgendwann gar nicht mehr."""
+    http = Vorbereitung(
+        Antwort({"state": "preparing", "retry_after": 0.001}, status_code=LEASE_VORBEREITUNG),
+        Antwort({"state": "preparing", "retry_after": 0.001}),
+    )
+
+    with caplog.at_level("WARNING"):
+        assert fenster_oeffnen(config(tmp_path), http=lambda: http, warten=uhr.warten) is False
+
+    assert not lease_offen()
+    assert min(uhr.pausen) >= LEASE_MINDESTPAUSE_S
+    assert sum(uhr.pausen) <= LEASE_VORBEREITUNG_S
+    assert len(http.fragen) <= LEASE_VORBEREITUNG_S / LEASE_MINDESTPAUSE_S
+    assert "nicht rechtzeitig" in " ".join(e.getMessage() for e in caplog.records)
+
+
+def test_ein_nachbar_ohne_auskunft_kostet_genau_eine_frage(tmp_path, uhr):
+    """Gemessen am 2026-09-05: heute kennt ``/api/model-lease`` nur DELETE und POST.
+
+    Ein GET läuft dort in 405. Das ist derselbe Ausgang wie jede gescheiterte Anmeldung —
+    kein Fenster, kein Fehler, und vor allem kein zweiter Versuch gegen eine Wand.
+    """
+    http = Vorbereitung(
+        Antwort({"state": "preparing"}, status_code=LEASE_VORBEREITUNG),
+        Antwort(fehler=requests.HTTPError("405")),
+    )
+
+    assert fenster_oeffnen(config(tmp_path), http=lambda: http, warten=uhr.warten) is False
+
+    assert len(http.fragen) == 1
+    assert uhr.pausen == [LEASE_WARTEZEIT_S]
+    assert not lease_offen()
+
+
+@pytest.mark.parametrize(
+    ("genannt", "erwartet"),
+    [
+        ({}, LEASE_WARTEZEIT_S),
+        ({"retry_after": None}, LEASE_WARTEZEIT_S),
+        ({"retry_after": "bald"}, LEASE_WARTEZEIT_S),
+        ({"retry_after": True}, LEASE_WARTEZEIT_S),
+        ({"retry_after": 0}, LEASE_MINDESTPAUSE_S),
+        ({"retry_after": -5}, LEASE_MINDESTPAUSE_S),
+        ({"retry_after": 90}, 90),
+        ({"retry_after": LEASE_VORBEREITUNG_S * 10}, LEASE_VORBEREITUNG_S),
+    ],
+)
+def test_die_wartezeit_kommt_vom_nachbarn_und_bleibt_in_schranken(tmp_path, uhr, genannt, erwartet):
+    http = Vorbereitung(
+        Antwort(dict(genannt, state="preparing"), status_code=LEASE_VORBEREITUNG),
+        Antwort({"state": "ready"}),
+    )
+
+    fenster_oeffnen(config(tmp_path), http=lambda: http, warten=uhr.warten)
+
+    assert uhr.pausen[0] == erwartet
 
 
 def test_das_ende_meldet_das_fenster_genau_einmal_ab(tmp_path):
@@ -657,26 +812,52 @@ def test_eine_unbrauchbare_v1_antwort_ist_dieselbe_verstaendliche_meldung(tmp_pa
         openai_klient(tmp_path, Http(antwort)).write(system="", prompt="")
 
 
-def test_auf_dem_v1_weg_bleibt_das_sitzungsfenster_still(tmp_path, caplog):
-    """#316: die andere Hälfte gehört dem Nachbarn, und die ist noch nicht verabredet.
+def test_auf_dem_v1_weg_gilt_das_fenster_und_schweigt_nur_die_haltung(tmp_path, caplog):
+    """#321: der Leerlauf von #316 hieße heute »wir bekommen still das Haushaltsmodell«.
 
-    ``mdopp/solarisbay#1320`` steht als Hypothese da — Sperrdatei oder HTTP ist offen, ein
-    ``acquire``/``release``-Vertrag fehlt. Also ein ausgesprochener No-op statt einer
-    erfundenen Form: wer im Log nach dem Fenster sucht, liest dort, warum keines aufgeht.
+    Der Vertrag steht jetzt, also wird angemeldet und abgemeldet — nur eine Haltung gibt es
+    auf diesem Weg nicht, und das bleibt ein ausgesprochener No-op statt eines stillen
+    Nichts.
     """
-    http = Fenster(v1_antwort())
+    http = Fenster(Antwort({}))
     aufbau = openai_config(tmp_path)
 
     with caplog.at_level("INFO"):
-        assert fenster_oeffnen(aufbau, http=lambda: http) is False
-        assert freigeben(aufbau, http=lambda: http) is False
+        assert fenster_oeffnen(aufbau, http=lambda: http) is True
+        assert freigeben(aufbau, http=lambda: http) is True
 
-    assert http.aufrufe == []
-    assert http.abmeldungen == []
+    # Genau ein Aufruf: die Anmeldung. Kein Aufwärmen, kein ``keep_alive``, kein Entladen.
+    ((url, kwargs),) = http.aufrufe
+    assert url == f"{DEFAULT_SOLARIS_URL}{LEASE_PATH}"
+    assert kwargs["json"] == {"model": LEASE_PROFIL, "ttl_s": LEASE_TTL_S}
+    assert len(http.abmeldungen) == 1
     assert not lease_offen()
     gemeldet = " ".join(eintrag.getMessage() for eintrag in caplog.records)
     assert BACKEND_OPENAI in gemeldet
     assert "127.0.0.1" not in gemeldet and MODELL not in gemeldet
+
+
+def test_das_profil_benennt_die_arbeit_und_nicht_die_runde(tmp_path):
+    """Die Zusage aus #299 überlebt den neuen Vertrag: der Nachbar erfährt nicht, wer spielt."""
+    http = Fenster(Antwort({}))
+    fenster_oeffnen(openai_config(tmp_path), http=lambda: http)
+
+    ((_, kwargs),) = anmeldungen(http)
+    assert LEASE_PROFIL == "foundry"
+    assert kwargs["json"]["model"] == LEASE_PROFIL
+    assert MODELL not in str(kwargs["json"])
+    assert set(kwargs["json"]) == {"model", "ttl_s"}
+    assert set(kwargs) == {"json", "timeout"}
+
+
+def test_auf_dem_alten_weg_bleibt_der_modellname_stehen(tmp_path):
+    """Bis ``mdopp/solarisbay#1333`` wirkt die Anmeldung dort auf Ollama — und ein Profil
+    wäre für Ollama ein Modell, das es nicht kennt."""
+    http = Fenster(Antwort({}))
+    fenster_oeffnen(config(tmp_path), http=lambda: http)
+
+    ((_, kwargs),) = anmeldungen(http)
+    assert kwargs["json"]["model"] == MODELL
 
 
 @pytest.mark.parametrize(

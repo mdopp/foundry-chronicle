@@ -125,6 +125,39 @@ LEASE_PATH = "/api/model-lease"
 # Abend schon begonnen — eine Anmeldung, die sich Zeit lässt, hält niemanden auf.
 LEASE_TIMEOUT = 5.0
 
+# Das Profil, das der Nachbar für uns lädt (Vertrag zu ``mdopp/solarisbay#1333``, im
+# Kommentar an #321). Ein **Profil**, kein Modellname: ``llama-server`` ignoriert den
+# Namen der Anfrage, und der Nachbar schaltet daran, welches Modell er geladen hält. Die
+# Zusage aus #299 bleibt damit wörtlich erfüllt — keine Runden-, Gilden- oder
+# Sitzungskennung; »foundry« sagt, *wessen Arbeit* ansteht, nicht *wer* spielt.
+LEASE_PROFIL = "foundry"
+
+LEASE_STEHT = 200
+
+# Kein Fehlschlag: der Nachbar lädt oder schaltet um, beim ersten Mal minutenlang (ein
+# 12b will erst heruntergeladen werden). Danach wird **nicht** erneut angemeldet, sondern
+# gefragt — und die Frist beginnt erst, wenn er ``ready`` sagt.
+LEASE_VORBEREITUNG = 202
+
+LEASE_BEREIT = "ready"
+
+LEASE_ZUSTAND_FELD = "state"
+
+LEASE_WARTEZEIT_FELD = "retry_after"
+
+# Wie lange zwischen zwei Fragen gewartet wird, wenn der Nachbar selbst nichts nennt.
+LEASE_WARTEZEIT_S = 30.0
+
+# Und die Untergrenze dazu, auch wenn er etwas nennt: ein Takt nahe null wäre die enge
+# Schleife gegen einen Dienst, der ohnehin gerade lädt — die Lektion vom 2026-08-10.
+LEASE_MINDESTPAUSE_S = 5.0
+
+# Wie lange insgesamt auf ``ready`` gewartet wird. Eine Grenze braucht es, weil sonst ein
+# Nachbar, der ewig »preparing« sagt, diesen Faden für immer bindet; großzügig darf sie
+# sein, weil niemand darauf wartet — die Sitzung läuft daneben weiter und schreibt zur Not
+# mit dem Haushaltsmodell, was der Herkunftsvermerk dann auch sagt (#320).
+LEASE_VORBEREITUNG_S = 1800.0
+
 # Wann das angemeldete Fenster von selbst ausläuft, gemessen an der monotonen Uhr dieses
 # Prozesses. Kein Wert in der Datenbank: ein Neustart erbt das Fenster ausdrücklich nicht,
 # und der Nachbar lässt es ohnehin nach ``LEASE_TTL_S`` verfallen. Läuft es hier ab, ohne
@@ -299,8 +332,11 @@ class OpenAIClient(_ChatClient):
 
     **Kein ``keep_alive``.** Das Feld ist Ollamas, der Ablöser hat keines, und wir denken
     ihm keines aus: was hier stünde, wäre eine Zusage über die Karte, die niemand einlöst.
-    Aus demselben Grund bleibt auch das Sitzungsfenster auf diesem Weg still (siehe
-    ``fenster_oeffnen``).
+    Das **Sitzungsfenster** beim Nachbarn gilt hier trotzdem (#321): dass dieser Dienst
+    selbst nichts hält, ist genau der Grund, warum es jemand für ihn tun muss.
+
+    Und ``model`` ist hier eine Bitte, kein Beleg: der Server antwortet mit dem Modell, das
+    er geladen hat, und **welches das war, steht in der Antwort** (#320).
 
     Was der Server über sich selbst entscheidet, steht nicht hier: das Abschalten des
     Denkens ist ein Startparameter des Dienstes, kein Feld dieser Anfrage.
@@ -342,6 +378,7 @@ def fenster_oeffnen(
     *,
     http: Callable[[], object] = _http_session,
     timeout: float = LEASE_TIMEOUT,
+    warten: Callable[[float], None] = time.sleep,
 ) -> bool:
     """Das Sitzungsfenster beim Nachbarn anmelden — und das Modell gleich mit laden (#299).
 
@@ -361,30 +398,114 @@ def fenster_oeffnen(
 
     Bester Wille, wie alles auf diesem Weg: scheitert es, beginnt der Abend trotzdem.
 
-    **Auf dem ``/v1``-Weg geschieht hier nichts** (#316) — ausgesprochen, siehe
-    ``_modellfenster_gilt``.
+    **Auch auf dem ``/v1``-Weg** (#321). Bis #316 geschah hier nichts, weil der Vertrag
+    mit dem Nachbarn für diesen Weg noch nicht verabredet war; jetzt ist er es. Der
+    Leerlauf hieße heute nicht mehr »wir warten auf eine Form«, sondern »wir bekommen
+    still das Haushaltsmodell«. Ollama-eigen bleibt allein die *Haltung* — ein
+    ``keep_alive`` hat der Ablöser nicht (``_haltung_gilt``).
     """
-    if not config.gpu_lease or not config.ollama_configured or not _modellfenster_gilt(config):
+    if not config.gpu_lease or not config.ollama_configured:
         return False
     basis = DEFAULT_SOLARIS_URL.rstrip("/")
     try:
         antwort = http().post(
             basis + LEASE_PATH,
-            json={"model": str(config.ollama_model), "ttl_s": LEASE_TTL_S},
+            json={"model": _lease_modell(config), "ttl_s": LEASE_TTL_S},
             timeout=timeout,
         )
-        antwort.raise_for_status()
     except requests.RequestException as fehler:
         logger.warning(
             "Das Sitzungsfenster kam beim Nachbarn nicht an (%s) — der Abend läuft trotzdem.",
             type(fehler).__name__,
         )
         return False
+    if antwort.status_code == LEASE_VORBEREITUNG:
+        if not _bereit_abwarten(antwort, basis, http=http, timeout=timeout, warten=warten):
+            return False
+    elif antwort.status_code != LEASE_STEHT:
+        logger.warning(
+            "Der Nachbar gibt die Karte nicht her (%s, %s) — der Abend läuft ohne Fenster.",
+            antwort.status_code,
+            _abgelehnt(antwort),
+        )
+        return False
     global _lease_bis, _lease_erneuerung_s
     _lease_bis = time.monotonic() + LEASE_TTL_S
     _lease_erneuerung_s = _genannter_takt(antwort)
-    _anweisen(config, LEASE_HALTUNG, http=http, timeout=HALTUNG_TIMEOUT)
+    if _haltung_gilt(config):
+        _anweisen(config, LEASE_HALTUNG, http=http, timeout=HALTUNG_TIMEOUT)
     return True
+
+
+def _lease_modell(config: Config) -> str:
+    """Was der Nachbar laden soll — ein Profil auf dem neuen Weg, ein Modellname auf dem alten.
+
+    Kein Schalter daneben, sondern dieselbe Entscheidung wie beim Klienten: der ``/v1``-Weg
+    ist der neue Vertrag (``mdopp/solarisbay#1333``, Profile), der Ollama-Weg der alte, und
+    dort **wirkt** die Anmeldung bis zu dessen Merge weiterhin auf Ollama. Ein Profilname
+    an das alte Ende geschickt wäre dort ein Modell, das keiner kennt — also bleibt am alten
+    Weg der Modellname stehen, bis auch er stillgelegt wird.
+    """
+    return LEASE_PROFIL if config.llm_backend == BACKEND_OPENAI else str(config.ollama_model)
+
+
+def _json(antwort) -> Mapping:
+    """Der Rumpf einer Antwort, oder ein leerer — kein Aufruf hängt an seinem Inhalt."""
+    try:
+        rumpf = antwort.json()
+    except ValueError:
+        return {}
+    return rumpf if isinstance(rumpf, Mapping) else {}
+
+
+def _abgelehnt(antwort) -> str:
+    """Warum der Nachbar ablehnt, für die eine Logzeile — mehr wird daraus nicht."""
+    rumpf = _json(antwort)
+    return str(rumpf.get("reason") or rumpf.get("holder") or "ohne Angabe")
+
+
+def _wartezeit(antwort) -> float:
+    """Wie lange bis zur nächsten Frage: was der Nachbar nennt, in vernünftigen Schranken."""
+    wert = _json(antwort).get(LEASE_WARTEZEIT_FELD)
+    if isinstance(wert, bool) or not isinstance(wert, (int, float)):
+        return LEASE_WARTEZEIT_S
+    return min(max(float(wert), LEASE_MINDESTPAUSE_S), LEASE_VORBEREITUNG_S)
+
+
+def _bereit_abwarten(
+    antwort,
+    basis: str,
+    *,
+    http: Callable[[], object],
+    timeout: float,
+    warten: Callable[[float], None],
+) -> bool:
+    """Auf ``ready`` warten, ohne erneut anzumelden und ohne den Abend anzuhalten (#321).
+
+    Ein zweites ``POST`` verbietet der Vertrag ausdrücklich — es setzte die Vorbereitung
+    neu auf. Gefragt wird deshalb mit ``GET``, frühestens nach der genannten Wartezeit und
+    nur, solange das Budget reicht. Jeder Ausgang außer ``ready`` ist derselbe wie eine
+    gescheiterte Anmeldung: kein Fenster, kein Fehler, der Abend läuft weiter.
+    """
+    ende = time.monotonic() + LEASE_VORBEREITUNG_S
+    pause = _wartezeit(antwort)
+    while time.monotonic() + pause <= ende:
+        warten(pause)
+        try:
+            stand = http().get(basis + LEASE_PATH, timeout=timeout)
+            stand.raise_for_status()
+        except requests.RequestException as fehler:
+            logger.warning(
+                "Der Nachbar sagt nichts zum vorbereiteten Fenster (%s) — der Abend läuft "
+                "ohne es weiter.",
+                type(fehler).__name__,
+            )
+            return False
+        if _json(stand).get(LEASE_ZUSTAND_FELD) == LEASE_BEREIT:
+            return True
+        pause = _wartezeit(stand)
+    logger.warning("Das Fenster wurde nicht rechtzeitig fertig — der Abend läuft ohne es weiter.")
+    return False
 
 
 def _genannter_takt(antwort) -> float:
@@ -394,11 +515,7 @@ def _genannter_takt(antwort) -> float:
     außerhalb der angemeldeten Frist liegt, kostet kein Fenster. Sie kostet nur den
     genannten Takt, und den ersetzt die Ableitung, die vor #306 die einzige Quelle war.
     """
-    try:
-        rumpf = antwort.json()
-    except ValueError:
-        return LEASE_ERNEUERUNG_S
-    wert = rumpf.get(LEASE_ERNEUERUNG_FELD) if isinstance(rumpf, Mapping) else None
+    wert = _json(antwort).get(LEASE_ERNEUERUNG_FELD)
     # ``bool`` ist in Python ein ``int``; ein ``True`` als Takt wäre eine Sekunde.
     if isinstance(wert, bool) or not isinstance(wert, (int, float)):
         return LEASE_ERNEUERUNG_S
@@ -424,40 +541,37 @@ def freigeben(
     entladen, dann abmelden — in dieser Reihenfolge ist die Karte frei, sobald der Nachbar
     davon erfährt.
 
-    **Auf dem ``/v1``-Weg geschieht auch hier nichts** (#316): es gibt keine Haltung, die
-    zu beenden wäre, und kein Fenster, das offen stünde.
+    **Auf dem ``/v1``-Weg wird nur abgemeldet** (#321): eine Haltung, die zu beenden wäre,
+    hat der Ablöser nicht — ein Fenster beim Nachbarn dagegen schon.
     """
-    if not _modellfenster_gilt(config):
-        return False
-    ergebnis = _anweisen(config, FREIGABE, http=http, timeout=timeout)
-    _fenster_schliessen(config, http=http)
-    return ergebnis
+    entladen = False
+    if _haltung_gilt(config):
+        entladen = _anweisen(config, FREIGABE, http=http, timeout=timeout)
+    return _fenster_schliessen(config, http=http) or entladen
 
 
-def _modellfenster_gilt(config: Config) -> bool:
-    """Ob der gewählte Weg ein Modellfenster überhaupt kennt (#316).
+def _haltung_gilt(config: Config) -> bool:
+    """Ob der gewählte Weg eine Modellhaltung kennt, die wir anweisen könnten (#316).
 
-    Nur Ollama kennt eines. ``llama-server`` nimmt kein ``keep_alive`` entgegen, und mit
-    dem Nachbarn ist für ihn noch nichts verabredet: ``mdopp/solarisbay#1320`` steht am
-    2026-09-05 ausdrücklich als Hypothese da — ob Sperrdatei oder HTTP, ist dort offen,
-    und einen ``acquire``/``release``-Vertrag gibt es noch nicht. Die andere Hälfte zu
-    erfinden hieße, sich auf eine Form festzulegen, die der Nachbar nie zugesagt hat;
-    nachverdrahtet wird, sobald seine Seite steht.
+    Nur Ollama kennt eine; ``llama-server`` nimmt kein ``keep_alive`` entgegen, und ein
+    ausgedachtes Gegenstück wäre eine Zusage, die niemand einlöst. Das **Fenster** beim
+    Nachbarn hängt daran nicht mehr: dafür gibt es seit #321 einen Vertrag, der für beide
+    Wege gilt.
 
-    Ein **ausgesprochener** No-op und kein stilles Nichts: wer im Log nach dem Fenster
-    sucht, soll dort lesen, warum keines aufgeht, statt es für einen Fehler zu halten.
+    Ein **ausgesprochener** No-op und kein stilles Nichts: wer im Log nach der Haltung
+    sucht, soll dort lesen, warum keine gesetzt wird, statt es für einen Fehler zu halten.
     """
     if config.llm_backend == BACKEND_OLLAMA:
         return True
     logger.info(
-        "Backend %s: kein Modellfenster und keine Freigabe — der Ablöser hält nichts, was "
-        "wir anweisen könnten, und der Vertrag dafür ist noch nicht verabredet.",
+        "Backend %s: keine Modellhaltung — der Ablöser hält nichts, was wir anweisen "
+        "könnten. Das Sitzungsfenster beim Nachbarn gilt davon unberührt.",
         config.llm_backend,
     )
     return False
 
 
-def _fenster_schliessen(config: Config, *, http: Callable[[], object]) -> None:
+def _fenster_schliessen(config: Config, *, http: Callable[[], object]) -> bool:
     """Das angemeldete Fenster abmelden — ohne offenes Fenster geschieht nichts.
 
     Der Vermerk fällt zuerst: ob der Nachbar es erfährt, ändert nichts daran, dass unsere
@@ -465,7 +579,7 @@ def _fenster_schliessen(config: Config, *, http: Callable[[], object]) -> None:
     """
     global _lease_bis
     if not lease_offen():
-        return
+        return False
     _lease_bis = 0.0
     try:
         antwort = http().delete(DEFAULT_SOLARIS_URL.rstrip("/") + LEASE_PATH, timeout=LEASE_TIMEOUT)
@@ -475,6 +589,8 @@ def _fenster_schliessen(config: Config, *, http: Callable[[], object]) -> None:
             "Das Sitzungsfenster ließ sich nicht abmelden (%s) — es verfällt von selbst.",
             type(fehler).__name__,
         )
+        return False
+    return True
 
 
 def _anweisen(
