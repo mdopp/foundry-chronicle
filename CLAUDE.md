@@ -37,7 +37,8 @@ Diese Regeln gelten für jede Sitzung, Mensch oder Agent.
   Frist mit, und am Ende jedes Aufschriebs wird ausdrücklich freigegeben (#300).
   **Die benannte Ausnahme dazu ist das Sitzungsfenster** (#299, seit 2026-08-27,
   Gegenstück `mdopp/solarisbay#1260`). Beginnt ein Abend, meldet der Bot ihn beim
-  Nachbardienst über die Schleife an — `POST /napi/gpu-lease {model, ttl_s}`, fünfzehn
+  Nachbardienst über die Schleife an — `POST /api/model-lease {model, ttl_s}` (**nicht**
+  unter `/napi/`: dieses Präfix ist beim Nachbarn token-pflichtig, #306), fünfzehn
   Minuten, alle fünf erneuert; am Ende jedes Aufschriebs, an derselben einen Freigabestelle,
   geht ein `DELETE` hinaus. Solange das Fenster steht, antwortet der Nachbar mit *unserem*
   Modell, statt seines bei jeder Anfrage zurückzuholen — auf dieser Karte kostet jeder
@@ -52,6 +53,17 @@ Diese Regeln gelten für jede Sitzung, Mensch oder Agent.
   auf —, und **die Nutzlast trägt keine Runden-, Gilden- oder Sitzungskennung**: der
   Nachbar muss nicht wissen, wer spielt. Verlassen wird der Vertrag ohne Neubau über
   `CHRONICLE_GPU_LEASE`.
+  **Seit #321 gilt das Fenster auf beiden Modellwegen.** Auf dem `/v1`-Weg nennt die
+  Nutzlast ein **Profil** (`foundry`) statt eines Modellnamens — `llama-server` ignoriert
+  den Namen der Anfrage, und der Nachbar schaltet am Profil, welches Modell er geladen
+  hält; die Zusage »keine Runden-, Gilden- oder Sitzungskennung« bleibt damit wörtlich
+  erfüllt, denn ein Profil benennt die Arbeit und nicht die Runde. Die Paarung »eine
+  Konstante, zwei Verwendungen« gilt dabei nur für den Ollama-Weg: der Ablöser kennt kein
+  `keep_alive`, dort trägt allein die Frist des Fensters. Antwortet der Nachbar mit
+  `202 preparing`, wird **nicht** erneut angemeldet, sondern gefragt — frühestens nach der
+  von ihm genannten Wartezeit, mit Obergrenze, und die Frist beginnt erst mit `ready`.
+  Ohne Fenster wäre der Leerlauf auf diesem Weg nicht »wir warten auf einen Vertrag«,
+  sondern »still schreibt das Haushaltsmodell«.
   **Ein Zeittakt wäre die falsche Grenze gewesen.** Erwogen und verworfen wurde ein
   Fenster alle zehn Minuten: es endet mitten im Satz, und ein Modell, das über eine
   unfertige Szene schreibt, erfindet den Abschluss — genau der Fehler, der hier der
@@ -114,6 +126,12 @@ als Gedächtnisstütze gelesen wird und niemand mehr nachprüft.
 
 Konkret: **keine Zahl im Protokoll, die nicht im Foundry-Chat-Log steht.** Wer Prosa
 erzeugt, trennt sichtbar zwischen Belegtem und Verbindungssätzen.
+
+Dasselbe gilt für den Herkunftsvermerk im Kopf: **er kommt aus der Antwort, nie aus der
+Einstellung** (#320). Auf dem `/v1`-Weg ignoriert der Server den angefragten Modellnamen,
+und wer die Einstellung hineinschreibt, behauptet etwas über einen fremden Prozess. Trägt
+die Antwort keinen verwertbaren Namen, entfällt er — eine Chronik ohne Herkunftsangabe ist
+ehrlich, eine mit falscher nicht.
 
 ## Commits
 

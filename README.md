@@ -140,9 +140,13 @@ Ollama auf der Box ablösen soll und `/api/chat` mit 404 beantwortet. Beide Wege
 nebeneinander, damit der Umzug den Dienst nicht verstummen lässt, bevor die Plattform
 umgezogen ist; Adresse und Modellname bleiben `OLLAMA_URL` und `OLLAMA_MODEL`. Auf dem
 `openai`-Weg gibt es **kein** `keep_alive` — das Feld ist Ollamas, und ein erfundenes
-Gegenstück wäre eine Zusage über die Karte, die niemand einlöst — und aus demselben Grund
-auch kein Sitzungsfenster: der Vertrag dafür ist mit dem Nachbarn noch nicht verabredet,
-also bleibt es dort ein ausgesprochener Leerlauf im Log statt einer geratenen Form.
+Gegenstück wäre eine Zusage über die Karte, die niemand einlöst. Das **Sitzungsfenster**
+beim Nachbarn gilt dort trotzdem (#321): dass dieser Weg selbst nichts hält, ist gerade
+der Grund, warum es jemand für ihn tun muss — ohne Fenster schriebe still das
+Haushaltsmodell. Die Nutzlast nennt dort ein Profil (`foundry`) statt eines Modellnamens,
+denn `llama-server` ignoriert den angefragten Namen ohnehin; **welches Modell geantwortet
+hat, steht deshalb in der Antwort und nicht in der Einstellung** (#320), und trägt sie
+keinen Namen, nennt die Chronik keinen.
 
 **Es gibt keine Haustür mehr, weil es kein Haus mehr gibt.** Bis
 [#231](../../issues/231) stand die Betreiber-Seite hinter Authelia
