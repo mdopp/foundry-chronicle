@@ -418,3 +418,13 @@ def test_der_aufschrieb_behaelt_seine_grosszuegige_grenze(stelle, am_draht):
 
     assert draht.anfragen[-1]["timeout"] == ollama.DEFAULT_TIMEOUT
     assert ollama.DEFAULT_TIMEOUT == 1800.0
+
+
+def test_ohne_namen_in_der_antwort_bleibt_der_hinweis_ohne_namen():
+    """#320: auch der Zwischenstand behauptet kein Modell, das nichts gesagt hat."""
+    ergebnis = deutsch(stueck("Wir steigen in den Keller."), Modell(name=None))
+
+    assert ergebnis is not None
+    assert _TEXTE.hinweis_ohne_namen in ergebnis.text
+    assert "None" not in ergebnis.text
+    assert ergebnis.model_name is None

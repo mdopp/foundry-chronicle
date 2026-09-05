@@ -467,3 +467,46 @@ def test_englischer_absatz_mit_unbelegter_zahl_wird_verworfen() -> None:
     modell = Modell("The party met seventeen guards.")
     ergebnis = _composer.compose(sitzung(szene(notes=("Guards at the pass.",))), modell)
     assert sprachen.chronik(sprachen.ENGLISCH).verworfen in ergebnis.text
+
+
+# --- Der Herkunftsvermerk kommt aus der Antwort (#320) ----------------------------------
+
+
+class SpaetBenannt(Modell):
+    """Ein Dienst, der seinen Namen erst mit der Antwort nennt — wie beide echten."""
+
+    def __init__(self, *antworten):
+        super().__init__(*antworten, name=None)
+
+    def write(self, *, system, prompt):
+        text = super().write(system=system, prompt=prompt)
+        self.name = "geladenes-modell"
+        return text
+
+
+def test_der_kopf_nennt_das_modell_das_geantwortet_hat():
+    """#320: gelesen wird der Name **nach** dem Schreiben, sonst stünde dort die Einstellung.
+
+    Auf dem ``/v1``-Weg ignoriert der Server den angefragten Namen; wer die Einstellung in
+    den Kopf schreibt, behauptet etwas über einen fremden Prozess.
+    """
+    modell = SpaetBenannt("Sie stiegen hinab.")
+
+    ergebnis = compose(sitzung(szene(notes=("Wir steigen hinab.",))), modell)
+
+    assert TEXTE.stand.format(name="geladenes-modell", herkunft=HERKUNFT_OHNE_FAKTEN) in (
+        ergebnis.text
+    )
+    assert ergebnis.model_name == "geladenes-modell"
+
+
+def test_ohne_namen_in_der_antwort_bleibt_der_kopf_ohne_namen():
+    """Eine Chronik ohne Herkunftsangabe ist ehrlich; eine mit falscher ist es nicht."""
+    modell = Modell("Sie stiegen hinab.", name=None)
+
+    ergebnis = compose(sitzung(szene(notes=("Wir steigen hinab.",))), modell)
+
+    assert TEXTE.stand_ohne_namen.format(herkunft=HERKUNFT_OHNE_FAKTEN) in ergebnis.text
+    assert "`" not in ergebnis.text.split(NOTIZEN_TITEL)[0]
+    assert "None" not in ergebnis.text
+    assert ergebnis.model_name is None

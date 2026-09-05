@@ -138,13 +138,83 @@ def test_eine_leere_antwort_wird_nicht_als_absatz_ausgegeben(tmp_path, rumpf):
         klient(tmp_path, Http(Antwort(rumpf))).write(system="", prompt="")
 
 
-def test_der_name_ist_das_konfigurierte_modell(tmp_path):
-    assert klient(tmp_path, Http()).name == MODELL
+def test_vor_der_ersten_antwort_gibt_es_keinen_namen(tmp_path):
+    """#320: die Einstellung ist eine Bitte, kein Beleg — und noch hat niemand geantwortet."""
+    assert klient(tmp_path, Http()).name is None
+
+
+@pytest.mark.parametrize(
+    ("bauart", "antwort"),
+    [
+        (OllamaClient, lambda name: Antwort({"model": name, "message": {"content": "Abend."}})),
+        (OpenAIClient, lambda name: Antwort({"model": name, **v1_antwort().json()})),
+    ],
+)
+def test_der_name_kommt_aus_der_antwort_und_nicht_aus_der_einstellung(tmp_path, bauart, antwort):
+    """Auf dem ``/v1``-Weg ignoriert der Server unseren Namen — dort ist die Antwort die Wahrheit.
+
+    Gemessen am 2026-09-05 auf dieser Box: ``llama-server`` nennt sich ohne ``--alias`` nach
+    seiner GGUF-Datei. Hässlich, aber wahr; nach ``mdopp/solarisbay#1333`` wird derselbe Satz
+    von selbst schön.
+    """
+    geladen = "/models/Gemma-4-12B-Q4_K_M.gguf"
+    modell = bauart(config(tmp_path), http=lambda: Http(antwort(geladen)))
+
+    modell.write(system="Ordne.", prompt="Szene 1")
+
+    assert modell.name == geladen
+    assert modell.name != MODELL
+
+
+@pytest.mark.parametrize(
+    "rumpf",
+    [
+        {"message": {"content": "Abend."}},
+        {"model": "", "message": {"content": "Abend."}},
+        {"model": "   ", "message": {"content": "Abend."}},
+        {"model": 12, "message": {"content": "Abend."}},
+        {"model": None, "message": {"content": "Abend."}},
+    ],
+)
+def test_ohne_verwertbaren_namen_bleibt_er_leer_statt_erfunden(tmp_path, rumpf):
+    """Eine Chronik ohne Herkunftsangabe ist ehrlich; eine mit falscher ist es nicht."""
+    modell = klient(tmp_path, Http(Antwort(rumpf)))
+    modell.write(system="Ordne.", prompt="Szene 1")
+    assert modell.name is None
+
+
+class Reihe(Http):
+    """Ein Dienst, der der Reihe nach verschieden antwortet."""
+
+    def __init__(self, antworten):
+        super().__init__()
+        self._reihe = list(antworten)
+
+    def post(self, url, **kwargs):
+        self.aufrufe.append((url, kwargs))
+        return self._reihe.pop(0)
+
+
+def test_der_name_erinnert_sich_nicht_an_eine_fruehere_antwort(tmp_path):
+    """Was die letzte Antwort nicht nennt, nennt der Kopf nicht — auch nichts Gemerktes."""
+    http = Reihe(
+        [
+            Antwort({"model": "erst", "message": {"content": "a"}}),
+            Antwort({"message": {"content": "b"}}),
+        ]
+    )
+    modell = klient(tmp_path, http)
+
+    modell.write(system="", prompt="")
+    assert modell.name == "erst"
+
+    modell.write(system="", prompt="")
+    assert modell.name is None
 
 
 def test_from_config_liefert_ohne_konfiguration_kein_modell(tmp_path):
     assert from_config(Config(data_dir=tmp_path)) is None
-    assert from_config(config(tmp_path)).name == MODELL
+    assert isinstance(from_config(config(tmp_path)), OllamaClient)
 
 
 def test_wer_den_klienten_baut_bestimmt_die_zeitgrenze(tmp_path):

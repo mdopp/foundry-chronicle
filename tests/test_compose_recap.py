@@ -337,3 +337,12 @@ def test_ein_zuruf_aus_den_notizen_der_chronik_bleibt_ohne_wirkung():
     assert "Drachen" not in modell.auftraege[0]
     assert modell.auftraege[0].endswith(AUFTRAG_HERGANG)
     assert "Der Drache fiel." not in ergebnis.text
+
+
+def test_der_rueckblick_nennt_ohne_namen_in_der_antwort_keinen():
+    """#320: der Vermerk kommt aus der Antwort — und wo keiner steht, steht keiner."""
+    ergebnis = recap(stoff(), Modell(name=None))
+
+    assert _RUECKBLICK.stand_ohne_namen.format(quelle=_RUECKBLICK.quelle) in ergebnis.text
+    assert "None" not in ergebnis.text
+    assert ergebnis.model_name is None
