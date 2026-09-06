@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.5.0](https://github.com/mdopp/foundry-chronicle/compare/v0.4.1...v0.5.0) (2026-09-06)
+
+
+### Features
+
+* **config:** der v1-Weg ist die Vorgabe, nicht mehr Ollama ([c58a198](https://github.com/mdopp/foundry-chronicle/commit/c58a198b9fcb94d13de23775098c4e940a886979)), closes [#329](https://github.com/mdopp/foundry-chronicle/issues/329)
+
+
+### Bug Fixes
+
+* **autoloop:** die Seal-Sperre trennt, warum der Verify geschuldet ist ([c56a10f](https://github.com/mdopp/foundry-chronicle/commit/c56a10f44e85a936cc18c02d44a084f943ba404d)), closes [#319](https://github.com/mdopp/foundry-chronicle/issues/319)
+
+
+### Documentation
+
+* **autoloop:** die CI-Zusage nennt den Befund statt der Vermutung ([fd0c8e9](https://github.com/mdopp/foundry-chronicle/commit/fd0c8e97b5f65cdf9d9a88828c2e2fa8956d7226)), closes [#338](https://github.com/mdopp/foundry-chronicle/issues/338)
+* **autoloop:** PR [#339](https://github.com/mdopp/foundry-chronicle/issues/339) macht die Vermutung zum Befund ([64007d6](https://github.com/mdopp/foundry-chronicle/commit/64007d640ce967f9e1f7ebeb5c1a51774a91b684)), closes [#340](https://github.com/mdopp/foundry-chronicle/issues/340)
+* Ollama ist abgeloest, llama-server ist der Ist-Zustand ([e8a98ed](https://github.com/mdopp/foundry-chronicle/commit/e8a98edba604a466977d2cb44b38b5c7b0546e82)), closes [#329](https://github.com/mdopp/foundry-chronicle/issues/329)
+
 ## [0.4.1](https://github.com/mdopp/foundry-chronicle/compare/v0.4.0...v0.4.1) (2026-09-06)
 
 
