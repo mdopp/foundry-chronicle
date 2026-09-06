@@ -795,3 +795,45 @@ ZWISCHENSTAND = {
 
 def zwischenstand(wert: str | None) -> Zwischenstandtexte:
     return ZWISCHENSTAND[zurechtgelegt(wert)]
+
+
+@dataclass(frozen=True)
+class Journaltexte:
+    """Die Sätze rund um den Journaleintrag in Foundry (#327).
+
+    Sie gehen an die **Runde**, nicht an den Betreiber: keine Variablennamen, kein
+    Statuscode, und was als Nächstes zu tun ist, steht drin. Ein Foundry, das aus war,
+    ist keine Störung, sondern eine Zeile im Abschlussatz.
+    """
+
+    seitentitel: str
+    titel: str
+    angelegt: str
+    misslungen: str
+
+
+JOURNAL = {
+    ENGLISCH: Journaltexte(
+        seitentitel="Chronicle",
+        titel="Chronicle — session of {datum}",
+        angelegt="Also filed in Foundry as the journal entry “{titel}”.",
+        misslungen=(
+            "Foundry could not be reached, so there is no journal entry — the chronicle "
+            "stands here in the thread. Trigger the write-up again once Foundry is back up."
+        ),
+    ),
+    DEUTSCH: Journaltexte(
+        seitentitel="Chronik",
+        titel="Chronik — Sitzung vom {datum}",
+        angelegt="Auch in Foundry abgelegt, als Journaleintrag „{titel}“.",
+        misslungen=(
+            "Foundry war nicht erreichbar, deshalb gibt es keinen Journaleintrag — die "
+            "Chronik steht hier im Thread. Läuft Foundry wieder, den Aufschrieb noch "
+            "einmal auslösen."
+        ),
+    ),
+}
+
+
+def journal(wert: str | None) -> Journaltexte:
+    return JOURNAL[zurechtgelegt(wert)]
