@@ -269,17 +269,19 @@ def test_die_instanz_werte_kommen_aus_template_variablen(variablen: dict, manife
     assert {"DISCORD_BOT_TOKEN", "OLLAMA_URL", "OLLAMA_MODEL"} <= bot
 
 
-def test_das_modell_backend_faehrt_ohne_ansage_weiter_ollama(
+def test_das_modell_backend_faehrt_ohne_ansage_den_weg_dieser_box(
     variablen: dict, manifest: dict
 ) -> None:
-    # #316: der Schalter steht im Template, damit der Umzug auf llama-server eine
-    # Einstellung ist und kein Neubau. Seine Vorgabe muss der Weg bleiben, den die Box
-    # heute fährt — eine Box, die frisch installiert wird, spräche sonst ins Leere.
-    assert variablen["CHRONICLE_LLM_BACKEND"]["default"] == "ollama"
+    # #316 stellte den Schalter auf, damit der Umzug eine Einstellung ist und kein Neubau;
+    # seine Vorgabe muss der Weg sein, den die Box **fährt** — eine frisch installierte
+    # Box spräche sonst ins Leere. Genau deshalb ist er mit #329 gewandert: die Box fährt
+    # llama-server, und eine Vorgabe, die auf den abgeschalteten Dienst zeigt, wäre kein
+    # vorsichtiger Rückfall, sondern eine stumme Neuinstallation.
+    assert variablen["CHRONICLE_LLM_BACKEND"]["default"] == "openai"
     bot = {
         eintrag["name"]: eintrag["value"] for eintrag in manifest["spec"]["containers"][0]["env"]
     }
-    assert bot["CHRONICLE_LLM_BACKEND"] == "ollama"
+    assert bot["CHRONICLE_LLM_BACKEND"] == "openai"
 
 
 def test_keine_echte_adresse_im_manifest(rohtext: str) -> None:

@@ -430,6 +430,10 @@ def am_draht(config, monkeypatch):
     monkeypatch.setenv("CHRONICLE_DATA_DIR", str(config.data_dir))
     monkeypatch.setenv("OLLAMA_URL", "http://ollama.example:11434")
     monkeypatch.setenv("OLLAMA_MODEL", "chronist-test")
+    # Ausdrücklich der alte Weg: seit #329 ist die Vorgabe ``openai``, und ``keep_alive``
+    # — worauf die Tests hier zeigen — ist Ollama-Eigenes. Ein auslaufender Weg soll in
+    # seinen Tests benannt sein; dann fällt mit ihm genau das weg, was ihn geprüft hat.
+    monkeypatch.setenv("CHRONICLE_LLM_BACKEND", "ollama")
     return gegenstelle
 
 

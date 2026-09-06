@@ -37,8 +37,8 @@ Dienst ein zweites Mal installiert.
 | `CHRONICLE_IMAGE_TAG` | Image-Tag für den Rollout | `latest` |
 | `CHRONICLE_GPU_LEASE` | Sitzungsfenster bei `solaris` an-/abmelden (#299); `aus` verlässt den Vertrag | `an` |
 | `DISCORD_BOT_TOKEN` | Token des Bots — ohne ihn bleibt der Bot aus | *(leer)* |
-| `OLLAMA_URL` | Ollama, das die Chronik formuliert; leer = `127.0.0.1:11434` | *(leer)* |
-| `OLLAMA_MODEL` | Textmodell dort; leer = geordnet statt formuliert | *(leer)* |
+| `OLLAMA_URL` | Modelldienst, der die Chronik formuliert; leer = `127.0.0.1:11435` | *(leer)* |
+| `OLLAMA_MODEL` | Textmodell dort; auf dem `/v1`-Weg eine Bitte, kein Beleg (#320); leer = geordnet statt formuliert | *(leer)* |
 
 `DATA_DIR` ist eine globale ServiceBay-Variable und wird hier nicht noch einmal
 deklariert. `PUBLIC_DOMAIN` kommt hier **nicht** mehr vor — es gibt keinen Proxy-Host,

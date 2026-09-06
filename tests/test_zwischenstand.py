@@ -25,7 +25,7 @@ from chronicle.compose.composer import SceneMaterial, compose
 from chronicle.compose.recap import recap
 from chronicle.compose.service import zwischenstand_der_szene
 from chronicle.compose.zwischenstand import zwischenstand
-from chronicle.config import Config
+from chronicle.config import BACKEND_OLLAMA, Config
 from chronicle.foundry import service as foundry
 
 STAND = "2026-08-05T20:00:00+00:00"
@@ -123,7 +123,7 @@ def test_eine_leere_szene_ergibt_nichts():
 
 @pytest.fixture
 def stelle(tmp_path):
-    config = Config(data_dir=tmp_path, ollama_model="chronist-test")
+    config = Config(data_dir=tmp_path, ollama_model="chronist-test", llm_backend=BACKEND_OLLAMA)
     db.init(config.database_path)
     return config
 

@@ -96,16 +96,18 @@ spec:
       # Satz und bleibt liegen, statt es mit einem falschen Wert zu versuchen.
       - name: DISCORD_BOT_TOKEN
         value: "{{DISCORD_BOT_TOKEN}}"
-      # Ollama gehört der Instanz und kommt seit #230 aus der Umgebung. Leer heißt: das
-      # Ollama dieser Box, ``chronicle.config`` setzt es ein.
+      # Der Modelldienst gehört der Instanz und kommt seit #230 aus der Umgebung. Leer
+      # heißt: der Dienst dieser Box, ``chronicle.config`` setzt ihn ein — seit #329 ist
+      # das llama-server auf 11435 und nicht mehr Ollama auf 11434. Die Variablennamen
+      # stammen aus der Ollama-Zeit und bleiben, weil der Betreiber sie kennt.
       - name: OLLAMA_URL
         value: "{{OLLAMA_URL}}"
       - name: OLLAMA_MODEL
         value: "{{OLLAMA_MODEL}}"
-      # Welche Sprache dieser Dienst spricht (#316). »ollama« ist die Vorgabe, weil die
-      # Box heute Ollama fährt; »openai« ist der Weg zu llama.cpps llama-server, der
-      # /api/chat nicht kennt und darauf mit 404 antwortet. Beide stehen nebeneinander,
-      # damit der Umzug den Dienst nicht verstummen lässt, bevor die Plattform umzieht.
+      # Welche Sprache dieser Dienst spricht (#316/#329). »openai« ist die Vorgabe, weil
+      # die Box llama-server fährt; »ollama« ruft Ollamas /api/chat, das der Ablöser mit
+      # 404 beantwortet. Der alte Weg bleibt wählbar, solange ihn jemand fährt — Ollama
+      # wird abgeschaltet (mdopp/solarisbay#1332), und dann fällt er ganz.
       - name: CHRONICLE_LLM_BACKEND
         value: "{{CHRONICLE_LLM_BACKEND}}"
       # Der Abschalter für das Sitzungsfenster gegen den Nachbardienst solaris (#299,

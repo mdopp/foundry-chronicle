@@ -21,17 +21,17 @@
   },
   "OLLAMA_URL": {
     "type": "text",
-    "description": "Adresse des Ollama, das die Chronik formuliert. Leer heisst: das Ollama dieser Box auf 127.0.0.1:11434 — der Pod laeuft im Host-Netz und erreicht es ueber die Schleife. Der Wert gehoert der Instanz und keiner Runde (#87): wohin gesprochenes Wort fliesst, entscheidet nicht eine einzelne Gruppe.",
+    "description": "Adresse des Modelldienstes, der die Chronik formuliert. Leer heisst: der Dienst dieser Box auf 127.0.0.1:11435 — der Pod laeuft im Host-Netz und erreicht ihn ueber die Schleife. Dort antwortet llama-server; Ollama hoerte auf 11434 und ist abgeloest (#329). Der Variablenname stammt aus der Ollama-Zeit und bleibt, weil ihn der Betreiber kennt. Der Wert gehoert der Instanz und keiner Runde (#87): wohin gesprochenes Wort fliesst, entscheidet nicht eine einzelne Gruppe.",
     "default": ""
   },
   "OLLAMA_MODEL": {
     "type": "text",
-    "description": "Name des Textmodells, das die Chronik formuliert — es muss auf dem oben genannten Ollama bereits liegen ('ollama list' auf der Box). Leer heisst: die Chronik entsteht trotzdem, dann geordnet statt formuliert. Eine Auswahlliste der installierten Modelle gab es bis #230 auf der Betreiber-Seite; sie ist der eine bewusst in Kauf genommene Verlust dieses Umbaus.",
+    "description": "Name des Textmodells, das die Chronik formuliert. Auf dem /v1-Weg ist er eine Bitte und kein Beleg: llama-server ignoriert ihn und antwortet mit dem Modell, das er geladen hat — welches das ist, entscheidet das Profil des Sitzungsfensters, und der Herkunftsvermerk der Chronik nimmt den Namen aus der Antwort (#320). Leer heisst: die Chronik entsteht trotzdem, dann geordnet statt formuliert.",
     "default": ""
   },
   "CHRONICLE_LLM_BACKEND": {
     "type": "text",
-    "description": "Welche Sprache der Modelldienst oben spricht (#316). 'ollama' (Vorgabe) ruft Ollamas eigenes /api/chat auf — das faehrt diese Box heute. 'openai' ruft /v1/chat/completions auf und ist der Weg zu llama.cpps llama-server, der Ollama abloesen soll: er kennt /api/chat nicht und antwortet darauf mit 404. Beide Wege stehen nebeneinander, damit der Umzug den Dienst nicht vorher verstummen laesst; umgestellt wird hier, wenn der neue Dienst auf OLLAMA_URL antwortet. Auf dem 'openai'-Weg gibt es kein keep_alive — der Abloeser haelt nichts, was wir anweisen koennten. Das Sitzungsfenster gegen solaris gilt dort trotzdem (#321) und meldet das Profil 'foundry' an, statt einen Modellnamen; CHRONICLE_GPU_LEASE wirkt also auf beiden Wegen. Ein unbekannter Wert gilt als 'ollama'.",
-    "default": "ollama"
+    "description": "Welche Sprache der Modelldienst oben spricht (#316/#329). 'openai' (Vorgabe) ruft /v1/chat/completions auf — so spricht llama-server, den diese Box faehrt. 'ollama' ruft Ollamas eigenes /api/chat auf; dieser Dienst wird abgeschaltet (mdopp/solarisbay#1332) und der Weg bleibt nur waehlbar, solange noch jemand eines faehrt. Ein unbekannter Wert gilt als die Vorgabe: der Betreiber tippt ihn in ein Textfeld, und ein Tippfehler soll die Chronik nicht anhalten. Ein keep_alive gibt es auf dem /v1-Weg nicht — llama-server haelt das Modell selbst. Das Sitzungsfenster gegen solaris gilt auf beiden Wegen (#321) und meldet das Profil 'foundry' an, statt einen Modellnamen; CHRONICLE_GPU_LEASE wirkt also ebenfalls auf beiden.",
+    "default": "openai"
   }
 }

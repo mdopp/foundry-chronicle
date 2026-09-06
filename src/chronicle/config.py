@@ -51,10 +51,15 @@ MITSCHNITT_VARIABLE = "CHRONICLE_FOUNDRY_MITSCHNITT"
 # das der **einzige** Horcher dieses Dienstes.
 HEALTH_PORT_VARIABLE = "CHRONICLE_HEALTH_PORT"
 
-# Der Box-Standard: unser Pod läuft im Host-Netz, Ollama hört daneben auf 11434. Er steht
+# Der Box-Standard: unser Pod läuft im Host-Netz, der Modelldienst hört daneben. Er steht
 # hier und nirgends sonst — Einrichtung und Komposition fragen denselben Wert, sonst
 # verspräche der Bot eine Adresse, gegen die der Lauf nicht redet.
-DEFAULT_OLLAMA_URL = "http://127.0.0.1:11434"
+#
+# **11435, nicht mehr 11434** (#329, seit 2026-09-06). Dort antwortet ``llama-server``;
+# Ollama hörte auf 11434 und wird abgeschaltet (``mdopp/solarisbay#1332``). Der Name der
+# Konstante bleibt aus der Ollama-Zeit stehen, weil er an der Template-Variable hängt, die
+# der Betreiber kennt — ihn umzubenennen kostete eine Neuinstallation und brächte nichts.
+DEFAULT_OLLAMA_URL = "http://127.0.0.1:11435"
 
 # Derselbe Fall eine Tür weiter: der Sprachdienst der Box spricht die Einwilligungs-Ansage,
 # im Host-Netz auf 8881. Anders als Ollama hat er keine eigene Template-Variable: dorthin
@@ -82,12 +87,19 @@ DEFAULT_SOLARIS_URL = "http://127.0.0.1:8787"
 # geht hinaus, und unsere eigenen Aufrufe tragen wieder die knappe Frist.
 GPU_LEASE_VARIABLE = "CHRONICLE_GPU_LEASE"
 
-# Welche Sprache der Modelldienst spricht (#316). Ollama antwortet auf sein eigenes
-# ``/api/chat``, llama.cpps ``llama-server`` kennt diesen Pfad nicht und antwortet mit 404;
-# er spricht das OpenAI-förmige ``/v1/chat/completions``. Die Box fährt **heute** Ollama,
-# deshalb ist das die Vorgabe: ein Dienst, der nur noch den neuen Weg kennt, verstummte,
-# bevor die Plattform umzieht. Ein unbekannter Wert fällt auf die Vorgabe zurück — der
-# Betreiber tippt ihn in ein Textfeld, und ein Tippfehler soll die Chronik nicht anhalten.
+# Welche Sprache der Modelldienst spricht (#316). ``llama-server`` spricht das
+# OpenAI-förmige ``/v1/chat/completions``; Ollama antwortete auf sein eigenes
+# ``/api/chat``, das der Ablöser mit 404 beantwortet.
+#
+# **Die Vorgabe ist seit #329 der ``/v1``-Weg** (2026-09-06). Sie stand auf Ollama, weil
+# die Box das fuhr — und genau das ist der Grund, sie jetzt zu drehen: die Box fährt es
+# nicht mehr. Eine Vorgabe, die einen abgeschalteten Dienst benennt, ist kein
+# vorsichtiger Rückfall, sondern eine Neuinstallation, die stumm bleibt.
+#
+# Ein unbekannter Wert fällt auf die Vorgabe zurück — der Betreiber tippt ihn in ein
+# Textfeld, und ein Tippfehler soll die Chronik nicht anhalten. ``ollama`` bleibt daneben
+# wählbar, bis der Dienst auf der Box wirklich weg ist (``mdopp/solarisbay#1332``): wer
+# heute noch eines fährt, soll es weiter erreichen, indem er den Wert ausdrücklich setzt.
 LLM_BACKEND_VARIABLE = "CHRONICLE_LLM_BACKEND"
 
 BACKEND_OLLAMA = "ollama"
@@ -134,7 +146,7 @@ def _schalter(env: Mapping[str, str], name: str, *, vorgabe: bool) -> bool:
 
 def _backend(env: Mapping[str, str], name: str) -> str:
     roh = (env.get(name) or "").strip().lower()
-    return roh if roh in LLM_BACKENDS else BACKEND_OLLAMA
+    return roh if roh in LLM_BACKENDS else BACKEND_OPENAI
 
 
 @dataclass(frozen=True, repr=False)
@@ -152,7 +164,7 @@ class Config:
     health_port: int | None = None
     foundry_mitschnitt: bool = False
     gpu_lease: bool = True
-    llm_backend: str = BACKEND_OLLAMA
+    llm_backend: str = BACKEND_OPENAI
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> Config:
