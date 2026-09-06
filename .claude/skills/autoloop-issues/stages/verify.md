@@ -31,8 +31,10 @@ The expensive pipeline runs **once per batch**, never once per issue. Deploying 
 Write `.claude/state/verify-result.json`:
 
 ```json
-{"sha": "<merge-sha>", "status": "green|red|owed", "detail": "<what you ran, what you saw, what you could not exercise>", "verified_at": "<ISO-8601>"}
+{"sha": "<merge-sha>", "status": "green|red|owed", "cause": "merge-pending|deployment-backlog", "detail": "<what you ran, what you saw, what you could not exercise>", "verified_at": "<ISO-8601>"}
 ```
+
+On **owed**, `cause` says which kind it is, because the two are gated differently (#319) and you are the only stage that can tell them apart: `deployment-backlog` when the batch could not be exercised because of a **delivery backlog only the operator can clear** — the box was never installed from the template, the registry isn't enabled, the node is out of reach for good (#315); `merge-pending` (the default — omit the field if unsure) when a re-run on your own could still turn it green. A `deployment-backlog` does not hold the next seal back; it is instead named in every firing summary until it is gone. Never label a path *you* skipped as a backlog — that would silently unblock the pipeline on your convenience.
 
 `detail` is read by a human, so write it for one: what was actually observed, and what was not. On **red**, open a revert PR or file an issue with the concrete repro — do not fix it yourself in this stage; a verify that also patches is a verify nobody can trust.
 

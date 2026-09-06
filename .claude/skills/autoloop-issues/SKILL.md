@@ -55,8 +55,8 @@ Run `python3 .claude/skills/autoloop-issues/queue.py <verb>` (add `--offline` to
 | `built <id> [--pr N]` | builder | mark the unit built onto the batch (refuses a `security: true` unit — it never rides the batch; it exits via `park … review`, unless every member issue carries a `waive`) |
 | `waive <issue> --reason "…"` | orchestrator (relaying the operator) | record on GitHub that the **operator** lifted the pre-merge draft gate for this issue (`autoloop:draft-waived` + a comment naming the reason); `built` then accepts the unit onto the batch |
 | `batch new\|seal\|reset [--branch …]` | builder/orch | batch lifecycle (`reset` drops the shipped units) |
-| `verify-set <sha> <status> [--pr N]` | builder/orch | set verify state + mirror the release-PR label |
-| `verify-get` | orchestrator | read verify state (auto-resets a dead `verifying`) |
+| `verify-set <sha> <status> [--cause merge-pending\|deployment-backlog] [--detail …] [--pr N]` | builder/orch | set verify state + cause + mirror the release-PR label |
+| `verify-get` | orchestrator | read verify state incl. `blocks_seal` (auto-resets a dead `verifying`) |
 | `park <issue> <blocked\|refinement\|review\|device-test\|upstream-wait> [--comment …]` | planner/builder | durably park to GitHub (label + comment); releases the `autoloop:building` claim and takes the unit out of `next`'s rotation |
 | `note "<one line>"` | any | append to the bounded run-scoped ring |
 | `mirror [--pr N]` | orchestrator | prune the cache + re-project labels (one-way) |
@@ -71,7 +71,22 @@ The expensive pipeline — full gates, CI, real-box `/verify` — runs **once pe
 
 The builder enforces the per-issue side (fast gates only, commit to the batch branch, no push). You enforce the batch side: **never dispatch a seal step while `batch.count < 8` AND planned units remain.**
 
-**Build-ahead is allowed; seal-ahead is not.** Verify runs in the background (it touches only the box env via ServiceBay and its own result file). The builder may keep **building** the next batch onto a fresh `batch/<id>` branch while a prior batch is being verified — building writes neither `main` nor the box, so it overlaps safely. What must **not** overlap is the singleton critical section: there is one `main`, one box, one verify state, so **a new batch may not be *sealed* while verify status is `owed`/`verifying`/`red`** (a prior batch is still in merge/verify). Build up to 8 then *wait* for the verify to clear before sealing.
+**Build-ahead is allowed; seal-ahead is not.** Verify runs in the background (it touches only the box env via ServiceBay and its own result file). The builder may keep **building** the next batch onto a fresh `batch/<id>` branch while a prior batch is being verified — building writes neither `main` nor the box, so it overlaps safely. What must **not** overlap is the singleton critical section: there is one `main`, one box, one verify state, so **a new batch may not be *sealed* while a prior batch is still in merge/verify**. Build up to 8 then *wait* for the verify to clear before sealing.
+
+### The seal block splits by **cause**, not by the mere presence of an `owed` (operator decision, 2026-09-06, #319)
+
+`owed` means two different things, and only one of them carries that justification. `queue.py` records which on the verify entry as `cause`, and `verify-get`/`summary` answer it directly as **`blocks_seal`** — read that flag, don't re-derive the rule:
+
+| `owed` because … | `cause` | Effect |
+|---|---|---|
+| a batch was just merged and still owes its proof — minutes to hours, **the loop clears it itself** | `merge-pending` (the default) | **blocks** the seal, as before |
+| a **delivery backlog only the operator can clear** (the box was never installed from the template, #315) | `deployment-backlog` | does **not** block the seal — but is **named in every end-of-firing summary until it is gone** |
+
+A `red` is a verdict and blocks whatever the cause says. An entry with **no** cause — a cache from before #319, or one `rebuild` reconstructed from the release-PR labels, where the cause is not recorded — counts as `merge-pending`: unknown resolves towards the blocking side.
+
+Why: applying "a prior batch is still in merge/verify" to a delivery backlog hangs every further piece of work on an action the loop cannot perform. That is what happened on 2026-09-05 — verify had been `owed` since 08-30 because of #315, and the rule read literally would have frozen the pipeline indefinitely, right before #316. **The visibility condition is load-bearing**: a backlog that no longer blocks must not quietly disappear, or the loosening is just forgetting. It stays in the summary of every firing for as long as it persists.
+
+Loosened is the **seal** gate only. The release gate is untouched: `owed` still projects `autoloop:verify-pending` onto the release PR, and a path-mandated change still ships no release without a green real-box `/verify`.
 
 ## Step 0 — Preflight (every firing)
 
@@ -79,16 +94,16 @@ The builder enforces the per-issue side (fast gates only, commit to the batch br
 2. **On `main`, current?** `git fetch origin && git checkout main && git pull --ff-only`. FF fails → exit + report.
 3. **Lock check.** `.claude/state/autoloop.lock` mtime < 10 min ⇒ another firing is running → exit. Else touch it.
 4. **Read status:** `queue.py summary` (compact — batch, verify, gh label counts). On a cold start (no cache), `queue.py rebuild` reconstructs it from GitHub labels. `queue.py mirror` prunes the cache + re-projects labels.
-5. **Fold in any background Verify result.** If `.claude/state/verify-result.json` exists, the background agent finished: fold it in with `queue.py verify-set <sha> <status> --detail "<…>"`, then **delete the result file**. `queue.py verify-get` auto-resets a `verifying` entry stuck >20 min (the agent died → relaunches next dispatch).
-6. **Release gate.** Releases are managed by **release-please**: `gh pr list --repo mdopp/foundry-chronicle --state open --json number,headRefName,labels` and pick the one whose `headRefName` starts with `release-please--`. On each push to `main` it maintains that `chore(main): release X.Y.Z` PR (bumps the version + `CHANGELOG.md` from conventional commits); **merging that PR** cuts the `vX.Y.Z` tag + GitHub release (triggers `build-images.yml`, publishing the service image to GHCR). You never create/push tags or bump versions in `pyproject.toml` — release-please does that. **Merging the release PR follows reversibility** (`CLAUDE.md`, Betreiber-Entscheidung 2026-08-30): is everything in it rollback-able, seal it yourself; is it not — a migration that rewrites data, a consent-relevant change, anything that cannot be taken back once deployed — a human decides. Mirror verify status onto that PR as a label (`queue.py verify-set ... --pr <n>` or `queue.py mirror --pr <n>` does this): `owed`/`verifying` → `autoloop:verify-pending`; `red` → `autoloop:verify-failed`; `green`/`null` → remove both. The gate you enforce here is the verify state: a merged batch whose path-mandated changes are `owed`/`verifying`/`red` is **not** clear, and you must not seal the next batch until it goes `green`. If a release is warranted after a green verify, say so in your end-of-firing summary — don't tag, don't merge the release PR (its mere existence on GitHub is the durable record; nothing to track locally).
+5. **Fold in any background Verify result.** If `.claude/state/verify-result.json` exists, the background agent finished: fold it in with `queue.py verify-set <sha> <status> --detail "<…>"`, passing `--cause <its cause>` through when the result file names one (that is how a delivery backlog gets marked without anyone hand-marking it), then **delete the result file**. `queue.py verify-get` auto-resets a `verifying` entry stuck >20 min (the agent died → relaunches next dispatch).
+6. **Release gate.** Releases are managed by **release-please**: `gh pr list --repo mdopp/foundry-chronicle --state open --json number,headRefName,labels` and pick the one whose `headRefName` starts with `release-please--`. On each push to `main` it maintains that `chore(main): release X.Y.Z` PR (bumps the version + `CHANGELOG.md` from conventional commits); **merging that PR** cuts the `vX.Y.Z` tag + GitHub release (triggers `build-images.yml`, publishing the service image to GHCR). You never create/push tags or bump versions in `pyproject.toml` — release-please does that. **Merging the release PR follows reversibility** (`CLAUDE.md`, Betreiber-Entscheidung 2026-08-30): is everything in it rollback-able, seal it yourself; is it not — a migration that rewrites data, a consent-relevant change, anything that cannot be taken back once deployed — a human decides. Mirror verify status onto that PR as a label (`queue.py verify-set ... --pr <n>` or `queue.py mirror --pr <n>` does this): `owed`/`verifying` → `autoloop:verify-pending`; `red` → `autoloop:verify-failed`; `green`/`null` → remove both. The gate you enforce here is the verify state: a merged batch whose path-mandated changes are `owed`/`verifying`/`red` is **not** clear, so no release goes out on it. Whether it also stops the **next seal** is the `blocks_seal` flag, not the status alone (see the cause split above). If a release is warranted after a green verify, say so in your end-of-firing summary — don't tag, don't merge the release PR (its mere existence on GitHub is the durable record; nothing to track locally).
 
 ## Step 1 — Dispatch (the loop body)
 
-**First, a non-blocking side-action (does NOT consume the tick):** if verify status is `"owed"`, launch Verify **in the background** (Step 2, `run_in_background: true`), set it to `"verifying"` (`queue.py verify-set <sha> verifying`) and **fall through** to pick a foreground stage below. If already `"verifying"`, an agent is already in flight — don't relaunch; fall through. The background verify clears the release gate on its own time; you don't wait on it here.
+**First, a non-blocking side-action (does NOT consume the tick):** if verify status is `"owed"`, launch Verify **in the background** (Step 2, `run_in_background: true`), set it to `"verifying"` (`queue.py verify-set <sha> verifying` — the cause rides along on the same sha, you don't repeat it) and **fall through** to pick a foreground stage below. If already `"verifying"`, an agent is already in flight — don't relaunch; fall through. A `deployment-backlog` owed is still re-checked this way — that re-check is how the loop notices the operator cleared it — but it never gates anything while it runs. The background verify clears the release gate on its own time; you don't wait on it here.
 
 Then pick **exactly one** foreground stage this tick, by the first matching rule, and spawn it (Step 2). Then re-check status and loop.
 
-1. **Builder — seal** — if a `batch` exists and (`batch.count >= 8` **or** `queue.py next` returns nothing) and it isn't merged yet **and** verify status is clear (`green`/`null` — *not* `owed`/`verifying`/`red`). Builder runs full gates + CI (where CI applies), merges, sets verify to `owed` if any merged file is path-mandated. **Seal-ahead is forbidden:** if verify is `owed`/`verifying`/`red`, a prior batch is still in merge/verify — do **not** seal; build-ahead instead (rule 2), or idle-wait (Step 3).
+1. **Builder — seal** — if a `batch` exists and (`batch.count >= 8` **or** `queue.py next` returns nothing) and it isn't merged yet **and** verify does not block (`queue.py verify-get` → `blocks_seal: false`). Builder runs full gates + CI (where CI applies), merges, sets verify to `owed` if any merged file is path-mandated. **Seal-ahead is forbidden:** if `blocks_seal` is true, a prior batch is still in merge/verify — do **not** seal; build-ahead instead (rule 2), or idle-wait (Step 3). A `deployment-backlog` owed is *not* that case and does not hold the seal back; carry it into the summary instead.
 2. **Builder — build** — if `queue.py next` returns a planned unit and `batch.count < 8`. Builder implements the next unit onto the batch branch with fast gates only. **This is the build-ahead path** — eligible even while a background Verify runs, because building touches neither `main` nor the box.
 3. **Planner** — if there's no actionable unit. Planner refills: groom + cluster open issues, decompose epics, park refinement/awaiting-user items (security issues become `security:true` units that route to the draft gate, not parked), or (queue dry) enqueue lint-sweep units or run a codebase eval.
 
@@ -161,6 +176,7 @@ Autoloop (foundry-chronicle) firing complete.
   Built this firing: <unit ids> → batch/<id> (count N/8)
   Merged batches:    PR #<n> (closes #a #b …)
   Verify:            green @ <sha> on the box | verifying (background) | owed | red (<detail>)
+  Deploy backlog:    owed @ <sha> since <date> — <detail>, needs the operator   ← only you can clear this
   Review pre-merge:  #<issue> (draft #<pr>) — security/privacy, NOT merged   ← review these
   Needs refinement:  #<issue> — "<question>"   ← your worklist
   Awaiting user:     #<issue> (external comment)
@@ -168,6 +184,8 @@ Next: <building #x | sealing batch | verifying | planner refill | e2e | idle hea
 ```
 
 The **Needs refinement** line is the point of the pipeline.
+
+The **Deploy backlog** line is mandatory whenever `queue.py summary` reports `verify.cause = deployment-backlog`, and it repeats every firing until that verify goes green — it is the price of no longer blocking the seal on it (#319). Omit the line only when there is no such backlog; never because it was already mentioned last firing.
 
 ## Hard exit conditions (stop; do not reschedule)
 
@@ -184,7 +202,7 @@ The **Needs refinement** line is the point of the pipeline.
 - Bump versions in `pyproject.toml` or create/push `v*` tags by hand — that is release-please's job. (Merging its release PR is allowed where everything in it is reversible; see the release gate above.)
 - `gh pr merge --auto` (no branch protection → silent no-op); reply to external commenters.
 - Dispatch a seal step while mid-batch (prime directive).
-- **Seal** a new batch while a prior batch's verify status is `owed`/`verifying`/`red` (seal-ahead forbidden — one batch in the merge/verify critical section at a time). It *may* build-ahead.
+- **Seal** a new batch while a prior batch's verify blocks (`blocks_seal: true` — seal-ahead forbidden; one batch in the merge/verify critical section at a time). It *may* build-ahead. The one `owed` that does **not** block is a `deployment-backlog` (#319): the loop cannot clear it, so it seals past it — and names it in every summary until the operator has.
 - Block the loop on Verify — that runs in the background; the builder keeps building while it does.
 - Ship/merge a path-mandated change without a green real-box `/verify`.
 - Auto-merge a `security:true` change — those open as draft and wait for human review. **You never waive that yourself.** `queue.py waive <issue> --reason "…"` exists only to write down a lift the **operator** asked for in this session; it stamps `autoloop:draft-waived` and a comment on the issue, so months later the merge is readable as a waiver and not as the #235 guard having been circumvented. Without that record `built` still refuses, and that refusal is correct.
