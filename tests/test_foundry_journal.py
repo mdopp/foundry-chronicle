@@ -13,7 +13,7 @@ import pytest
 from chronicle import sprache as sprachen
 from chronicle.foundry.client import FoundryUnreachable
 from chronicle.foundry.journal import BEOBACHTER, FORMAT_HTML, _html, dokument, eintragen
-from tests.conftest import runde
+from conftest import runde
 
 
 def test_die_seite_traegt_die_chronik_als_html():
