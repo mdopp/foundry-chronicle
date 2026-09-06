@@ -47,6 +47,25 @@ CHAT_PATH = "/api/chat"
 # ausgedachtes Gegenstück wäre eine Zusage, die niemand einlöst.
 OPENAI_CHAT_PATH = "/v1/chat/completions"
 
+# **Das Denken kostet hier alles und bringt nichts** (#323, gemessen am 2026-09-06 auf
+# dieser Box gegen die Notiz von Sitzung 4, identischer Prompt, 2619 Prompt-Tokens).
+# ``llama-server`` legt die Gedankenkette in ein eigenes Feld ``reasoning_content``, das
+# wir nie lesen — sie wird trotzdem Token für Token erzeugt und bezahlt:
+#
+#   gemma-4-e4b   mit Denken   6,5-11,0 s   520-833 Tokens, davon ~90 % unsichtbar
+#   gemma-4-e4b   ohne Denken   1,8-2,2 s    77-114 Tokens
+#   gemma-4-12b   mit Denken  32,2-47,3 s  1181-1722 Tokens, davon ~93 % unsichtbar
+#   gemma-4-12b   ohne Denken       6,6 s       121 Tokens
+#
+# Der Inhalt wurde dabei nicht schlechter, sondern in beiden Modellen gleichwertig — und
+# in keinem der Läufe stand ein Name im Text, der nicht in der Notiz steht. Das ist der
+# Unterschied zwischen »der Zwischenstand kommt nach einer Dreiviertelminute« und »er ist
+# da, bevor die nächste Szene läuft« (#294/#296).
+#
+# **Nur für die OpenAI-Form.** Ollamas eigenes Gegenstück heißt ``think`` und ist ein
+# anderes Feld; erfunden wird es hier nicht.
+OHNE_DENKEN = {"enable_thinking": False}
+
 TAGS_PATH = "/api/tags"
 
 # Das Feld, in dem beide Dienste den Namen des Modells nennen, das **geantwortet** hat
@@ -338,8 +357,10 @@ class OpenAIClient(_ChatClient):
     Und ``model`` ist hier eine Bitte, kein Beleg: der Server antwortet mit dem Modell, das
     er geladen hat, und **welches das war, steht in der Antwort** (#320).
 
-    Was der Server über sich selbst entscheidet, steht nicht hier: das Abschalten des
-    Denkens ist ein Startparameter des Dienstes, kein Feld dieser Anfrage.
+    **Und das Denken schalten wir ab** (#323). Die Fassung davor stand hier mit dem Satz,
+    das sei ein Startparameter des Dienstes und kein Feld dieser Anfrage — das war geraten
+    und gemessen falsch: ``llama-server`` reicht ``chat_template_kwargs`` an die Vorlage
+    durch, und ``enable_thinking: false`` greift je Aufruf.
     """
 
     PFAD = OPENAI_CHAT_PATH
@@ -349,6 +370,7 @@ class OpenAIClient(_ChatClient):
             "model": self._model,
             "stream": False,
             "messages": self._nachrichten(system=system, prompt=prompt),
+            "chat_template_kwargs": OHNE_DENKEN,
         }
 
     def _text(self, rumpf: Mapping) -> object:

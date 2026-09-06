@@ -775,6 +775,27 @@ def test_der_v1_weg_ruft_den_pfad_des_abloesers_und_traegt_keine_frist(tmp_path)
     assert text == "Ein ruhiger Abend."
 
 
+def test_der_v1_weg_schaltet_das_denken_ab(tmp_path):
+    """Gemessen (#323): die Gedankenkette landet in einem Feld, das wir nie lesen.
+
+    ``llama-server`` erzeugt sie trotzdem Token für Token — auf dem 12b waren es ~93 % der
+    Antwort und damit der Unterschied zwischen 6,6 s und 32 s. Der Schalter reist an jedem
+    Aufruf mit, denn ohne ihn gilt die Vorgabe der Vorlage, und die denkt.
+    """
+    http = Http(v1_antwort())
+    openai_klient(tmp_path, http).write(system="Ordne.", prompt="Szene 1")
+
+    assert http.aufrufe[0][1]["json"]["chat_template_kwargs"] == {"enable_thinking": False}
+
+
+def test_ollama_erfindet_sich_kein_gegenstueck_zum_denkschalter(tmp_path):
+    """``chat_template_kwargs`` ist die OpenAI-Form; Ollamas Feld heißt anders."""
+    http = Http(Antwort({"message": {"content": "Ein ruhiger Abend."}}))
+    OllamaClient(config(tmp_path), http=lambda: http).write(system="Ordne.", prompt="Szene 1")
+
+    assert "chat_template_kwargs" not in http.aufrufe[0][1]["json"]
+
+
 def test_ohne_eigene_adresse_redet_auch_der_v1_klient_mit_dieser_box(tmp_path):
     http = Http(v1_antwort())
     openai_klient(tmp_path, http, url=None).write(system="Ordne.", prompt="Szene 1")
