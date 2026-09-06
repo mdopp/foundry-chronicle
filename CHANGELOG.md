@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.1](https://github.com/mdopp/foundry-chronicle/compare/v0.4.0...v0.4.1) (2026-09-06)
+
+
+### Bug Fixes
+
+* **compose:** die Frist des Zwischenstands passt zum denkenden Modell ([4d18277](https://github.com/mdopp/foundry-chronicle/commit/4d1827740a3c8e67a07df54e1523cfb319a9d782)), closes [#330](https://github.com/mdopp/foundry-chronicle/issues/330)
+
 ## [0.4.0](https://github.com/mdopp/foundry-chronicle/compare/v0.3.2...v0.4.0) (2026-09-06)
 
 
