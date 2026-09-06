@@ -94,9 +94,7 @@ class MockOllama:
             """
             rumpf = request.get_json(silent=True) or {}
             text = self._aus(rumpf)
-            return jsonify(
-                {"model": GELADEN, "choices": [{"message": {"content": text}}]}
-            )
+            return jsonify({"model": GELADEN, "choices": [{"message": {"content": text}}]})
 
         return app
 
