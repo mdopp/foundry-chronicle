@@ -338,8 +338,31 @@ class OpenAIClient(_ChatClient):
     Und ``model`` ist hier eine Bitte, kein Beleg: der Server antwortet mit dem Modell, das
     er geladen hat, und **welches das war, steht in der Antwort** (#320).
 
-    Was der Server über sich selbst entscheidet, steht nicht hier: das Abschalten des
-    Denkens ist ein Startparameter des Dienstes, kein Feld dieser Anfrage.
+    **Und das Denken bleibt an** (#325). Die Fassung davor sagte, das Abschalten sei ein
+    Startparameter des Dienstes und kein Feld dieser Anfrage — das war geraten und ist
+    gemessen falsch: ``llama-server`` reicht ``chat_template_kwargs`` an die Vorlage durch,
+    und ``enable_thinking: false`` greift je Aufruf. Es steht hier trotzdem nicht, und das
+    ist eine Entscheidung und kein Vergessen.
+
+    Gemessen am 2026-09-06 auf dieser Box gegen die Notizen des ersten Spielabends,
+    identischer Prompt, ``gemma-4-12b``:
+
+    ==================  ========  ========================================
+    Denken              Dauer     Ergebnis
+    ==================  ========  ========================================
+    aus                 ~7,6 s    erzählt das Tischgespräch mit
+    an                  ~70-76 s  reine Handlung, aus Sicht der Figuren
+    ==================  ========  ========================================
+
+    Abgeschaltet fiel die Nacherzählung in die Spielerebene zurück — »Die Spielgruppe
+    besprach technische Details zur Aufzeichnung« als erster Satz eines Spielabends. Der
+    Zwischenstand hat mit ``ZWISCHENSTAND_TIMEOUT`` vier Minuten, der Aufschrieb eine
+    halbe Stunde; beide tragen die langsame Fassung mühelos, und **niemand wartet** auf
+    das Ergebnis (#294). Geschwindigkeit war hier nie die knappe Ware, Genauigkeit schon.
+
+    Wer das je umdrehen will, braucht einen Weg, an dem eine Sekunde wirklich zählt — und
+    misst vorher, ob die Story-Regel aus ``sprache`` allein trägt. Sie half auch ohne
+    Denken, aber nicht vollständig.
     """
 
     PFAD = OPENAI_CHAT_PATH
