@@ -174,6 +174,23 @@ ehrlich, eine mit falscher nicht.
   `(...)` lässt Release-Werkzeuge grün laufen und trotzdem kein Release schneiden.
 - Beides prüft `scripts/check_commit_subjects.py` — im `commit-msg`-Hook und in CI.
   Nach dem Klonen einmal `pre-commit install` ausführen, sonst greift der Hook nicht.
+- **Was die Box erreicht, muss unter einer Art stehen, die eine Version schneidet**
+  (#343, Betreiber-Entscheidung 2026-09-06). Von den sieben Arten schneiden nur `feat`,
+  `fix` und `revert` (sowie jedes `!`) ein Release; `refactor`, `chore`, `docs` und `test`
+  nicht. Ein Commit unter einer dieser vier, der `src/**`, `templates/**`,
+  `pyproject.toml`, `Dockerfile`, `.dockerignore` oder `scripts/verify_e2e.py` anfasst,
+  landet nie im Abbild und damit nie auf dem Server — und nichts meldete das, bis
+  `scripts/check_release_reach.py` es im CI-Job `commits` laut scheitern lässt. Geprüft
+  wird nach **Wirkung**, nicht nach Benennung: mehr Arten Versionen auslösen zu lassen
+  wäre die verworfene Alternative, weil sie Versionen ohne Änderung für die Runde erzeugt.
+  Der Notausstieg ist der Trailer **`Ohne-Auslieferung: <Grund>`** im Commit-Rumpf — für
+  den wirklich verhaltensneutralen Fall, etwa einen Docstring in `src/`. Er wird bei jedem
+  Lauf samt Grund gedruckt, auch bei grünem Ergebnis; ohne Grundtext zählt er nicht.
+  **Die eine Stelle, an der dieser Wächter strenger ist als die Regel oben:** Gits
+  Vorspann `Revert "…"` wird hier **nicht** übersprungen. Er trägt keine
+  Conventional-Art, schneidet also kein Release — eine Rücknahme, die den Server nicht
+  erreicht, ist genau der Fehler, den der Wächter sucht. Wer eine ausgelieferte Datei
+  zurücknimmt, schreibt `revert(scope): …`.
 
 ## Releases
 
