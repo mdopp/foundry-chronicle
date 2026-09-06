@@ -181,6 +181,34 @@ ZITAT_REGEL = {
     ),
 }
 
+# **Die Erzählung gehört den Figuren, nicht dem Tisch** (#325). Eine echte Aufnahme
+# besteht zu erheblichen Teilen aus Gespräch *neben* dem Spiel — Aufnahmetechnik,
+# Werkzeuge, Regelfragen, Termine, Pausen. Ohne diese Regel erzählt das Modell es
+# gehorsam mit: im Messlauf vom 2026-09-06 begann die Nacherzählung des ersten
+# Spielabends mit »Die Spielgruppe besprach technische Details zur Aufzeichnung und
+# Synchronisation der Spielkanäle«. Das ist wahr und trotzdem falsch — gelesen wird der
+# Text Wochen später als Gedächtnisstütze an einen Abend, und der Abend war das Spiel.
+#
+# **Der zweite Satz ist der wichtigere.** Eine Szene, die *nur* aus solchem Gespräch
+# besteht, darf keine Handlung erzwingen: ein Modell, dem man das Tischgespräch verbietet
+# und das trotzdem eine Szene liefern soll, füllt die Lücke — und Erfinden ist hier der
+# teuerste Fehler. Also bekommt es einen erlaubten Ausweg, der die Wahrheit sagt.
+_STORY_EN = (
+    "- Tell only what happened in the game, from the characters' side. Talk around the "
+    "table — about recording, technology, tools, rules, scheduling or breaks — does not "
+    "belong in the account, however much room it takes up in the material.\n"
+    "- If the material carries no play at all but only such talk, write exactly that in "
+    "one sentence and invent no action.\n"
+)
+
+_STORY_DE = (
+    "- Erzähle allein das Spielgeschehen, aus Sicht der Figuren. Gespräch am Tisch "
+    "daneben — über Aufnahme, Technik, Werkzeuge, Regeln, Termine oder Pausen — gehört "
+    "nicht in die Erzählung, auch wenn es in der Vorlage breiten Raum einnimmt.\n"
+    "- Gibt die Vorlage kein Spielgeschehen her, sondern nur solches Gespräch, schreibe "
+    "genau das in einem Satz und erfinde keine Handlung.\n"
+)
+
 _SYSTEM_EN = (
     "You are the chronicler of a tabletop roleplaying group. You order and connect, "
     "you invent nothing. Write in English.\n"
@@ -189,6 +217,7 @@ _SYSTEM_EN = (
     "- Name no digit and no number. The numbers already stand traced in the log.\n"
     "- Invent no events, names, places, rolls or outcomes.\n"
     "- If the material is thin, write correspondingly little.\n"
+    f"{_STORY_EN}"
     "- Answer with the paragraph itself, without a heading and without a preamble."
 )
 
@@ -200,6 +229,7 @@ _SYSTEM_DE = (
     "- Nenne keine Ziffer und keine Zahl. Die Zahlen stehen bereits belegt im Protokoll.\n"
     "- Erfinde keine Ereignisse, Namen, Orte, Würfe oder Ergebnisse.\n"
     "- Ist die Vorlage dünn, schreibe entsprechend wenig.\n"
+    f"{_STORY_DE}"
     "- Antworte mit dem Absatz selbst, ohne Überschrift und ohne Vorrede."
 )
 
@@ -382,6 +412,7 @@ RUECKBLICK = {
             "- Name no digit and no number. The numbers stand traced below the recap.\n"
             "- Invent no events, names, places, rolls or outcomes.\n"
             "- If the material is thin, write correspondingly little.\n"
+            f"{_STORY_EN}"
             "- Answer with the text itself, without a heading and without a preamble."
         ),
         system_faeden=(
@@ -442,6 +473,7 @@ RUECKBLICK = {
             "Rückblick.\n"
             "- Erfinde keine Ereignisse, Namen, Orte, Würfe oder Ergebnisse.\n"
             "- Ist die Vorlage dünn, schreibe entsprechend wenig.\n"
+            f"{_STORY_DE}"
             "- Antworte mit dem Text selbst, ohne Überschrift und ohne Vorrede."
         ),
         system_faeden=(
@@ -747,6 +779,7 @@ ZWISCHENSTAND = {
             "- Invent no events, names, places, rolls or outcomes.\n"
             "- Invent no ending. Write only what the material carries.\n"
             "- If the material is thin, write correspondingly little.\n"
+            f"{_STORY_EN}"
             "- Answer with the text itself, without a heading and without a preamble."
         ),
         auftrag="Report on this scene, which has just ended.",
@@ -780,6 +813,7 @@ ZWISCHENSTAND = {
             "- Erfinde keine Ereignisse, Namen, Orte, Würfe oder Ergebnisse.\n"
             "- Erfinde keinen Abschluss. Schreibe nur, was die Vorlage hergibt.\n"
             "- Ist die Vorlage dünn, schreibe entsprechend wenig.\n"
+            f"{_STORY_DE}"
             "- Antworte mit dem Text selbst, ohne Überschrift und ohne Vorrede."
         ),
         auftrag="Berichte über diese Szene, die eben zu Ende ging.",
