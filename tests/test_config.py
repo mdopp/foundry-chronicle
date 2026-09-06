@@ -169,15 +169,17 @@ def test_das_sitzungsfenster_ist_an_bis_es_jemand_abschaltet():
 
 
 def test_das_backend_ist_ohne_ansage_das_der_box():
-    # #316: llama-server kennt Ollamas /api/chat nicht. Beide Wege stehen nebeneinander,
-    # und die Vorgabe ist der, den die Box **heute** fährt — sonst verstummte der Dienst,
-    # bevor die Plattform umzieht. Ein Tippfehler in einem Textfeld hält die Chronik
-    # ebenfalls nicht an: was nicht erkannt wird, gilt als der alte Weg.
-    assert Config.from_env({}).llm_backend == BACKEND_OLLAMA
-    assert Config.from_env({"CHRONICLE_LLM_BACKEND": ""}).llm_backend == BACKEND_OLLAMA
-    assert Config.from_env({"CHRONICLE_LLM_BACKEND": "llama.cpp"}).llm_backend == BACKEND_OLLAMA
-    assert Config.from_env({"CHRONICLE_LLM_BACKEND": "openai"}).llm_backend == BACKEND_OPENAI
-    assert Config.from_env({"CHRONICLE_LLM_BACKEND": " OpenAI "}).llm_backend == BACKEND_OPENAI
+    # #316 gab es beide Wege nebeneinander, mit Ollama als Vorgabe: der, den die Box damals
+    # fuhr. Seit #329 fährt sie den anderen, und die Vorgabe ist mitgewandert — eine
+    # Vorgabe, die einen abgeschalteten Dienst benennt, ist kein vorsichtiger Rückfall,
+    # sondern eine Neuinstallation, die stumm bleibt. Ein Tippfehler in einem Textfeld hält
+    # die Chronik weiterhin nicht an: was nicht erkannt wird, gilt als die Vorgabe.
+    assert Config.from_env({}).llm_backend == BACKEND_OPENAI
+    assert Config.from_env({"CHRONICLE_LLM_BACKEND": ""}).llm_backend == BACKEND_OPENAI
+    assert Config.from_env({"CHRONICLE_LLM_BACKEND": "llama.cpp"}).llm_backend == BACKEND_OPENAI
+    # Und der alte Weg bleibt erreichbar, solange ihn jemand fährt (solarisbay#1332).
+    assert Config.from_env({"CHRONICLE_LLM_BACKEND": "ollama"}).llm_backend == BACKEND_OLLAMA
+    assert Config.from_env({"CHRONICLE_LLM_BACKEND": " Ollama "}).llm_backend == BACKEND_OLLAMA
 
 
 def test_der_nachbardienst_wird_nur_ueber_die_schleife_angesprochen():

@@ -208,7 +208,12 @@ def station_5_erste_zusammenfassung(config, sitzung_id, mock_ollama):
     """Komposition gegen das Mock-Modell — und die Zahlenschranke gegen dessen Erfindung."""
     chronik = compose_session(config, runde(config), sitzung_id)
     assert chronik.reason is None
-    assert chronik.model_name == ollama_mock.MODELL
+    # Der **geladene** Name, nicht der angefragte (#320/#329). Seit die Vorgabe der
+    # ``/v1``-Weg ist, geht der Durchstich hier durch und belegt die Regel zum ersten
+    # Mal von Ende zu Ende: die Attrappe nennt absichtlich einen anderen Namen, als in
+    # der Anfrage stand, und der Kopf der Chronik trägt ihren.
+    assert chronik.model_name == ollama_mock.GELADEN
+    assert chronik.model_name != ollama_mock.MODELL
     assert (chronik.scene_count, chronik.fact_count, chronik.prose_count) == (3, 3, 2)
 
     assert f"Summe {foundry_mock.STURZ_SUMME}" in chronik.text

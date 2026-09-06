@@ -25,7 +25,7 @@ from chronicle import (
 )
 from chronicle import runde as runden
 from chronicle.compose import client as ollama
-from chronicle.config import Config
+from chronicle.config import BACKEND_OLLAMA, Config
 from chronicle.discord import rueckblick
 from chronicle.discord import service as diktat
 from chronicle.foundry.model import SyncState
@@ -485,8 +485,14 @@ def test_die_nacht_gibt_die_modellhaltung_hinterher_wieder_her(stelle, monkeypat
     mit_notiz(stelle)
     gastgeber = runde(stelle)
     # Die beiden Ollama-Werte kommen seit #230 aus der Umgebung und nicht aus der Datei.
+    # ``llm_backend`` ausdrücklich: seit #329 ist die Vorgabe der ``/v1``-Weg, und der
+    # kennt kein ``keep_alive``. Was diesen Test trägt, ist Ollama-Eigenes — also steht es
+    # hier, statt aus einer Vorgabe zu fallen, die inzwischen woandershin zeigt.
     mit_modell = replace(
-        stelle, ollama_url="http://ollama.example:11434", ollama_model="chronist-test"
+        stelle,
+        ollama_url="http://ollama.example:11434",
+        ollama_model="chronist-test",
+        llm_backend=BACKEND_OLLAMA,
     )
     draht = Draht()
     # An ``requests.Session`` und nicht an ``_http_session``: dessen Funktionsobjekt steckt

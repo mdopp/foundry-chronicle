@@ -82,7 +82,16 @@ class Http:
 
 
 def config(tmp_path, *, url=ADRESSE, model=MODELL):
-    return Config(ollama_url=url, ollama_model=model, data_dir=tmp_path)
+    """Der **Ollama**-Aufbau — ausdrücklich, seit die Vorgabe der ``/v1``-Weg ist (#329).
+
+    Bis dahin stand hier kein ``llm_backend``, und alles, was Ollama-Eigenes prüft
+    — ``keep_alive``, die Haltefrist, ``/api/chat`` —, bekam den Weg geschenkt. Ein
+    auslaufender Weg soll in seinen Tests benannt sein: dann fällt bei seiner Entfernung
+    genau das weg, was ihn geprüft hat, und nichts bleibt stumm zurück.
+    """
+    return Config(
+        ollama_url=url, ollama_model=model, data_dir=tmp_path, llm_backend=BACKEND_OLLAMA
+    )
 
 
 def klient(tmp_path, http, **kwargs):
@@ -784,15 +793,20 @@ def test_ohne_eigene_adresse_redet_auch_der_v1_klient_mit_dieser_box(tmp_path):
     assert http.aufrufe[0][0] == f"{DEFAULT_OLLAMA_URL}{OPENAI_CHAT_PATH}"
 
 
-def test_ohne_ansage_antwortet_weiterhin_ollama(tmp_path):
-    """Die Naht ist ``from_config`` und sonst nichts — und ihre Vorgabe ist der alte Weg.
+def test_ohne_ansage_antwortet_der_abloeser(tmp_path):
+    """Die Naht ist ``from_config`` und sonst nichts — und ihre Vorgabe ist der neue Weg.
 
-    Ein Umbau, der nur noch den neuen Weg spräche, legte den Dienst still, bevor die
-    Plattform überhaupt umzieht.
+    Sie stand bis #329 auf Ollama, weil die Box das fuhr; genau das ist der Grund, sie
+    jetzt zu drehen. Eine Vorgabe, die einen abgeschalteten Dienst benennt, ist kein
+    vorsichtiger Rückfall, sondern eine Neuinstallation, die stumm bleibt.
+
+    ``ollama`` bleibt daneben **wählbar**, bis der Dienst auf der Box wirklich weg ist
+    (``mdopp/solarisbay#1332``) — wer heute noch eines fährt, erreicht es, indem er den
+    Wert ausdrücklich setzt.
     """
-    assert Config().llm_backend == BACKEND_OLLAMA
-    assert isinstance(from_config(config(tmp_path)), OllamaClient)
+    assert Config().llm_backend == BACKEND_OPENAI
     assert isinstance(from_config(openai_config(tmp_path)), OpenAIClient)
+    assert isinstance(from_config(config(tmp_path)), OllamaClient)
     assert from_config(Config(data_dir=tmp_path)) is None
 
 
