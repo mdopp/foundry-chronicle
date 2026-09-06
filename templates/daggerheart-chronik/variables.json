@@ -11,7 +11,7 @@
   },
   "CHRONICLE_GPU_LEASE": {
     "type": "text",
-    "description": "Schalter fuer das Sitzungsfenster gegen den Nachbardienst solaris (#299, Gegenstueck mdopp/solarisbay#1260). 'an' (Vorgabe) meldet den Beginn eines Spielabends ueber die Schleife bei 127.0.0.1:8787 an und am Ende wieder ab; solaris antwortet dann fuer eine Viertelstunde mit dem grossen Modell, statt es bei jeder Haushaltsanfrage zu verdraengen — jeder Wechsel kostet auf dieser Karte rund 56 s. Die Anmeldung traegt nur Frist und Modell — auf dem 'openai'-Weg das Profil 'foundry' —, kein Geheimnis und keine Runden-, Gilden- oder Sitzungskennung. 'aus' verlaesst den Vertrag ohne Neubau: es geht kein Aufruf mehr hinaus, und unsere eigenen Aufrufe tragen wieder die knappe Frist. Leer heisst 'an' — eine Box, die die Variable nicht kennt, soll den Vertrag nicht stillschweigend abschalten.",
+    "description": "Schalter fuer das Sitzungsfenster gegen den Nachbardienst solaris (#299, Gegenstueck mdopp/solarisbay#1260). 'an' (Vorgabe) meldet den Beginn eines Spielabends ueber die Schleife bei 127.0.0.1:8787 an und am Ende wieder ab; solaris antwortet dann fuer eine Viertelstunde mit dem grossen Modell, statt es bei jeder Haushaltsanfrage zu verdraengen — jeder Wechsel kostet auf dieser Karte rund 56 s. Die Anmeldung traegt nur Frist und Profil ('foundry'), kein Geheimnis und keine Runden-, Gilden- oder Sitzungskennung. 'aus' verlaesst den Vertrag ohne Neubau: es geht kein Aufruf mehr hinaus, und der Nachbar behaelt sein Haushaltsmodell auf der Karte. Leer heisst 'an' — eine Box, die die Variable nicht kennt, soll den Vertrag nicht stillschweigend abschalten.",
     "default": "an"
   },
   "DISCORD_BOT_TOKEN": {
@@ -26,12 +26,7 @@
   },
   "OLLAMA_MODEL": {
     "type": "text",
-    "description": "Name des Textmodells, das die Chronik formuliert. Auf dem /v1-Weg ist er eine Bitte und kein Beleg: llama-server ignoriert ihn und antwortet mit dem Modell, das er geladen hat — welches das ist, entscheidet das Profil des Sitzungsfensters, und der Herkunftsvermerk der Chronik nimmt den Namen aus der Antwort (#320). Leer heisst: die Chronik entsteht trotzdem, dann geordnet statt formuliert.",
+    "description": "Name des Textmodells, das die Chronik formuliert. Er ist eine Bitte und kein Beleg: llama-server ignoriert ihn und antwortet mit dem Modell, das er geladen hat — welches das ist, entscheidet das Profil des Sitzungsfensters, und der Herkunftsvermerk der Chronik nimmt den Namen aus der Antwort (#320). Leer heisst: die Chronik entsteht trotzdem, dann geordnet statt formuliert.",
     "default": ""
-  },
-  "CHRONICLE_LLM_BACKEND": {
-    "type": "text",
-    "description": "Welche Sprache der Modelldienst oben spricht (#316/#329). 'openai' (Vorgabe) ruft /v1/chat/completions auf — so spricht llama-server, den diese Box faehrt. 'ollama' ruft Ollamas eigenes /api/chat auf; dieser Dienst wird abgeschaltet (mdopp/solarisbay#1332) und der Weg bleibt nur waehlbar, solange noch jemand eines faehrt. Ein unbekannter Wert gilt als die Vorgabe: der Betreiber tippt ihn in ein Textfeld, und ein Tippfehler soll die Chronik nicht anhalten. Ein keep_alive gibt es auf dem /v1-Weg nicht — llama-server haelt das Modell selbst. Das Sitzungsfenster gegen solaris gilt auf beiden Wegen (#321) und meldet das Profil 'foundry' an, statt einen Modellnamen; CHRONICLE_GPU_LEASE wirkt also ebenfalls auf beiden.",
-    "default": "openai"
   }
 }

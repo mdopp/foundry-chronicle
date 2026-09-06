@@ -105,8 +105,8 @@ def test_das_gate_hoert_nur_auf_der_schleife(manifest: dict, variablen: dict) ->
 
 
 def test_das_hostnetz_bleibt_samt_seiner_begruendung(manifest: dict, rohtext: str) -> None:
-    # Erklärte Abweichung von ServiceBay-ADR 0007 (#165): der Dienst erreicht Ollama
-    # (127.0.0.1:11434) und solaris-tts (127.0.0.1:8881) nur über die Schleife der Box,
+    # Erklärte Abweichung von ServiceBay-ADR 0007 (#165): der Dienst erreicht llama-server
+    # (127.0.0.1:11435) und solaris-tts (127.0.0.1:8881) nur über die Schleife der Box,
     # und beide binden nirgendwo sonst. Wer die Zeile herausnimmt, legt den Dienst still,
     # ohne dass etwas fehlschlüge — deshalb steht sie hier fest. Die Begründung steht
     # daneben und nicht nur im Kopf dessen, der sie geschrieben hat: eine Abweichung ohne
@@ -269,19 +269,15 @@ def test_die_instanz_werte_kommen_aus_template_variablen(variablen: dict, manife
     assert {"DISCORD_BOT_TOKEN", "OLLAMA_URL", "OLLAMA_MODEL"} <= bot
 
 
-def test_das_modell_backend_faehrt_ohne_ansage_den_weg_dieser_box(
-    variablen: dict, manifest: dict
-) -> None:
-    # #316 stellte den Schalter auf, damit der Umzug eine Einstellung ist und kein Neubau;
-    # seine Vorgabe muss der Weg sein, den die Box **fährt** — eine frisch installierte
-    # Box spräche sonst ins Leere. Genau deshalb ist er mit #329 gewandert: die Box fährt
-    # llama-server, und eine Vorgabe, die auf den abgeschalteten Dienst zeigt, wäre kein
-    # vorsichtiger Rückfall, sondern eine stumme Neuinstallation.
-    assert variablen["CHRONICLE_LLM_BACKEND"]["default"] == "openai"
-    bot = {
-        eintrag["name"]: eintrag["value"] for eintrag in manifest["spec"]["containers"][0]["env"]
-    }
-    assert bot["CHRONICLE_LLM_BACKEND"] == "openai"
+def test_es_gibt_keinen_backend_schalter_mehr(variablen: dict, manifest: dict) -> None:
+    # #316 stellte ihn auf, damit der Umzug eine Einstellung ist und kein Neubau; mit #329
+    # hat die Box Ollama abgeschaltet, und ein Schalter mit genau einem gültigen Wert ist
+    # eine falsche Zusage — »ollama« im Textfeld landete still auf dem einen Weg. Beide
+    # Hälften müssen zusammen fallen: bliebe {{CHRONICLE_LLM_BACKEND}} im Manifest ohne
+    # Deklaration stehen, löste der Assembler es ins Leere auf.
+    assert "CHRONICLE_LLM_BACKEND" not in variablen
+    bot = {eintrag["name"] for eintrag in manifest["spec"]["containers"][0]["env"]}
+    assert "CHRONICLE_LLM_BACKEND" not in bot
 
 
 def test_keine_echte_adresse_im_manifest(rohtext: str) -> None:

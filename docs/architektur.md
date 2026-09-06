@@ -210,11 +210,12 @@ Dienst 157 s (#330, beides gemessen 2026-09-06).
 Die GPU-Konkurrenz stellte sich schon damals — **und sie war zugunsten des Nachbarn
 entschieden** (#303, seit 2026-08-26). #295 hatte die Sitzung das große Modell festhalten lassen; die
 Messung des Nachbardienstes hat ergeben, dass beide Modelle auf der 16,4-GB-Karte nicht
-koexistieren. Also die verabredete Rückfallebene: gehalten wird nicht, der Tausch je
-Szenenschnitt wird in Kauf genommen. Ersatzlos streichen ginge dabei nicht — der
-Ollama-Dienst dieser Box setzt `OLLAMA_KEEP_ALIVE=24h`, und ein Aufruf ohne eigenes
-`keep_alive` erbt sie. Jeder Aufruf trägt deshalb eine knappe Frist, und am Ende jedes
-Aufschriebs steht die ausdrückliche Freigabe (#300).
+koexistieren. Also die verabredete Rückfallebene: gehalten wurde nicht, der Tausch je
+Szenenschnitt wurde in Kauf genommen. Ersatzlos streichen ging dabei nicht — der
+Ollama-Dienst dieser Box setzte `OLLAMA_KEEP_ALIVE=24h`, und ein Aufruf ohne eigenes
+`keep_alive` erbte sie. Jeder Aufruf trug deshalb eine knappe Frist, und am Ende jedes
+Aufschriebs stand die ausdrückliche Freigabe (#300). **Die eine Freigabestelle gibt es
+weiterhin** — sie schließt heute das Fenster statt einer Haltefrist.
 
 **Seit #299 gibt es dazu eine benannte Ausnahme: das Sitzungsfenster** (2026-08-27,
 ausgehandelt mit `mdopp/solarisbay#1260`, von beiden Betreibern entschieden). Der Beginn
@@ -226,8 +227,9 @@ Solange es steht, antwortet der Nachbar mit unserem Modell, statt seines bei jed
 Haushaltsanfrage zurückzuholen; die Rechnung dahinter ist, dass eine langsamere Antwort
 billiger ist als zwei Ladevorgänge zu je rund 56 s. Dass die beiden Modelle nicht
 nebeneinander passen, ist dabei die **Prämisse** des Vertrags und nicht der Einwand
-dagegen. Die knappe Frist bleibt die Norm — Fensterfrist und `keep_alive` kommen aus
-**derselben Konstante**, damit nicht zwei Zahlen auseinanderlaufen —, und der Aufruf ist
+dagegen. Die knappe Frist blieb die Norm — Fensterfrist und `keep_alive` kamen aus
+**derselben Konstante**, damit nicht zwei Zahlen auseinanderliefen; seit #329 trägt allein
+die Frist des Fensters —, und der Aufruf ist
 in beide Richtungen bester Wille: scheitert er, beginnt und endet die Sitzung trotzdem.
 Er trägt kein Geheimnis (seit #230 hat diese Instanz keines) und **keine Runden-, Gilden-
 oder Sitzungskennung**: welches Modell, wie lange — mehr braucht der Nachbar nicht.
@@ -239,9 +241,10 @@ lässt sich der Vertrag ohne Neubau mit `CHRONICLE_GPU_LEASE`.
 ein **Profil** (`foundry`) statt eines Modellnamens: `llama-server` ignoriert den Namen der
 Anfrage, und der Nachbar schaltet am Profil, welches Modell er geladen hält — die Zusage
 »keine Runden-, Gilden- oder Sitzungskennung« bleibt damit wörtlich erfüllt, denn ein Profil
-benennt die Arbeit und nicht die Runde. Die Paarung aus einer Konstante gilt dabei nur für
-den Ollama-Weg; der Ablöser kennt kein `keep_alive`, dort trägt allein die Frist des
-Fensters. Sagt der Nachbar `202 preparing`, wird **nicht** erneut angemeldet, sondern
+benennt die Arbeit und nicht die Runde. Die Paarung aus einer Konstante galt dabei nur für
+den Ollama-Weg und ist mit ihm gefallen; der Ablöser kennt kein `keep_alive`, hier trägt
+allein die Frist des Fensters. Sagt der Nachbar `202 preparing`, wird **nicht** erneut
+angemeldet, sondern
 gefragt — frühestens nach der von ihm genannten Wartezeit, mit Obergrenze nach oben und
 einer Untergrenze gegen die enge Schleife —, und die Frist beginnt erst mit `ready`. Der
 Leerlauf, den #316 dort gelassen hatte, hieß am Ende nicht »wir warten auf einen Vertrag«,
@@ -307,7 +310,7 @@ passiert ist** — und Teile davon nacherzählen können.
   mit ihr gefallen. ADR 0001 bindet den Dienst nicht mehr — er ist nicht user-facing.
 - **Dass der Pod im Host-Netz liegt, ist eine erklärte Abweichung** von ServiceBays
   ADR 0007 (#165) und keine Nachlässigkeit: der Dienst spricht die Nachbarn der Box über
-  die Schleife an — Ollama (`127.0.0.1:11434`) schreibt die Chronik, `solaris-tts`
+  die Schleife an — `llama-server` (`127.0.0.1:11435`) schreibt die Chronik, `solaris-tts`
   (`127.0.0.1:8881`) spricht die Ansage, `solaris-whisper-batch` (`127.0.0.1:10301`)
   verschriftet —, und alle drei binden nur an Loopback. Eine benannte Ausnahme wurde in
   `mdopp/servicebay#2518` erfragt und verneint. **Was sie kostete, ist mit #231 weg statt

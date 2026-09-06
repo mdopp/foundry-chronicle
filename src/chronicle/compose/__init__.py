@@ -5,7 +5,6 @@ from chronicle.compose.client import (
     ModelError,
     ModelNotConfigured,
     ModelUnreachable,
-    OllamaClient,
     OpenAIClient,
     TextModel,
 )
@@ -34,7 +33,6 @@ __all__ = [
     "ModelUnreachable",
     "Nacherzaehlung",
     "Notiz",
-    "OllamaClient",
     "OpenAIClient",
     "Recap",
     "RecapMaterial",

@@ -29,7 +29,7 @@ metadata:
 spec:
   # **Erklärte Abweichung von ServiceBay-ADR 0007** (#165), die App-Container in einen
   # eigenen Netz-Namensraum stellen will. Grund: der Dienst spricht die Nachbarn dieser
-  # Box über die Schleife an — Ollama auf 127.0.0.1:11434 schreibt die Chronik,
+  # Box über die Schleife an — llama-server auf 127.0.0.1:11435 schreibt die Chronik,
   # solaris-tts auf 127.0.0.1:8881 spricht die Ansage, solaris-whisper-batch auf
   # 127.0.0.1:10301 verschriftet die Spuren. Alle drei binden **nur** Loopback; aus einer
   # isolierten netns wären sie unerreichbar, auch über ``host.containers.internal``, denn
@@ -98,18 +98,14 @@ spec:
         value: "{{DISCORD_BOT_TOKEN}}"
       # Der Modelldienst gehört der Instanz und kommt seit #230 aus der Umgebung. Leer
       # heißt: der Dienst dieser Box, ``chronicle.config`` setzt ihn ein — seit #329 ist
-      # das llama-server auf 11435 und nicht mehr Ollama auf 11434. Die Variablennamen
-      # stammen aus der Ollama-Zeit und bleiben, weil der Betreiber sie kennt.
+      # das llama-server auf 11435, und Ollama auf 11434 ist abgeschaltet. Die
+      # Variablennamen stammen aus der Ollama-Zeit und bleiben, weil der Betreiber sie
+      # kennt. CHRONICLE_LLM_BACKEND stand hier bis #329 daneben und wählte zwischen den
+      # beiden Wegen; mit dem zweiten Weg ist der Schalter gefallen.
       - name: OLLAMA_URL
         value: "{{OLLAMA_URL}}"
       - name: OLLAMA_MODEL
         value: "{{OLLAMA_MODEL}}"
-      # Welche Sprache dieser Dienst spricht (#316/#329). »openai« ist die Vorgabe, weil
-      # die Box llama-server fährt; »ollama« ruft Ollamas /api/chat, das der Ablöser mit
-      # 404 beantwortet. Der alte Weg bleibt wählbar, solange ihn jemand fährt — Ollama
-      # wird abgeschaltet (mdopp/solarisbay#1332), und dann fällt er ganz.
-      - name: CHRONICLE_LLM_BACKEND
-        value: "{{CHRONICLE_LLM_BACKEND}}"
       # Der Abschalter für das Sitzungsfenster gegen den Nachbardienst solaris (#299,
       # Gegenstück mdopp/solarisbay#1260). »an« ist die Vorgabe, weil der Vertrag von
       # beiden Betreibern entschieden ist; er steht hier, damit eine Seite ihn ohne
@@ -124,10 +120,10 @@ spec:
     # verwirft ``resources.limits`` für eine Pod-Spezifikation still — kein Fehler, kein
     # Hinweis, der Pod startet ohne Karte. Gemessen am 2026-08-12 im Container:
     # ``cuda_verfuegbar() -> False`` und kein ``nvidia-*``-Knoten unter ``/dev``, während
-    # der Nachbar ollama seine hat (ServiceBay #1026/#2174, unser Fall als
+    # der Nachbar llama seine hat (ServiceBay #1026/#2174, unser Fall als
     # mdopp/servicebay#2517). **Seit #216 braucht dieser Pod auch keine:** er hält kein
     # Whisper-Modell mehr. Verschriftet wird bei ``solaris-whisper-batch`` auf der Karte
-    # der Box (mdopp/solarisbay#1161), erreicht über die Schleife wie Ollama und
+    # der Box (mdopp/solarisbay#1161), erreicht über die Schleife wie llama-server und
     # solaris-tts auch — Vorgabe ``127.0.0.1:10301``, überschreibbar mit
     # ``CHRONICLE_WHISPER_URL``. Einen CPU-Rückfall gibt es dafür **nicht** mehr: ist der
     # Dienst aus, bleibt die Spur liegen und der Nachtlauf sagt es, statt eine Chronik

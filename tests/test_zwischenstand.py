@@ -18,14 +18,14 @@ from conftest import PASSWORT, deutsche_runde, runde, warte_auf_laeufe
 from chronicle import db, jobs, notes, settings, zugang
 from chronicle import sprache as sprachen
 from chronicle.bot import chronik
-from chronicle.compose import client as ollama
+from chronicle.compose import client as modellklient
 from chronicle.compose import service as compose_service
 from chronicle.compose.client import ModelUnreachable
 from chronicle.compose.composer import SceneMaterial, compose
 from chronicle.compose.recap import recap
 from chronicle.compose.service import zwischenstand_der_szene
 from chronicle.compose.zwischenstand import zwischenstand
-from chronicle.config import BACKEND_OLLAMA, Config
+from chronicle.config import Config
 from chronicle.foundry import service as foundry
 
 STAND = "2026-08-05T20:00:00+00:00"
@@ -123,7 +123,7 @@ def test_eine_leere_szene_ergibt_nichts():
 
 @pytest.fixture
 def stelle(tmp_path):
-    config = Config(data_dir=tmp_path, ollama_model="chronist-test", llm_backend=BACKEND_OLLAMA)
+    config = Config(data_dir=tmp_path, ollama_model="chronist-test")
     db.init(config.database_path)
     return config
 
@@ -358,7 +358,7 @@ class Draht:
         return None
 
     def json(self):
-        return {"message": {"content": GEDEUTET}}
+        return {"choices": [{"message": {"content": GEDEUTET}}]}
 
 
 @pytest.fixture
@@ -367,18 +367,20 @@ def am_draht(monkeypatch):
         eines = Draht(fehler)
         # An ``requests.Session`` und nicht an ``_http_session``: dessen Funktionsobjekt
         # steckt als Vorgabewert in den Signaturen und lässt sich dort nicht austauschen.
-        monkeypatch.setattr(ollama.requests, "Session", lambda: eines)
+        monkeypatch.setattr(modellklient.requests, "Session", lambda: eines)
         return eines
 
     return gegenstelle
 
 
-def test_ein_schnitt_haelt_das_modell_nur_knapp(stelle, am_draht):
-    """#303: dieser Weg läuft nicht durch ``kette.schreiben`` und wird von dessen Freigabe
-    deshalb nicht erfasst.
+def test_ein_schnitt_traegt_keine_haltefrist_mehr(stelle, am_draht):
+    """#303/#329: dieser Weg läuft nicht durch ``kette.schreiben`` und wird von dessen
+    Freigabe deshalb nicht erfasst.
 
     Ohne ausdrückliche Frist erbte er die Vorgabe des Ollama-Dienstes dieser Box — 24
-    Stunden nach *jedem* Szenenschnitt. Der Beleg steht auf dem Draht.
+    Stunden nach *jedem* Szenenschnitt, weshalb hier eine knappe mitreiste. Der Ablöser
+    kennt kein ``keep_alive``, und ein erfundenes Gegenstück wäre eine Zusage über die
+    Karte, die niemand einlöst. Der Beleg steht auf dem Draht.
     """
     gewaehlt, sitzung, erste = sitzung_mit_szenen(stelle)
     draht = am_draht()
@@ -386,8 +388,7 @@ def test_ein_schnitt_haelt_das_modell_nur_knapp(stelle, am_draht):
     ergebnis = zwischenstand_der_szene(stelle, gewaehlt, sitzung, erste)
 
     assert ergebnis is not None and GEDEUTET in ergebnis.text
-    assert draht.anfragen[-1]["json"]["keep_alive"] == ollama.KNAPPE_HALTUNG
-    assert ollama.KNAPPE_HALTUNG != "24h"
+    assert "keep_alive" not in draht.anfragen[-1]["json"]
 
 
 def test_der_schnitt_laeuft_gegen_seine_eigene_knappe_zeitgrenze(stelle, am_draht):
@@ -397,8 +398,8 @@ def test_der_schnitt_laeuft_gegen_seine_eigene_knappe_zeitgrenze(stelle, am_drah
 
     zwischenstand_der_szene(stelle, gewaehlt, sitzung, erste)
 
-    assert draht.anfragen[-1]["timeout"] == ollama.ZWISCHENSTAND_TIMEOUT
-    assert ollama.ZWISCHENSTAND_TIMEOUT < ollama.DEFAULT_TIMEOUT
+    assert draht.anfragen[-1]["timeout"] == modellklient.ZWISCHENSTAND_TIMEOUT
+    assert modellklient.ZWISCHENSTAND_TIMEOUT < modellklient.DEFAULT_TIMEOUT
 
 
 def test_eine_gerissene_zeitgrenze_bleibt_still(stelle, am_draht):
@@ -416,8 +417,8 @@ def test_der_aufschrieb_behaelt_seine_grosszuegige_grenze(stelle, am_draht):
 
     compose_service.compose_session(stelle, gewaehlt, sitzung)
 
-    assert draht.anfragen[-1]["timeout"] == ollama.DEFAULT_TIMEOUT
-    assert ollama.DEFAULT_TIMEOUT == 1800.0
+    assert draht.anfragen[-1]["timeout"] == modellklient.DEFAULT_TIMEOUT
+    assert modellklient.DEFAULT_TIMEOUT == 1800.0
 
 
 def test_ohne_namen_in_der_antwort_bleibt_der_hinweis_ohne_namen():

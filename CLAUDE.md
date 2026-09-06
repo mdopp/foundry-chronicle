@@ -27,16 +27,20 @@ Diese Regeln gelten für jede Sitzung, Mensch oder Agent.
   am Ende entsteht wie bisher.
   **Der Modelldienst dieser Box ist `llama-server`, nicht mehr Ollama** (#329, seit
   2026-09-06; Konzept in `mdopp/solarisbay#1332`, Operator-Auftrag »ollama ganz weg«). Er
-  hört auf `127.0.0.1:11435` und spricht `/v1/chat/completions`; gewählt wird er über
-  `CHRONICLE_LLM_BACKEND=openai`. **Er hält das Modell von sich aus** — welches geladen
+  hört auf `127.0.0.1:11435` und spricht `/v1/chat/completions`; zu wählen gibt es nichts,
+  es ist der einzige Weg. **Er hält das Modell von sich aus** — welches geladen
   ist, entscheidet ein Profil, und umgeschaltet wird über das Sitzungsfenster weiter unten.
   Damit ist die `keep_alive`-Mechanik im nächsten Absatz **Historie**: sie beantwortete
   eine Frage, die Ollama stellte und die dieser Server nicht mehr stellt. Sie bleibt
   lesbar, weil sie erklärt, warum das Fenster so aussieht, wie es aussieht.
-  **Nichts Neues wird mehr gegen Ollama gebaut.** Im Code stehen `OllamaClient` und seine
-  Attrappe trotzdem weiter, bis der Nachbar das Abschalten auf der Box gemeldet hat
-  (`mdopp/solarisbay#1332`) — ein Weg, der heute noch läuft, wird nicht entfernt, bevor er
-  wirklich niemanden mehr trägt.
+  **Der Ollama-Weg ist raus** (#329, zweite Hälfte, 2026-09-06). `OllamaClient`, seine
+  Attrappe und der Schalter `CHRONICLE_LLM_BACKEND` standen bis dahin weiter im Code, weil
+  ein Weg, der noch läuft, nicht entfernt wird, bevor er wirklich niemanden mehr trägt.
+  Genau diese Bedingung ist eingetreten: `mdopp/solarisbay#1332` ist gemerged, und aus dem
+  deployten Container gemessen antwortet `127.0.0.1:11434` nicht mehr. Der Grundsatz bleibt
+  stehen — er erklärt die Wartezeit. **Der Schalter ging mit statt einwertig
+  stehenzubleiben:** einer mit genau einem gültigen Wert ist eine falsche Zusage, denn wer
+  `ollama` in das Textfeld tippt, bekäme still `openai`.
   Zwei Zahlen weiter unten sind überholt und im Imperfekt zu lesen: der Modelltausch
   kostet **20 s**, nicht 56, und ein Szenen-Zwischenstand auf dem großen Modell braucht
   durch den deployten Dienst **157 s** — weshalb seine Frist mit #330 auf acht Minuten
@@ -62,10 +66,12 @@ Diese Regeln gelten für jede Sitzung, Mensch oder Agent.
   Minuten, alle fünf erneuert; am Ende jedes Aufschriebs, an derselben einen Freigabestelle,
   geht ein `DELETE` hinaus. Solange das Fenster steht, antwortet der Nachbar mit *unserem*
   Modell, statt seines bei jeder Anfrage zurückzuholen — auf dieser Karte kostet jeder
-  Wechsel rund 56 s, in beide Richtungen. **Das nimmt #303 nicht zurück:** die knappe
-  Frist bleibt die Norm, das Fenster ist die Ausnahme, und beide Zahlen kommen aus
-  **derselben Konstante** — was wir dem Nachbarn zusagen, ist genau das `keep_alive`, das
-  unsere Aufrufe tragen. Dass die beiden Modelle nicht nebeneinander passen, ist die
+  Wechsel rund 56 s, in beide Richtungen. **Das nahm #303 nicht zurück:** die knappe
+  Frist blieb die Norm, das Fenster war die Ausnahme, und beide Zahlen kamen aus
+  **derselben Konstante** — was wir dem Nachbarn zusagten, war genau das `keep_alive`, das
+  unsere Aufrufe trugen. Seit der Ollama-Weg gefallen ist (#329), trägt allein die Frist
+  des Fensters; die Paarung ist Historie, und sie steht hier, weil sie erklärt, warum die
+  Zahl so gewählt ist. Dass die beiden Modelle nicht nebeneinander passen, ist die
   *Prämisse* des Vertrags und nicht der Einwand dagegen; passten sie, bräuchte es ihn
   nicht. Der Aufruf geht über die Schleife, ohne Token und ausdrücklich **ohne gemeinsames
   Geheimnis** (seit #230 hat diese Instanz keines mehr), er ist in beide Richtungen bester
@@ -78,8 +84,9 @@ Diese Regeln gelten für jede Sitzung, Mensch oder Agent.
   den Namen der Anfrage, und der Nachbar schaltet am Profil, welches Modell er geladen
   hält; die Zusage »keine Runden-, Gilden- oder Sitzungskennung« bleibt damit wörtlich
   erfüllt, denn ein Profil benennt die Arbeit und nicht die Runde. Die Paarung »eine
-  Konstante, zwei Verwendungen« gilt dabei nur für den Ollama-Weg: der Ablöser kennt kein
-  `keep_alive`, dort trägt allein die Frist des Fensters. Antwortet der Nachbar mit
+  Konstante, zwei Verwendungen« galt dabei nur für den Ollama-Weg und ist mit ihm gefallen:
+  der Ablöser kennt kein `keep_alive`, hier trägt allein die Frist des Fensters. Antwortet
+  der Nachbar mit
   `202 preparing`, wird **nicht** erneut angemeldet, sondern gefragt — frühestens nach der
   von ihm genannten Wartezeit, mit Obergrenze, und die Frist beginnt erst mit `ready`.
   Ohne Fenster wäre der Leerlauf auf diesem Weg nicht »wir warten auf einen Vertrag«,
@@ -484,7 +491,7 @@ Volltexte stehen im Katalog.
 - **Erklärte Abweichung, bleibend — und seit #231 fast kostenlos:** der Pod läuft mit
   `hostNetwork: true` statt im eigenen Netz-Namensraum, den **ADR 0007** verlangt (#165).
   Der Grund steht im Template: der Dienst spricht die Nachbarn dieser Box über die
-  Schleife an — Ollama auf `127.0.0.1:11434` schreibt die Chronik, `solaris-tts` auf
+  Schleife an — `llama-server` auf `127.0.0.1:11435` schreibt die Chronik, `solaris-tts` auf
   `127.0.0.1:8881` spricht die Ansage, `solaris-whisper-batch` auf `127.0.0.1:10301`
   verschriftet die Spuren. Alle drei binden **nur** Loopback; aus einer isolierten netns
   wären sie unerreichbar, auch über `host.containers.internal` — das führt an das Gateway

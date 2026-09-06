@@ -9,7 +9,7 @@ Zwei Außengrenzen laufen dabei **echt**, nicht als Funktions-Fake:
 * Ein Mock-Foundry spricht den Handschlag aus ``docs/foundry-zugriff.md`` über HTTP und
   Socket.io. Der Client-Code ist der echte; erst hier hängen Cookie, Query-Parameter,
   Ereignisfolge und Antwortform mit an der Prüfung.
-* Ein Mock-Ollama antwortet auf ``/api/tags`` und ``/api/chat`` — und erfindet für eine
+* Ein Mock-Modelldienst antwortet auf ``/v1/chat/completions`` — und erfindet für eine
   Szene eine Zahl. Die Zahlenschranke ist die teuerste Regel des Hauses; hier bekommt
   sie ihren Beweis gegen ein Modell, das sie wirklich verletzt.
 
@@ -23,7 +23,7 @@ from dataclasses import replace
 
 import pytest
 from conftest import deutsche_runde, runde
-from mocks import foundry_mock, ollama_mock
+from mocks import foundry_mock, modell_mock
 
 from chronicle import db, foundry, notes, protocol, search, settings
 from chronicle import sprache as sprachen
@@ -80,8 +80,8 @@ def mock_foundry():
 
 
 @pytest.fixture
-def mock_ollama():
-    server = ollama_mock.MockOllama(vergiftete_szene=ZWEITE_SZENE)
+def mock_modell():
+    server = modell_mock.MockModell(vergiftete_szene=ZWEITE_SZENE)
     yield server
     server.stop()
 
@@ -116,7 +116,7 @@ def station_1_aufsetzen(tmp_path):
     return config
 
 
-def station_2_konfigurieren(config, mock_foundry, mock_ollama):
+def station_2_konfigurieren(config, mock_foundry, mock_modell):
     """Zwei Orte, zwei Zuständigkeiten: die Runde in Discord, die Instanz in der Umgebung.
 
     Was einer Gilde gehört — Foundry-Zugang, Zustellkanal, Nachtlauf — pflegt ``/chronicle setup``
@@ -130,11 +130,11 @@ def station_2_konfigurieren(config, mock_foundry, mock_ollama):
         {"foundry_url": mock_foundry.url, "foundry_user": foundry_mock.BENUTZER},
     )
 
-    config = replace(config, ollama_url=mock_ollama.url, ollama_model=ollama_mock.MODELL)
+    config = replace(config, ollama_url=mock_modell.url, ollama_model=modell_mock.MODELL)
 
     aktuell = settings.effective(config, gruppe)
     assert aktuell.foundry_configured
-    assert aktuell.ollama_model == ollama_mock.MODELL
+    assert aktuell.ollama_model == modell_mock.MODELL
     # Das Passwort wird gereicht und nie abgelegt (#64) — auch nicht als Nebenwirkung
     # des Speicherns.
     assert foundry_mock.PASSWORT not in str(settings.stored(gruppe))
@@ -204,7 +204,7 @@ def station_4_erste_sitzung(config):
     return sitzung_id
 
 
-def station_5_erste_zusammenfassung(config, sitzung_id, mock_ollama):
+def station_5_erste_zusammenfassung(config, sitzung_id, mock_modell):
     """Komposition gegen das Mock-Modell — und die Zahlenschranke gegen dessen Erfindung."""
     chronik = compose_session(config, runde(config), sitzung_id)
     assert chronik.reason is None
@@ -212,14 +212,14 @@ def station_5_erste_zusammenfassung(config, sitzung_id, mock_ollama):
     # ``/v1``-Weg ist, geht der Durchstich hier durch und belegt die Regel zum ersten
     # Mal von Ende zu Ende: die Attrappe nennt absichtlich einen anderen Namen, als in
     # der Anfrage stand, und der Kopf der Chronik trägt ihren.
-    assert chronik.model_name == ollama_mock.GELADEN
-    assert chronik.model_name != ollama_mock.MODELL
+    assert chronik.model_name == modell_mock.GELADEN
+    assert chronik.model_name != modell_mock.MODELL
     assert (chronik.scene_count, chronik.fact_count, chronik.prose_count) == (3, 3, 2)
 
     assert f"Summe {foundry_mock.STURZ_SUMME}" in chronik.text
     assert f"Summe {foundry_mock.WIRTIN_SUMME}" in chronik.text
-    assert ollama_mock.ERFUNDENE_ZAHL in "\n".join(mock_ollama.antworten)
-    assert ollama_mock.ERFUNDENE_ZAHL not in chronik.text
+    assert modell_mock.ERFUNDENE_ZAHL in "\n".join(mock_modell.antworten)
+    assert modell_mock.ERFUNDENE_ZAHL not in chronik.text
     assert VERWORFEN in chronik.text
 
     for titel in (NOTIZEN_TITEL, BELEG_TITEL, VERBINDUNG_TITEL):
@@ -230,7 +230,7 @@ def station_5_erste_zusammenfassung(config, sitzung_id, mock_ollama):
     assert rueckblick.reason is None
     assert rueckblick.thread_count == 2
     assert FAEDEN_TITEL in rueckblick.text
-    assert ollama_mock.ERFUNDENE_ZAHL not in rueckblick.text
+    assert modell_mock.ERFUNDENE_ZAHL not in rueckblick.text
 
 
 def station_6_wiederfinden(config, sitzung_id):
@@ -245,16 +245,16 @@ def station_6_wiederfinden(config, sitzung_id):
     for titel in (BELEG_TITEL, VERBINDUNG_TITEL):
         assert titel in abgelegt
     assert FAEDEN_TITEL in protocol.stored(runde(config), sitzung_id, RUECKBLICK).text
-    assert ollama_mock.ERFUNDENE_ZAHL not in abgelegt
+    assert modell_mock.ERFUNDENE_ZAHL not in abgelegt
 
 
-def test_vom_aufsetzen_bis_zur_ersten_chronik(tmp_path, mock_foundry, mock_ollama):
+def test_vom_aufsetzen_bis_zur_ersten_chronik(tmp_path, mock_foundry, mock_modell):
     """Aufsetzen, konfigurieren, abgleichen, mitschreiben, komponieren, wiederfinden."""
     config = station_1_aufsetzen(tmp_path)
-    config = station_2_konfigurieren(config, mock_foundry, mock_ollama)
+    config = station_2_konfigurieren(config, mock_foundry, mock_modell)
     station_3_erster_abgleich(config)
     sitzung_id = station_4_erste_sitzung(config)
-    station_5_erste_zusammenfassung(config, sitzung_id, mock_ollama)
+    station_5_erste_zusammenfassung(config, sitzung_id, mock_modell)
     station_6_wiederfinden(config, sitzung_id)
 
 

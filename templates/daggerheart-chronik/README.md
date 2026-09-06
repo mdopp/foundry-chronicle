@@ -38,7 +38,7 @@ Dienst ein zweites Mal installiert.
 | `CHRONICLE_GPU_LEASE` | Sitzungsfenster bei `solaris` an-/abmelden (#299); `aus` verlässt den Vertrag | `an` |
 | `DISCORD_BOT_TOKEN` | Token des Bots — ohne ihn bleibt der Bot aus | *(leer)* |
 | `OLLAMA_URL` | Modelldienst, der die Chronik formuliert; leer = `127.0.0.1:11435` | *(leer)* |
-| `OLLAMA_MODEL` | Textmodell dort; auf dem `/v1`-Weg eine Bitte, kein Beleg (#320); leer = geordnet statt formuliert | *(leer)* |
+| `OLLAMA_MODEL` | Textmodell dort; eine Bitte, kein Beleg (#320); leer = geordnet statt formuliert | *(leer)* |
 
 `DATA_DIR` ist eine globale ServiceBay-Variable und wird hier nicht noch einmal
 deklariert. `PUBLIC_DOMAIN` kommt hier **nicht** mehr vor — es gibt keinen Proxy-Host,
@@ -98,8 +98,8 @@ zu Discord aus. Die Uhrzeit gehört der Runde und steht in Discord unter `/chron
 
 `spec.hostNetwork: true` steht bewusst da, obwohl ServiceBays **ADR 0007** App-Container
 in einen eigenen Netz-Namensraum stellen will (#165). Der Grund sind die Nachbarn auf
-derselben Box, die dieser Dienst über die Schleife anspricht: **Ollama** auf
-`127.0.0.1:11434` schreibt die Chronik, **`solaris-tts`** auf `127.0.0.1:8881` spricht die
+derselben Box, die dieser Dienst über die Schleife anspricht: **`llama-server`** auf
+`127.0.0.1:11435` schreibt die Chronik, **`solaris-tts`** auf `127.0.0.1:8881` spricht die
 Ansage im Sprachkanal, **`solaris-whisper-batch`** auf `127.0.0.1:10301` verschriftet die
 Spuren, und **`solaris`** auf `127.0.0.1:8787` nimmt das Sitzungsfenster entgegen (#299:
 `POST`/`DELETE /api/model-lease`, damit der Nachbar das große Modell während eines
@@ -134,12 +134,12 @@ startet ohne Karte (`cuda_verfuegbar() -> False`, keine `nvidia-*`-Knoten unter 
 Das ist ServiceBays Lücke #1026/#2174, unser Fall als `mdopp/servicebay#2517`.
 
 Der bekannte Fix wäre ein einzelnes `.container`-Quadlet mit `AddDevice=` und
-`SecurityLabelDisable=true` — so hängen `ollama` und `solaris-whisper` auf derselben Box
+`SecurityLabelDisable=true` — so hängen `llama` und `solaris-whisper` auf derselben Box
 an der Karte.
 
 **Seit #216 braucht dieser Pod auch keine.** Er hält kein Whisper-Modell mehr; die
 Verschriftung ist ein HTTP-Aufruf gegen `solaris-whisper-batch`, der auf der Karte der
-Box rechnet (`mdopp/solarisbay#1161`). Erreicht wird er über die Schleife wie Ollama und
+Box rechnet (`mdopp/solarisbay#1161`). Erreicht wird er über die Schleife wie `llama-server` und
 `solaris-tts` auch — Vorgabe `http://127.0.0.1:10301`, überschreibbar mit
 `CHRONICLE_WHISPER_URL`; das Template setzt nichts.
 

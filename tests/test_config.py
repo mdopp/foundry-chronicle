@@ -1,8 +1,6 @@
 from pathlib import Path
 
 from chronicle.config import (
-    BACKEND_OLLAMA,
-    BACKEND_OPENAI,
     DEFAULT_SOLARIS_URL,
     DEFAULT_TTS_URL,
     FOUNDRY_VARIABLES,
@@ -13,7 +11,7 @@ VOLLSTAENDIG = {
     "FOUNDRY_URL": "https://foundry.example",
     "FOUNDRY_USER": "chronist",
     "DISCORD_BOT_TOKEN": "bot-token-aus-der-umgebung",
-    "OLLAMA_URL": "http://ollama.example:11434",
+    "OLLAMA_URL": "http://modell.example:11435",
     "OLLAMA_MODEL": "chronist-modell",
     "CHRONICLE_DATA_DIR": "/srv/chronicle",
 }
@@ -77,7 +75,7 @@ def test_discord_darf_fehlen():
 
 def test_ollama_kommt_aus_der_umgebung():
     config = Config.from_env(VOLLSTAENDIG)
-    assert config.ollama_url == "http://ollama.example:11434"
+    assert config.ollama_url == "http://modell.example:11435"
     assert config.ollama_model == "chronist-modell"
     assert config.ollama_configured
 
@@ -108,7 +106,7 @@ def test_eine_fehlende_adresse_haelt_ollama_nicht_auf():
 
 
 def test_die_ollama_adresse_ist_konfiguration_und_wird_nicht_maskiert():
-    assert "http://ollama.example:11434" in repr(Config.from_env(VOLLSTAENDIG))
+    assert "http://modell.example:11435" in repr(Config.from_env(VOLLSTAENDIG))
 
 
 def test_datenverzeichnis_hat_eine_vorgabe():
@@ -168,18 +166,15 @@ def test_das_sitzungsfenster_ist_an_bis_es_jemand_abschaltet():
     assert Config.from_env({"CHRONICLE_GPU_LEASE": "0"}).gpu_lease is False
 
 
-def test_das_backend_ist_ohne_ansage_das_der_box():
-    # #316 gab es beide Wege nebeneinander, mit Ollama als Vorgabe: der, den die Box damals
-    # fuhr. Seit #329 fährt sie den anderen, und die Vorgabe ist mitgewandert — eine
-    # Vorgabe, die einen abgeschalteten Dienst benennt, ist kein vorsichtiger Rückfall,
-    # sondern eine Neuinstallation, die stumm bleibt. Ein Tippfehler in einem Textfeld hält
-    # die Chronik weiterhin nicht an: was nicht erkannt wird, gilt als die Vorgabe.
-    assert Config.from_env({}).llm_backend == BACKEND_OPENAI
-    assert Config.from_env({"CHRONICLE_LLM_BACKEND": ""}).llm_backend == BACKEND_OPENAI
-    assert Config.from_env({"CHRONICLE_LLM_BACKEND": "llama.cpp"}).llm_backend == BACKEND_OPENAI
-    # Und der alte Weg bleibt erreichbar, solange ihn jemand fährt (solarisbay#1332).
-    assert Config.from_env({"CHRONICLE_LLM_BACKEND": "ollama"}).llm_backend == BACKEND_OLLAMA
-    assert Config.from_env({"CHRONICLE_LLM_BACKEND": " Ollama "}).llm_backend == BACKEND_OLLAMA
+def test_es_gibt_keinen_backend_schalter_mehr():
+    # #316 stellte ihn auf, weil zwei Wege nebeneinander liefen; #329 hat den zweiten
+    # abgeschaltet. Ein Schalter mit genau einem gültigen Wert bleibt nicht als Höflichkeit
+    # stehen: wer »ollama« in das Textfeld tippte, bekäme still den einen Weg, und die Box
+    # täte etwas anderes als das, was dort steht. Der Test hält fest, dass die Variable
+    # wirklich nirgends mehr gelesen wird — sonst käme sie über eine Vorgabe zurück.
+    assert not hasattr(Config(), "llm_backend")
+    assert "CHRONICLE_LLM_BACKEND" not in repr(Config.from_env({"CHRONICLE_LLM_BACKEND": "ollama"}))
+    assert "llm_backend" not in repr(Config())
 
 
 def test_der_nachbardienst_wird_nur_ueber_die_schleife_angesprochen():

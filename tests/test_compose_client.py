@@ -1,20 +1,15 @@
 """Der Aufruf des Modelldienstes — ohne Netz, gegen eine nachgebaute HTTP-Sitzung."""
 
 import pathlib
-from dataclasses import replace
 
 import pytest
 import requests
 
 from chronicle import sprache as sprachen
 from chronicle.compose.client import (
-    CHAT_PATH,
     DEFAULT_TIMEOUT,
-    FREIGABE,
-    KNAPPE_HALTUNG,
     LEASE_ERNEUERUNG_FELD,
     LEASE_ERNEUERUNG_S,
-    LEASE_HALTUNG,
     LEASE_MINDESTPAUSE_S,
     LEASE_PATH,
     LEASE_PROFIL,
@@ -23,29 +18,21 @@ from chronicle.compose.client import (
     LEASE_VORBEREITUNG_S,
     LEASE_WARTEZEIT_S,
     OPENAI_CHAT_PATH,
-    TAGS_PATH,
     ZWISCHENSTAND_TIMEOUT,
     ModelNotConfigured,
     ModelUnreachable,
-    OllamaClient,
     OpenAIClient,
     erneuerung,
     fenster_oeffnen,
     freigeben,
     from_config,
-    installed_models,
     lease_offen,
 )
 from chronicle.compose.composer import SceneMaterial, SessionMaterial, compose
-from chronicle.config import (
-    BACKEND_OLLAMA,
-    BACKEND_OPENAI,
-    DEFAULT_OLLAMA_URL,
-    DEFAULT_SOLARIS_URL,
-    Config,
-)
+from chronicle.config import DEFAULT_OLLAMA_URL, DEFAULT_SOLARIS_URL, Config
 
-ADRESSE = "http://ollama.example:11434/"
+ADRESSE = "http://modell.example:11435/"
+BASIS = ADRESSE.rstrip("/")
 MODELL = "chronist-modell"
 
 
@@ -82,51 +69,56 @@ class Http:
 
 
 def config(tmp_path, *, url=ADRESSE, model=MODELL):
-    """Der **Ollama**-Aufbau — ausdrücklich, seit die Vorgabe der ``/v1``-Weg ist (#329).
+    """Der Aufbau, den der Dienst seit #329 kennt — es gibt nur noch einen Weg.
 
-    Bis dahin stand hier kein ``llm_backend``, und alles, was Ollama-Eigenes prüft
-    — ``keep_alive``, die Haltefrist, ``/api/chat`` —, bekam den Weg geschenkt. Ein
-    auslaufender Weg soll in seinen Tests benannt sein: dann fällt bei seiner Entfernung
-    genau das weg, was ihn geprüft hat, und nichts bleibt stumm zurück.
+    Bis dahin stand hier ausdrücklich ``llm_backend``, damit ein auslaufender Weg in seinen
+    Tests benannt war und bei seiner Entfernung genau das wegfiel, was ihn geprüft hatte.
+    Genau das ist eingetreten; der Schalter ist mit ihm gefallen.
     """
-    return Config(ollama_url=url, ollama_model=model, data_dir=tmp_path, llm_backend=BACKEND_OLLAMA)
+    return Config(ollama_url=url, ollama_model=model, data_dir=tmp_path)
 
 
 def klient(tmp_path, http, **kwargs):
-    return OllamaClient(config(tmp_path, **kwargs), http=lambda: http)
+    return OpenAIClient(config(tmp_path, **kwargs), http=lambda: http)
 
 
-def test_baut_den_aufruf_wie_ollama_ihn_erwartet(tmp_path):
-    http = Http(Antwort({"message": {"content": "  Ein ruhiger Abend.  "}}))
+def v1_antwort(text="Ein ruhiger Abend."):
+    return Antwort({"choices": [{"message": {"content": text}}]})
+
+
+def test_ruft_den_pfad_des_modelldienstes_und_traegt_keine_frist(tmp_path):
+    """``keep_alive`` war Ollamas Feld — der Ablöser hat keines, und wir erfinden keines."""
+    http = Http(v1_antwort("  Ein ruhiger Abend.  "))
     text = klient(tmp_path, http).write(system="Ordne.", prompt="Szene 1")
 
     url, kwargs = http.aufrufe[0]
-    assert url == f"http://ollama.example:11434{CHAT_PATH}"
+    assert OPENAI_CHAT_PATH == "/v1/chat/completions"
+    assert url == f"{BASIS}{OPENAI_CHAT_PATH}"
     assert kwargs["json"]["model"] == MODELL
     assert kwargs["json"]["stream"] is False
     assert kwargs["json"]["messages"] == [
         {"role": "system", "content": "Ordne."},
         {"role": "user", "content": "Szene 1"},
     ]
-    assert kwargs["json"]["keep_alive"] == KNAPPE_HALTUNG
+    assert "keep_alive" not in kwargs["json"]
     assert kwargs["timeout"] > 0
     assert text == "Ein ruhiger Abend."
 
 
 def test_ohne_gewaehltes_modell_gibt_es_keinen_klienten(tmp_path):
     with pytest.raises(ModelNotConfigured) as fehler:
-        OllamaClient(Config(data_dir=tmp_path))
+        OpenAIClient(Config(data_dir=tmp_path))
     assert "Noch kein Modell gewählt" in str(fehler.value)
     assert "OLLAMA" not in str(fehler.value)
 
 
-def test_ohne_eigene_adresse_redet_der_klient_mit_dem_ollama_dieser_box(tmp_path):
-    http = Http(Antwort({"message": {"content": "Ein ruhiger Abend."}}))
+def test_ohne_eigene_adresse_redet_der_klient_mit_dem_dienst_dieser_box(tmp_path):
+    http = Http(v1_antwort())
     klient(tmp_path, http, url=None).write(system="Ordne.", prompt="Szene 1")
-    assert http.aufrufe[0][0] == f"{DEFAULT_OLLAMA_URL}{CHAT_PATH}"
+    assert http.aufrufe[0][0] == f"{DEFAULT_OLLAMA_URL}{OPENAI_CHAT_PATH}"
 
 
-def test_ein_nicht_erreichbares_ollama_ist_eine_verstaendliche_meldung(tmp_path):
+def test_ein_nicht_erreichbarer_dienst_ist_eine_verstaendliche_meldung(tmp_path):
     http = Http(fehler=requests.ConnectionError("weg"))
     with pytest.raises(ModelUnreachable) as fehler:
         klient(tmp_path, http).write(system="", prompt="")
@@ -134,44 +126,21 @@ def test_ein_nicht_erreichbares_ollama_ist_eine_verstaendliche_meldung(tmp_path)
     assert "ConnectionError" in str(fehler.value)
 
 
-def test_ein_fehlerstatus_zaehlt_ebenfalls_als_unerreichbar(tmp_path):
-    http = Http(Antwort(fehler=requests.HTTPError("500")))
-    with pytest.raises(ModelUnreachable):
-        klient(tmp_path, http).write(system="", prompt="")
-
-
-def test_eine_antwort_ohne_json_ist_kein_text(tmp_path):
-    with pytest.raises(ModelUnreachable):
-        klient(tmp_path, Http(Antwort())).write(system="", prompt="")
-
-
-@pytest.mark.parametrize("rumpf", [{}, {"message": {}}, {"message": {"content": "   "}}])
-def test_eine_leere_antwort_wird_nicht_als_absatz_ausgegeben(tmp_path, rumpf):
-    with pytest.raises(ModelUnreachable):
-        klient(tmp_path, Http(Antwort(rumpf))).write(system="", prompt="")
-
-
 def test_vor_der_ersten_antwort_gibt_es_keinen_namen(tmp_path):
     """#320: die Einstellung ist eine Bitte, kein Beleg — und noch hat niemand geantwortet."""
     assert klient(tmp_path, Http()).name is None
 
 
-@pytest.mark.parametrize(
-    ("bauart", "antwort"),
-    [
-        (OllamaClient, lambda name: Antwort({"model": name, "message": {"content": "Abend."}})),
-        (OpenAIClient, lambda name: Antwort({"model": name, **v1_antwort().json()})),
-    ],
-)
-def test_der_name_kommt_aus_der_antwort_und_nicht_aus_der_einstellung(tmp_path, bauart, antwort):
-    """Auf dem ``/v1``-Weg ignoriert der Server unseren Namen — dort ist die Antwort die Wahrheit.
+def test_der_name_kommt_aus_der_antwort_und_nicht_aus_der_einstellung(tmp_path):
+    """``llama-server`` ignoriert unseren Namen — die Antwort ist die Wahrheit.
 
-    Gemessen am 2026-09-05 auf dieser Box: ``llama-server`` nennt sich ohne ``--alias`` nach
-    seiner GGUF-Datei. Hässlich, aber wahr; nach ``mdopp/solarisbay#1333`` wird derselbe Satz
-    von selbst schön.
+    Gemessen am 2026-09-05 auf dieser Box: er nennt sich ohne ``--alias`` nach seiner
+    GGUF-Datei. Hässlich, aber wahr; nach ``mdopp/solarisbay#1333`` wird derselbe Satz von
+    selbst schön.
     """
     geladen = "/models/Gemma-4-12B-Q4_K_M.gguf"
-    modell = bauart(config(tmp_path), http=lambda: Http(antwort(geladen)))
+    antwort = Antwort({"model": geladen, **v1_antwort().json()})
+    modell = klient(tmp_path, Http(antwort))
 
     modell.write(system="Ordne.", prompt="Szene 1")
 
@@ -180,18 +149,12 @@ def test_der_name_kommt_aus_der_antwort_und_nicht_aus_der_einstellung(tmp_path, 
 
 
 @pytest.mark.parametrize(
-    "rumpf",
-    [
-        {"message": {"content": "Abend."}},
-        {"model": "", "message": {"content": "Abend."}},
-        {"model": "   ", "message": {"content": "Abend."}},
-        {"model": 12, "message": {"content": "Abend."}},
-        {"model": None, "message": {"content": "Abend."}},
-    ],
+    "genannt",
+    [{}, {"model": ""}, {"model": "   "}, {"model": 12}, {"model": None}],
 )
-def test_ohne_verwertbaren_namen_bleibt_er_leer_statt_erfunden(tmp_path, rumpf):
+def test_ohne_verwertbaren_namen_bleibt_er_leer_statt_erfunden(tmp_path, genannt):
     """Eine Chronik ohne Herkunftsangabe ist ehrlich; eine mit falscher ist es nicht."""
-    modell = klient(tmp_path, Http(Antwort(rumpf)))
+    modell = klient(tmp_path, Http(Antwort({**genannt, **v1_antwort("Abend.").json()})))
     modell.write(system="Ordne.", prompt="Szene 1")
     assert modell.name is None
 
@@ -212,8 +175,8 @@ def test_der_name_erinnert_sich_nicht_an_eine_fruehere_antwort(tmp_path):
     """Was die letzte Antwort nicht nennt, nennt der Kopf nicht — auch nichts Gemerktes."""
     http = Reihe(
         [
-            Antwort({"model": "erst", "message": {"content": "a"}}),
-            Antwort({"message": {"content": "b"}}),
+            Antwort({"model": "erst", **v1_antwort("a").json()}),
+            v1_antwort("b"),
         ]
     )
     modell = klient(tmp_path, http)
@@ -225,19 +188,14 @@ def test_der_name_erinnert_sich_nicht_an_eine_fruehere_antwort(tmp_path):
     assert modell.name is None
 
 
-def test_from_config_liefert_ohne_konfiguration_kein_modell(tmp_path):
-    assert from_config(Config(data_dir=tmp_path)) is None
-    assert isinstance(from_config(config(tmp_path)), OllamaClient)
-
-
 def test_wer_den_klienten_baut_bestimmt_die_zeitgrenze(tmp_path):
     """#302: der Aufschrieb darf lange rechnen, der Zwischenstand ausdrücklich nicht."""
-    http = Http(Antwort({"message": {"content": "Ein ruhiger Abend."}}))
+    http = Http(v1_antwort())
 
-    OllamaClient(config(tmp_path), http=lambda: http).write(system="", prompt="")
+    klient(tmp_path, http).write(system="", prompt="")
     assert http.aufrufe[-1][1]["timeout"] == DEFAULT_TIMEOUT
 
-    OllamaClient(config(tmp_path), http=lambda: http, timeout=ZWISCHENSTAND_TIMEOUT).write(
+    OpenAIClient(config(tmp_path), http=lambda: http, timeout=ZWISCHENSTAND_TIMEOUT).write(
         system="", prompt=""
     )
     assert http.aufrufe[-1][1]["timeout"] == ZWISCHENSTAND_TIMEOUT
@@ -247,123 +205,6 @@ def test_wer_den_klienten_baut_bestimmt_die_zeitgrenze(tmp_path):
     # #330 auf acht Minuten gewandert. Drei ist damit die Aussage, die noch trägt: knapper
     # bleibt knapper, aber nicht knapper als der Lauf, den sie zulassen soll.
     assert ZWISCHENSTAND_TIMEOUT * 3 < DEFAULT_TIMEOUT
-
-
-TAGS = {
-    "models": [
-        {"name": "gemma4:e4b"},
-        {"name": "gemma4:12b"},
-        {"name": "nomic-embed-text:latest"},
-        {},
-    ]
-}
-
-
-def test_die_installierten_modelle_kommen_aus_api_tags():
-    http = Http(Antwort(TAGS))
-    namen = installed_models(ADRESSE, http=lambda: http)
-
-    url, kwargs = http.aufrufe[0]
-    assert url == f"http://ollama.example:11434{TAGS_PATH}"
-    assert kwargs["timeout"] <= 5
-    # Einbettungsmodelle schreiben keinen Text und werden nicht angeboten.
-    assert namen == ("gemma4:12b", "gemma4:e4b")
-
-
-def test_ein_abgeschaltetes_ollama_ist_eine_verstaendliche_meldung():
-    http = Http(fehler=requests.ConnectionError("weg"))
-    with pytest.raises(ModelUnreachable) as fehler:
-        installed_models(ADRESSE, http=lambda: http)
-    assert "nicht erreichbar" in str(fehler.value)
-
-
-def test_ein_fehlerstatus_auf_tags_zaehlt_ebenfalls_als_unerreichbar():
-    with pytest.raises(ModelUnreachable):
-        installed_models(ADRESSE, http=lambda: Http(Antwort(fehler=requests.HTTPError("500"))))
-
-
-@pytest.mark.parametrize("rumpf", [None, {}, {"models": "keine Liste"}])
-def test_eine_unerwartete_antwort_ist_keine_modellliste(rumpf):
-    antwort = Antwort() if rumpf is None else Antwort(rumpf)
-    with pytest.raises(ModelUnreachable):
-        installed_models(ADRESSE, http=lambda: Http(antwort))
-
-
-def test_ein_ollama_ohne_textmodelle_liefert_eine_leere_liste():
-    http = Http(Antwort({"models": [{"name": "nomic-embed-text"}]}))
-    assert installed_models(ADRESSE, http=lambda: http) == ()
-
-
-def test_kein_aufruf_laesst_die_frist_weg(tmp_path):
-    """#303: ein Aufruf ohne ``keep_alive`` erbt die Vorgabe der Box — vierundzwanzig Stunden.
-
-    Deshalb steht das Feld an *jedem* Aufruf und an keiner Bedingung. Der Test läuft die
-    Wege ab, an denen früher ein Zweig hing: mit und ohne eigene Adresse, mit der knappen
-    Zeitgrenze des Zwischenstands, und noch einmal nach einer Freigabe.
-    """
-    http = Http(Antwort({"message": {"content": "Ein ruhiger Abend."}}))
-
-    klient(tmp_path, http).write(system="Ordne.", prompt="Szene 1")
-    klient(tmp_path, http, url=None).write(system="Ordne.", prompt="Szene 2")
-    OllamaClient(config(tmp_path), http=lambda: http, timeout=ZWISCHENSTAND_TIMEOUT).write(
-        system="Ordne.", prompt="Szene 3"
-    )
-    freigeben(config(tmp_path), http=lambda: http)
-    klient(tmp_path, http).write(system="Ordne.", prompt="Szene 4")
-
-    geschrieben = [kwargs["json"] for _, kwargs in http.aufrufe if kwargs["json"]["messages"]]
-    assert len(geschrieben) == 4
-    assert {rumpf["keep_alive"] for rumpf in geschrieben} == {KNAPPE_HALTUNG}
-
-
-def test_die_frist_am_aufruf_ist_knapp_und_endlich():
-    """Gehalten wird seit #303 nicht mehr — die Frist überbrückt nur noch den nächsten Aufruf.
-
-    Ollama kennt für »für immer« einen negativen Wert; er käme hier einer Sperre gleich.
-    Null wäre die andere Übertreibung: innerhalb eines Aufschriebs folgen Chronik und
-    Rückblick unmittelbar aufeinander, und dazwischen zu entladen kostete den Ladevorgang
-    zweimal.
-    """
-    zahl, einheit = KNAPPE_HALTUNG[:-1], KNAPPE_HALTUNG[-1]
-    assert einheit in {"m", "h"}
-    minuten = float(zahl) if einheit == "m" else float(zahl) * 60
-    assert 0 < minuten <= 15
-
-
-def test_der_abschluss_gibt_das_modell_mit_null_wieder_frei(tmp_path):
-    http = Http(Antwort({"message": {"content": "Ein ruhiger Abend."}}))
-
-    assert freigeben(config(tmp_path), http=lambda: http) is True
-
-    url, kwargs = http.aufrufe[-1]
-    assert url == f"http://ollama.example:11434{CHAT_PATH}"
-    # Kein Wort schreiben lassen: der Aufruf entlädt nur.
-    assert kwargs["json"]["messages"] == []
-    assert kwargs["json"]["keep_alive"] == FREIGABE
-    assert FREIGABE == 0
-
-
-def test_ein_abgeschaltetes_ollama_haelt_den_abend_nicht_auf(tmp_path):
-    """Die Freigabe ist bester Wille: ein Abend darf weder daran hängen noch daran scheitern."""
-    http = Http(fehler=requests.ConnectionError("weg"))
-    assert freigeben(config(tmp_path), http=lambda: http) is False
-
-
-def test_ein_fehlerstatus_bei_der_freigabe_zaehlt_ebenfalls_als_gescheitert(tmp_path):
-    http = Http(Antwort(fehler=requests.HTTPError("500")))
-    assert freigeben(config(tmp_path), http=lambda: http) is False
-
-
-def test_ohne_gewaehltes_modell_gibt_es_nichts_freizugeben(tmp_path):
-    http = Http()
-    assert freigeben(Config(data_dir=tmp_path), http=lambda: http) is False
-    assert http.aufrufe == []
-
-
-def test_ohne_eigene_adresse_geht_die_freigabe_an_das_ollama_dieser_box(tmp_path):
-    http = Http(Antwort({}))
-    freigeben(config(tmp_path, url=None), http=lambda: http)
-    assert http.aufrufe[0][0] == f"{DEFAULT_OLLAMA_URL}{CHAT_PATH}"
 
 
 # ---------------------------------------------------------------------------
@@ -397,7 +238,7 @@ def anmeldungen(http):
     return [(url, kwargs) for url, kwargs in http.aufrufe if url.endswith(LEASE_PATH)]
 
 
-def test_der_beginn_meldet_das_fenster_mit_modell_und_frist_an(tmp_path):
+def test_der_beginn_meldet_das_fenster_mit_profil_und_frist_an(tmp_path):
     """Genau ein POST, und die Nutzlast sagt nur, *was* geladen wird und *wie lange*.
 
     Wer spielt, gehört nicht hinein: der Nachbar entscheidet daran nichts, und eine
@@ -408,7 +249,7 @@ def test_der_beginn_meldet_das_fenster_mit_modell_und_frist_an(tmp_path):
 
     ((url, kwargs),) = anmeldungen(http)
     assert url == f"{DEFAULT_SOLARIS_URL}{LEASE_PATH}"
-    assert kwargs["json"] == {"model": MODELL, "ttl_s": LEASE_TTL_S}
+    assert kwargs["json"] == {"model": LEASE_PROFIL, "ttl_s": LEASE_TTL_S}
     assert kwargs["timeout"] > 0
 
 
@@ -425,29 +266,32 @@ def test_die_anmeldung_traegt_keine_kennung_und_kein_geheimnis(tmp_path):
     assert DEFAULT_SOLARIS_URL.startswith("http://127.0.0.1:")
 
 
-def test_bei_offenem_fenster_tragen_die_aufrufe_die_frist_des_fensters(tmp_path):
-    """Eine Konstante, zwei Werte: die knappe Frist bleibt die Norm, das Fenster die Ausnahme."""
-    http = Fenster(Antwort({"message": {"content": "Ein ruhiger Abend."}}))
+def test_das_profil_benennt_die_arbeit_und_nicht_die_runde(tmp_path):
+    """Die Zusage aus #299 überlebt den neuen Vertrag: der Nachbar erfährt nicht, wer spielt.
 
-    klient(tmp_path, http).write(system="Ordne.", prompt="Vor dem Fenster")
-    assert http.aufrufe[-1][1]["json"]["keep_alive"] == KNAPPE_HALTUNG
-
+    Ein **Profil**, kein Modellname: ``llama-server`` ignoriert den Namen der Anfrage, und
+    der Nachbar schaltet am Profil, welches Modell er geladen hält. Bis #329 stand am
+    Ollama-Weg daneben der Modellname, weil ein Profil dort ein unbekanntes Modell gewesen
+    wäre; mit dem Weg ist auch diese Verzweigung gefallen.
+    """
+    http = Fenster(Antwort({}))
     fenster_oeffnen(config(tmp_path), http=lambda: http)
-    klient(tmp_path, http).write(system="Ordne.", prompt="Im Fenster")
-    assert http.aufrufe[-1][1]["json"]["keep_alive"] == LEASE_HALTUNG
 
-    freigeben(config(tmp_path), http=lambda: http)
-    klient(tmp_path, http).write(system="Ordne.", prompt="Nach dem Fenster")
-    assert http.aufrufe[-1][1]["json"]["keep_alive"] == KNAPPE_HALTUNG
+    ((_, kwargs),) = anmeldungen(http)
+    assert LEASE_PROFIL == "foundry"
+    assert kwargs["json"]["model"] == LEASE_PROFIL
+    assert MODELL not in str(kwargs["json"])
 
 
-def test_die_frist_des_fensters_und_das_keep_alive_kommen_aus_derselben_konstante():
-    """Zwei Zahlen liefen auseinander; das Fenster fiele dann mitten im Abend zu."""
+def test_die_frist_des_fensters_und_ihr_erneuerungstakt_haengen_zusammen():
+    """Zwei Zahlen liefen auseinander; das Fenster fiele dann mitten im Abend zu.
+
+    Bis #329 war es *eine Zahl mit zwei Verwendungen*: dieselbe Frist ging als
+    ``keep_alive`` an Ollama und als ``ttl_s`` an den Nachbarn. Der Ablöser kennt kein
+    ``keep_alive``; geblieben ist die Verwendung, die den Vertrag trägt.
+    """
     assert LEASE_TTL_S == 15 * 60
-    assert LEASE_HALTUNG == f"{LEASE_TTL_S}s"
     assert LEASE_ERNEUERUNG_S == LEASE_TTL_S / 3 == 5 * 60
-    assert LEASE_HALTUNG != "24h"
-    assert KNAPPE_HALTUNG != LEASE_HALTUNG
 
 
 def test_der_pfad_liegt_nicht_im_token_pflichtigen_praefix_des_nachbarn():
@@ -490,19 +334,16 @@ def test_ein_fehlender_oder_unsinniger_takt_faellt_auf_die_eigene_ableitung_zuru
     assert erneuerung() == LEASE_ERNEUERUNG_S
 
 
-def test_die_anmeldung_laedt_das_modell_gleich_mit(tmp_path):
-    """Der offene Punkt aus #299: der erste Szenenschnitt soll den Ladevorgang nicht zahlen.
+def test_die_anmeldung_ist_der_einzige_aufruf_des_beginns(tmp_path):
+    """Bis #329 lud sie das Modell gleich mit — ein ``keep_alive``-Aufruf an Ollama (#299).
 
-    Geladen wird erst **nach** der Zusage — ohne sie verdrängten wir den Nachbarn
-    ungefragt, und genau das kauft das Fenster ja ab.
+    Der Aufwärm-Aufruf hing an Ollamas Haltung und ist mit ihr gefallen; ``llama-server``
+    lädt auf die Anmeldung hin selbst, und was er geladen hält, entscheidet das Profil.
     """
     http = Fenster(Antwort({}))
-    fenster_oeffnen(config(tmp_path), http=lambda: http)
+    assert fenster_oeffnen(config(tmp_path), http=lambda: http) is True
 
-    url, kwargs = http.aufrufe[-1]
-    assert url == f"http://ollama.example:11434{CHAT_PATH}"
-    assert kwargs["json"]["messages"] == []
-    assert kwargs["json"]["keep_alive"] == LEASE_HALTUNG
+    assert [url for url, _ in http.aufrufe] == [f"{DEFAULT_SOLARIS_URL}{LEASE_PATH}"]
 
 
 def test_ein_gescheitertes_fenster_haelt_den_beginn_nicht_auf(tmp_path, caplog):
@@ -512,9 +353,7 @@ def test_ein_gescheitertes_fenster_haelt_den_beginn_nicht_auf(tmp_path, caplog):
         assert fenster_oeffnen(config(tmp_path), http=lambda: http) is False
 
     assert not lease_offen()
-    assert klient(tmp_path, Fenster(Antwort({"message": {"content": "x"}}))).write(
-        system="", prompt=""
-    )
+    assert klient(tmp_path, Fenster(v1_antwort("x"))).write(system="", prompt="")
     gemeldet = " ".join(eintrag.getMessage() for eintrag in caplog.records)
     assert "ConnectionError" in gemeldet
     assert "127.0.0.1" not in gemeldet and MODELL not in gemeldet
@@ -557,14 +396,11 @@ def test_der_abschalter_laesst_keinen_einzigen_aufruf_hinausgehen(tmp_path):
     from dataclasses import replace
 
     aus = replace(config(tmp_path), gpu_lease=False)
-    http = Fenster(Antwort({"message": {"content": "Ein ruhiger Abend."}}))
+    http = Fenster(v1_antwort())
 
     assert fenster_oeffnen(aus, http=lambda: http) is False
     assert http.aufrufe == []
     assert not lease_offen()
-
-    OllamaClient(aus, http=lambda: http).write(system="Ordne.", prompt="Szene 1")
-    assert http.aufrufe[-1][1]["json"]["keep_alive"] == KNAPPE_HALTUNG
 
     freigeben(aus, http=lambda: http)
     assert http.abmeldungen == []
@@ -700,24 +536,31 @@ def test_die_wartezeit_kommt_vom_nachbarn_und_bleibt_in_schranken(tmp_path, uhr,
 
 
 def test_das_ende_meldet_das_fenster_genau_einmal_ab(tmp_path):
-    """Der Fensterschluss hängt an der Freigabe — und die gibt es nur einmal je Aufschrieb."""
+    """Der Fensterschluss hängt an der Freigabe — und die gibt es nur einmal je Aufschrieb.
+
+    Bis #329 gab dieselbe Stelle davor Ollamas Haltung mit ``keep_alive: 0`` frei; der
+    Ablöser hat keine, die zu beenden wäre. Geblieben ist das Abmelden — und **nur** es:
+    kein Entladen, kein zweiter Aufruf.
+    """
     http = Fenster(Antwort({}))
     fenster_oeffnen(config(tmp_path), http=lambda: http)
 
-    freigeben(config(tmp_path), http=lambda: http)
+    assert freigeben(config(tmp_path), http=lambda: http) is True
     ((url, kwargs),) = http.abmeldungen
     assert url == f"{DEFAULT_SOLARIS_URL}{LEASE_PATH}"
     assert set(kwargs) == {"timeout"}
     assert not lease_offen()
+    assert len(anmeldungen(http)) == len(http.aufrufe) == 1
 
-    freigeben(config(tmp_path), http=lambda: http)
+    assert freigeben(config(tmp_path), http=lambda: http) is False
     assert len(http.abmeldungen) == 1
 
 
 def test_ohne_offenes_fenster_wird_nichts_abgemeldet(tmp_path):
     http = Fenster(Antwort({}))
-    freigeben(config(tmp_path), http=lambda: http)
+    assert freigeben(config(tmp_path), http=lambda: http) is False
     assert http.abmeldungen == []
+    assert http.aufrufe == []
 
 
 def test_ein_gescheitertes_abmelden_haelt_den_abschluss_nicht_auf(tmp_path, caplog):
@@ -726,10 +569,11 @@ def test_ein_gescheitertes_abmelden_haelt_den_abschluss_nicht_auf(tmp_path, capl
     fenster_oeffnen(config(tmp_path), http=lambda: http)
 
     with caplog.at_level("WARNING"):
-        assert freigeben(config(tmp_path), http=lambda: http) is True
+        assert freigeben(config(tmp_path), http=lambda: http) is False
 
     assert not lease_offen()
     gemeldet = " ".join(eintrag.getMessage() for eintrag in caplog.records)
+    assert "ConnectionError" in gemeldet
     assert "127.0.0.1" not in gemeldet
 
 
@@ -749,62 +593,18 @@ def test_es_gibt_weiterhin_nur_eine_freigabestelle():
 
 
 # --------------------------------------------------------------------------------------
-# Der zweite Weg: ``llama-server`` in der OpenAI-Form (#316). Ollama bleibt die Vorgabe;
-# beide Wege stehen nebeneinander, weil die Box heute noch den ersten fährt.
+# Was am Klienten hängt: Naht, Fehlerbild und die Zahlensperre dahinter
 # --------------------------------------------------------------------------------------
 
 
-def openai_config(tmp_path, **kwargs):
-    return replace(config(tmp_path, **kwargs), llm_backend=BACKEND_OPENAI)
-
-
-def openai_klient(tmp_path, http, **kwargs):
-    return OpenAIClient(openai_config(tmp_path, **kwargs), http=lambda: http)
-
-
-def v1_antwort(text="Ein ruhiger Abend."):
-    return Antwort({"choices": [{"message": {"content": text}}]})
-
-
-def test_der_v1_weg_ruft_den_pfad_des_abloesers_und_traegt_keine_frist(tmp_path):
-    """``keep_alive`` ist Ollamas Feld — der Ablöser hat keines, und wir erfinden keines."""
-    http = Http(v1_antwort("  Ein ruhiger Abend.  "))
-    text = openai_klient(tmp_path, http).write(system="Ordne.", prompt="Szene 1")
-
-    url, kwargs = http.aufrufe[0]
-    assert OPENAI_CHAT_PATH == "/v1/chat/completions"
-    assert url == f"http://ollama.example:11434{OPENAI_CHAT_PATH}"
-    assert kwargs["json"]["model"] == MODELL
-    assert kwargs["json"]["stream"] is False
-    assert kwargs["json"]["messages"] == [
-        {"role": "system", "content": "Ordne."},
-        {"role": "user", "content": "Szene 1"},
-    ]
-    assert "keep_alive" not in kwargs["json"]
-    assert kwargs["timeout"] > 0
-    assert text == "Ein ruhiger Abend."
-
-
-def test_ohne_eigene_adresse_redet_auch_der_v1_klient_mit_dieser_box(tmp_path):
-    http = Http(v1_antwort())
-    openai_klient(tmp_path, http, url=None).write(system="Ordne.", prompt="Szene 1")
-    assert http.aufrufe[0][0] == f"{DEFAULT_OLLAMA_URL}{OPENAI_CHAT_PATH}"
-
-
 def test_ohne_ansage_antwortet_der_abloeser(tmp_path):
-    """Die Naht ist ``from_config`` und sonst nichts — und ihre Vorgabe ist der neue Weg.
+    """Die Naht ist ``from_config`` und sonst nichts — und es gibt nur noch einen Weg.
 
-    Sie stand bis #329 auf Ollama, weil die Box das fuhr; genau das ist der Grund, sie
-    jetzt zu drehen. Eine Vorgabe, die einen abgeschalteten Dienst benennt, ist kein
-    vorsichtiger Rückfall, sondern eine Neuinstallation, die stumm bleibt.
-
-    ``ollama`` bleibt daneben **wählbar**, bis der Dienst auf der Box wirklich weg ist
-    (``mdopp/solarisbay#1332``) — wer heute noch eines fährt, erreicht es, indem er den
-    Wert ausdrücklich setzt.
+    Sie stand bis #329 auf Ollama, weil die Box das fuhr; mit #335 wanderte die Vorgabe,
+    und jetzt ist der zweite Weg ganz gefallen. Geblieben ist die Entscheidung, *ob*
+    überhaupt ein Modell antwortet.
     """
-    assert Config().llm_backend == BACKEND_OPENAI
-    assert isinstance(from_config(openai_config(tmp_path)), OpenAIClient)
-    assert isinstance(from_config(config(tmp_path)), OllamaClient)
+    assert isinstance(from_config(config(tmp_path)), OpenAIClient)
     assert from_config(Config(data_dir=tmp_path)) is None
 
 
@@ -822,75 +622,9 @@ def test_ohne_ansage_antwortet_der_abloeser(tmp_path):
         Antwort({"message": {"content": "Ein ruhiger Abend."}}),
     ],
 )
-def test_eine_unbrauchbare_v1_antwort_ist_dieselbe_verstaendliche_meldung(tmp_path, antwort):
+def test_eine_unbrauchbare_antwort_ist_dieselbe_verstaendliche_meldung(tmp_path, antwort):
     with pytest.raises(ModelUnreachable):
-        openai_klient(tmp_path, Http(antwort)).write(system="", prompt="")
-
-
-def test_auf_dem_v1_weg_gilt_das_fenster_und_schweigt_nur_die_haltung(tmp_path, caplog):
-    """#321: der Leerlauf von #316 hieße heute »wir bekommen still das Haushaltsmodell«.
-
-    Der Vertrag steht jetzt, also wird angemeldet und abgemeldet — nur eine Haltung gibt es
-    auf diesem Weg nicht, und das bleibt ein ausgesprochener No-op statt eines stillen
-    Nichts.
-    """
-    http = Fenster(Antwort({}))
-    aufbau = openai_config(tmp_path)
-
-    with caplog.at_level("INFO"):
-        assert fenster_oeffnen(aufbau, http=lambda: http) is True
-        assert freigeben(aufbau, http=lambda: http) is True
-
-    # Genau ein Aufruf: die Anmeldung. Kein Aufwärmen, kein ``keep_alive``, kein Entladen.
-    ((url, kwargs),) = http.aufrufe
-    assert url == f"{DEFAULT_SOLARIS_URL}{LEASE_PATH}"
-    assert kwargs["json"] == {"model": LEASE_PROFIL, "ttl_s": LEASE_TTL_S}
-    assert len(http.abmeldungen) == 1
-    assert not lease_offen()
-    gemeldet = " ".join(eintrag.getMessage() for eintrag in caplog.records)
-    assert BACKEND_OPENAI in gemeldet
-    assert "127.0.0.1" not in gemeldet and MODELL not in gemeldet
-
-
-def test_das_profil_benennt_die_arbeit_und_nicht_die_runde(tmp_path):
-    """Die Zusage aus #299 überlebt den neuen Vertrag: der Nachbar erfährt nicht, wer spielt."""
-    http = Fenster(Antwort({}))
-    fenster_oeffnen(openai_config(tmp_path), http=lambda: http)
-
-    ((_, kwargs),) = anmeldungen(http)
-    assert LEASE_PROFIL == "foundry"
-    assert kwargs["json"]["model"] == LEASE_PROFIL
-    assert MODELL not in str(kwargs["json"])
-    assert set(kwargs["json"]) == {"model", "ttl_s"}
-    assert set(kwargs) == {"json", "timeout"}
-
-
-def test_auf_dem_alten_weg_bleibt_der_modellname_stehen(tmp_path):
-    """Bis ``mdopp/solarisbay#1333`` wirkt die Anmeldung dort auf Ollama — und ein Profil
-    wäre für Ollama ein Modell, das es nicht kennt."""
-    http = Fenster(Antwort({}))
-    fenster_oeffnen(config(tmp_path), http=lambda: http)
-
-    ((_, kwargs),) = anmeldungen(http)
-    assert kwargs["json"]["model"] == MODELL
-
-
-@pytest.mark.parametrize(
-    ("bauart", "openai", "antwort"),
-    [
-        (OllamaClient, False, Antwort({"message": {"content": "Ein ruhiger Abend."}})),
-        (OpenAIClient, True, v1_antwort()),
-    ],
-)
-def test_der_zwischenstand_behaelt_auf_beiden_wegen_seine_kuerzere_frist(
-    tmp_path, bauart, openai, antwort
-):
-    """#302: die eigene Grenze des Zwischenstands hängt am Klienten, nicht am Backend."""
-    assert ZWISCHENSTAND_TIMEOUT < DEFAULT_TIMEOUT
-    http = Http(antwort)
-    aufbau = openai_config(tmp_path) if openai else config(tmp_path)
-    bauart(aufbau, http=lambda: http, timeout=ZWISCHENSTAND_TIMEOUT).write(system="", prompt="")
-    assert http.aufrufe[-1][1]["timeout"] == ZWISCHENSTAND_TIMEOUT
+        klient(tmp_path, Http(antwort)).write(system="", prompt="")
 
 
 def material():
@@ -902,16 +636,16 @@ def material():
     )
 
 
-def test_ein_scheiterndes_v1_modell_liefert_geordnet_statt_erzaehlt(tmp_path):
+def test_ein_scheiterndes_modell_liefert_geordnet_statt_erzaehlt(tmp_path):
     """Der Fehler bleibt im Klienten: keine Ausnahme schlägt bis zur Komposition durch."""
     http = Http(Antwort(fehler=requests.HTTPError("404")))
-    ergebnis = compose(material(), openai_klient(tmp_path, http), inhaltssprache=sprachen.DEUTSCH)
+    ergebnis = compose(material(), klient(tmp_path, http), inhaltssprache=sprachen.DEUTSCH)
     assert "Erste Notiz." in ergebnis.text
     assert ergebnis.prose_count == 0
 
 
-def test_die_zahlensperre_greift_auch_auf_dem_v1_weg(tmp_path):
+def test_die_zahlensperre_greift_vor_der_ausgabe(tmp_path):
     """Mechanisch und vor der Ausgabe — der Weg des Aufrufs ändert daran nichts."""
     http = Http(v1_antwort("Es waren 42 Ratten."))
-    ergebnis = compose(material(), openai_klient(tmp_path, http), inhaltssprache=sprachen.DEUTSCH)
+    ergebnis = compose(material(), klient(tmp_path, http), inhaltssprache=sprachen.DEUTSCH)
     assert "42" not in ergebnis.text
