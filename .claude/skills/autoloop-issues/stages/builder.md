@@ -64,7 +64,9 @@ Implement the one file/rule named. Size guard: ≤2 source files (+ tests), ≤1
 
 ## Mode: `seal` — ship the accumulated batch (expensive pipeline, once)
 
-Precondition (re-assert): (`batch.count >= 8` **or** `queue.py next` returns nothing) **and** verify status is clear (`green`/`null`, not `owed`/`verifying`/`red` — check with `queue.py verify-get`). Mid-batch, or a prior batch still in verify → do nothing, return "not ready to seal".
+Precondition (re-assert): (`batch.count >= 8` **or** `queue.py next` returns nothing) **and** the verify state does not block — `queue.py verify-get` says `blocks_seal: false`. Mid-batch, or a prior batch still in verify → do nothing, return "not ready to seal".
+
+Read that flag, don't re-derive it from the status: since #319 an `owed` with `cause: deployment-backlog` — a delivery backlog only the operator can clear, e.g. the box never installed from the template (#315) — does **not** block, because the loop cannot clear it and would otherwise freeze indefinitely. Everything else that isn't `green` still does. If you seal past such a backlog, say so in the PR body and in your return line: it stays visible until the operator has cleared it.
 
 ### 1. Full gate
 ```bash

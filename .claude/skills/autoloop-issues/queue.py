@@ -53,6 +53,12 @@ L_UPSTREAM = LABEL + "upstream-wait"
 L_VERIFY_PENDING = LABEL + "verify-pending"
 L_VERIFY_FAILED = LABEL + "verify-failed"
 
+# Warum der Verify aussteht. Die Sperre trennt danach (#319, Betreiber 2026-09-06):
+# nur der erste Fall traegt die Begruendung "ein Stapel haengt noch in merge/verify".
+CAUSE_MERGE_PENDING = "merge-pending"  # ein gemergter Stapel schuldet seinen Beweis
+CAUSE_BACKLOG = "deployment-backlog"  # ein Rueckstand, den nur der Betreiber aufloest
+VERIFY_CAUSES = (CAUSE_MERGE_PENDING, CAUSE_BACKLOG)
+
 PARK_LABELS = {
     "blocked": L_BLOCKED,
     "refinement": L_REFINE,
@@ -115,7 +121,7 @@ class Cache:
             "version": CACHE_VERSION,
             "batch": None,  # {branch, count, unit_ids:[...]} | None
             "units": {},  # id -> unit dict (the in-flight plan for THIS run)
-            "verify": None,  # {sha, status, since, detail} | None
+            "verify": None,  # {sha, status, cause, since, detail} | None
             "notes": [],  # bounded run-scoped scratch ring
             "lock": None,  # {pid, since}
             "last_invocation": None,
@@ -147,7 +153,17 @@ def v_summary(c: Cache, a) -> None:
         else {"branch": batch["branch"], "count": batch["count"]},
         "verify": None
         if not verify
-        else {"sha": verify.get("sha"), "status": verify.get("status")},
+        else {
+            "sha": verify.get("sha"),
+            "status": verify.get("status"),
+            "cause": verify.get("cause", CAUSE_MERGE_PENDING),
+            "blocks_seal": _blocks_seal(verify),
+            # Ein Rueckstand, der nicht mehr sperrt, darf nicht still verschwinden:
+            # der Detailtext geht in die Zusammenfassung jedes Durchgangs (#319).
+            "detail": verify.get("detail", "")
+            if verify.get("cause") == CAUSE_BACKLOG
+            else None,
+        },
         "planned_units": len(planned),
         "next_unit": (planned[0]["id"] if planned else None),
         "gh": {
@@ -417,9 +433,18 @@ def v_verify_set(c: Cache, a) -> None:
     # --detail replaces it, and only for the same sha (a new sha's detail is
     # about different changes).
     detail = a.detail or (prev.get("detail", "") if prev.get("sha") == a.sha else "")
+    # Die Ursache traegt genauso weit wie der Checklisten-Text: der owed->verifying-Hop
+    # derselben sha darf sie nicht verlieren, sonst sperrt ein Auslieferungsrueckstand
+    # doch wieder. Eine neue sha faengt bei der sperrenden Ursache an.
+    cause = a.cause or (
+        prev.get("cause", CAUSE_MERGE_PENDING)
+        if prev.get("sha") == a.sha
+        else CAUSE_MERGE_PENDING
+    )
     d["verify"] = {
         "sha": a.sha,
         "status": a.status,
+        "cause": cause,
         "detail": detail,
         "since": int(time.time()),
     }
@@ -439,6 +464,21 @@ def v_verify_set(c: Cache, a) -> None:
     print(json.dumps(d["verify"], ensure_ascii=False))
 
 
+def _blocks_seal(verify: dict | None) -> bool:
+    """Sperrt diese Verify-Lage das Sealen des naechsten Stapels?"""
+    if not verify or verify.get("status") in (None, "green"):
+        return False
+    # Ein 'red' ist ein Urteil und sperrt immer. Ein ausstehender Beweis sperrt nur,
+    # wenn die Schleife ihn selbst einloesen kann; ein Auslieferungsrueckstand wartet
+    # auf den Betreiber, und daran jede weitere Arbeit aufzuhaengen hiesse, auf eine
+    # Handlung zu warten, die die Schleife nicht ausfuehren kann (#319).
+    if verify["status"] == "red":
+        return True
+    # Ohne Ursache — Cache aus der Zeit vor #319 oder `rebuild` aus den Labels, wo sie
+    # nirgends steht — gilt die sperrende: unbekannt zaehlt in Richtung Vorsicht.
+    return verify.get("cause", CAUSE_MERGE_PENDING) != CAUSE_BACKLOG
+
+
 def _verify_labels(status: str):
     if status in ("owed", "verifying"):
         return [L_VERIFY_PENDING], [L_VERIFY_FAILED]
@@ -455,7 +495,8 @@ def v_verify_get(c: Cache, a) -> None:
         if int(time.time()) - int(verify.get("since", 0)) > 1200:
             verify["status"] = "owed"
             c.save(d)
-    print(json.dumps(verify, ensure_ascii=False, indent=2))
+    out = None if not verify else {**verify, "blocks_seal": _blocks_seal(verify)}
+    print(json.dumps(out, ensure_ascii=False, indent=2))
 
 
 def v_note(c: Cache, a) -> None:
@@ -599,6 +640,7 @@ def v_selftest(c: Cache, a) -> None:
             """Call a verb offline, swallowing its stdout, and return the parsed print."""
             kw.setdefault("offline", True)
             kw.setdefault("repo", None)
+            kw.setdefault("cause", "")
             buf = io.StringIO()
             with contextlib.redirect_stdout(buf):
                 fn(self.c, argparse.Namespace(**kw))
@@ -769,6 +811,87 @@ def v_selftest(c: Cache, a) -> None:
             self._run(v_verify_set, sha="def", status="owed", detail="", pr=None)
             self.assertEqual(self.c.load()["verify"]["detail"], "")
 
+        def _verify(self):
+            return json.loads(self._run(v_verify_get))
+
+        def test_an_owed_without_a_cause_blocks_the_seal(self):
+            self._run(v_verify_set, sha="abc", status="owed", detail="", pr=None)
+            got = self._verify()
+            self.assertEqual(got["cause"], CAUSE_MERGE_PENDING)
+            self.assertTrue(got["blocks_seal"])
+
+        def test_a_deployment_backlog_owed_does_not_block_the_seal(self):
+            self._run(
+                v_verify_set,
+                sha="abc",
+                status="owed",
+                cause=CAUSE_BACKLOG,
+                detail="Box nie aus dem Template installiert (#315)",
+                pr=None,
+            )
+            self.assertFalse(self._verify()["blocks_seal"])
+
+        def test_a_deployment_backlog_is_named_in_every_summary(self):
+            self._run(
+                v_verify_set,
+                sha="abc",
+                status="owed",
+                cause=CAUSE_BACKLOG,
+                detail="Box nie aus dem Template installiert (#315)",
+                pr=None,
+            )
+            v = json.loads(self._run(v_summary))["verify"]
+            self.assertEqual(v["cause"], CAUSE_BACKLOG)
+            self.assertFalse(v["blocks_seal"])
+            self.assertIn("#315", v["detail"])
+
+        def test_the_cause_survives_the_owed_to_verifying_hop(self):
+            self._run(
+                v_verify_set,
+                sha="abc",
+                status="owed",
+                cause=CAUSE_BACKLOG,
+                detail="",
+                pr=None,
+            )
+            self._run(v_verify_set, sha="abc", status="verifying", detail="", pr=None)
+            got = self._verify()
+            self.assertEqual(got["cause"], CAUSE_BACKLOG)
+            self.assertFalse(got["blocks_seal"])
+
+        def test_a_new_sha_owes_its_proof_again(self):
+            self._run(
+                v_verify_set,
+                sha="abc",
+                status="owed",
+                cause=CAUSE_BACKLOG,
+                detail="",
+                pr=None,
+            )
+            self._run(v_verify_set, sha="def", status="owed", detail="", pr=None)
+            got = self._verify()
+            self.assertEqual(got["cause"], CAUSE_MERGE_PENDING)
+            self.assertTrue(got["blocks_seal"])
+
+        def test_a_red_blocks_whatever_the_cause_says(self):
+            self._run(
+                v_verify_set,
+                sha="abc",
+                status="red",
+                cause=CAUSE_BACKLOG,
+                detail="",
+                pr=None,
+            )
+            self.assertTrue(self._verify()["blocks_seal"])
+
+        def test_blocks_seal_on_entries_that_carry_no_cause(self):
+            # so wie ein Cache aus der Zeit vor #319 und wie `rebuild` ihn aus den
+            # Labels wiederherstellt: ohne Ursache gilt die sperrende
+            self.assertTrue(_blocks_seal({"sha": "?", "status": "owed"}))
+            self.assertTrue(_blocks_seal({"sha": "?", "status": "red"}))
+            self.assertFalse(_blocks_seal({"sha": "?", "status": "green"}))
+            self.assertFalse(_blocks_seal(None))
+
         def test_verify_labels(self):
             self.assertEqual(
                 _verify_labels("owed"), ([L_VERIFY_PENDING], [L_VERIFY_FAILED])
@@ -822,6 +945,12 @@ def main() -> None:
     sp = add("verify-set", v_verify_set)
     sp.add_argument("sha")
     sp.add_argument("status", choices=["owed", "verifying", "green", "red"])
+    sp.add_argument(
+        "--cause",
+        default="",
+        choices=list(VERIFY_CAUSES),
+        help=f"why it is outstanding; {CAUSE_BACKLOG} does not block the seal",
+    )
     sp.add_argument("--detail", default="")
     sp.add_argument("--pr", type=int)
     add("verify-get", v_verify_get)
