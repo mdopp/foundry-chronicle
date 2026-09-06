@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.4.0](https://github.com/mdopp/foundry-chronicle/compare/v0.3.2...v0.4.0) (2026-09-06)
+
+
+### Features
+
+* **compose:** die Nacherzählung gehört den Figuren, nicht dem Tisch ([2a25779](https://github.com/mdopp/foundry-chronicle/commit/2a25779bc8c983375fb74ebd9ffcb8e9233bb9f5)), closes [#325](https://github.com/mdopp/foundry-chronicle/issues/325)
+* **compose:** llama-server spricht neben Ollama, gewaehlt per Einstellung ([1cde905](https://github.com/mdopp/foundry-chronicle/commit/1cde90518922100f7805ef486d5b4ba25dd9d52c)), closes [#316](https://github.com/mdopp/foundry-chronicle/issues/316)
+
+
+### Bug Fixes
+
+* **compose:** das Sitzungsfenster gilt auch auf dem v1-Weg ([32bc0f3](https://github.com/mdopp/foundry-chronicle/commit/32bc0f3eb6ffce4511668f19f754762c1aeb132f)), closes [#321](https://github.com/mdopp/foundry-chronicle/issues/321)
+* **compose:** der Herkunftsvermerk kommt aus der Antwort, nie aus der Einstellung ([d9519f5](https://github.com/mdopp/foundry-chronicle/commit/d9519f5e5f14be3acfdba7ea7043163187cbb0ab)), closes [#320](https://github.com/mdopp/foundry-chronicle/issues/320)
+
+
+### Documentation
+
+* das Release-Tor trennt nach Umkehrbarkeit, nicht nach Repo ([4cacbbc](https://github.com/mdopp/foundry-chronicle/commit/4cacbbce82d0180cb81c5a4c3004d50362dc9948))
+* der Zeiger auf die Standards nennt die Variante und wird erzeugt ([00ad4ad](https://github.com/mdopp/foundry-chronicle/commit/00ad4adc459de0811adb1eff5bd60d75de35e8b6)), closes [#313](https://github.com/mdopp/foundry-chronicle/issues/313)
+
 ## [0.3.2](https://github.com/mdopp/foundry-chronicle/compare/v0.3.1...v0.3.2) (2026-08-30)
 
 

@@ -1,6 +1,6 @@
 [project]
 name = "foundry-chronicle"
-version = "0.3.2"
+version = "0.4.0"
 description = "Sitzungsprotokolle für Tisch-Rollenspiel — eine Instanz pro Gruppe"
 requires-python = ">=3.12"
 # **Kein Flask, kein Jinja2, kein waitress mehr** (#231). Die Betreiber-Seite ist fort, und
