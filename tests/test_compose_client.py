@@ -235,8 +235,11 @@ def test_wer_den_klienten_baut_bestimmt_die_zeitgrenze(tmp_path):
     )
     assert http.aufrufe[-1][1]["timeout"] == ZWISCHENSTAND_TIMEOUT
     # »Deutlich knapper« ist die ganze Aussage — eine Grenze, die dem Aufschrieb gleicht,
-    # löste das Problem nicht.
-    assert ZWISCHENSTAND_TIMEOUT * 4 < DEFAULT_TIMEOUT
+    # löste das Problem nicht. Der Faktor stand auf vier, solange das Modell ohne Denken
+    # antwortete; seit #325 kostet derselbe Lauf das Zwanzigfache, und die Grenze ist mit
+    # #330 auf acht Minuten gewandert. Drei ist damit die Aussage, die noch trägt: knapper
+    # bleibt knapper, aber nicht knapper als der Lauf, den sie zulassen soll.
+    assert ZWISCHENSTAND_TIMEOUT * 3 < DEFAULT_TIMEOUT
 
 
 TAGS = {

@@ -77,7 +77,21 @@ EMBEDDING_MARKER = "embed"
 # halbe Stunde und schluckte damit jeden weiteren Schnitt des Abends (#302). Reißt sie,
 # fällt der Zwischenstand still aus — derselbe Fall wie ein Ollama, das nicht antwortet,
 # und kein neuer.
-ZWISCHENSTAND_TIMEOUT = 240.0
+#
+# **Von 240 s auf 480 s gehoben** (#330, gemessen am 2026-09-06). Die vier Minuten stammen
+# aus der Zeit vor #325, als das Modell noch ohne Denken antwortete. Gegen dieselbe Szene
+# gemessen, seit das Denken die Erzählebene hält:
+#
+#   direkt gegen /v1, ohne Wettbewerb um die Karte   70,0 / 76,0 / 90,3 s
+#   durch den deployten Dienst, mit Sitzungsfenster           157,2 s
+#
+# Der letzte Wert ist der ehrliche: er trägt, was ein echter Abend trägt. 157 s gegen 240 s
+# ist kein Abstand, sondern ein Zufall — ein Abend mit längeren Szenen, und der
+# Zwischenstand fällt **still** aus, was der teuerste Ausfall ist, weil ihn niemand
+# bemerkt. Acht Minuten geben den dreifachen Abstand zum gemessenen Lauf und bleiben weit
+# unter der Szenenlänge, um die es #302 ging: ein hängendes Modell blockiert dann acht
+# Minuten und nicht eine halbe Stunde.
+ZWISCHENSTAND_TIMEOUT = 480.0
 
 # Wie lange Ollama das Modell nach einem Aufruf im Speicher behält. Dass hier überhaupt
 # eine Zahl steht, ist der Punkt: auf dieser Box setzt der Ollama-Dienst
