@@ -198,8 +198,17 @@ Die Latenzfrage stellt sich dabei nicht: es wartet niemand, die nächste Szene l
 bereits. Wo keine Karte steht, fällt der Zwischenstand aus, ohne dass die Chronik am Ende
 darunter leidet.
 
-Die GPU-Konkurrenz stellt sich schon — **und sie ist zugunsten des Nachbarn entschieden**
-(#303, seit 2026-08-26). #295 hatte die Sitzung das große Modell festhalten lassen; die
+**Der Modelldienst ist seit #329 (2026-09-06) llama.cpps `llama-server` auf
+`127.0.0.1:11435`, nicht mehr Ollama.** Er spricht `/v1/chat/completions` und **hält das
+Modell selbst**; welches geladen ist, entscheidet ein Profil, umgeschaltet wird über das
+Sitzungsfenster. Alles, was in diesem Abschnitt über `OLLAMA_KEEP_ALIVE` und Haltefristen
+steht, ist damit **Historie** — es steht hier, weil es erklärt, warum das Fenster so
+aussieht, wie es aussieht. Zwei Zahlen darin sind überholt: der Modelltausch kostet 20 s
+statt 56, und ein Szenen-Zwischenstand auf dem großen Modell braucht durch den deployten
+Dienst 157 s (#330, beides gemessen 2026-09-06).
+
+Die GPU-Konkurrenz stellte sich schon damals — **und sie war zugunsten des Nachbarn
+entschieden** (#303, seit 2026-08-26). #295 hatte die Sitzung das große Modell festhalten lassen; die
 Messung des Nachbardienstes hat ergeben, dass beide Modelle auf der 16,4-GB-Karte nicht
 koexistieren. Also die verabredete Rückfallebene: gehalten wird nicht, der Tausch je
 Szenenschnitt wird in Kauf genommen. Ersatzlos streichen ginge dabei nicht — der
