@@ -46,8 +46,10 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
-from chronicle import db, kette, lebenszyklus, recordings, register
+from chronicle import db, kette, lebenszyklus, notes, recordings, register
+from chronicle import sprache as sprachen
 from chronicle.compose.service import erzaehlen, zwischenstand_der_szene
+from chronicle.foundry import journal
 from chronicle.config import Config
 from chronicle.discord.ausgabe import erzaehlung_zustellen
 from chronicle.foundry.service import sync
@@ -488,16 +490,47 @@ def abgleich(config: Config, runde: Runde, *, passwort: str | None = None) -> st
     return zustand.message
 
 
-def chronik(config: Config, runde: Runde, session_id: int) -> str:
+def chronik(
+    config: Config, runde: Runde, session_id: int, *, journal_passwort: str | None = None
+) -> str:
     """Der Durchgang aus ``kette.schreiben``, in einem Satz beantwortet.
 
     Die Reihenfolge steht dort und nicht hier: sie ist dieselbe, die der Nachtlauf und der
     Stapelaufruf gehen, und dreimal gepflegt lief sie auseinander (#221).
+
+    ``journal_passwort`` legt die fertige Chronik zusätzlich als Journaleintrag in Foundry
+    ab (#327). Es steht hier und nicht in ``kette.schreiben``, weil nur der Abschluss ein
+    Passwort in der Hand hat: der Nachtlauf und der Stapelaufruf haben keines, und der
+    Merkzettel aus #64 wird genau einmal eingelöst.
     """
     lauf = kette.schreiben(config, runde, session_id)
     if lauf is None:
         raise JobError(kette.warum_nicht(runde))
-    return satz(lauf)
+    return satz(lauf) + _journal(config, runde, session_id, lauf, journal_passwort)
+
+
+def _journal(
+    config: Config, runde: Runde, session_id: int, lauf: kette.Lauf, passwort: str | None
+) -> str:
+    """Die Chronik zurück in die Welt — bester Wille, wie das Sitzungsfenster.
+
+    Ohne Passwort still: der Nachtlauf und der Stapelaufruf gehen hier durch, ohne dass
+    die Runde einen Satz über etwas liest, das sie gar nicht ausgelöst hat.
+    """
+    if not passwort:
+        return ""
+    kopf = notes.session(runde, session_id)
+    if kopf is None:
+        return ""
+    texte = sprachen.journal(lauf.chronik.inhaltssprache)
+    return " " + journal.eintragen(
+        config,
+        runde,
+        titel=texte.titel.format(datum=kopf.played_on),
+        text=lauf.chronik.text,
+        passwort=passwort,
+        inhaltssprache=lauf.chronik.inhaltssprache,
+    )
 
 
 def satz(lauf: kette.Lauf) -> str:
@@ -590,7 +623,7 @@ def abschluss(config: Config, runde: Runde, session_id: int, *, passwort: str | 
         vorlauf = NACHGETRAGEN.format(anzahl=zustand.nachgetragen)
     else:
         vorlauf = ""
-    return vorlauf + chronik(config, runde, session_id)
+    return vorlauf + chronik(config, runde, session_id, journal_passwort=passwort)
 
 
 def mehrzahl(anzahl: int) -> str:
