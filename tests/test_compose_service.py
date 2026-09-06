@@ -1,5 +1,7 @@
 """Vom Speicher bis zum abgelegten Protokoll — der Stapellauf am Stück."""
 
+import time
+
 import pytest
 import requests
 from conftest import UNSER_KONTO, deutsche_runde, laufender_job, runde
@@ -8,8 +10,9 @@ import chronicle.compose.__main__ as entry
 from chronicle import db, jobs, lebenszyklus, settings
 from chronicle import runde as runden
 from chronicle import sprache as sprachen
-from chronicle.compose import client as ollama
+from chronicle.compose import client as modellklient
 from chronicle.compose.service import KIND, RUECKBLICK, compose_session, recap_session
+from chronicle.config import DEFAULT_SOLARIS_URL
 from chronicle.discord import rueckblick
 from chronicle.foundry import store
 from chronicle.foundry.model import NICHT_MEHR_VORHANDEN, WorldSnapshot
@@ -399,14 +402,15 @@ class Antwort:
         return None
 
     def json(self):
-        return {"message": {"content": "Die Runde tastet sich voran."}}
+        return {"choices": [{"message": {"content": "Die Runde tastet sich voran."}}]}
 
 
-class Ollama:
-    """Ein Ollama am Draht — was der Stapellauf wirklich hinausschickt, steht in ``rumpf``."""
+class Modelldienst:
+    """Ein Modelldienst am Draht — was der Stapellauf hinausschickt, steht in ``rumpf``."""
 
     def __init__(self, fehler=None):
         self.rumpf = []
+        self.abmeldungen = []
         self._fehler = fehler
 
     def post(self, url, **kwargs):
@@ -415,44 +419,48 @@ class Ollama:
             raise self._fehler
         return Antwort()
 
+    def delete(self, url, **kwargs):
+        self.abmeldungen.append(url)
+        return Antwort()
+
 
 @pytest.fixture
 def am_draht(config, monkeypatch):
     """Der Stapellauf mit hinterlegtem Modell und einer Gegenstelle auf dem Draht."""
 
     def gegenstelle(fehler=None):
-        eines = Ollama(fehler)
+        eines = Modelldienst(fehler)
         # An ``requests.Session`` und nicht an ``_http_session``: dessen Funktionsobjekt
         # steckt als Vorgabewert in den Signaturen und lässt sich nicht mehr austauschen.
-        monkeypatch.setattr(ollama.requests, "Session", lambda: eines)
+        monkeypatch.setattr(modellklient.requests, "Session", lambda: eines)
         return eines
 
     monkeypatch.setenv("CHRONICLE_DATA_DIR", str(config.data_dir))
-    monkeypatch.setenv("OLLAMA_URL", "http://ollama.example:11434")
+    monkeypatch.setenv("OLLAMA_URL", "http://modell.example:11435")
     monkeypatch.setenv("OLLAMA_MODEL", "chronist-test")
-    # Ausdrücklich der alte Weg: seit #329 ist die Vorgabe ``openai``, und ``keep_alive``
-    # — worauf die Tests hier zeigen — ist Ollama-Eigenes. Ein auslaufender Weg soll in
-    # seinen Tests benannt sein; dann fällt mit ihm genau das weg, was ihn geprüft hat.
-    monkeypatch.setenv("CHRONICLE_LLM_BACKEND", "ollama")
     return gegenstelle
 
 
-def test_der_stapelaufruf_gibt_die_modellhaltung_hinterher_wieder_her(
-    config, scope, welt, am_draht
+def test_der_stapelaufruf_geht_durch_die_eine_freigabestelle(
+    config, scope, welt, am_draht, monkeypatch
 ):
     """#300: der Aufschrieb neben ``/session done`` besetzte das große Modell bis zur Frist.
 
     Freigegeben wurde bis dahin allein in ``jobs.abschluss``; dieser Weg geht dort nicht
-    vorbei. Der Beleg steht auf dem Draht und nicht in einer Merkliste: die letzte Anfrage
-    an Ollama trägt ``keep_alive: 0``.
+    vorbei. Der Beleg steht auf dem Draht und nicht in einer Merkliste — bis #329 als
+    ``keep_alive: 0`` an Ollama, seither als Abmeldung des Sitzungsfensters, weil der
+    Ablöser keine Haltung kennt, die zu beenden wäre.
     """
     sitzung_id = eine_runde(scope, welt)
     gegenstelle = am_draht()
+    monkeypatch.setattr(
+        "chronicle.compose.client._lease_bis", time.monotonic() + modellklient.LEASE_TTL_S
+    )
 
     entry.main([str(sitzung_id)])
 
-    assert gegenstelle.rumpf[-1]["keep_alive"] == ollama.FREIGABE
-    assert ollama.FREIGABE == 0
+    assert gegenstelle.abmeldungen == [DEFAULT_SOLARIS_URL + modellklient.LEASE_PATH]
+    assert not modellklient.lease_offen()
 
 
 def test_der_stapelaufruf_hinterlaesst_eine_zeile_zu_seiner_sitzung(config, scope, welt, am_draht):
@@ -494,7 +502,7 @@ def test_ein_gescheiterter_stapelaufruf_steht_ebenfalls_in_der_zeile(
 def test_ein_modell_an_der_zeitgrenze_verschwindet_nicht_mehr_spurlos(
     config, scope, welt, am_draht
 ):
-    """Genau der Lauf vom 22.08.: Ollama antwortet nicht, und niemand erfuhr davon.
+    """Genau der Lauf vom 22.08.: das Modell antwortet nicht, und niemand erfuhr davon.
 
     Die Chronik entsteht trotzdem — geordnet statt formuliert —, und **das** steht jetzt
     in der Zeile. Vorher stand dort nichts, und wiederholt wurde der Lauf erst einen Tag
@@ -513,7 +521,7 @@ def test_ein_modell_an_der_zeitgrenze_verschwindet_nicht_mehr_spurlos(
 def test_der_stapelaufruf_beginnt_nicht_neben_einem_laufenden_lauf(
     config, scope, welt, am_draht, capsys
 ):
-    """Eine CPU, ein Ollama — dieselbe Schranke wie hinter jedem Knopf, jetzt auch hier."""
+    """Eine CPU, ein Modelldienst — dieselbe Schranke wie hinter jedem Knopf, jetzt hier."""
     sitzung_id = eine_runde(scope, welt)
     am_draht()
     laufender_job(config, kind=jobs.ABGLEICH)

@@ -122,9 +122,9 @@ ginge nicht: Foundry will es vorgezeigt, nicht geprüft. **Der Bot-Token wird se
 [#231](../../issues/231) noch gibt. Ob er gesetzt ist, sagt der Bot, indem er läuft oder
 nicht. Eine Wanderung räumt einen Bestand aus der Zeit davor aus der SQLite — aber
 erst, wenn die Variable gesetzt ist: gelöscht ohne Ersatz wäre der Token
-unwiederbringlich. Die Ollama-Adresse hat eine zweite Stufe: ist `OLLAMA_URL` nicht
-gesetzt, gilt `http://127.0.0.1:11434` — das Ollama der Box. Offen bleibt dann allein
-die Modellwahl über `OLLAMA_MODEL`. Rein aus der Umgebung kommen weiterhin
+unwiederbringlich. Die Adresse des Modelldienstes hat eine zweite Stufe: ist `OLLAMA_URL`
+nicht gesetzt, gilt `http://127.0.0.1:11435` — der `llama-server` dieser Box. Offen bleibt
+dann allein die Modellwahl über `OLLAMA_MODEL`. Rein aus der Umgebung kommen weiterhin
 `CHRONICLE_DATA_DIR` (Vorgabe `./data`), `CHRONICLE_RECORDINGS_DIR` (Vorgabe
 `./recordings`), `CHRONICLE_WHISPER_URL` — die Adresse des Spracherkenners (Vorgabe
 `http://127.0.0.1:10301`, siehe [Transkription](#transkription)) — sowie `TTS_URL`, die Adresse
@@ -133,27 +133,25 @@ des Sprachdienstes, der die Ansage spricht (Vorgabe `http://127.0.0.1:8881`, sie
 Foundry-Konfiguration, startet der Dienst trotzdem und sagt es dort, wo jemand danach
 fragt: in `/chronicle setup` und in der Meldung des Abgleichs.
 
-**Der Modelldienst ist llama.cpps `llama-server`** (seit [#329](../../issues/329),
-2026-09-06): `CHRONICLE_LLM_BACKEND=openai` gegen `http://127.0.0.1:11435`, wo er
+**Der Modelldienst ist llama.cpps `llama-server`, und es gibt nur ihn** (seit
+[#329](../../issues/329), 2026-09-06): `http://127.0.0.1:11435`, wo er
 `/v1/chat/completions` beantwortet. So fährt die Box seit v0.4.0. Ollama ist damit
-**abgelöst** — es hörte auf `/api/chat` unter Port 11434, und dieser Weg steht als
-`CHRONICLE_LLM_BACKEND=ollama` noch im Code, weil er entfernt wird, wenn der Dienst auf
-der Box wirklich weg ist (`mdopp/solarisbay#1332`) und keinen Tag früher. **Der
-Vorgabewert des Schalters steht bis dahin noch auf `ollama`** — die Box setzt ihn
-ausdrücklich, eine Neuinstallation muss es auch. Adresse und Modellname heißen weiterhin
-`OLLAMA_URL` und `OLLAMA_MODEL`; die Namen sind aus der Ollama-Zeit geblieben, gemeint ist
-der Modelldienst dieser Box.
+**abgelöst** — es hörte auf `/api/chat` unter Port 11434 und ist auf der Box abgeschaltet
+(`mdopp/solarisbay#1332`). Der Schalter `CHRONICLE_LLM_BACKEND`, mit dem #316 zwischen
+beiden Wegen wählen ließ, ist mit dem zweiten Weg gefallen: einer mit genau einem gültigen
+Wert ist eine falsche Zusage. Adresse und Modellname heißen weiterhin `OLLAMA_URL` und
+`OLLAMA_MODEL`; die Namen sind aus der Ollama-Zeit geblieben, gemeint ist der Modelldienst
+dieser Box.
 
-Auf dem `openai`-Weg **ignoriert der Server den angefragten Modellnamen** — welches Modell
-geladen ist, entscheidet das Profil des Sitzungsfensters. Ein `keep_alive` gibt es dort **nicht** — das Feld war Ollamas, und ein
-erfundenes Gegenstück wäre eine Zusage über die Karte, die niemand einlöst; `llama-server`
-hält das Modell ohnehin selbst. Das **Sitzungsfenster**
-beim Nachbarn gilt dort trotzdem (#321): dass dieser Weg selbst nichts hält, ist gerade
-der Grund, warum es jemand für ihn tun muss — ohne Fenster schriebe still das
-Haushaltsmodell. Die Nutzlast nennt dort ein Profil (`foundry`) statt eines Modellnamens,
-denn `llama-server` ignoriert den angefragten Namen ohnehin; **welches Modell geantwortet
-hat, steht deshalb in der Antwort und nicht in der Einstellung** (#320), und trägt sie
-keinen Namen, nennt die Chronik keinen.
+Der Server **ignoriert den angefragten Modellnamen** — welches Modell geladen ist,
+entscheidet das Profil des Sitzungsfensters. Ein `keep_alive` gibt es **nicht** — das Feld
+war Ollamas, und ein erfundenes Gegenstück wäre eine Zusage über die Karte, die niemand
+einlöst; `llama-server` hält das Modell ohnehin selbst. Das **Sitzungsfenster** beim
+Nachbarn gilt trotzdem (#321): dass dieser Weg selbst nichts hält, ist gerade der Grund,
+warum es jemand für ihn tun muss — ohne Fenster schriebe still das Haushaltsmodell. Die
+Nutzlast nennt ein Profil (`foundry`) statt eines Modellnamens; **welches Modell
+geantwortet hat, steht deshalb in der Antwort und nicht in der Einstellung** (#320), und
+trägt sie keinen Namen, nennt die Chronik keinen.
 
 **Es gibt keine Haustür mehr, weil es kein Haus mehr gibt.** Bis
 [#231](../../issues/231) stand die Betreiber-Seite hinter Authelia

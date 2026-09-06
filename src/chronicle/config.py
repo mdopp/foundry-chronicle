@@ -56,7 +56,7 @@ HEALTH_PORT_VARIABLE = "CHRONICLE_HEALTH_PORT"
 # verspräche der Bot eine Adresse, gegen die der Lauf nicht redet.
 #
 # **11435, nicht mehr 11434** (#329, seit 2026-09-06). Dort antwortet ``llama-server``;
-# Ollama hörte auf 11434 und wird abgeschaltet (``mdopp/solarisbay#1332``). Der Name der
+# Ollama hörte auf 11434 und ist abgeschaltet (``mdopp/solarisbay#1332``). Der Name der
 # Konstante bleibt aus der Ollama-Zeit stehen, weil er an der Template-Variable hängt, die
 # der Betreiber kennt — ihn umzubenennen kostete eine Neuinstallation und brächte nichts.
 DEFAULT_OLLAMA_URL = "http://127.0.0.1:11435"
@@ -84,29 +84,17 @@ DEFAULT_SOLARIS_URL = "http://127.0.0.1:8787"
 # Ob das Sitzungsfenster überhaupt angemeldet wird (#299). An, weil der Vertrag mit
 # ``mdopp/solarisbay#1260`` von beiden Betreibern entschieden ist. Der Schalter steht
 # daneben, damit die eine Seite ihn ohne Neubau verlassen kann — aus heißt: kein Aufruf
-# geht hinaus, und unsere eigenen Aufrufe tragen wieder die knappe Frist.
+# geht hinaus, und der Nachbar behält sein Haushaltsmodell auf der Karte.
 GPU_LEASE_VARIABLE = "CHRONICLE_GPU_LEASE"
 
-# Welche Sprache der Modelldienst spricht (#316). ``llama-server`` spricht das
-# OpenAI-förmige ``/v1/chat/completions``; Ollama antwortete auf sein eigenes
-# ``/api/chat``, das der Ablöser mit 404 beantwortet.
-#
-# **Die Vorgabe ist seit #329 der ``/v1``-Weg** (2026-09-06). Sie stand auf Ollama, weil
-# die Box das fuhr — und genau das ist der Grund, sie jetzt zu drehen: die Box fährt es
-# nicht mehr. Eine Vorgabe, die einen abgeschalteten Dienst benennt, ist kein
-# vorsichtiger Rückfall, sondern eine Neuinstallation, die stumm bleibt.
-#
-# Ein unbekannter Wert fällt auf die Vorgabe zurück — der Betreiber tippt ihn in ein
-# Textfeld, und ein Tippfehler soll die Chronik nicht anhalten. ``ollama`` bleibt daneben
-# wählbar, bis der Dienst auf der Box wirklich weg ist (``mdopp/solarisbay#1332``): wer
-# heute noch eines fährt, soll es weiter erreichen, indem er den Wert ausdrücklich setzt.
-LLM_BACKEND_VARIABLE = "CHRONICLE_LLM_BACKEND"
-
-BACKEND_OLLAMA = "ollama"
-
-BACKEND_OPENAI = "openai"
-
-LLM_BACKENDS = (BACKEND_OLLAMA, BACKEND_OPENAI)
+# **``CHRONICLE_LLM_BACKEND`` stand hier bis #329.** Mit #316 wählte es zwischen Ollamas
+# ``/api/chat`` und dem OpenAI-förmigen ``/v1/chat/completions`` des Ablösers, damit der
+# Umzug eine Einstellung sein konnte und kein Neubau; seit #335 stand die Vorgabe auf
+# ``openai``. Die Box hat Ollama abgeschaltet (``mdopp/solarisbay#1332``, gemessen am
+# 2026-09-06), und damit ist der zweite Wert weggefallen. Ein Schalter mit genau einem
+# gültigen Wert bleibt nicht als Höflichkeit stehen: wer ``ollama`` in das Textfeld tippt,
+# bekäme still ``openai`` — dieselbe falsche Zusage, wegen der oben
+# ``CHRONICLE_REQUIRE_REMOTE_USER`` gefallen ist.
 
 DEFAULT_DATA_DIR = "data"
 
@@ -144,11 +132,6 @@ def _schalter(env: Mapping[str, str], name: str, *, vorgabe: bool) -> bool:
     return vorgabe if not roh else roh in ("1", "true", "yes", "on", "an")
 
 
-def _backend(env: Mapping[str, str], name: str) -> str:
-    roh = (env.get(name) or "").strip().lower()
-    return roh if roh in LLM_BACKENDS else BACKEND_OPENAI
-
-
 @dataclass(frozen=True, repr=False)
 class Config:
     foundry_url: str | None = None
@@ -164,7 +147,6 @@ class Config:
     health_port: int | None = None
     foundry_mitschnitt: bool = False
     gpu_lease: bool = True
-    llm_backend: str = BACKEND_OPENAI
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> Config:
@@ -183,7 +165,6 @@ class Config:
             health_port=_port(env, HEALTH_PORT_VARIABLE),
             foundry_mitschnitt=_flag(env, MITSCHNITT_VARIABLE),
             gpu_lease=_schalter(env, GPU_LEASE_VARIABLE, vorgabe=True),
-            llm_backend=_backend(env, LLM_BACKEND_VARIABLE),
         )
 
     @property
@@ -233,6 +214,5 @@ class Config:
             f"whisper_url={self.whisper_url!r}, "
             f"health_port={self.health_port!r}, "
             f"foundry_mitschnitt={self.foundry_mitschnitt!r}, "
-            f"gpu_lease={self.gpu_lease!r}, "
-            f"llm_backend={self.llm_backend!r})"
+            f"gpu_lease={self.gpu_lease!r})"
         )

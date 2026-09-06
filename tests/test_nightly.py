@@ -3,6 +3,7 @@
 import json
 import logging
 import threading
+import time
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -24,8 +25,8 @@ from chronicle import (
     zugang,
 )
 from chronicle import runde as runden
-from chronicle.compose import client as ollama
-from chronicle.config import BACKEND_OLLAMA, Config
+from chronicle.compose import client as modellklient
+from chronicle.config import DEFAULT_SOLARIS_URL, Config
 from chronicle.discord import rueckblick
 from chronicle.discord import service as diktat
 from chronicle.foundry.model import SyncState
@@ -458,13 +459,18 @@ def test_ohne_sitzung_meldet_die_nacht_keine_chronik(stelle, monkeypatch):
 
 
 class Draht:
-    """Ein Ollama am Draht — was die Nacht wirklich hinausschickt, steht in ``rumpf``."""
+    """Ein Modelldienst am Draht — was die Nacht hinausschickt, steht in ``rumpf``."""
 
     def __init__(self):
         self.rumpf = []
+        self.abmeldungen = []
 
     def post(self, _url, **kwargs):
         self.rumpf.append(kwargs["json"])
+        return Draht.Antwort()
+
+    def delete(self, url, **kwargs):
+        self.abmeldungen.append(url)
         return Draht.Antwort()
 
     class Antwort:
@@ -472,38 +478,38 @@ class Draht:
             return None
 
         def json(self):
-            return {"message": {"content": "Die Runde tastet sich voran."}}
+            return {"choices": [{"message": {"content": "Die Runde tastet sich voran."}}]}
 
 
-def test_die_nacht_gibt_die_modellhaltung_hinterher_wieder_her(stelle, monkeypatch):
-    """#300: die Nacht geht nicht über ``jobs.abschluss`` und ließ die Haltung deshalb stehen.
+def test_die_nacht_geht_durch_die_eine_freigabestelle(stelle, monkeypatch):
+    """#300: die Nacht geht nicht über ``jobs.abschluss`` und ließ die Karte deshalb stehen.
 
     Gemessen hat es der Nachbardienst an der Karte dieser Box: 4 h 27 min belegt für rund
     31 Minuten gerechnete Arbeit. Der Beleg steht hier auf dem Draht und nicht in einer
-    Merkliste — die letzte Anfrage an Ollama trägt ``keep_alive: 0``.
+    Merkliste — bis #329 als ``keep_alive: 0`` an Ollama, seither als Abmeldung des
+    Sitzungsfensters, weil der Ablöser keine Haltung kennt, die zu beenden wäre.
     """
     mit_notiz(stelle)
     gastgeber = runde(stelle)
-    # Die beiden Ollama-Werte kommen seit #230 aus der Umgebung und nicht aus der Datei.
-    # ``llm_backend`` ausdrücklich: seit #329 ist die Vorgabe der ``/v1``-Weg, und der
-    # kennt kein ``keep_alive``. Was diesen Test trägt, ist Ollama-Eigenes — also steht es
-    # hier, statt aus einer Vorgabe zu fallen, die inzwischen woandershin zeigt.
+    # Die beiden Werte kommen seit #230 aus der Umgebung und nicht aus der Datei.
     mit_modell = replace(
         stelle,
-        ollama_url="http://ollama.example:11434",
+        ollama_url="http://modell.example:11435",
         ollama_model="chronist-test",
-        llm_backend=BACKEND_OLLAMA,
     )
     draht = Draht()
     # An ``requests.Session`` und nicht an ``_http_session``: dessen Funktionsobjekt steckt
     # als Vorgabewert in den Signaturen und lässt sich dort nicht mehr austauschen.
-    monkeypatch.setattr(ollama.requests, "Session", lambda: draht)
+    monkeypatch.setattr(modellklient.requests, "Session", lambda: draht)
+    monkeypatch.setattr(
+        "chronicle.compose.client._lease_bis", time.monotonic() + modellklient.LEASE_TTL_S
+    )
 
     nightly.lauf(mit_modell, gastgeber)
 
     assert protocol.stored(gastgeber, 1) is not None
-    assert draht.rumpf[-1]["keep_alive"] == ollama.FREIGABE
-    assert ollama.FREIGABE == 0
+    assert draht.abmeldungen == [DEFAULT_SOLARIS_URL + modellklient.LEASE_PATH]
+    assert not modellklient.lease_offen()
 
 
 def test_geschrieben_wird_nur_wo_material_juenger_ist_als_die_chronik(stelle):

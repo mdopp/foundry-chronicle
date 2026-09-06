@@ -2262,13 +2262,10 @@ class ModellMitTuer:
     def _http(self) -> Flask:
         app = Flask(__name__)
 
-        @app.post("/api/chat")
-        def chat():
-            return jsonify({"message": {"content": self._warten()}})
-
         @app.post("/v1/chat/completions")
         def v1():
-            """Der Weg, den der Dienst seit #329 ohne Ansage geht.
+            """Der Weg, den der Dienst seit #329 geht — und seit dessen zweiter Hälfte der
+            einzige.
 
             Er stand hier nicht, und die Tür ging deshalb nie auf: der Lauf klopfte an
             einen Pfad, den diese Attrappe mit 404 beantwortete, ``gefragt`` blieb ungesetzt
