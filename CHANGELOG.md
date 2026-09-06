@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.1](https://github.com/mdopp/foundry-chronicle/compare/v0.5.0...v0.5.1) (2026-09-06)
+
+
+### Bug Fixes
+
+* **ci:** geprueft wird nach Wirkung, nicht nach Benennung ([3fb943c](https://github.com/mdopp/foundry-chronicle/commit/3fb943cabd8f9820eab195a063cd837be43e0f9c)), closes [#343](https://github.com/mdopp/foundry-chronicle/issues/343)
+
 ## [0.5.0](https://github.com/mdopp/foundry-chronicle/compare/v0.4.1...v0.5.0) (2026-09-06)
 
 
