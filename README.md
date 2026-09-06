@@ -133,14 +133,21 @@ des Sprachdienstes, der die Ansage spricht (Vorgabe `http://127.0.0.1:8881`, sie
 Foundry-Konfiguration, startet der Dienst trotzdem und sagt es dort, wo jemand danach
 fragt: in `/chronicle setup` und in der Meldung des Abgleichs.
 
-**Welche Sprache der Modelldienst spricht, ist seit [#316](../../issues/316) eine
-Einstellung:** `CHRONICLE_LLM_BACKEND=ollama` (Vorgabe) ruft Ollamas eigenes `/api/chat`
-auf, `openai` ruft `/v1/chat/completions` — den Weg zu llama.cpps `llama-server`, der
-Ollama auf der Box ablösen soll und `/api/chat` mit 404 beantwortet. Beide Wege stehen
-nebeneinander, damit der Umzug den Dienst nicht verstummen lässt, bevor die Plattform
-umgezogen ist; Adresse und Modellname bleiben `OLLAMA_URL` und `OLLAMA_MODEL`. Auf dem
-`openai`-Weg gibt es **kein** `keep_alive` — das Feld ist Ollamas, und ein erfundenes
-Gegenstück wäre eine Zusage über die Karte, die niemand einlöst. Das **Sitzungsfenster**
+**Der Modelldienst ist llama.cpps `llama-server`** (seit [#329](../../issues/329),
+2026-09-06): `CHRONICLE_LLM_BACKEND=openai` gegen `http://127.0.0.1:11435`, wo er
+`/v1/chat/completions` beantwortet. So fährt die Box seit v0.4.0. Ollama ist damit
+**abgelöst** — es hörte auf `/api/chat` unter Port 11434, und dieser Weg steht als
+`CHRONICLE_LLM_BACKEND=ollama` noch im Code, weil er entfernt wird, wenn der Dienst auf
+der Box wirklich weg ist (`mdopp/solarisbay#1332`) und keinen Tag früher. **Der
+Vorgabewert des Schalters steht bis dahin noch auf `ollama`** — die Box setzt ihn
+ausdrücklich, eine Neuinstallation muss es auch. Adresse und Modellname heißen weiterhin
+`OLLAMA_URL` und `OLLAMA_MODEL`; die Namen sind aus der Ollama-Zeit geblieben, gemeint ist
+der Modelldienst dieser Box.
+
+Auf dem `openai`-Weg **ignoriert der Server den angefragten Modellnamen** — welches Modell
+geladen ist, entscheidet das Profil des Sitzungsfensters. Ein `keep_alive` gibt es dort **nicht** — das Feld war Ollamas, und ein
+erfundenes Gegenstück wäre eine Zusage über die Karte, die niemand einlöst; `llama-server`
+hält das Modell ohnehin selbst. Das **Sitzungsfenster**
 beim Nachbarn gilt dort trotzdem (#321): dass dieser Weg selbst nichts hält, ist gerade
 der Grund, warum es jemand für ihn tun muss — ohne Fenster schriebe still das
 Haushaltsmodell. Die Nutzlast nennt dort ein Profil (`foundry`) statt eines Modellnamens,

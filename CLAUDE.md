@@ -25,7 +25,24 @@ Diese Regeln gelten für jede Sitzung, Mensch oder Agent.
   Die GPU-Pflicht gilt für diesen einen Weg trotzdem: verschriftet wird währenddessen
   nur, wo eine Karte steht (#295). Ohne Karte fällt der Zwischenstand aus — die Chronik
   am Ende entsteht wie bisher.
-  **Gehalten wird das Modell dafür nicht mehr** (#303, seit 2026-08-26). #295 hatte die
+  **Der Modelldienst dieser Box ist `llama-server`, nicht mehr Ollama** (#329, seit
+  2026-09-06; Konzept in `mdopp/solarisbay#1332`, Operator-Auftrag »ollama ganz weg«). Er
+  hört auf `127.0.0.1:11435` und spricht `/v1/chat/completions`; gewählt wird er über
+  `CHRONICLE_LLM_BACKEND=openai`. **Er hält das Modell von sich aus** — welches geladen
+  ist, entscheidet ein Profil, und umgeschaltet wird über das Sitzungsfenster weiter unten.
+  Damit ist die `keep_alive`-Mechanik im nächsten Absatz **Historie**: sie beantwortete
+  eine Frage, die Ollama stellte und die dieser Server nicht mehr stellt. Sie bleibt
+  lesbar, weil sie erklärt, warum das Fenster so aussieht, wie es aussieht.
+  **Nichts Neues wird mehr gegen Ollama gebaut.** Im Code stehen `OllamaClient` und seine
+  Attrappe trotzdem weiter, bis der Nachbar das Abschalten auf der Box gemeldet hat
+  (`mdopp/solarisbay#1332`) — ein Weg, der heute noch läuft, wird nicht entfernt, bevor er
+  wirklich niemanden mehr trägt.
+  Zwei Zahlen weiter unten sind überholt und im Imperfekt zu lesen: der Modelltausch
+  kostet **20 s**, nicht 56, und ein Szenen-Zwischenstand auf dem großen Modell braucht
+  durch den deployten Dienst **157 s** — weshalb seine Frist mit #330 auf acht Minuten
+  steht (beides gemessen 2026-09-06).
+
+  **Gehalten wurde das Modell dafür nicht** (#303, seit 2026-08-26). #295 hatte die
   Sitzung das große Modell festhalten lassen, damit der Szenenschnitt es nicht jedes Mal
   neu lädt. Die Messung des Nachbardienstes hat das entschieden: unser Chronik-Modell und
   seines passen auf der Karte dieser Box **nicht** nebeneinander, jedes Laden verdrängt
@@ -33,8 +50,11 @@ Diese Regeln gelten für jede Sitzung, Mensch oder Agent.
   behält sein Modell, und wir nehmen den Tausch je Szenenschnitt in Kauf. **Ersatzlos
   streichen wäre das Gegenteil gewesen:** der Ollama-Dienst dieser Box setzt
   `OLLAMA_KEEP_ALIVE=24h`, und ein Aufruf ohne ausdrückliches `keep_alive` erbt diese
-  vierundzwanzig Stunden statt unserer zwei. Jeder Aufruf schickt deshalb eine knappe
-  Frist mit, und am Ende jedes Aufschriebs wird ausdrücklich freigegeben (#300).
+  vierundzwanzig Stunden statt unserer zwei. Jeder Aufruf schickte deshalb eine knappe
+  Frist mit, und am Ende jedes Aufschriebs wurde ausdrücklich freigegeben (#300) — **die
+  eine Freigabestelle gibt es weiterhin**, sie schließt heute das Fenster statt einer
+  Haltefrist.
+
   **Die benannte Ausnahme dazu ist das Sitzungsfenster** (#299, seit 2026-08-27,
   Gegenstück `mdopp/solarisbay#1260`). Beginnt ein Abend, meldet der Bot ihn beim
   Nachbardienst über die Schleife an — `POST /api/model-lease {model, ttl_s}` (**nicht**
