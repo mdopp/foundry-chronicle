@@ -2264,11 +2264,26 @@ class ModellMitTuer:
 
         @app.post("/api/chat")
         def chat():
-            self.gefragt.set()
-            self.freigegeben = self._tuer.wait(GRENZE)
-            return jsonify({"message": {"content": GESCHRIEBEN}})
+            return jsonify({"message": {"content": self._warten()}})
+
+        @app.post("/v1/chat/completions")
+        def v1():
+            """Der Weg, den der Dienst seit #329 ohne Ansage geht.
+
+            Er stand hier nicht, und die Tür ging deshalb nie auf: der Lauf klopfte an
+            einen Pfad, den diese Attrappe mit 404 beantwortete, ``gefragt`` blieb ungesetzt
+            und die Schleife wartete auf ein Ereignis, das nicht kam. Was diesen Test trägt,
+            ist die Nacht **neben** der Gateway-Schleife — und die soll über den Weg laufen,
+            den der Dienst wirklich nimmt.
+            """
+            return jsonify({"choices": [{"message": {"content": self._warten()}}]})
 
         return app
+
+    def _warten(self) -> str:
+        self.gefragt.set()
+        self.freigegeben = self._tuer.wait(GRENZE)
+        return GESCHRIEBEN
 
 
 @pytest.fixture

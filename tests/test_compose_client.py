@@ -89,9 +89,7 @@ def config(tmp_path, *, url=ADRESSE, model=MODELL):
     auslaufender Weg soll in seinen Tests benannt sein: dann fällt bei seiner Entfernung
     genau das weg, was ihn geprüft hat, und nichts bleibt stumm zurück.
     """
-    return Config(
-        ollama_url=url, ollama_model=model, data_dir=tmp_path, llm_backend=BACKEND_OLLAMA
-    )
+    return Config(ollama_url=url, ollama_model=model, data_dir=tmp_path, llm_backend=BACKEND_OLLAMA)
 
 
 def klient(tmp_path, http, **kwargs):
