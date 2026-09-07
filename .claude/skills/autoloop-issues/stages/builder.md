@@ -100,8 +100,36 @@ If **any** merged file is path-mandated (list below), `queue.py verify-set <merg
 templates/**          (the ServiceBay template — templates/daggerheart-chronik/ lives here)
 ```
 A merged file under this path means the seal **must** set `verify=owed`; the release stays blocked
-until the box says green. Rationale: a template is only shown correct by installing it on a real node
-— CI cannot do that. Everything else here is covered by tests and CI.
+until the box says green — a template only proves itself by being installed on a real node, and CI
+cannot do that.
+
+**A second, separate trigger: talks to a live neighbour at runtime.** Betreiber-Entscheidung
+2026-09-07 (#351): the same real-box proof is owed when a change talks, at runtime, to another
+service actually running on this box — CI has no such neighbour to talk to, so nothing there can
+catch a break in that conversation. This is a *different* justification from `templates/**` above
+(that one is about installation, this one about a live peer), so don't fold it into that list — and
+don't give it a second copy of the neighbour roster either: `CLAUDE.md` § the ADR-0007 deviation
+(»Erklärte Abweichung, bleibend«) already names every neighbour this service has, by loopback
+address — the model service and its GPU lease, the speech service, the transcription service — plus
+Foundry as the one external neighbour. Read it there; a list that exists twice drifts out of sync
+with the one that's actually true, which is exactly what #344 was about.
+
+**How to decide:** does the diff change *how* we talk to one of those — the address, the payload
+shape, how we handle its state (a lease, a loaded model, a session), or what we do on its error or
+timeout path? Then the box has to prove it; CI's mocks stand in for the neighbour and can't tell you
+the real one still agrees. A typo in a nearby comment, a rename that doesn't touch the wire format, a
+test added next to the call — none of that is this trigger.
+
+**Known remainder, accepted, not a surprise to rediscover:** this axis still misses paths that run
+only in real operation for *other* reasons — pure startup logic that touches no neighbour, or
+something that only breaks under real Discord permissions. The operator accepted that gap on
+2026-09-07 rather than gate on "whatever CI fundamentally cannot execute," which is the more honest
+definition but not mechanically checkable — a gate that decides differently for identical work
+protects nobody.
+
+Sanity example: `verwaistes_fenster_schliessen` (`src/chronicle/compose/client.py`) runs only at bot
+startup and calls the neighbour's GPU lease — it talks to a live neighbour at runtime, so it falls
+under this trigger even though it touches no `templates/**` file.
 
 ## Return
 - build: `Builder: built foundry-adapter (#92,#94) onto batch/2026-..a, fast gate green, count 2/8.`
