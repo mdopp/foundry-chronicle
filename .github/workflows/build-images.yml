@@ -9,6 +9,7 @@ on:
     paths:
       - 'src/**'
       - 'tests/**'
+      - 'scripts/verify_e2e.py'
       - 'pyproject.toml'
       - 'Dockerfile'
       - '.dockerignore'
@@ -22,6 +23,7 @@ on:
     paths:
       - 'src/**'
       - 'tests/**'
+      - 'scripts/verify_e2e.py'
       - 'pyproject.toml'
       - 'Dockerfile'
       - '.dockerignore'
