@@ -684,6 +684,29 @@ def test_was_nicht_uns_gehoert_bleibt_beim_start_stehen(tmp_path, stand):
 
 
 @pytest.mark.parametrize(
+    "stand",
+    [
+        Antwort({"state": "releasing", "model": LEASE_PROFIL, "holder": LEASE_HALTER}),
+        Antwort({"state": "preparing", "model": LEASE_PROFIL, "holder": LEASE_HALTER}),
+    ],
+)
+def test_ein_eigenes_fenster_ausserhalb_von_ready_bleibt_beim_start_stehen(tmp_path, stand):
+    """#348: der Halter allein sagt nur »war einmal unseres«, nicht »nichts mehr abzuräumen«.
+
+    In ``releasing`` steht unser Halter noch in der Antwort, obwohl die Freigabe bereits
+    läuft — gemessen gegen v0.59.1: bis zu 12 s lang (Ticket-Kommentar). Ein zweites
+    ``DELETE`` wäre dort nicht bloß überflüssig, sondern beim Nachbarn ausdrücklich
+    unzulässig. Und ``preparing`` lädt gerade ein Modell für jemanden — möglicherweise für
+    einen Vorgänger von uns, dessen Lauf erst beginnt; auch das ist nicht unseres zu
+    schließen.
+    """
+    http = Verwaist(stand)
+
+    assert verwaistes_fenster_schliessen(config(tmp_path), http=lambda: http) is False
+    assert http.abmeldungen == []
+
+
+@pytest.mark.parametrize(
     "http",
     [
         Verwaist(Antwort({"holder": LEASE_HALTER}, fehler=requests.HTTPError("kaputt"))),
