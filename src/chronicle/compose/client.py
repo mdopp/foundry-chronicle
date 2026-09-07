@@ -546,6 +546,14 @@ def verwaistes_fenster_schliessen(
     Viertelstunde. Genau diese Unterscheidung war ohne ``holder`` nicht möglich und hat den
     Fix bis #1347 der Gegenseite aufgehalten.
 
+    Verlangt wird zusätzlich ``state == "ready"`` (#348). Der Halter allein sagt nur »das
+    war einmal einer von uns«, nicht »hier ist gerade nichts mehr abzuräumen«: in
+    ``releasing`` steht unser Halter noch in der Antwort, obwohl die Freigabe bereits läuft
+    — ein zweites ``DELETE`` wäre dort nicht bloß überflüssig, sondern beim Nachbarn
+    ausdrücklich unzulässig. Und ein Fenster in ``preparing`` gehört uns so wenig zum
+    Schließen wie ein fremdes: es lädt gerade ein Modell für jemanden, möglicherweise für
+    einen Vorgänger von uns, dessen Lauf erst beginnt.
+
     Der Abschalter zählt, das gewählte Modell nicht: aufzuräumen ist hier nichts zu
     schreiben, und ein Fenster kann auch von einem Vorgänger stammen, dessen Runde ein
     Modell gepflegt hatte.
@@ -558,7 +566,11 @@ def verwaistes_fenster_schliessen(
     try:
         stand = http().get(ziel, timeout=timeout)
         stand.raise_for_status()
-        if _json(stand).get(LEASE_HALTER_FELD) != LEASE_HALTER:
+        rumpf = _json(stand)
+        if (
+            rumpf.get(LEASE_HALTER_FELD) != LEASE_HALTER
+            or rumpf.get(LEASE_ZUSTAND_FELD) != LEASE_BEREIT
+        ):
             return False
         antwort = http().delete(ziel, json={LEASE_HALTER_FELD: LEASE_HALTER}, timeout=timeout)
         antwort.raise_for_status()
