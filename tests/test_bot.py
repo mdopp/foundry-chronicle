@@ -2523,6 +2523,38 @@ def test_das_fenster_wird_erneuert_solange_es_gilt(
     assert len(angemeldet) == 3
 
 
+def test_eine_fehlgeschlagene_erneuerung_beendet_die_schleife_nicht(
+    konfiguration, sitzung_id, ohne_espeak, runde, monkeypatch
+):
+    """#347: ein einzelner transienter Fehlschlag darf das Fenster nicht fuer den Rest des
+    Abends beenden — der Nachbar gewaehrt nach der letzten erfolgreichen Anmeldung noch
+    einen weiteren Takt Karenz. Die erste Erneuerung schlaegt hier fehl (``False``), die
+    zweite gelingt wieder; massgeblich fuers Ende bleibt allein ``lease_offen``.
+    """
+    monkeypatch.setattr(ollama, "erneuerung", lambda: 0)
+    ergebnisse = iter([True, False, True])
+
+    def anmelden(config):
+        angemeldet.append(next(ergebnisse))
+        return angemeldet[-1]
+
+    monkeypatch.setattr(ollama, "fenster_oeffnen", anmelden)
+    gilt = iter([True, True, False])
+    monkeypatch.setattr(ollama, "lease_offen", lambda: next(gilt))
+    angemeldet = []
+    bot = gateway.baue(konfiguration)
+
+    async def start_und_fenster():
+        await befehl(bot, "start")(FakeCtx(runde.mira))
+        await der_lauf(bot, konfiguration).lease
+
+    asyncio.run(start_und_fenster())
+
+    # Trotz des Fehlschlags in der Mitte lief die Schleife bis zum letzten ``lease_offen``
+    # weiter, statt beim ersten ``False`` abzubrechen: drei Anmeldeversuche, nicht einer.
+    assert angemeldet == [True, False, True]
+
+
 def test_die_vorstellung_steht_im_kanal_bevor_die_ansage_laeuft(
     konfiguration, sitzung_id, ohne_espeak, runde
 ):

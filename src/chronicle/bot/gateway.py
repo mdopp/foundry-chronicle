@@ -1691,11 +1691,25 @@ async def _fenster_halten(config: Config, runde) -> None:
 
     Den Takt nennt der Nachbar in seiner Antwort (#306); nennt er keinen, gilt die eigene
     Ableitung. Gefragt wird nach jeder Anmeldung neu — er darf ihn ändern.
+
+    **Ein einzelner fehlgeschlagener Erneuerungsaufruf beendet die Schleife nicht** (#347).
+    Der Nachbar gewährt nach der letzten erfolgreichen Anmeldung das Doppelte des Taktes
+    Karenz (600 s bei 300 s Takt) — ein verpasster Schlag lässt also noch genau einen
+    weiteren im nächsten Takt zu, *wenn die Schleife dafür noch läuft*. Vorher brach sie am
+    ersten Fehlschlag sofort ab (die alte Bedingung stand direkt im ``while``) und verbrauchte
+    diesen Puffer, ohne ihn zu nutzen. Maßgeblich fürs Ende bleibt allein ``lease_offen()``
+    — die eigene, großzügigere Bindung an die letzte *erfolgreiche* Anmeldung (#299) —, nicht
+    der Erfolg des letzten Versuchs. Kein Rückfall auf die knappe Frist ohne Not: bleibt der
+    Nachbar dauerhaft unerreichbar, versucht es dieser Takt weiter, bis auch ``lease_offen()``
+    kippt, und endet dann so wie zuvor auch — bester Wille, kein Aufhalten des Abends.
     """
-    while await asyncio.to_thread(modell.fenster_oeffnen, settings.effective(config, runde)):
+    if not await asyncio.to_thread(modell.fenster_oeffnen, settings.effective(config, runde)):
+        return
+    while True:
         await asyncio.sleep(modell.erneuerung())
         if not modell.lease_offen():
             return
+        await asyncio.to_thread(modell.fenster_oeffnen, settings.effective(config, runde))
 
 
 def _verwaistes_fenster_raeumen(config: Config) -> None:
