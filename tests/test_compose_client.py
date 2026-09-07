@@ -1,5 +1,6 @@
 """Der Aufruf des Modelldienstes — ohne Netz, gegen eine nachgebaute HTTP-Sitzung."""
 
+import ast
 import pathlib
 
 import pytest
@@ -10,6 +11,8 @@ from chronicle.compose.client import (
     DEFAULT_TIMEOUT,
     LEASE_ERNEUERUNG_FELD,
     LEASE_ERNEUERUNG_S,
+    LEASE_HALTER,
+    LEASE_HALTER_FELD,
     LEASE_MINDESTPAUSE_S,
     LEASE_PATH,
     LEASE_PROFIL,
@@ -27,6 +30,7 @@ from chronicle.compose.client import (
     freigeben,
     from_config,
     lease_offen,
+    verwaistes_fenster_schliessen,
 )
 from chronicle.compose.composer import SceneMaterial, SessionMaterial, compose
 from chronicle.config import DEFAULT_OLLAMA_URL, DEFAULT_SOLARIS_URL, Config
@@ -249,7 +253,11 @@ def test_der_beginn_meldet_das_fenster_mit_profil_und_frist_an(tmp_path):
 
     ((url, kwargs),) = anmeldungen(http)
     assert url == f"{DEFAULT_SOLARIS_URL}{LEASE_PATH}"
-    assert kwargs["json"] == {"model": LEASE_PROFIL, "ttl_s": LEASE_TTL_S}
+    assert kwargs["json"] == {
+        "model": LEASE_PROFIL,
+        "ttl_s": LEASE_TTL_S,
+        LEASE_HALTER_FELD: LEASE_HALTER,
+    }
     assert kwargs["timeout"] > 0
 
 
@@ -258,9 +266,12 @@ def test_die_anmeldung_traegt_keine_kennung_und_kein_geheimnis(tmp_path):
     fenster_oeffnen(config(tmp_path), http=lambda: http)
 
     ((_, kwargs),) = anmeldungen(http)
-    assert set(kwargs["json"]) == {"model", "ttl_s"}
+    assert set(kwargs["json"]) == {"model", "ttl_s", LEASE_HALTER_FELD}
     for verboten in ("runde", "runde_id", "guild", "guild_id", "session", "session_id"):
         assert verboten not in kwargs["json"]
+    # Der Halter benennt den **Dienst**, nicht die Runde — sonst wäre er genau das Feld,
+    # durch das die Zusage aus #321 hinausliefe.
+    assert kwargs["json"][LEASE_HALTER_FELD] == "foundry-chronicle"
     # Kein Token, kein Header, keine Anmeldung — die Schleife dieser Box ist der Beleg.
     assert set(kwargs) == {"json", "timeout"}
     assert DEFAULT_SOLARIS_URL.startswith("http://127.0.0.1:")
@@ -405,6 +416,9 @@ def test_der_abschalter_laesst_keinen_einzigen_aufruf_hinausgehen(tmp_path):
     freigeben(aus, http=lambda: http)
     assert http.abmeldungen == []
 
+    assert verwaistes_fenster_schliessen(aus, http=lambda: http) is False
+    assert http.aufrufe == [] and http.abmeldungen == []
+
 
 class Uhr:
     """Eine Uhr, die nur durch Warten vorgeht — sonst liefe die Wartezeit in echt ab."""
@@ -548,7 +562,8 @@ def test_das_ende_meldet_das_fenster_genau_einmal_ab(tmp_path):
     assert freigeben(config(tmp_path), http=lambda: http) is True
     ((url, kwargs),) = http.abmeldungen
     assert url == f"{DEFAULT_SOLARIS_URL}{LEASE_PATH}"
-    assert set(kwargs) == {"timeout"}
+    assert set(kwargs) == {"json", "timeout"}
+    assert kwargs["json"] == {LEASE_HALTER_FELD: LEASE_HALTER}
     assert not lease_offen()
     assert len(anmeldungen(http)) == len(http.aufrufe) == 1
 
@@ -575,6 +590,113 @@ def test_ein_gescheitertes_abmelden_haelt_den_abschluss_nicht_auf(tmp_path, capl
     gemeldet = " ".join(eintrag.getMessage() for eintrag in caplog.records)
     assert "ConnectionError" in gemeldet
     assert "127.0.0.1" not in gemeldet
+
+
+class Verwaist(Fenster):
+    """Ein Nachbar, der auf ``GET`` einen Fensterstand nennt und das Abmelden quittiert."""
+
+    def __init__(self, stand):
+        super().__init__(Antwort({"ok": True, "state": "released"}))
+        self._stand = stand
+
+    def get(self, url, **kwargs):
+        self.aufrufe.append((url, kwargs))
+        return self._stand
+
+
+def test_der_halter_steht_als_wortwoertliche_konstante_im_modul():
+    """#333/#321: die Zusage trägt nur, solange hier nichts Berechnetes steht.
+
+    Der Nachbar validiert die Kennung ohnehin kurz und fest — aber seine Prüfung ist nicht
+    unsere Zusage. Ein aus der Runde abgeleiteter Wert käme durch sie hindurch und verriete
+    trotzdem, wer spielt; deshalb prüft dieser Test die **Quelle** und nicht nur den Wert.
+    """
+    quelle = pathlib.Path("src/chronicle/compose/client.py").read_text(encoding="utf-8")
+    assert '\nLEASE_HALTER = "foundry-chronicle"\n' in quelle
+    assert LEASE_HALTER == "foundry-chronicle"
+    baum = ast.parse(quelle)
+    ((wert,),) = [
+        [zuweisung.value]
+        for zuweisung in ast.walk(baum)
+        if isinstance(zuweisung, ast.Assign)
+        and any(
+            isinstance(ziel, ast.Name) and ziel.id == "LEASE_HALTER" for ziel in zuweisung.targets
+        )
+    ]
+    assert isinstance(wert, ast.Constant) and isinstance(wert.value, str)
+
+
+def test_kein_weg_schickt_ein_delete_ohne_rumpf():
+    """Der Notausgang gehört dem Betreiber, nicht unserem Normalbetrieb (#333).
+
+    Ein ``DELETE`` ohne Rumpf gibt beim Nachbarn frei, **ohne** den Halter zu prüfen. Bis
+    #333 hatte unser Normalweg zufällig genau diese Form — geprüft wird deshalb nicht die
+    eine Stelle, sondern dass es keine zweite ohne Rumpf gibt.
+    """
+    ohne_rumpf = []
+    for pfad in pathlib.Path("src/chronicle").rglob("*.py"):
+        for knoten in ast.walk(ast.parse(pfad.read_text(encoding="utf-8"))):
+            if not isinstance(knoten, ast.Call):
+                continue
+            if not (isinstance(knoten.func, ast.Attribute) and knoten.func.attr == "delete"):
+                continue
+            if not any(wort.arg == "json" for wort in knoten.keywords):
+                ohne_rumpf.append(f"{pfad.as_posix()}:{knoten.lineno}")
+    assert ohne_rumpf == []
+
+
+def test_ein_verwaistes_fenster_des_vorgaengers_wird_beim_start_geschlossen(tmp_path, caplog):
+    """#333: prozesslokaler Zustand stirbt mit dem Prozess — das Fenster beim Nachbarn nicht."""
+    http = Verwaist(Antwort({"state": "ready", "model": LEASE_PROFIL, "holder": LEASE_HALTER}))
+
+    with caplog.at_level("INFO"):
+        assert verwaistes_fenster_schliessen(config(tmp_path), http=lambda: http) is True
+
+    ((url, _),) = http.aufrufe
+    assert url == f"{DEFAULT_SOLARIS_URL}{LEASE_PATH}"
+    ((abmeldung, kwargs),) = http.abmeldungen
+    assert abmeldung == url
+    assert kwargs["json"] == {LEASE_HALTER_FELD: LEASE_HALTER}
+    assert "127.0.0.1" not in " ".join(eintrag.getMessage() for eintrag in caplog.records)
+
+
+@pytest.mark.parametrize(
+    "stand",
+    [
+        Antwort({"state": "none", "model": "", "holder": ""}),
+        Antwort({"state": "ready", "model": LEASE_PROFIL, "holder": "solaris-chat"}),
+        Antwort({"state": "ready", "model": LEASE_PROFIL, "holder": LEASE_PROFIL}),
+        Antwort({"state": "ready", "model": LEASE_PROFIL}),
+        Antwort(["kein Rumpf"]),
+        Antwort(),
+    ],
+)
+def test_was_nicht_uns_gehoert_bleibt_beim_start_stehen(tmp_path, stand):
+    """Ein fremdes Fenster zu schließen kostet einem anderen Dienst seinen laufenden Lauf.
+
+    ``holder == 'foundry'`` steht ausdrücklich mit dabei: das ist der Wert, den der Nachbar
+    ohne eigene Angabe einträgt — also gerade **kein** Beleg, dass das Fenster von uns ist.
+    """
+    http = Verwaist(stand)
+
+    assert verwaistes_fenster_schliessen(config(tmp_path), http=lambda: http) is False
+    assert http.abmeldungen == []
+
+
+@pytest.mark.parametrize(
+    "http",
+    [
+        Verwaist(Antwort({"holder": LEASE_HALTER}, fehler=requests.HTTPError("kaputt"))),
+        Fenster(fehler=requests.ConnectionError("weg")),
+    ],
+)
+def test_ein_gescheitertes_aufraeumen_haelt_den_start_nicht_auf(tmp_path, caplog, http):
+    """Bester Wille auch hier: der Bot verbindet, das Fenster verfällt notfalls von selbst."""
+    with caplog.at_level("WARNING"):
+        assert verwaistes_fenster_schliessen(config(tmp_path), http=lambda: http) is False
+
+    gemeldet = " ".join(eintrag.getMessage() for eintrag in caplog.records)
+    assert "Error" in gemeldet and "127.0.0.1" not in gemeldet
 
 
 def test_es_gibt_weiterhin_nur_eine_freigabestelle():

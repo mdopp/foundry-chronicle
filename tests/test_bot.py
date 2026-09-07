@@ -2482,6 +2482,27 @@ def test_der_start_meldet_das_sitzungsfenster_beim_nachbarn_an(
     assert runde.kanal.verbindung.schneidet
 
 
+def test_der_prozessstart_raeumt_ein_verwaistes_fenster_ab(konfiguration, pycord, monkeypatch):
+    """#333: der prozesslokale Vermerk stirbt mit dem Prozess, das Fenster beim Nachbarn nicht.
+
+    Beim Start und **nicht** in ``on_ready``: das Ereignis kommt nach jeder
+    Wiederverbindung noch einmal, und mitten im Abend stuende dort ein eigenes, gueltiges
+    Fenster — der Abfall vom Gateway schloesse dann die laufende Sitzung aus.
+    """
+    geraeumt = []
+    monkeypatch.setattr(
+        ollama,
+        "verwaistes_fenster_schliessen",
+        lambda config: geraeumt.append(config) is None,
+    )
+
+    gateway.run(konfiguration)
+    (bot,) = FakeBot.erzeugt
+
+    assert geraeumt == [konfiguration]
+    assert "fenster" not in inspect.getsource(bot.ereignisse["on_ready"])
+
+
 def test_das_fenster_wird_erneuert_solange_es_gilt(
     konfiguration, sitzung_id, ohne_espeak, runde, monkeypatch
 ):

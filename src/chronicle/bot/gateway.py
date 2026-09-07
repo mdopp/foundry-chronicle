@@ -1698,6 +1698,18 @@ async def _fenster_halten(config: Config, runde) -> None:
             return
 
 
+def _verwaistes_fenster_raeumen(config: Config) -> None:
+    """Vor der ersten Verbindung aufräumen, was ein toter Vorgänger offen ließ (#333).
+
+    Hier und **nicht** in ``on_ready``: das Ereignis kommt bei jeder Wiederverbindung noch
+    einmal vorbei, und mitten im Abend stünde dort ein eigenes, gültiges Fenster — ein
+    Abfall vom Gateway schlösse dann das Fenster der laufenden Sitzung. Ein Prozessstart
+    ist der eine Moment, in dem ein Fenster unter unserem Halter nur von einem Vorgänger
+    stammen kann.
+    """
+    modell.verwaistes_fenster_schliessen(config)
+
+
 def _fenster_anmelden(config: Config, lauf: _Lauf, runde) -> None:
     """Den Erneuerer für diesen Abend stellen — höchstens einen je Runde."""
     if lauf.lease is not None and not lauf.lease.done():
@@ -3170,6 +3182,7 @@ def run(config: Config) -> None:
     logger.info("Aufnahme-Bot: verbinde mit dem Discord-Gateway")
     discord = _discord()
     bot = baue(config)
+    _verwaistes_fenster_raeumen(config)
     # Der nächtliche Lauf hängt an diesem Prozess (#229) — aber neben der Schleife, nicht
     # in ihr: ``nightly.starten`` gibt einen eigenen Faden, und der Lauf selbst bekommt in
     # ``jobs.start`` noch einen. Auf der Ereignisschleife bliebe während einer Verschriftung

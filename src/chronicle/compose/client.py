@@ -123,6 +123,21 @@ LEASE_TIMEOUT = 5.0
 # Sitzungskennung; »foundry« sagt, *wessen Arbeit* ansteht, nicht *wer* spielt.
 LEASE_PROFIL = "foundry"
 
+# **Wer das Fenster hält.** Seit ``mdopp/solarisbay#1347`` prüft der Nachbar den Halter bei
+# jedem ``DELETE``: nur wer eingetragen ist, gibt frei, jeder andere bekommt ``409`` mit
+# dem echten Halter. Ohne eigene Angabe trägt er den **Profilnamen** ein — dann ist unser
+# Fenster von dem eines beliebigen anderen Dienstes unter demselben Profil nicht zu
+# unterscheiden, und genau daran hing #333.
+#
+# Eine **Konstante**, und das ist der Punkt: die Zusage aus #321, dass die Nutzlast keine
+# Runden-, Gilden- oder Sitzungskennung trägt, hält nur, solange hier nichts Berechnetes
+# steht. Ein freies Textfeld ist die Stelle, an der so eine Zusage still erodiert. Der
+# Nachbar validiert ohnehin kurz und fest (``[a-z0-9-]``, höchstens 64) — aber seine
+# Prüfung ist nicht unsere Zusage.
+LEASE_HALTER = "foundry-chronicle"
+
+LEASE_HALTER_FELD = "holder"
+
 LEASE_STEHT = 200
 
 # Kein Fehlschlag: der Nachbar lädt oder schaltet um, beim ersten Mal minutenlang (ein
@@ -363,7 +378,11 @@ def fenster_oeffnen(
     try:
         antwort = http().post(
             basis + LEASE_PATH,
-            json={"model": LEASE_PROFIL, "ttl_s": LEASE_TTL_S},
+            json={
+                "model": LEASE_PROFIL,
+                "ttl_s": LEASE_TTL_S,
+                LEASE_HALTER_FELD: LEASE_HALTER,
+            },
             timeout=timeout,
         )
     except requests.RequestException as fehler:
@@ -400,7 +419,7 @@ def _json(antwort) -> Mapping:
 def _abgelehnt(antwort) -> str:
     """Warum der Nachbar ablehnt, für die eine Logzeile — mehr wird daraus nicht."""
     rumpf = _json(antwort)
-    return str(rumpf.get("reason") or rumpf.get("holder") or "ohne Angabe")
+    return str(rumpf.get("reason") or rumpf.get(LEASE_HALTER_FELD) or "ohne Angabe")
 
 
 def _wartezeit(antwort) -> float:
@@ -477,13 +496,24 @@ def freigeben(config: Config, *, http: Callable[[], object] = _http_session) -> 
     Der Vermerk fällt zuerst: ob der Nachbar es erfährt, ändert nichts daran, dass ab jetzt
     wieder das Haushaltsmodell antwortet. Bester Wille auch hier — ein Abend darf am
     Abmelden nicht scheitern.
+
+    **Der Rumpf ist nicht Zierrat, sondern der Unterschied zum Notausgang** (#333). Ein
+    ``DELETE`` *ohne* Rumpf ist beim Nachbarn der Betreiber- und Notfallpfad: er gibt frei,
+    **ohne** den Halter zu prüfen. Bis #333 hatte unser Normalweg zufällig genau diese Form
+    — jede Freigabe, die dieser Dienst je gemacht hat, lief über den Weg, der die Prüfung
+    umgeht. Ein fremdes Fenster unter dem Profil ``foundry`` hätten wir kommentarlos
+    geschlossen, und der Nachbar hätte es nicht ablehnen können.
     """
     global _lease_bis
     if not lease_offen():
         return False
     _lease_bis = 0.0
     try:
-        antwort = http().delete(DEFAULT_SOLARIS_URL.rstrip("/") + LEASE_PATH, timeout=LEASE_TIMEOUT)
+        antwort = http().delete(
+            DEFAULT_SOLARIS_URL.rstrip("/") + LEASE_PATH,
+            json={LEASE_HALTER_FELD: LEASE_HALTER},
+            timeout=LEASE_TIMEOUT,
+        )
         antwort.raise_for_status()
     except requests.RequestException as fehler:
         logger.warning(
@@ -491,4 +521,53 @@ def freigeben(config: Config, *, http: Callable[[], object] = _http_session) -> 
             type(fehler).__name__,
         )
         return False
+    return True
+
+
+def verwaistes_fenster_schliessen(
+    config: Config,
+    *,
+    http: Callable[[], object] = _http_session,
+    timeout: float = LEASE_TIMEOUT,
+) -> bool:
+    """Beim Start ein Fenster abräumen, das ein **toter Vorgänger** offen ließ (#333).
+
+    ``lease_offen`` ist prozesslokal: stirbt der Prozess mit offenem Fenster, gibt niemand
+    frei, und der Nachbar hält bis zu einer Viertelstunde unser Modell statt seines. Kein
+    Leck — die Frist verfällt von selbst —, aber unnötige Kartenzeit für einen Nachbarn,
+    der nichts dafür kann.
+
+    Kein zweiter Schließer neben der einen Freigabestelle (#299/#300): hier gibt es noch
+    kein eigenes Fenster, gegen das dieser Aufruf laufen könnte, und danach nie wieder.
+
+    Geschlossen wird **nur**, was uns gehört — der Halter aus der ``GET``-Antwort muss
+    unserer sein. Ein fremdes Fenster unter demselben Profil bleibt stehen: es zu schließen
+    kostete einem anderen Dienst seinen laufenden Lauf, und das wiegt schwerer als unsere
+    Viertelstunde. Genau diese Unterscheidung war ohne ``holder`` nicht möglich und hat den
+    Fix bis #1347 der Gegenseite aufgehalten.
+
+    Der Abschalter zählt, das gewählte Modell nicht: aufzuräumen ist hier nichts zu
+    schreiben, und ein Fenster kann auch von einem Vorgänger stammen, dessen Runde ein
+    Modell gepflegt hatte.
+
+    Bester Wille wie alles auf diesem Weg: scheitert es, startet der Bot trotzdem.
+    """
+    if not config.gpu_lease:
+        return False
+    ziel = DEFAULT_SOLARIS_URL.rstrip("/") + LEASE_PATH
+    try:
+        stand = http().get(ziel, timeout=timeout)
+        stand.raise_for_status()
+        if _json(stand).get(LEASE_HALTER_FELD) != LEASE_HALTER:
+            return False
+        antwort = http().delete(ziel, json={LEASE_HALTER_FELD: LEASE_HALTER}, timeout=timeout)
+        antwort.raise_for_status()
+    except requests.RequestException as fehler:
+        logger.warning(
+            "Ein verwaistes Sitzungsfenster ließ sich nicht abräumen (%s) — es verfällt von "
+            "selbst.",
+            type(fehler).__name__,
+        )
+        return False
+    logger.info("Ein Sitzungsfenster eines toten Vorgängers wurde beim Start abgeräumt.")
     return True
