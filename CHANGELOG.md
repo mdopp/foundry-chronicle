@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.3](https://github.com/mdopp/foundry-chronicle/compare/v0.5.2...v0.5.3) (2026-09-07)
+
+
+### Documentation
+
+* **autoloop:** das Verify-Tor fragt nach dem Nachbarn, nicht nur nach dem Pfad ([6d218c5](https://github.com/mdopp/foundry-chronicle/commit/6d218c5ea2166a7cd9e5e440f64904c64fe45b64)), closes [#351](https://github.com/mdopp/foundry-chronicle/issues/351)
+
 ## [0.5.2](https://github.com/mdopp/foundry-chronicle/compare/v0.5.1...v0.5.2) (2026-09-07)
 
 
