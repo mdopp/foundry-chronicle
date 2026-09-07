@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.2](https://github.com/mdopp/foundry-chronicle/compare/v0.5.1...v0.5.2) (2026-09-07)
+
+
+### Bug Fixes
+
+* **compose:** der Halter macht aus dem Notausgang wieder den Normalweg ([fa14695](https://github.com/mdopp/foundry-chronicle/commit/fa14695a7d65f49678a87550ffb5fbe9c9769950)), closes [#333](https://github.com/mdopp/foundry-chronicle/issues/333)
+
 ## [0.5.1](https://github.com/mdopp/foundry-chronicle/compare/v0.5.0...v0.5.1) (2026-09-06)
 
 
