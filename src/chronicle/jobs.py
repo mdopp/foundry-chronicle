@@ -49,9 +49,9 @@ from uuid import uuid4
 from chronicle import db, kette, lebenszyklus, notes, recordings, register
 from chronicle import sprache as sprachen
 from chronicle.compose.service import erzaehlen, zwischenstand_der_szene
-from chronicle.foundry import journal
 from chronicle.config import Config
 from chronicle.discord.ausgabe import erzaehlung_zustellen
+from chronicle.foundry import journal
 from chronicle.foundry.service import sync
 from chronicle.runde import Runde
 

@@ -9,15 +9,19 @@ Aufrufform bleibt bis zu einem Lauf an einer echten Welt eine begründete Annahm
 from __future__ import annotations
 
 import pytest
+from conftest import runde
 
 from chronicle import sprache as sprachen
 from chronicle.foundry.client import FoundryUnreachable
 from chronicle.foundry.journal import BEOBACHTER, FORMAT_HTML, _html, dokument, eintragen
-from conftest import runde
 
 
 def test_die_seite_traegt_die_chronik_als_html():
-    d = dokument("Chronik", "# Szene 1\n\nEs regnete.\n\n- ein Wurf\n- noch einer", seitentitel="Chronik")
+    d = dokument(
+        "Chronik",
+        "# Szene 1\n\nEs regnete.\n\n- ein Wurf\n- noch einer",
+        seitentitel="Chronik",
+    )
     inhalt = d["pages"][0]["text"]["content"]
     assert "<h1>Szene 1</h1>" in inhalt
     assert "<p>Es regnete.</p>" in inhalt
