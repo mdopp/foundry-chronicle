@@ -374,6 +374,8 @@ class Rueckblicktexte:
     auftrag_faeden: str
     keine: str
     kopf: str
+    aufgezeichnet: str
+    aufgezeichnet_ueber_nacht: str
     stand: str
     stand_ohne_namen: str
     quelle: str
@@ -439,6 +441,10 @@ RUECKBLICK = {
         auftrag_faeden="Name the open threads of this session.",
         keine="none",
         kopf="# Recap — session of {datum}",
+        aufgezeichnet="Recorded on {datum} from {von} to {bis} — {minuten} minutes.",
+        aufgezeichnet_ueber_nacht=(
+            "Recorded from {datum} {von} to {datum_bis} {bis} — {minuten} minutes."
+        ),
         stand=(
             "_Condensed from {quelle} by the language model `{name}`. What is narrated is "
             "interpretation; only what stands under “Traced from the chronicle” is traced._"
@@ -506,6 +512,10 @@ RUECKBLICK = {
         auftrag_faeden="Nenne die offenen Fäden dieser Sitzung.",
         keine="keine",
         kopf="# Rückblick — Sitzung vom {datum}",
+        aufgezeichnet="Aufgezeichnet am {datum} von {von} bis {bis} Uhr — {minuten} Minuten.",
+        aufgezeichnet_ueber_nacht=(
+            "Aufgezeichnet vom {datum} {von} Uhr bis {datum_bis} {bis} Uhr — {minuten} Minuten."
+        ),
         stand=(
             "_Verdichtet aus {quelle} vom Sprachmodell `{name}`. Erzähltes ist gedeutet; "
             "belegt ist nur, was unter »Belegt aus der Chronik« steht._"

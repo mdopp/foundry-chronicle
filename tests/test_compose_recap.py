@@ -346,3 +346,34 @@ def test_der_rueckblick_nennt_ohne_namen_in_der_antwort_keinen():
     assert _RUECKBLICK.stand_ohne_namen.format(quelle=_RUECKBLICK.quelle) in ergebnis.text
     assert "None" not in ergebnis.text
     assert ergebnis.model_name is None
+
+
+# --------------------------------------------------------------------------------------
+# Das Aufzeichnungsfenster im Kopf (#358) — welchen Ausschnitt dieser Rückblick zeigt.
+# --------------------------------------------------------------------------------------
+
+
+def test_der_kopf_nennt_das_aufgezeichnete_fenster():
+    """Der Tag allein sagt nicht, welchen Ausschnitt des Abends der Rückblick zeigt.
+
+    Am 2026-09-08 begann eine Gruppe um 20:50 und startete den Bot um 21:26. Aus dem
+    Rückblick war nicht zu sehen, dass die ersten sechsunddreißig Minuten gar nicht darin
+    stehen — die Frage kostete einen halben Abend Suche.
+    """
+    stoff = RecapMaterial(
+        session_id=7,
+        played_on="2026-09-08",
+        title="aldentan",
+        chronicle="## Szene 1",
+        aufgezeichnet="Aufgezeichnet am 08.09.2026 von 21:26 bis 22:10 Uhr — 44 Minuten.",
+    )
+    text = _recap.recap(stoff, None, inhaltssprache=sprachen.DEUTSCH).text
+    assert "von 21:26 bis 22:10 Uhr" in text
+    assert text.index("21:26") < text.index("### ")
+
+
+def test_ohne_aufnahme_steht_keine_leere_spanne_da():
+    """Eine Sitzung aus getippten Notizen hat kein Fenster — dann fehlt die Zeile."""
+    stoff = RecapMaterial(session_id=7, played_on="2026-09-08", chronicle="## Szene 1")
+    text = _recap.recap(stoff, None, inhaltssprache=sprachen.DEUTSCH).text
+    assert "Aufgezeichnet" not in text

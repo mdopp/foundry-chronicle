@@ -49,6 +49,11 @@ class RecapMaterial:
     title: str | None = None
     chronicle: str = ""
     previous: tuple[str, ...] = ()
+    # Wann wirklich aufgezeichnet wurde, fertig formatiert in der Zone der Runde (#358).
+    # Fertig und nicht roh, weil die Zone hier nicht bekannt ist — sie hängt an der Runde,
+    # und die kennt nur der Aufrufer. ``None`` heißt: keine Aufnahme, dann steht die Zeile
+    # nicht da, statt eine leere Spanne zu behaupten.
+    aufgezeichnet: str | None = None
 
 
 @dataclass(frozen=True)
@@ -135,6 +140,8 @@ def _kopf(
     titel = texte.kopf.format(datum=material.played_on)
     if material.title:
         titel += f": {material.title}"
+    if material.aufgezeichnet:
+        titel += f"\n\n_{material.aufgezeichnet}_"
     if grund is None:
         quelle = texte.quelle_mit_vorigen if material.previous else texte.quelle
         vorlage = texte.stand if name else texte.stand_ohne_namen

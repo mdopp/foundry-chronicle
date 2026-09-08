@@ -13,8 +13,10 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from datetime import UTC, datetime
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from chronicle import db, lebenszyklus, settings
+from chronicle import sprache as sprachen
 from chronicle.compose import client
 from chronicle.compose.client import TextModel
 from chronicle.compose.composer import (
@@ -153,7 +155,60 @@ def szenenstoff(scope: db.Scope, session_id: int, scene_id: int) -> SceneMateria
     )
 
 
-def recap_material(scope: db.Scope, session_id: int) -> RecapMaterial | None:
+def _aufzeichnungsfenster(
+    scope: db.Scope, session_id: int, zone: str, texte: sprachen.Rueckblicktexte
+) -> str | None:
+    """Wann wirklich aufgezeichnet wurde — als fertiger Satz in der Zone der Runde (#358).
+
+    Der Kopf nennt bisher nur ``played_on``, den Tag. Das reicht nicht: am 2026-09-08 hat
+    eine Gruppe ihren Abend um 20:50 begonnen, den Bot aber erst um 21:26 gestartet — und
+    aus dem Rückblick war nicht zu sehen, dass die ersten sechsunddreißig Minuten gar nicht
+    darin stehen. Ein Protokoll, dem man nicht ansieht, welchen Ausschnitt es zeigt,
+    behauptet mehr, als es weiß.
+
+    Die Zone ist die des Nachtlaufs (``settings.nightly_zone``) und keine eigene: eine
+    Runde hat **eine** Ortszeit, und zwei Einstellungen dafür liefen beim ersten
+    Zeitumstellungswechsel auseinander.
+    """
+    zeile = scope.execute(
+        "SELECT MIN(started_at) AS von, MAX(uploaded_at) AS bis FROM recording "
+        "WHERE runde_id = ? AND session_id = ?",
+        (scope.runde_id, session_id),
+    ).fetchone()
+    if zeile is None or not zeile["von"] or not zeile["bis"]:
+        return None
+    try:
+        ort = ZoneInfo(zone)
+        von = datetime.fromisoformat(zeile["von"]).astimezone(ort)
+        bis = datetime.fromisoformat(zeile["bis"]).astimezone(ort)
+    except (ValueError, ZoneInfoNotFoundError):
+        return None
+    minuten = max(1, round((bis - von).total_seconds() / 60))
+    if von.date() == bis.date():
+        return texte.aufgezeichnet.format(
+            datum=von.strftime("%d.%m.%Y"),
+            von=von.strftime("%H:%M"),
+            bis=bis.strftime("%H:%M"),
+            minuten=minuten,
+        )
+    # Ein Abend, der über Mitternacht geht, trägt zwei Daten. Nur das erste zu nennen
+    # ließe die Spanne rückwärts laufen.
+    return texte.aufgezeichnet_ueber_nacht.format(
+        datum=von.strftime("%d.%m.%Y"),
+        von=von.strftime("%H:%M"),
+        datum_bis=bis.strftime("%d.%m.%Y"),
+        bis=bis.strftime("%H:%M"),
+        minuten=minuten,
+    )
+
+
+def recap_material(
+    scope: db.Scope,
+    session_id: int,
+    *,
+    zone: str = settings.DEFAULT_NIGHTLY_ZONE,
+    inhaltssprache: str = sprachen.DEFAULT,
+) -> RecapMaterial | None:
     kopf = scope.execute(
         "SELECT s.id, s.played_on, s.title, p.text FROM session s "
         "JOIN protocol p ON p.session_id = s.id AND p.kind = ? "
@@ -175,6 +230,9 @@ def recap_material(scope: db.Scope, session_id: int) -> RecapMaterial | None:
         title=kopf["title"],
         chronicle=kopf["text"],
         previous=tuple(zeile["text"] for zeile in frueher),
+        aufgezeichnet=_aufzeichnungsfenster(
+            scope, session_id, zone, sprachen.rueckblick(inhaltssprache)
+        ),
     )
 
 
@@ -327,7 +385,12 @@ def recap_session(
         return None
     scope = db.scoped(runde)
     try:
-        stoff = recap_material(scope, session_id)
+        stoff = recap_material(
+            scope,
+            session_id,
+            zone=settings.nightly_zone(runde),
+            inhaltssprache=settings.sprache(runde),
+        )
         if stoff is None:
             return None
         gewaehlt = (
