@@ -43,13 +43,21 @@ def test_die_regel_steht_in_der_sprache_der_stufe(sprache):
 
 
 @pytest.mark.parametrize("regel", [sprachen._STORY_DE, sprachen._STORY_EN])
-def test_die_regel_laesst_einen_ehrlichen_ausweg(regel):
-    """Der zweite Satz ist der wichtigere — ohne ihn erzwingt die Regel eine Erfindung.
+def test_der_ausweg_verbietet_die_erfindung_und_verlangt_trotzdem_eine_antwort(regel):
+    """Der zweite Satz trägt **zwei** Zusagen, und die zweite kam erst am 2026-09-08 dazu.
 
-    Ein Modell, dem man das Tischgespräch verbietet und das trotzdem eine Szene liefern
-    soll, füllt die Lücke. Erfinden ist hier der teuerste Fehler, also bekommt es einen
-    erlaubten Ausweg, der die Wahrheit sagt.
+    Zuerst nur: wo kein Spiel ist, wird keines erfunden. Am ersten echten Abend danach
+    lieferte das genau einen Satz — »Die Vorlage gibt kein Spielgeschehen her« — und sonst
+    nichts, bei fünfundvierzig Minuten Material und sechs Sprechern. Ehrlich, und für die
+    Runde wertlos: an einem Abend, an dem Regeln geklärt und Figuren besprochen werden,
+    fallen Entscheidungen, die der nächste braucht.
+
+    Der Ausweg darf also nicht in Schweigen führen. Beides muss dastehen, sonst kippt die
+    Regel wieder in die eine oder die andere Richtung.
     """
     zeilen = [z for z in regel.splitlines() if z.strip()]
     assert len(zeilen) == 2
-    assert "erfinde keine Handlung" in zeilen[1] or "invent no action" in zeilen[1]
+    ausweg = zeilen[1]
+    assert "keine Handlung" in ausweg or "invent no action" in ausweg
+    assert "schweige auch nicht" in ausweg or "do not fall silent" in ausweg
+    assert "besprochen wurde" in ausweg or "discussed instead" in ausweg
