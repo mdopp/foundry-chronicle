@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.6.0](https://github.com/mdopp/foundry-chronicle/compare/v0.5.2...v0.6.0) (2026-09-08)
+
+
+### Features
+
+* **compose:** der Rueckblick sagt, welchen Ausschnitt er zeigt ([81e5cb3](https://github.com/mdopp/foundry-chronicle/commit/81e5cb30707c4bd2498304f0f4dbeed1ef6c0397))
+* **compose:** der Rueckblick schweigt nicht mehr, wenn nicht gespielt wurde ([66f9352](https://github.com/mdopp/foundry-chronicle/commit/66f935216a2f058e584770e26204b6a257113b6e))
+
+
+### Bug Fixes
+
+* **discord:** der Rueckblick geht in den Kanal seiner Sitzung ([7b435c9](https://github.com/mdopp/foundry-chronicle/commit/7b435c9220733601f0786c044e46d5b5f23053a7))
+
+
+### Documentation
+
+* **autoloop:** das Verify-Tor fragt nach dem Nachbarn, nicht nur nach dem Pfad ([6d218c5](https://github.com/mdopp/foundry-chronicle/commit/6d218c5ea2166a7cd9e5e440f64904c64fe45b64)), closes [#351](https://github.com/mdopp/foundry-chronicle/issues/351)
+
 ## [0.5.2](https://github.com/mdopp/foundry-chronicle/compare/v0.5.1...v0.5.2) (2026-09-07)
 
 
