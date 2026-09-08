@@ -122,17 +122,25 @@ def _now() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds")
 
 
-def _protokoll(runde: Runde, session_id: int) -> tuple[str, str | None] | None:
+def _protokoll(runde: Runde, session_id: int) -> tuple[str, str | None, str | None] | None:
+    """Text, Zustellzeitpunkt und der Kanal der Sitzung — die drei Dinge, die ``deliver`` braucht.
+
+    Der Kanal kommt aus der Sitzung und nicht aus einer Einstellung (#359): der Rückblick
+    geht dorthin, wo der Abend stattfand.
+    """
     scope = db.scoped(runde)
     try:
         zeile = scope.execute(
-            "SELECT text, delivered_at FROM protocol "
-            "WHERE runde_id = ? AND session_id = ? AND kind = ?",
+            "SELECT p.text, p.delivered_at, s.kanal_id FROM protocol p "
+            "JOIN session s ON s.id = p.session_id AND s.runde_id = p.runde_id "
+            "WHERE p.runde_id = ? AND p.session_id = ? AND p.kind = ?",
             (scope.runde_id, session_id, RUECKBLICK),
         ).fetchone()
     finally:
         scope.close()
-    return None if zeile is None else (str(zeile["text"]), zeile["delivered_at"])
+    if zeile is None:
+        return None
+    return (str(zeile["text"]), zeile["delivered_at"], zeile["kanal_id"])
 
 
 def _merken(runde: Runde, session_id: int, at: str) -> None:
@@ -236,37 +244,38 @@ def deliver(
     zugang = settings.effective(config, runde)
     if not zugang.discord_configured:
         return Zustellung(NICHT_EINGERICHTET)
-    gewaehlt = (zugang.discord_recap_channel or "").strip().lstrip("#")
-    if not gewaehlt:
-        return Zustellung(KEIN_ZUSTELLKANAL)
 
     abgelegt = _protokoll(runde, session_id)
     if abgelegt is None:
         return Zustellung(KEIN_RUECKBLICK.format(sitzung=session_id))
-    text, zugestellt = abgelegt
+    text, zugestellt, kanal_id = abgelegt
+    # **Der Kanal der Sitzung, kein eigener** (Betreiber-Entscheidung 2026-09-08, #359).
+    # Bis dahin ging der Rückblick in einen gesondert eingestellten Kanal — und kam nie an:
+    # der Bot durfte ihn nicht einmal sehen (HTTP 403, »Missing Access«), bei jeder Sitzung
+    # seit der ersten. Die Chronik landete daneben zuverlässig, weil sie den Kanal der
+    # Sitzung nimmt. Zwei Ziele hießen zwei Rechtelagen, von denen eine still falsch war.
+    # Eines heißt: wer den Abend sieht, sieht auch den Rückblick.
+    gewaehlt = (kanal_id or "").strip()
+    if not gewaehlt:
+        # Sitzungen aus der Zeit vor Discord haben keinen Kanal. Der Rückblick steht
+        # trotzdem in der Datenbank; ein Ort, an dem ihn jemand läse, fehlt nur hier.
+        return Zustellung(KEIN_ZUSTELLKANAL)
     if zugestellt is not None:
         return Zustellung(SCHON_ZUGESTELLT.format(sitzung=session_id))
 
-    if not runde.guild_id:
-        logger.warning(
-            "Runde %s hat keine Gilde — Rückblick zur Sitzung %s bleibt liegen.",
-            runde.id,
-            session_id,
-        )
-        return Zustellung(OHNE_GILDE.format(sitzung=session_id), gescheitert=True)
-
     bot = client if client is not None else DiscordClient(zugang)
     try:
-        kanal = bot.guild_channel_id(runde.guild_id, gewaehlt)
-        if kanal is None:
-            logger.warning(
-                "Zustellkanal %s liegt nicht in Gilde %s — Rückblick zur Sitzung %s bleibt liegen.",
-                gewaehlt,
-                runde.guild_id,
-                session_id,
-            )
-            return Zustellung(KEIN_KANAL.format(sitzung=session_id), gescheitert=True)
-        bot.post_embed(kanal, embed(text))
+        # **Kein Auflösen über die Gilde mehr** (#359). Zwei Gründe, und der erste allein
+        # entscheidet: ``guild_channel_id`` nimmt nur ``GUILD_TEXT``, und der Kanal einer
+        # Sitzung ist in aller Regel ein **Thread** — die Auflösung schlüge immer fehl.
+        # Die Chronik geht denselben Weg und hat ihn nie gebraucht.
+        #
+        # Der zweite: die Auflösung schützte gegen eine Id, die ein Mensch in eine
+        # Einstellung getippt hat und die in eine fremde Gilde zeigen konnte. Diese Id
+        # tippt niemand — sie stammt aus der Sitzungszeile, und die hängt an ``runde_id``.
+        # Die Trennung zwischen Runden liegt damit dort, wo sie ohnehin liegt
+        # (``db.scoped``), und nicht in einer zweiten Prüfung daneben.
+        bot.post_embed(gewaehlt, embed(text))
     except DiscordError as fehler:
         # Der Rückblick steht bereits in der Datenbank; ein Discord, das gerade nicht
         # antwortet, macht daraus keinen fehlgeschlagenen Stapellauf. ``delivered_at``

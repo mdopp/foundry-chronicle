@@ -325,6 +325,15 @@ def _mit_scope(runde, arbeit):
         scope.close()
 
 
+def _kanal_setzen(scope, session_id: int, kanal_id: str) -> None:
+    """Der Kanal einer Sitzung — seit #359 das Ziel ihres Rückblicks."""
+    with scope:
+        scope.execute(
+            "UPDATE session SET kanal_id = ? WHERE runde_id = ? AND id = ?",
+            (kanal_id, scope.runde_id, session_id),
+        )
+
+
 def _marke(runde, ids) -> str:
     """Die Sitzungsmarke dieser Runde — was das Menü mitgibt, statt einer nackten Nummer."""
     return notes.sitzungsmarke(notes.session(runde, ids["sitzung"]))
@@ -1273,45 +1282,43 @@ def test_nachbarrunde_wird_nicht_ueber_fremdschluessel_erreicht(zwei_runden):
     assert protocol.stored(a, ids[2]["sitzung"]) is None
 
 
-def test_der_rueckblick_erreicht_keinen_kanal_einer_fremden_gilde(zwei_runden):
+def test_der_rueckblick_erreicht_keinen_kanal_einer_fremden_runde(zwei_runden):
     """Der Kanal ist der Ort, an dem die Gruppe ihren Rückblick liest (#182).
 
-    Beide Gilden haben einen Kanal namens »chronik« — gleichnamig ist Absicht, wie überall
-    hier. Eine Suche über alle Gilden des Bots fände die erstbeste, und eine Id lässt sich
-    ohnehin von Hand in die Einstellung schreiben. Beides muss an der Gilde der Runde
-    enden, sonst läse eine fremde Gruppe die Sitzung dieser hier.
+    **Der Mechanismus hat sich mit #359 geändert, die Zusage nicht.** Bis dahin stand das
+    Ziel in einer Einstellung, die ein Mensch tippt — deshalb wurde es gegen die Gilde der
+    Runde aufgelöst, damit weder ein gleicher Name noch eine von Hand eingetragene Id in
+    eine fremde Gruppe zeigen konnte.
+
+    Getippt wird nichts mehr: der Rückblick geht in den Kanal **seiner Sitzung**, und die
+    Sitzungszeile wird unter ``db.scoped(runde)`` gelesen. Damit liegt die Trennung dort,
+    wo sie in diesem Haus ohnehin liegt, statt in einer zweiten Prüfung daneben. Was
+    geprüft werden muss, ist deshalb jetzt: erreicht eine Runde über ihren eigenen Aufruf
+    die Sitzung der anderen?
     """
-    # Der Token kommt seit #230 aus der Umgebung; gepflegt wird er nirgends mehr.
-    config, _a, b, ids = zwei_runden
+    config, a, b, ids = zwei_runden
     config = replace(config, discord_bot_token=TOKEN)
 
-    class ZweiGilden:
-        """Zwei Gilden, in beiden ein Kanal »chronik«."""
+    _mit_scope(a, lambda scope: _kanal_setzen(scope, ids[1]["sitzung"], "kanal-von-a"))
+    _mit_scope(b, lambda scope: _kanal_setzen(scope, ids[2]["sitzung"], "kanal-von-b"))
 
-        kanaele = {"gilde-a": "kanal-der-fremden", "gilde-b": "kanal-von-b"}
-
+    class Postfach:
         def __init__(self):
             self.gepostet = []
-
-        def guild_channel_id(self, guild_id, kanal):
-            kennung = self.kanaele.get(guild_id)
-            if kennung is None:
-                return None
-            return kennung if kanal in (kennung, "chronik") else None
 
         def post_embed(self, kanal, eingebettet):
             self.gepostet.append(kanal)
 
-    settings.save(b, {"discord_recap_channel": "kanal-der-fremden"})
-    bot = ZweiGilden()
-    fremd = discord_rueckblick.deliver(config, b, ids[2]["sitzung"], client=bot)
+    bot = Postfach()
 
+    # Die Sitzungsnummer der **anderen** Runde, durch den Aufruf dieser hier: die Zeile
+    # liegt außerhalb ihres Bereichs, also gibt es nichts zuzustellen — und schon gar
+    # nicht in deren Kanal.
+    fremd = discord_rueckblick.deliver(config, b, ids[1]["sitzung"], client=bot)
     assert bot.gepostet == []
-    assert fremd.gescheitert
+    assert "kanal-von-a" not in str(fremd.meldung)
 
-    settings.save(b, {"discord_recap_channel": "chronik"})
     eigen = discord_rueckblick.deliver(config, b, ids[2]["sitzung"], client=bot)
-
     assert bot.gepostet == ["kanal-von-b"]
     assert not eigen.gescheitert
 

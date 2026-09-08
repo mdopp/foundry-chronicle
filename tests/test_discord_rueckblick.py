@@ -17,7 +17,7 @@ from __future__ import annotations
 import pytest
 import requests
 
-from chronicle import db, settings
+from chronicle import db
 from chronicle import runde as runden
 from chronicle.compose.composer import SceneMaterial, SessionMaterial, compose, fact_line
 from chronicle.compose.recap import RecapMaterial, recap
@@ -146,7 +146,13 @@ def gastgeber(config):
     return runden.anlegen(config.database_path, "Der Krumme Ast", guild_id=GILDE)
 
 
-def sitzung(gastgeber, *, played_on=DATUM, kanal_id=None):
+def sitzung(gastgeber, *, played_on=DATUM, kanal_id=KANAL):
+    """Eine Sitzung — **mit** Kanal, denn seit #359 geht der Rückblick dorthin.
+
+    Vorher war ``None`` die Vorgabe: der Kanal der Sitzung spielte für den Rückblick keine
+    Rolle, er ging in den gesondert eingestellten. Wer den Fall ohne Kanal prüfen will,
+    übergibt ihn jetzt ausdrücklich.
+    """
     scope = db.scoped(gastgeber)
     try:
         with scope:
@@ -207,14 +213,15 @@ def _einzige_sitzung(gastgeber):
 # --- Genau einmal --------------------------------------------------------------------
 
 
-def test_der_rueckblick_geht_als_embed_in_den_gruppenkanal(config, gastgeber):
-    sitzung_id = sitzung(gastgeber)
+def test_der_rueckblick_geht_als_embed_in_den_kanal_seiner_sitzung(config, gastgeber):
+    """Seit #359 in den Kanal der Sitzung — dorthin, wo der Abend stattfand."""
+    sitzung_id = sitzung(gastgeber, kanal_id=THREAD)
     protokoll(gastgeber, sitzung_id)
     api = FakeDiscord()
 
     zustellung = zustellen(config, gastgeber, api)
 
-    assert api.gepostet == [(CHRONIK_KANAL, {"description": RUMPF, "title": TITEL})]
+    assert api.gepostet == [(THREAD, {"description": RUMPF, "title": TITEL})]
     assert zustellung == rueckblick.Zustellung(rueckblick.ZUGESTELLT.format(sitzung=sitzung_id))
     assert zugestellt_am(gastgeber, sitzung_id) is not None
 
@@ -289,71 +296,16 @@ def test_nur_der_rueckblick_geht_hinaus_nicht_die_chronik(config, gastgeber):
 # --- Zwei Formen desselben Kanals, und keine über die Gilde hinaus ---------------------
 
 
-def test_ein_in_setup_gewaehlter_kanal_wird_wirklich_beliefert(config, gastgeber):
-    """Der Fehler aus #182: ``/chronicle setup`` legt die Id ab, gesucht wurde nach dem Namen.
-
-    Der Test geht bis zum echten Absenden — eine Zustellung, die nur bis zur Auflösung
-    des Kanals käme, hätte den Fehler nicht gezeigt: dort war er ja.
-    """
-    sitzung_id = sitzung(gastgeber)
-    protokoll(gastgeber, sitzung_id)
-    settings.save(gastgeber, {"discord_recap_channel": CHRONIK_KANAL})
-    api = FakeDiscord()
-
-    zustellung = zustellen(config, gastgeber, api)
-
-    assert api.gepostet == [(CHRONIK_KANAL, {"description": RUMPF, "title": TITEL})]
-    assert not zustellung.gescheitert
-    assert zugestellt_am(gastgeber, sitzung_id) is not None
-
-
-def test_ein_kanalname_aus_der_zeit_vor_setup_wird_weiter_beliefert(config, gastgeber):
-    """Runden von vorher tragen den Namen — sie werden nicht gewandert, sondern verstanden."""
-    sitzung_id = sitzung(gastgeber)
-    protokoll(gastgeber, sitzung_id)
-    settings.save(gastgeber, {"discord_recap_channel": KANAL})
-    api = FakeDiscord()
-
-    zustellung = zustellen(config, gastgeber, api)
-
-    assert api.gepostet == [(CHRONIK_KANAL, {"description": RUMPF, "title": TITEL})]
-    assert not zustellung.gescheitert
-
-
-def test_eine_kanal_id_aus_einer_fremden_gilde_ist_nicht_erreichbar(config, gastgeber):
-    """Die Trennung zwischen Runden: der Kanal der Nachbarn bleibt der Nachbarn."""
-    sitzung_id = sitzung(gastgeber)
-    protokoll(gastgeber, sitzung_id)
-    settings.save(gastgeber, {"discord_recap_channel": FREMDER_KANAL})
-    api = FakeDiscord()
-
-    zustellung = zustellen(config, gastgeber, api)
-
-    assert api.gepostet == []
-    assert zustellung.gescheitert
-    assert FREMDER_KANAL not in zustellung.meldung
-    assert zugestellt_am(gastgeber, sitzung_id) is None
-
-
-def test_ein_gleichnamiger_kanal_der_nachbarn_bekommt_den_rueckblick_nicht(config, gastgeber):
-    """»chronik« heißt in jeder zweiten Gilde ein Kanal — geliefert wird in die eigene."""
-    sitzung_id = sitzung(gastgeber)
-    protokoll(gastgeber, sitzung_id)
-    api = FakeDiscord()
-
-    zustellen(config, gastgeber, api)
-
-    assert [kanal for kanal, _ in api.gepostet] == [CHRONIK_KANAL]
-
-
-# --- Ohne Einrichtung passiert nichts, und das steht da ------------------------------
-
-
 def test_ohne_zustellkanal_bleibt_die_zustellung_aus(tmp_path):
+    """Seit #359 ist das die Sitzung **ohne Kanal** — aus der Zeit vor Discord.
+
+    Vorher war es eine Runde ohne eingestellten Zustellkanal. Den gibt es nicht mehr; der
+    Rückblick geht in den Kanal seiner Sitzung, und Sitzungen von damals haben keinen.
+    """
     config = Config(discord_bot_token=TOKEN, data_dir=tmp_path / "daten")
     db.init(config.database_path)
     eine = runden.anlegen(config.database_path, "Der Krumme Ast", guild_id=GILDE)
-    sitzung_id = sitzung(eine)
+    sitzung_id = sitzung(eine, kanal_id=None)
     protokoll(eine, sitzung_id)
     api = FakeDiscord()
 
@@ -374,51 +326,6 @@ def test_ohne_bot_token_bleibt_die_zustellung_aus(tmp_path):
 
     assert deliver(config, eine, sitzung_id).meldung == rueckblick.NICHT_EINGERICHTET
     assert zugestellt_am(eine, sitzung_id) is None
-
-
-def test_ohne_gilde_stellt_die_runde_nicht_zu_und_sagt_es(config):
-    """Eine Runde ohne Gilde hat keinen Ort — dann wird nicht geraten, sondern gesagt."""
-    ohne = runden.anlegen(config.database_path, "Aus der Zeit der Oberfläche")
-    sitzung_id = sitzung(ohne)
-    protokoll(ohne, sitzung_id)
-    api = FakeDiscord()
-
-    zustellung = zustellen(config, ohne, api)
-
-    assert zustellung.meldung == rueckblick.OHNE_GILDE.format(sitzung=sitzung_id)
-    assert zustellung.gescheitert
-    assert api.gepostet == []
-    assert zugestellt_am(ohne, sitzung_id) is None
-
-
-def test_ein_in_der_oberflaeche_gesetzter_kanal_gewinnt(tmp_path):
-    config = Config(
-        discord_bot_token=TOKEN, discord_recap_channel="alt", data_dir=tmp_path / "daten"
-    )
-    db.init(config.database_path)
-    eine = runden.anlegen(config.database_path, "Der Krumme Ast", guild_id=GILDE)
-    sitzung_id = sitzung(eine)
-    protokoll(eine, sitzung_id)
-    settings.save(eine, {"discord_recap_channel": f"#{KANAL}"})
-    api = FakeDiscord()
-
-    zustellung = zustellen(config, eine, api)
-
-    assert api.gepostet == [(CHRONIK_KANAL, {"description": RUMPF, "title": TITEL})]
-    assert zustellung.meldung == rueckblick.ZUGESTELLT.format(sitzung=sitzung_id)
-
-
-def test_ohne_den_kanal_sagt_der_lauf_das_statt_still_zu_stehen(config, gastgeber):
-    sitzung_id = sitzung(gastgeber)
-    protokoll(gastgeber, sitzung_id)
-    api = FakeDiscord(kanal="plauderei")
-
-    zustellung = zustellen(config, gastgeber, api)
-
-    assert zustellung.meldung == rueckblick.KEIN_KANAL.format(sitzung=sitzung_id)
-    assert zustellung.gescheitert
-    assert api.gepostet == []
-    assert zugestellt_am(gastgeber, sitzung_id) is None
 
 
 def test_ein_unerreichbares_discord_verschiebt_die_zustellung_ohne_token(config, gastgeber):
@@ -454,58 +361,57 @@ def _beide_protokolle(gastgeber):
     return sitzung_id
 
 
-def test_chronik_und_rueckblick_nehmen_zwei_verschiedene_wege(config, gastgeber):
-    """Der Befund aus #261: verschiedenes Ziel, verschiedene Form — im selben Lauf.
+def test_chronik_und_rueckblick_gehen_in_denselben_kanal(config, gastgeber):
+    """Betreiber-Entscheidung 2026-09-08 (#359): **ein** Ziel, weiterhin zwei Formen.
 
-    Festgehalten, damit niemand aus »die Chronik kam an« schließt, der Rückblick müsste
-    es auch. Zusammengelegt sind sie nicht: der Rückblick wird im Gruppenkanal gelesen,
-    die Chronik passt in kein Embed.
+    #261 hielt hier das Gegenteil fest — verschiedenes Ziel, verschiedene Form —, damit
+    niemand aus »die Chronik kam an« schließt, der Rückblick müsste es auch. Der Grund
+    dafür ist eingetreten und war teuer: der Rückblick ging in einen gesondert
+    eingestellten Kanal, den der Bot nicht einmal sehen durfte, und kam bei **keiner**
+    Sitzung je an — drei Wochen lang unbemerkt, weil die Chronik daneben zuverlässig
+    ankam.
+
+    Zwei Ziele hießen zwei Rechtelagen, von denen eine still falsch war. Eines heißt: wer
+    den Abend sieht, sieht auch den Rückblick.
+
+    Die **Formen** bleiben getrennt: der Rückblick als Embed, die Chronik als Datei — sie
+    passt in kein Embed.
     """
     sitzung_id = _beide_protokolle(gastgeber)
     api = FakeDiscord()
 
     _beide_wege(config, gastgeber, api, sitzung_id)
 
-    assert [ziel for ziel, _ in api.gepostet] == [CHRONIK_KANAL]
+    assert [ziel for ziel, _ in api.gepostet] == [THREAD]
     assert api.angehaengt == [(THREAD, f"chronik-{DATUM}.md")]
 
 
-def test_ein_verweigerter_kanal_haelt_die_chronik_nicht_auf_und_sagt_warum(
-    config, gastgeber, caplog
-):
-    """Genau das Bild aus drei Läufen — nur sagt die Meldung jetzt, woran es lag."""
+def test_ein_verweigerter_kanal_trifft_jetzt_beide_wege(config, gastgeber, caplog):
+    """Der Preis eines gemeinsamen Ziels (#359), ausdrücklich festgehalten.
+
+    Vorher lagen Rückblick und Chronik in verschiedenen Kanälen; ein gesperrter traf nur
+    einen von beiden. Seit sie denselben Kanal nehmen, trifft eine fehlende Berechtigung
+    **beide**. Das ist die Kehrseite der Vereinfachung und kein Versehen: eine Rechtelage
+    statt zweier, dafür ohne Rückfallweg.
+
+    Der Tausch ist bewusst so entschieden. Zwei Ziele hießen zwei Rechtelagen, von denen
+    eine drei Wochen lang still falsch war — der Rückblick kam bei keiner Sitzung an, und
+    niemand bemerkte es, weil die Chronik daneben ankam. Ein Ausfall, den man sieht, ist
+    besser als einer, den man nicht sieht.
+    """
     sitzung_id = _beide_protokolle(gastgeber)
-    api = FakeDiscord(verweigert=(CHRONIK_KANAL,))
+    api = FakeDiscord(verweigert=(THREAD,))
 
     with caplog.at_level("WARNING"):
         zustellung, ausgabe = _beide_wege(config, gastgeber, api, sitzung_id)
 
     assert zustellung.gescheitert
     assert "HTTP 403" in zustellung.meldung
-    assert "Missing Permissions" in zustellung.meldung
-    assert GILDE in caplog.text
     assert TOKEN not in caplog.text and TOKEN not in zustellung.meldung
     assert zugestellt_am(gastgeber, sitzung_id) is None
-    # Die Chronik geht denselben Lauf durch — der Fehlschlag des einen Wegs ist keiner des
-    # anderen, und der Sitzungskanal liegt außerhalb des verweigerten Zustellkanals.
-    assert ausgabe == ""
-    assert api.angehaengt == [(THREAD, f"chronik-{DATUM}.md")]
-
-
-def test_ein_verweigerter_sitzungskanal_wird_beim_anhang_genauso_deutlich(config, gastgeber):
-    """Die andere Hälfte: auch der Anhang meldet Status und Rumpf statt eines Namens."""
-    sitzung_id = _beide_protokolle(gastgeber)
-    api = FakeDiscord(verweigert=(THREAD,))
-
-    zustellung, ausgabe = _beide_wege(config, gastgeber, api, sitzung_id)
-
-    assert not zustellung.gescheitert
-    assert "HTTP 403" in ausgabe
-    assert "Missing Permissions" in ausgabe
-    assert TOKEN not in ausgabe
-
-
-# --- Die Maße eines Embeds -----------------------------------------------------------
+    # Und die Chronik ebenso — beide melden es, keine tut still so, als sei sie durch.
+    assert ausgabe != ""
+    assert api.angehaengt == []
 
 
 def test_ein_zu_langer_rueckblick_wird_ehrlich_gekuerzt_und_zeigt_auf_die_datei(

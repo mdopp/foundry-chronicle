@@ -7,7 +7,7 @@ import requests
 from conftest import UNSER_KONTO, deutsche_runde, laufender_job, runde
 
 import chronicle.compose.__main__ as entry
-from chronicle import db, jobs, lebenszyklus, settings
+from chronicle import db, jobs, lebenszyklus
 from chronicle import runde as runden
 from chronicle import sprache as sprachen
 from chronicle.compose import client as modellklient
@@ -277,16 +277,16 @@ def test_der_stapelaufruf_stellt_den_rueckblick_genau_einmal_zu(
     config, scope, welt, monkeypatch, capsys
 ):
     sitzung_id = eine_runde(scope, welt)
-    settings.save(runde(config), {"discord_recap_channel": "chronik"})
-    # Der Stapelaufruf nimmt die erste Runde; die trägt seit dem Runden-Modell eine Gilde,
-    # und ohne sie wüsste die Zustellung nicht, in welcher sie den Kanal suchen soll.
-    _gilde_setzen(config, "g-runde")
+    # Der Rückblick geht seit #359 in den Kanal seiner Sitzung — keine Einstellung mehr,
+    # und damit auch keine Gilde, in der noch etwas zu suchen wäre.
+    with scope:
+        scope.execute(
+            "UPDATE session SET kanal_id = ? WHERE runde_id = ? AND id = ?",
+            ("t-sitzung", scope.runde_id, sitzung_id),
+        )
     gepostet = []
 
     class Briefkasten:
-        def guild_channel_id(self, gilde, kanal):
-            return f"{gilde}/{kanal}"
-
         def post_embed(self, kanal, eingebettet):
             gepostet.append((kanal, eingebettet))
 
@@ -305,7 +305,7 @@ def test_der_stapelaufruf_stellt_den_rueckblick_genau_einmal_zu(
 
     zeilen = protokolle(scope, sitzung_id)
     abgelegt = next(z["text"] for z in zeilen if z["kind"] == RUECKBLICK)
-    assert gepostet == [("g-runde/chronik", rueckblick.embed(abgelegt))]
+    assert gepostet == [("t-sitzung", rueckblick.embed(abgelegt))]
     assert "had already been delivered" in capsys.readouterr().out
 
 
