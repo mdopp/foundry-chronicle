@@ -4,6 +4,21 @@ on:
   push:
     branches: [main]
 
+# Zwei Laeufe duerfen sich nicht ueberholen (#355). Am 2026-09-07 wurden sechs
+# Releases in schneller Folge geschnitten; ein Release-PR wurde gemergt, waehrend
+# der naechste Push den naechsten Lauf schon angestossen hatte. Der fand den ihm
+# bekannten PR gemergt vor, wollte ihn wiederbeleben und scheiterte an
+# "state cannot be changed" -- zwanzig Sekunden spaeter stand ein Doppelgaenger-PR
+# fuer eine bereits veroeffentlichte Version da, den release-please nicht mehr
+# abraeumt.
+#
+# `cancel-in-progress: false` ist hier die richtige Haelfte der Sperre: Laeufe
+# sollen sich anstellen, nicht einander abbrechen. Ein abgebrochener Lauf koennte
+# einen Tag setzen und den Release-Bau danach nicht mehr starten.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 permissions:
   contents: write
   pull-requests: write
