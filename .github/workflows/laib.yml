@@ -1,0 +1,79 @@
+name: laib
+
+# Die Laib-Vorlage, wirklich gestartet (#362): laib template lint, gerendert durch
+# `laib add`, Quadlet -dryrun mit Podman 5 und ein echter Start unter systemd --user und
+# Quadlet auf dem Runner — mit dem Abbild **dieses** Commits. Dasselbe Muster wie laibs
+# eigener `boot`-Job (mdopp/laib scripts/boot-test.sh); die Mechanik steht im Skript.
+
+on:
+  pull_request:
+    paths:
+      - 'templates/**'
+      - 'src/**'
+      - 'pyproject.toml'
+      - 'Dockerfile'
+      - '.dockerignore'
+      - 'scripts/laib_start.sh'
+      - '.github/workflows/laib.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'templates/**'
+      - 'src/**'
+      - 'pyproject.toml'
+      - 'Dockerfile'
+      - '.dockerignore'
+      - 'scripts/laib_start.sh'
+      - '.github/workflows/laib.yml'
+  workflow_dispatch:
+    inputs:
+      laib_ref:
+        description: 'Der Stand von mdopp/laib, gegen den gestartet wird.'
+        type: string
+        default: main
+
+permissions:
+  contents: read
+
+jobs:
+  start:
+    name: Vorlage echt gestartet
+    # Wie laibs boot-Job: ein echter systemd --user mit Podmans Quadlet-Generator.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: laib aus mdopp/laib bauen
+        run: |
+          git clone -q --depth 1 --branch "${LAIB_REF}" https://github.com/mdopp/laib "$RUNNER_TEMP/laib"
+          echo "laib @ $(git -C "$RUNNER_TEMP/laib" rev-parse --short HEAD)"
+          echo "GO_MOD=$RUNNER_TEMP/laib/go.mod" >> "$GITHUB_ENV"
+        env:
+          LAIB_REF: ${{ inputs.laib_ref || 'main' }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: ${{ env.GO_MOD }}
+      - run: cd "$RUNNER_TEMP/laib" && CGO_ENABLED=0 go build -o "$RUNNER_TEMP/laib-bin" ./cmd/laib
+
+      # laib apply zieht jedes Abbild vor dem Start (laib #46); das dieses Commits muss also
+      # aus einer Registry kommen. Eine lokale, nichts verlässt den Runner.
+      - name: Das Abbild dieses Commits, in einer Registry auf dem Runner
+        run: |
+          docker run -d -p 127.0.0.1:5000:5000 --name registry registry:2
+          docker build -q -t localhost:5000/foundry-chronicle:ci .
+          docker push -q localhost:5000/foundry-chronicle:ci
+          mkdir -p ~/.config/containers
+          printf '[[registry]]\nlocation = "localhost:5000"\ninsecure = true\n' > ~/.config/containers/registries.conf
+
+      - name: systemd --user, nft
+        run: |
+          podman --version
+          loginctl enable-linger "$(id -un)" || sudo loginctl enable-linger "$(id -un)" || true
+          command -v nft >/dev/null || { sudo apt-get update -q && sudo apt-get install -y -q nftables; }
+
+      - run: scripts/laib_start.sh
+        env:
+          XDG_RUNTIME_DIR: /run/user/1001
+          LAIB_BIN: ${{ runner.temp }}/laib-bin
+          CHRONIK_IMAGE: localhost:5000/foundry-chronicle:ci

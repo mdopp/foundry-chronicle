@@ -10,9 +10,9 @@ wäre ein zweiter, dauerhafter Ort — sie steht in der Dienstbeschreibung der B
 einer Instanz mit mehreren Runden ginge das Passwort des Betreibers an *jeden*
 Foundry-Server, den irgendeine Runde einträgt. Adresse und Benutzer bleiben Konfiguration.
 
-Der Bot-Token verlässt dieses Objekt nie über ``repr``/``str`` — das ist der
-wahrscheinlichste Weg in eine Logzeile. Die Ollama-Adresse ist dagegen Konfiguration und
-kein Geheimnis; sie bleibt lesbar.
+Der Bot-Token und die beiden Schlüssel (Modell, Erkenner) verlassen dieses Objekt nie über
+``repr``/``str`` — das ist der wahrscheinlichste Weg in eine Logzeile. Die Adressen sind
+dagegen Konfiguration und kein Geheimnis; sie bleiben lesbar.
 """
 
 from __future__ import annotations
@@ -51,40 +51,50 @@ MITSCHNITT_VARIABLE = "CHRONICLE_FOUNDRY_MITSCHNITT"
 # das der **einzige** Horcher dieses Dienstes.
 HEALTH_PORT_VARIABLE = "CHRONICLE_HEALTH_PORT"
 
-# Der Box-Standard: unser Pod läuft im Host-Netz, der Modelldienst hört daneben. Er steht
-# hier und nirgends sonst — Einrichtung und Komposition fragen denselben Wert, sonst
-# verspräche der Bot eine Adresse, gegen die der Lauf nicht redet.
+# **Der Modelldienst kommt von Laib** (#362). Adresse, Schlüssel und Lease sind dort
+# eingebaute Werte, die jeder Dienst in seinen Units bekommt — ``${MODEL_URL}``,
+# ``${MODEL_KEY}``, ``${MODEL_LEASE}`` (laib ``internal/state/load.go``) — und die Vorlage
+# reicht sie unter denselben Namen herein. Eine Vorgabe gibt es hier deshalb nicht mehr:
+# die Box kennt ihren Modelldienst, dieser Prozess nicht. Ohne Adresse schreibt niemand,
+# die Chronik entsteht geordnet statt formuliert.
 #
-# **11435, nicht mehr 11434** (#329, seit 2026-09-06). Dort antwortet ``llama-server``;
-# Ollama hörte auf 11434 und ist abgeschaltet (``mdopp/solarisbay#1332``). Der Name der
-# Konstante bleibt aus der Ollama-Zeit stehen, weil er an der Template-Variable hängt, die
-# der Betreiber kennt — ihn umzubenennen kostete eine Neuinstallation und brächte nichts.
-DEFAULT_OLLAMA_URL = "http://127.0.0.1:11435"
+# **Bis #362 standen hier zwei Adressen mit ``127.0.0.1``**: ``llama-server`` auf 11435
+# und der Nachbar ``solaris`` auf 8787, der das Sitzungsfenster vergab. Beide setzten
+# das Host-Netz voraus (#165); auf Laib läuft dieser Dienst in seinem eigenen
+# Netz-Namensraum, und die Box nennt die Adresse, unter der er den Modelldienst erreicht.
+MODEL_URL_VARIABLE = "MODEL_URL"
+MODEL_KEY_VARIABLE = "MODEL_KEY"
+MODEL_LEASE_VARIABLE = "MODEL_LEASE"
 
-# Derselbe Fall eine Tür weiter: der Sprachdienst der Box spricht die Einwilligungs-Ansage,
-# im Host-Netz auf 8881. Anders als Ollama hat er keine eigene Template-Variable: dorthin
-# fließt kein Wort der Runde, sondern allein unser eigener, feststehender Ansagetext, und
-# wer die Vorgabe nicht erreicht, bekommt espeak-ng statt einer Fehlermeldung. Eine Frage
-# nach einem Wert, dessen falsche Belegung nur die Stimme ändert, wäre eine zu viel.
-DEFAULT_TTS_URL = "http://127.0.0.1:8881"
+# **Welches Modell, nicht welches Fenster** (#362, laib ADR 0011, Ergänzung 2026-10-14).
+# Ein Preset wie ``gemma-4-12b``; das engste Fenster dafür wählt die Lease selbst. Es
+# steht in einer Template-Variablen und nirgends als Konstante: ein Fenstername im Code
+# wäre genau die Kopplung an den Nachbarn, die der Vertrag abschafft (``foundry`` war
+# einer, und Laib weist ihn ab).
+MODEL_PRESET_VARIABLE = "MODEL_PRESET"
 
-# Und noch eine: ``solaris-whisper-batch`` verschriftet die Spuren, im Host-Netz auf
-# 10301 (#216, ``mdopp/solarisbay#1161``). Auch er bekommt keine eigene Variable — es gibt
-# nichts zu wählen: welches Modell rechnet, entscheidet seine eigene Unit.
+# Der Sprachdienst spricht die Einwilligungs-Ansage: **Piper aus Laibs Stimme** (#362),
+# über das Wyoming-Protokoll. Die Vorlage nennt die Adresse; ohne sie gilt die Schleife
+# dieser Maschine. Dorthin fließt kein Wort der Runde, sondern allein unser eigener,
+# feststehender Ansagetext, und wer ihn nicht erreicht, bekommt espeak-ng statt einer
+# Fehlermeldung.
+DEFAULT_TTS_URL = "tcp://127.0.0.1:10200"
+
+# Der Spracherkenner für die Spuren (#216): seit #362 der eigene Container dieses Dienstes
+# (``chronik-whisper``), nicht mehr ``solaris-whisper-batch``. Es gibt nichts zu wählen —
+# welches Modell rechnet, entscheidet seine Unit; die Vorlage nennt die Adresse.
 DEFAULT_WHISPER_URL = "http://127.0.0.1:10301"
 
-# Und die vierte: der Nachbardienst ``solaris`` teilt sich die Karte dieser Box mit uns
-# und nimmt unter ``/napi`` Anmeldungen entgegen — im Host-Netz auf 8787. Dorthin geht das
-# Sitzungsfenster (#299): »dieses Modell ist für die nächste Viertelstunde geladen«.
-# Auch er bekommt keine eigene Template-Variable, denn es gibt nichts zu wählen: der
-# Vertrag gilt für den Nachbarn auf *dieser* Schleife oder gar nicht. Was es gibt, ist der
-# Abschalter darunter.
-DEFAULT_SOLARIS_URL = "http://127.0.0.1:8787"
+# Der Schlüssel, den der Erkenner verlangt (#362). Er ist ein Geheimnis dieses Dienstes,
+# das Laib beim ersten Apply erzeugt und beiden Containern als podman-Secret gibt: der
+# Erkenner liest die Spuren der Runden, und ein Port, den jeder Pod der Box erreicht,
+# braucht dann eine Tür.
+WHISPER_KEY_VARIABLE = "CHRONICLE_WHISPER_KEY"
 
-# Ob das Sitzungsfenster überhaupt angemeldet wird (#299). An, weil der Vertrag mit
-# ``mdopp/solarisbay#1260`` von beiden Betreibern entschieden ist. Der Schalter steht
-# daneben, damit die eine Seite ihn ohne Neubau verlassen kann — aus heißt: kein Aufruf
-# geht hinaus, und der Nachbar behält sein Haushaltsmodell auf der Karte.
+# Ob das Sitzungsfenster überhaupt angemeldet wird (#299). An, weil der Vertrag mit der
+# Lease der Box der Normalfall ist. Der Schalter steht daneben, damit der Betreiber ihn
+# ohne Neubau verlassen kann — aus heißt: kein Aufruf geht hinaus, und die Box behält ihr
+# Haushaltsmodell auf der Karte.
 GPU_LEASE_VARIABLE = "CHRONICLE_GPU_LEASE"
 
 # **``CHRONICLE_LLM_BACKEND`` stand hier bis #329.** Mit #316 wählte es zwischen Ollamas
@@ -138,12 +148,15 @@ class Config:
     foundry_user: str | None = None
     discord_bot_token: str | None = None
     discord_recap_channel: str | None = None
-    ollama_url: str | None = None
-    ollama_model: str | None = None
+    model_url: str | None = None
+    model_preset: str | None = None
+    model_key: str | None = None
+    model_lease: str | None = None
     tts_url: str | None = None
     data_dir: Path = Path(DEFAULT_DATA_DIR)
     recordings_dir: Path = Path(DEFAULT_RECORDINGS_DIR)
     whisper_url: str | None = None
+    whisper_key: str | None = None
     health_port: int | None = None
     foundry_mitschnitt: bool = False
     gpu_lease: bool = True
@@ -156,12 +169,15 @@ class Config:
             foundry_user=_value(env, "FOUNDRY_USER"),
             discord_bot_token=_value(env, "DISCORD_BOT_TOKEN"),
             discord_recap_channel=_value(env, "DISCORD_RECAP_CHANNEL"),
-            ollama_url=_value(env, "OLLAMA_URL"),
-            ollama_model=_value(env, "OLLAMA_MODEL"),
+            model_url=_value(env, MODEL_URL_VARIABLE),
+            model_preset=_value(env, MODEL_PRESET_VARIABLE),
+            model_key=_value(env, MODEL_KEY_VARIABLE),
+            model_lease=_value(env, MODEL_LEASE_VARIABLE),
             tts_url=_value(env, "TTS_URL"),
             data_dir=Path(_value(env, "CHRONICLE_DATA_DIR") or DEFAULT_DATA_DIR),
             recordings_dir=Path(_value(env, "CHRONICLE_RECORDINGS_DIR") or DEFAULT_RECORDINGS_DIR),
             whisper_url=_value(env, "CHRONICLE_WHISPER_URL"),
+            whisper_key=_value(env, WHISPER_KEY_VARIABLE),
             health_port=_port(env, HEALTH_PORT_VARIABLE),
             foundry_mitschnitt=_flag(env, MITSCHNITT_VARIABLE),
             gpu_lease=_schalter(env, GPU_LEASE_VARIABLE, vorgabe=True),
@@ -190,10 +206,11 @@ class Config:
         return self.discord_bot_token is not None
 
     @property
-    def ollama_configured(self) -> bool:
-        # Die Adresse löst immer auf — ohne eigene ist es das Ollama dieser Box. Offen
-        # bleibt allein die Modellwahl.
-        return bool(self.ollama_model)
+    def model_configured(self) -> bool:
+        # Beides nennt die Box: wo der Modelldienst steht und welches Preset wir wollen.
+        # Fehlt eines, schreibt niemand — eine geratene Adresse wäre eine Behauptung über
+        # eine Box, die dieser Prozess nicht kennt.
+        return bool(self.model_url and self.model_preset)
 
     @property
     def database_path(self) -> Path:
@@ -206,12 +223,15 @@ class Config:
             f"foundry_user={self.foundry_user!r}, "
             f"discord_bot_token={masked(self.discord_bot_token)}, "
             f"discord_recap_channel={self.discord_recap_channel!r}, "
-            f"ollama_url={self.ollama_url!r}, "
-            f"ollama_model={self.ollama_model!r}, "
+            f"model_url={self.model_url!r}, "
+            f"model_preset={self.model_preset!r}, "
+            f"model_key={masked(self.model_key)}, "
+            f"model_lease={self.model_lease!r}, "
             f"tts_url={self.tts_url!r}, "
             f"data_dir={str(self.data_dir)!r}, "
             f"recordings_dir={str(self.recordings_dir)!r}, "
             f"whisper_url={self.whisper_url!r}, "
+            f"whisper_key={masked(self.whisper_key)}, "
             f"health_port={self.health_port!r}, "
             f"foundry_mitschnitt={self.foundry_mitschnitt!r}, "
             f"gpu_lease={self.gpu_lease!r})"

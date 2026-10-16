@@ -1,0 +1,26 @@
+name: chronik
+template: {registry: foundry-chronicle, name: chronik, version: 1}
+provides: [chronicle]
+# Sitzungsprotokolle für Tisch-Rollenspielrunden: der Discord-Bot (chronik) und sein
+# Spracherkenner mit Zeitstempeln (chronik-whisper). Bedient wird in Discord, eine Seite
+# gibt es nicht (#231) — deshalb keine Route. Beide Container laufen in ihrem eigenen
+# Netz-Namensraum (laib ADR 0007): das Modell erreicht der Bot über Laibs eingebaute Werte
+# MODEL_URL/MODEL_LEASE, Piper über host.containers.internal, den Erkenner über dessen
+# veröffentlichten Port. Das Host-Netz der ServiceBay-Fassung (#165) fällt damit weg.
+routes: []
+secrets:
+  - name: CHRONIK_DISCORD_TOKEN      # aus dem Discord Developer Portal: laib secret set, nie ein Literal
+    external: true
+  - name: CHRONIK_WHISPER_KEY        # die Tür des Erkenners; beim ersten Apply erzeugt, beide Container bekommen ihn
+data:
+  - path: ${DATA_DIR}/chronik/data       # die SQLite: alles Unersetzliche
+  - path: ${DATA_DIR}/chronik/aufnahmen  # Stimmen echter Menschen (§201 StGB): nach sieben Tagen gelöscht, nie im Backup
+    backup: false
+  - path: ${DATA_DIR}/chronik/whisper    # der Modell-Zwischenspeicher des Erkenners, neu ladbar
+    backup: false
+health:
+  http: http://127.0.0.1:8701/healthz
+ports:
+  - {port: 8701, lan: false}   # das Install-Gate, nur auf der Schleife veröffentlicht
+  - {port: 10301, lan: false}  # der Erkenner: für den Bot über host.containers.internal, nie das LAN; dahinter der Schlüssel
+gpu: true                      # der Erkenner rechnet auf der Karte, nur solange eine Spur ansteht

@@ -5,11 +5,15 @@ gilt die Installation als gescheitert. Bislang kam er aus der Betreiber-Seite; d
 mit #231 gefallen, und der Bot ist der Prozess, der bleibt — seither auch der einzige,
 der über HTTP überhaupt noch antwortet.
 
-**Gebunden wird ausschließlich an die Schleife**, und das ist keine Vorgabe, sondern die
-Eigenschaft: der Pod läuft im Host-Netz (#165), ein ``0.0.0.0`` stünde damit im ganzen
-LAN offen — genau der Weg, über den sich in #190 jemand einen ``Remote-User`` erfinden
-konnte. Der Poller der Box fragt ``localhost`` und liegt auf derselben Maschine; er
-braucht nichts weiter. Deshalb gibt es hier keine Umgebungsvariable für die Adresse.
+**Gebunden wird an den eigenen Netz-Namensraum des Containers, ``0.0.0.0``** (#362). Auf
+Laib läuft dieser Dienst nicht mehr im Host-Netz: wer ihn erreicht, entscheidet die
+Vorlage mit ``PublishPort=127.0.0.1:…`` — die Box, und sonst niemand. Bis #362 lag der Pod
+im Host-Netz (#165), und ein ``0.0.0.0`` hätte dort im ganzen LAN offengestanden — genau
+der Weg, über den sich in #190 jemand einen ``Remote-User`` erfinden konnte; deshalb hieß
+die Adresse damals ``127.0.0.1``. Im eigenen Namensraum wäre die Schleife dagegen die
+falsche Tür: die veröffentlichte Portweiterleitung kommt nicht über die Schleife des
+Containers herein. Eine Umgebungsvariable gibt es weiterhin nicht — es gibt keinen
+richtigen zweiten Wert.
 
 Der Endpunkt sagt nichts über den Zustand des Bots aus, sondern nur, dass der Prozess
 lebt und antwortet. Mehr wäre eine Zusage, die niemand hält: eine Gateway-Verbindung, die
@@ -24,7 +28,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 logger = logging.getLogger(__name__)
 
-HOST = "127.0.0.1"
+HOST = "0.0.0.0"
 
 PFAD = "/healthz"
 

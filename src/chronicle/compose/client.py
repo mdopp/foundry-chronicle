@@ -14,11 +14,14 @@ damit ist der zweite Weg gefallen. Der Schalter ist mitgefallen: einer mit genau
 gültigen Wert ist eine falsche Zusage, denn wer ``ollama`` hineinschriebe, bekäme still
 den ``/v1``-Weg.
 
-**Wer geantwortet hat, sagt die Antwort — nie die Einstellung** (#320). ``llama-server``
-ignoriert den Modellnamen der Anfrage und antwortet mit dem Modell, das gerade geladen
-ist; die Einstellung wäre dort eine Behauptung über einen fremden Prozess. Der Name des
-antwortenden Modells steht oben in der Antwort, und genau der — und nur der — wird
-weitergereicht.
+**Seit #362 steht der Dienst hinter Laibs Lease** (laib ADR 0011). Adresse, Schlüssel und
+Lease sind eingebaute Werte der Box, und ``model`` ist ein **Preset**: der Proxy vor dem
+Router lädt, was die Anfrage nennt, sofern das stehende Fenster es erlaubt. Das Fenster
+selbst nennen wir nie — wir fragen nach einem Modell, und die Lease wählt das engste.
+
+**Wer geantwortet hat, sagt die Antwort — nie die Einstellung** (#320). Was wir erbitten,
+ist eine Bitte und kein Beleg; der Name des antwortenden Modells steht oben in der
+Antwort, und genau der — und nur der — wird weitergereicht.
 """
 
 from __future__ import annotations
@@ -30,18 +33,15 @@ from typing import Protocol
 
 import requests
 
-from chronicle.config import (
-    DEFAULT_OLLAMA_URL,
-    DEFAULT_SOLARIS_URL,
-    Config,
-)
+from chronicle.config import Config
 
 logger = logging.getLogger(__name__)
 
 # Der einzige Weg (#316/#329). ``llama-server`` spricht die OpenAI-Form; ein ``keep_alive``
 # gibt es dort **nicht** und wird auch nicht erfunden — es war ein Ollama-Feld, und ein
-# ausgedachtes Gegenstück wäre eine Zusage, die niemand einlöst.
-OPENAI_CHAT_PATH = "/v1/chat/completions"
+# ausgedachtes Gegenstück wäre eine Zusage, die niemand einlöst. Seit #362 hängt der Pfad
+# an ``MODEL_URL``, und die nennt Laib samt ``/v1`` — die übliche OpenAI-Basis.
+OPENAI_CHAT_PATH = "/chat/completions"
 
 # Das Feld, in dem der Dienst den Namen des Modells nennt, das **geantwortet** hat (#320)
 # — bei ``llama-server`` der Name des geladenen Modells und nicht der angefragte; heute
@@ -81,96 +81,71 @@ DEFAULT_TIMEOUT = 1800.0
 # Minuten und nicht eine halbe Stunde.
 ZWISCHENSTAND_TIMEOUT = 480.0
 
-# **Die Frist des Vertrags mit ``solaris`` (#299).** Solange ein Sitzungsfenster angemeldet
-# ist, antwortet der Nachbar mit *unserem* großen Modell, statt bei jeder Haushaltsanfrage
-# seines zurückzuholen — ein Tausch, der auf dieser Karte Sekunden kostet, in beide
-# Richtungen.
-#
-# Bis #329 war das **eine Zahl mit zwei Verwendungen**: Ollama hielt ein Modell nur so
-# lange, wie der Aufruf es mit ``keep_alive`` erbat, und wir nannten dem Nachbarn genau
-# diese Frist, damit nicht zwei Zahlen auseinanderliefen. Der Ablöser kennt kein
-# ``keep_alive`` und hält von sich aus; geblieben ist die eine Verwendung, die den Vertrag
-# trägt.
+# **Die Frist, die wir für ein Fenster erbitten** (#299). Solange es steht, antwortet die
+# Lease der Box mit *unserem* Modell, statt bei jeder Haushaltsanfrage ihres
+# zurückzuholen — ein Tausch, der auf dieser Karte Sekunden kostet, in beide Richtungen.
+# Laib nimmt 300 bis 86400 s und nennt den Takt selbst (``renew_after``, ein Drittel der
+# Frist); eine Viertelstunde heißt: ein toter Prozess hält die Karte nicht länger als das.
 LEASE_TTL_S = 900
 
-# Erneuert wird dreimal je Frist — die **Rückfallebene**, falls der Nachbar keinen Takt
+# Erneuert wird dreimal je Frist — die **Rückfallebene**, falls die Antwort keinen Takt
 # nennt (#306). Abgeleitet und nicht danebengeschrieben: zwei Zahlen liefen auseinander,
 # sobald jemand eine von beiden anfasst, und das Fenster fiele mitten im Abend zu.
 LEASE_ERNEUERUNG_S = LEASE_TTL_S / 3
 
-# Der Nachbar nennt den Takt in seiner Antwort; genau deshalb steht er dort. Aus der
-# eigenen Frist abgeleitet stimmte er nur, solange beide Seiten dieselbe Zahl halten —
-# heute zufällig 900 —, und liefe stumm auseinander, sobald einer sie anfasst (#306).
 LEASE_ERNEUERUNG_FELD = "renew_after"
 
-# **Nicht** ``/napi/*``: dieses Präfix ist beim Nachbarn Authelia-umgangen und deshalb
-# token-pflichtig und fail-closed. Ein token-freier Endpunkt darin hieße »alles hier
-# braucht ein Token, außer dem einen« — und zwar vor dem Präfix, über das seine App echte
-# Geräte schaltet. Er hat seinen eigenen Vorschlag darum zurückgezogen; wir folgen (#306).
-# ``/api/model-lease`` ist stattdessen peer-gebunden auf die Schleife und weist
-# proxy-weitergeleitete Aufrufe ab: dieselbe Zusage »nur von der Box«, ohne ein fremdes
-# Sicherheitsversprechen aufzuweichen. Der Feldname ``ttl_s`` blieb dagegen unserer.
-LEASE_PATH = "/api/model-lease"
-
-# Der Nachbar steht auf derselben Box, an derselben Schleife. Wartet er länger, hat der
-# Abend schon begonnen — eine Anmeldung, die sich Zeit lässt, hält niemanden auf.
+# Wie lange auf die Lease gewartet wird. Sie steht auf derselben Box; wartet sie länger,
+# hat der Abend schon begonnen — eine Anmeldung, die sich Zeit lässt, hält niemanden auf.
 LEASE_TIMEOUT = 5.0
 
-# Das Profil, das der Nachbar für uns lädt (Vertrag zu ``mdopp/solarisbay#1333``, im
-# Kommentar an #321). Ein **Profil**, kein Modellname: ``llama-server`` ignoriert den
-# Namen der Anfrage, und der Nachbar schaltet daran, welches Modell er geladen hält. Die
-# Zusage aus #299 bleibt damit wörtlich erfüllt — keine Runden-, Gilden- oder
-# Sitzungskennung; »foundry« sagt, *wessen Arbeit* ansteht, nicht *wer* spielt.
-LEASE_PROFIL = "foundry"
-
-# **Wer das Fenster hält.** Seit ``mdopp/solarisbay#1347`` prüft der Nachbar den Halter bei
-# jedem ``DELETE``: nur wer eingetragen ist, gibt frei, jeder andere bekommt ``409`` mit
-# dem echten Halter. Ohne eigene Angabe trägt er den **Profilnamen** ein — dann ist unser
-# Fenster von dem eines beliebigen anderen Dienstes unter demselben Profil nicht zu
-# unterscheiden, und genau daran hing #333.
+# **Wer das Fenster hält** — laut Vertrag der Name des fragenden Dienstes,
+# ``[a-z0-9-]{1,64}``, Pflicht bei jedem ``POST`` und jedem eigenen ``DELETE``. Nur wer
+# eingetragen ist, gibt frei; jeder andere bekommt ``409`` mit dem echten Halter.
 #
 # Eine **Konstante**, und das ist der Punkt: die Zusage aus #321, dass die Nutzlast keine
 # Runden-, Gilden- oder Sitzungskennung trägt, hält nur, solange hier nichts Berechnetes
-# steht. Ein freies Textfeld ist die Stelle, an der so eine Zusage still erodiert. Der
-# Nachbar validiert ohnehin kurz und fest (``[a-z0-9-]``, höchstens 64) — aber seine
-# Prüfung ist nicht unsere Zusage.
+# steht. Laibs Lease weist ein unbekanntes Feld ohnehin ab (``unexpected_field``) — aber
+# ihre Prüfung ist nicht unsere Zusage.
 LEASE_HALTER = "foundry-chronicle"
 
 LEASE_HALTER_FELD = "holder"
 
 LEASE_STEHT = 200
 
-# Kein Fehlschlag: der Nachbar lädt oder schaltet um, beim ersten Mal minutenlang (ein
-# 12b will erst heruntergeladen werden). Danach wird **nicht** erneut angemeldet, sondern
-# gefragt — und die Frist beginnt erst, wenn er ``ready`` sagt.
+# Kein Fehlschlag: die Lease lädt die Gewichte. Danach wird **nicht** erneut angemeldet,
+# sondern mit ``GET`` gefragt — und die Frist beginnt erst, wenn sie ``ready`` sagt.
 LEASE_VORBEREITUNG = 202
 
 LEASE_BEREIT = "ready"
+
+# Der Zustand, in dem kein Fenster steht. ``releasing`` gibt es bei Laib nicht: ein
+# ``DELETE`` ist fertig, wenn die Antwort kommt.
+LEASE_LEER = "none"
 
 LEASE_ZUSTAND_FELD = "state"
 
 LEASE_WARTEZEIT_FELD = "retry_after"
 
-# Wie lange zwischen zwei Fragen gewartet wird, wenn der Nachbar selbst nichts nennt.
+# Wie lange zwischen zwei Fragen gewartet wird, wenn die Lease selbst nichts nennt.
 LEASE_WARTEZEIT_S = 30.0
 
-# Und die Untergrenze dazu, auch wenn er etwas nennt: ein Takt nahe null wäre die enge
+# Und die Untergrenze dazu, auch wenn sie etwas nennt: ein Takt nahe null wäre die enge
 # Schleife gegen einen Dienst, der ohnehin gerade lädt — die Lektion vom 2026-08-10.
 LEASE_MINDESTPAUSE_S = 5.0
 
-# Wie lange insgesamt auf ``ready`` gewartet wird. Eine Grenze braucht es, weil sonst ein
-# Nachbar, der ewig »preparing« sagt, diesen Faden für immer bindet; großzügig darf sie
+# Wie lange insgesamt auf ``ready`` gewartet wird. Eine Grenze braucht es, weil sonst eine
+# Lease, die ewig »preparing« sagt, diesen Faden für immer bindet; großzügig darf sie
 # sein, weil niemand darauf wartet — die Sitzung läuft daneben weiter und schreibt zur Not
 # mit dem Haushaltsmodell, was der Herkunftsvermerk dann auch sagt (#320).
 LEASE_VORBEREITUNG_S = 1800.0
 
 # Wann das angemeldete Fenster von selbst ausläuft, gemessen an der monotonen Uhr dieses
 # Prozesses. Kein Wert in der Datenbank: ein Neustart erbt das Fenster ausdrücklich nicht,
-# und der Nachbar lässt es ohnehin nach ``LEASE_TTL_S`` verfallen. Läuft es hier ab, ohne
-# dass jemand erneuert, fallen unsere Aufrufe von selbst auf die knappe Frist zurück.
+# und die Lease lässt es ohnehin verfallen, wenn niemand erneuert.
 _lease_bis = 0.0
 
-# Der Takt, in dem das offene Fenster erneuert wird — gesagt vom Nachbarn, sonst abgeleitet.
+# Der Takt, in dem das offene Fenster erneuert wird — gesagt von der Lease, sonst abgeleitet.
 _lease_erneuerung_s = LEASE_ERNEUERUNG_S
 
 KEIN_MODELL = "Noch kein Modell gewählt — ein Modell hinterlegt der Betreiber dieser Box."
@@ -268,10 +243,11 @@ class OpenAIClient:
         http: Callable[[], object] = _http_session,
         timeout: float = DEFAULT_TIMEOUT,
     ) -> None:
-        if not config.ollama_configured:
+        if not config.model_configured:
             raise ModelNotConfigured(KEIN_MODELL)
-        self._base = (config.ollama_url or DEFAULT_OLLAMA_URL).rstrip("/")
-        self._model = str(config.ollama_model)
+        self._base = str(config.model_url).rstrip("/")
+        self._model = str(config.model_preset)
+        self._kopf = _schluessel(config)
         self._http = http()
         self._timeout = timeout
         self._geantwortet: str | None = None
@@ -293,6 +269,7 @@ class OpenAIClient:
                         {"role": "user", "content": prompt},
                     ],
                 },
+                headers=self._kopf,
                 timeout=self._timeout,
             )
             antwort.raise_for_status()
@@ -344,9 +321,28 @@ def from_config(config: Config, *, timeout: float = DEFAULT_TIMEOUT) -> TextMode
     Ollama-Weg gefallen ist, bleibt davon die Entscheidung, *ob* überhaupt ein Modell
     antwortet. Die Aufrufer sehen weiterhin nur ``TextModel``.
     """
-    if not config.ollama_configured:
+    if not config.model_configured:
         return None
     return OpenAIClient(config, timeout=timeout)
+
+
+def _schluessel(config: Config) -> dict[str, str]:
+    """Der Schlüssel der Box als Kopfzeile — oder keiner, wenn sie keinen nennt.
+
+    Er geht an genau zwei Stellen hinaus: an den Modelldienst und an die Lease derselben
+    Box. Nie in eine Logzeile — ``Config.__repr__`` maskiert ihn, und keine Meldung hier
+    nennt mehr als die Fehlerart.
+    """
+    return {"Authorization": f"Bearer {config.model_key}"} if config.model_key else {}
+
+
+def _lease_moeglich(config: Config) -> bool:
+    """Ob es überhaupt eine Lease gibt, mit der wir reden dürfen.
+
+    Ohne Adresse gibt es keine; ohne Schlüssel weist sie jedes ``POST`` und ``DELETE`` mit
+    ``401`` ab — ein Aufruf, dessen Ausgang feststeht, geht gar nicht erst hinaus.
+    """
+    return bool(config.gpu_lease and config.model_lease and config.model_key)
 
 
 def fenster_oeffnen(
@@ -356,47 +352,49 @@ def fenster_oeffnen(
     timeout: float = LEASE_TIMEOUT,
     warten: Callable[[float], None] = time.sleep,
 ) -> bool:
-    """Das Sitzungsfenster beim Nachbarn anmelden (#299).
+    """Das Sitzungsfenster bei der Lease der Box anmelden (#299, Vertrag seit #362).
 
-    Die Nutzlast trägt **nur** das Profil und die Frist. Wer spielt, gehört nicht dazu: der
-    Nachbar entscheidet daran nichts, und eine Runden-, Gilden- oder Sitzungskennung wäre
-    eine Preisgabe an einen Dienst, der ohne sie auskommt. Ein Geheimnis reist auch keines
-    mit — der Aufruf geht über die Schleife dieser Box, und seit #230 hat diese Instanz
-    keines mehr.
+    **Gefragt wird nach einem Modell, nicht nach einem Fenster** (laib ADR 0011, Ergänzung
+    2026-10-14): ``model`` ist das Preset aus der Vorlage, und welches Fenster es erlaubt,
+    entscheidet die Lease. Die Nutzlast ist genau ``{model, ttl_s, holder}`` — wer spielt,
+    gehört nicht dazu: eine Runden-, Gilden- oder Sitzungskennung wäre eine Preisgabe an
+    einen Dienst, der ohne sie auskommt, und Laib weist ein unbekanntes Feld ohnehin ab.
+
+    **Der Schlüssel reist mit.** ``POST`` und ``DELETE`` verlangen
+    ``Authorization: Bearer <MODEL_KEY>``; das ist die eine benannte Ausnahme von »ohne
+    gemeinsames Geheimnis« (``CLAUDE.md``). Er ist kein Geheimnis dieser Instanz, sondern
+    ein eingebauter Wert der Box, den jeder ihrer Dienste bekommt.
 
     Bester Wille, wie alles auf diesem Weg: scheitert es, beginnt der Abend trotzdem.
-
-    **Bis #329 lud die Anmeldung das Modell gleich mit** — der Aufwärm-Aufruf war die
-    Antwort auf den offenen Punkt aus #299: mit dem Wegfall von ``halten`` (#303) zahlte
-    der erste Szenenschnitt eines Abends sonst den Ladevorgang. Er hing an Ollamas
-    ``keep_alive`` und ist mit ihm gefallen; ``llama-server`` lädt auf die Anmeldung hin
-    selbst, und was er geladen hält, entscheidet das Profil.
     """
-    if not config.gpu_lease or not config.ollama_configured:
+    if not _lease_moeglich(config) or not config.model_configured:
         return False
-    basis = DEFAULT_SOLARIS_URL.rstrip("/")
+    ziel = str(config.model_lease)
     try:
         antwort = http().post(
-            basis + LEASE_PATH,
+            ziel,
             json={
-                "model": LEASE_PROFIL,
+                "model": config.model_preset,
                 "ttl_s": LEASE_TTL_S,
                 LEASE_HALTER_FELD: LEASE_HALTER,
             },
+            headers=_schluessel(config),
             timeout=timeout,
         )
     except requests.RequestException as fehler:
         logger.warning(
-            "Das Sitzungsfenster kam beim Nachbarn nicht an (%s) — der Abend läuft trotzdem.",
+            "Das Sitzungsfenster kam bei der Lease nicht an (%s) — der Abend läuft trotzdem.",
             type(fehler).__name__,
         )
         return False
     if antwort.status_code == LEASE_VORBEREITUNG:
-        if not _bereit_abwarten(antwort, basis, http=http, timeout=timeout, warten=warten):
+        stand = _bereit_abwarten(antwort, ziel, http=http, timeout=timeout, warten=warten)
+        if stand is None:
             return False
+        antwort = stand
     elif antwort.status_code != LEASE_STEHT:
         logger.warning(
-            "Der Nachbar gibt die Karte nicht her (%s, %s) — der Abend läuft ohne Fenster.",
+            "Die Lease gibt die Karte nicht her (%s, %s) — der Abend läuft ohne Fenster.",
             antwort.status_code,
             _abgelehnt(antwort),
         )
@@ -417,13 +415,19 @@ def _json(antwort) -> Mapping:
 
 
 def _abgelehnt(antwort) -> str:
-    """Warum der Nachbar ablehnt, für die eine Logzeile — mehr wird daraus nicht."""
+    """Warum die Lease ablehnt, für die eine Logzeile — und wer die Karte hält, wenn sie es sagt.
+
+    Laib antwortet auf jede Ablehnung mit ``{ok: false, reason}``; bei ``held`` steht der
+    Halter daneben. Ein Halter ist ein Dienstname, kein Mensch — er darf ins Log.
+    """
     rumpf = _json(antwort)
-    return str(rumpf.get("reason") or rumpf.get(LEASE_HALTER_FELD) or "ohne Angabe")
+    grund = str(rumpf.get("reason") or "ohne Angabe")
+    halter = rumpf.get(LEASE_HALTER_FELD)
+    return f"{grund}, gehalten von {halter}" if halter else grund
 
 
 def _wartezeit(antwort) -> float:
-    """Wie lange bis zur nächsten Frage: was der Nachbar nennt, in vernünftigen Schranken."""
+    """Wie lange bis zur nächsten Frage: was die Lease nennt, in vernünftigen Schranken."""
     wert = _json(antwort).get(LEASE_WARTEZEIT_FELD)
     if isinstance(wert, bool) or not isinstance(wert, (int, float)):
         return LEASE_WARTEZEIT_S
@@ -432,46 +436,55 @@ def _wartezeit(antwort) -> float:
 
 def _bereit_abwarten(
     antwort,
-    basis: str,
+    ziel: str,
     *,
     http: Callable[[], object],
     timeout: float,
     warten: Callable[[float], None],
-) -> bool:
+):
     """Auf ``ready`` warten, ohne erneut anzumelden und ohne den Abend anzuhalten (#321).
 
-    Ein zweites ``POST`` verbietet der Vertrag ausdrücklich — es setzte die Vorbereitung
-    neu auf. Gefragt wird deshalb mit ``GET``, frühestens nach der genannten Wartezeit und
-    nur, solange das Budget reicht. Jeder Ausgang außer ``ready`` ist derselbe wie eine
-    gescheiterte Anmeldung: kein Fenster, kein Fehler, der Abend läuft weiter.
+    Ein zweites ``POST`` verbietet der Vertrag ausdrücklich. Gefragt wird deshalb mit
+    ``GET`` — ohne Schlüssel, Lesen ist bei Laib offen —, frühestens nach der genannten
+    Wartezeit und nur, solange das Budget reicht. Zählt nur ein ``ready``, das **unser**
+    ist: sagt die Lease es für einen anderen Halter, hat uns jemand die Karte genommen,
+    während die Gewichte luden. Gibt die Antwort mit ``ready`` zurück, sonst ``None``.
     """
     ende = time.monotonic() + LEASE_VORBEREITUNG_S
     pause = _wartezeit(antwort)
     while time.monotonic() + pause <= ende:
         warten(pause)
         try:
-            stand = http().get(basis + LEASE_PATH, timeout=timeout)
+            stand = http().get(ziel, timeout=timeout)
             stand.raise_for_status()
         except requests.RequestException as fehler:
             logger.warning(
-                "Der Nachbar sagt nichts zum vorbereiteten Fenster (%s) — der Abend läuft "
+                "Die Lease sagt nichts zum vorbereiteten Fenster (%s) — der Abend läuft "
                 "ohne es weiter.",
                 type(fehler).__name__,
             )
-            return False
-        if _json(stand).get(LEASE_ZUSTAND_FELD) == LEASE_BEREIT:
-            return True
+            return None
+        rumpf = _json(stand)
+        if rumpf.get(LEASE_HALTER_FELD) != LEASE_HALTER:
+            logger.warning(
+                "Das vorbereitete Fenster gehört nicht mehr uns (%s) — der Abend läuft ohne es "
+                "weiter.",
+                rumpf.get(LEASE_HALTER_FELD) or "niemand",
+            )
+            return None
+        if rumpf.get(LEASE_ZUSTAND_FELD) == LEASE_BEREIT:
+            return stand
         pause = _wartezeit(stand)
     logger.warning("Das Fenster wurde nicht rechtzeitig fertig — der Abend läuft ohne es weiter.")
-    return False
+    return None
 
 
 def _genannter_takt(antwort) -> float:
-    """Der Erneuerungstakt aus der Antwort des Nachbarn — oder die eigene Ableitung (#306).
+    """Der Erneuerungstakt aus der Antwort der Lease — oder die eigene Ableitung (#306).
 
     Bester Wille auch hier: eine Antwort ohne JSON, ohne das Feld oder mit einer Zahl, die
     außerhalb der angemeldeten Frist liegt, kostet kein Fenster. Sie kostet nur den
-    genannten Takt, und den ersetzt die Ableitung, die vor #306 die einzige Quelle war.
+    genannten Takt, und den ersetzt die Ableitung.
     """
     wert = _json(antwort).get(LEASE_ERNEUERUNG_FELD)
     # ``bool`` ist in Python ein ``int``; ein ``True`` als Takt wäre eine Sekunde.
@@ -488,30 +501,26 @@ def freigeben(config: Config, *, http: Callable[[], object] = _http_session) -> 
     endet (``kette.schreiben``, ``finally``). Ein zweiter Schließer liefe irgendwann gegen
     den ersten, deshalb hängt das Abmelden hier und nicht daneben.
 
-    Bis #329 gab dieselbe Stelle davor Ollamas Modellhaltung mit ``keep_alive: 0`` frei —
-    ohne Rücksicht darauf, ob dieser Prozess sie gesetzt hatte, denn nach einem Neustart
-    mitten im Abend hielte Ollama trotzdem noch. Der Ablöser kennt keine Haltung, die zu
-    beenden wäre; geblieben ist das Fenster.
-
-    Der Vermerk fällt zuerst: ob der Nachbar es erfährt, ändert nichts daran, dass ab jetzt
+    Der Vermerk fällt zuerst: ob die Lease es erfährt, ändert nichts daran, dass ab jetzt
     wieder das Haushaltsmodell antwortet. Bester Wille auch hier — ein Abend darf am
     Abmelden nicht scheitern.
 
     **Der Rumpf ist nicht Zierrat, sondern der Unterschied zum Notausgang** (#333). Ein
-    ``DELETE`` *ohne* Rumpf ist beim Nachbarn der Betreiber- und Notfallpfad: er gibt frei,
-    **ohne** den Halter zu prüfen. Bis #333 hatte unser Normalweg zufällig genau diese Form
-    — jede Freigabe, die dieser Dienst je gemacht hat, lief über den Weg, der die Prüfung
-    umgeht. Ein fremdes Fenster unter dem Profil ``foundry`` hätten wir kommentarlos
-    geschlossen, und der Nachbar hätte es nicht ablehnen können.
+    ``DELETE`` *ohne* Rumpf ist bei Laib der Weg des Betreibers aus einem Fenster, das
+    niemand erneuert: er gibt frei, **ohne** den Halter zu prüfen. Mit ``{holder}`` lehnt
+    die Lease ab, was nicht uns gehört.
     """
     global _lease_bis
     if not lease_offen():
         return False
     _lease_bis = 0.0
+    if not _lease_moeglich(config):
+        return False
     try:
         antwort = http().delete(
-            DEFAULT_SOLARIS_URL.rstrip("/") + LEASE_PATH,
+            str(config.model_lease),
             json={LEASE_HALTER_FELD: LEASE_HALTER},
+            headers=_schluessel(config),
             timeout=LEASE_TIMEOUT,
         )
         antwort.raise_for_status()
@@ -532,47 +541,42 @@ def verwaistes_fenster_schliessen(
 ) -> bool:
     """Beim Start ein Fenster abräumen, das ein **toter Vorgänger** offen ließ (#333).
 
-    ``lease_offen`` ist prozesslokal: stirbt der Prozess mit offenem Fenster, gibt niemand
-    frei, und der Nachbar hält bis zu einer Viertelstunde unser Modell statt seines. Kein
-    Leck — die Frist verfällt von selbst —, aber unnötige Kartenzeit für einen Nachbarn,
-    der nichts dafür kann.
+    Die Verbraucherregel des Vertrags: beim Start ``GET``, und hält unser eigener Halter
+    ein Fenster, wird es zuerst mit ``DELETE`` zurückgegeben. ``lease_offen`` ist
+    prozesslokal: stirbt der Prozess mit offenem Fenster, gibt sonst niemand frei, und die
+    Box hält bis zum Ablauf unser Modell statt ihres.
 
     Kein zweiter Schließer neben der einen Freigabestelle (#299/#300): hier gibt es noch
     kein eigenes Fenster, gegen das dieser Aufruf laufen könnte, und danach nie wieder.
+    Und das gilt für ``preparing`` wie für ``ready`` — bei einem Prozessstart kann ein
+    Fenster unter unserem Halter nur von einem Vorgänger stammen. (Bis #362 blieb ein
+    ``preparing`` stehen; das war eine Regel des Nachbarn ``solaris``, bei dem eine
+    Freigabe Zeit brauchte. Laibs ``DELETE`` ist fertig, wenn die Antwort kommt.)
 
-    Geschlossen wird **nur**, was uns gehört — der Halter aus der ``GET``-Antwort muss
-    unserer sein. Ein fremdes Fenster unter demselben Profil bleibt stehen: es zu schließen
-    kostete einem anderen Dienst seinen laufenden Lauf, und das wiegt schwerer als unsere
-    Viertelstunde. Genau diese Unterscheidung war ohne ``holder`` nicht möglich und hat den
-    Fix bis #1347 der Gegenseite aufgehalten.
-
-    Verlangt wird zusätzlich ``state == "ready"`` (#348). Der Halter allein sagt nur »das
-    war einmal einer von uns«, nicht »hier ist gerade nichts mehr abzuräumen«: in
-    ``releasing`` steht unser Halter noch in der Antwort, obwohl die Freigabe bereits läuft
-    — ein zweites ``DELETE`` wäre dort nicht bloß überflüssig, sondern beim Nachbarn
-    ausdrücklich unzulässig. Und ein Fenster in ``preparing`` gehört uns so wenig zum
-    Schließen wie ein fremdes: es lädt gerade ein Modell für jemanden, möglicherweise für
-    einen Vorgänger von uns, dessen Lauf erst beginnt.
-
-    Der Abschalter zählt, das gewählte Modell nicht: aufzuräumen ist hier nichts zu
-    schreiben, und ein Fenster kann auch von einem Vorgänger stammen, dessen Runde ein
-    Modell gepflegt hatte.
+    Geschlossen wird **nur**, was uns gehört. Ein fremdes Fenster bleibt stehen: es zu
+    schließen kostete einem anderen Dienst seinen laufenden Lauf, und das wiegt schwerer
+    als unsere Viertelstunde.
 
     Bester Wille wie alles auf diesem Weg: scheitert es, startet der Bot trotzdem.
     """
-    if not config.gpu_lease:
+    if not _lease_moeglich(config):
         return False
-    ziel = DEFAULT_SOLARIS_URL.rstrip("/") + LEASE_PATH
+    ziel = str(config.model_lease)
     try:
         stand = http().get(ziel, timeout=timeout)
         stand.raise_for_status()
         rumpf = _json(stand)
         if (
             rumpf.get(LEASE_HALTER_FELD) != LEASE_HALTER
-            or rumpf.get(LEASE_ZUSTAND_FELD) != LEASE_BEREIT
+            or rumpf.get(LEASE_ZUSTAND_FELD, LEASE_LEER) == LEASE_LEER
         ):
             return False
-        antwort = http().delete(ziel, json={LEASE_HALTER_FELD: LEASE_HALTER}, timeout=timeout)
+        antwort = http().delete(
+            ziel,
+            json={LEASE_HALTER_FELD: LEASE_HALTER},
+            headers=_schluessel(config),
+            timeout=timeout,
+        )
         antwort.raise_for_status()
     except requests.RequestException as fehler:
         logger.warning(

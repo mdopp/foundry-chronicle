@@ -21,7 +21,7 @@ ist ``chronik.Anhang``. Ein echter Discord ist nicht im Spiel — kein Token, ke
 Datenverzeichnis unter ``/tmp`` und eigenem Port und räumt beides am Ende ab; die
 Datenbank der Gruppe sieht er nie.
 
-Die Umgebung wird **gebaut, nicht geerbt**: ohne ``OLLAMA_URL`` komponiert der Lauf
+Die Umgebung wird **gebaut, nicht geerbt**: ohne ``MODEL_URL`` komponiert der Lauf
 geordnet statt formuliert, und genau das macht ihn wiederholbar — ein Sprachmodell
 schriebe jedes Mal etwas anderes. Ohne die Foundry- und Discord-Werte fasst die
 Wegwerf-Instanz auch dort nichts an. Ein Mock-Foundry und ein Mock-Ollama gehören

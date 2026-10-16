@@ -52,7 +52,7 @@ import yaml
 WURZEL = Path(__file__).resolve().parents[1]
 WORKFLOW = WURZEL / ".github" / "workflows" / "build-images.yml"
 
-# Dieselbe Registry-Adresse wie in templates/daggerheart-chronik/template.yml; der Test
+# Dieselbe Registry-Adresse wie in templates/chronik/values.example.yml; der Test
 # hält beide zusammen.
 IMAGE = "ghcr.io/mdopp/foundry-chronicle"
 REGISTRY, PAKET = IMAGE.split("/", 1)
