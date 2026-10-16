@@ -34,6 +34,8 @@ fail() { echo "FAIL: $*" >&2; exit 1; }
 cleanup() {
   set +e
   journalctl --user -u chronik.service -u chronik-whisper.service --no-pager 2>/dev/null | tail -60
+  # was der Quadlet-Generator dieses Podman nicht übersetzen konnte
+  /usr/libexec/podman/quadlet -dryrun -user 2>&1 >/dev/null | tail -5
   systemctl --user stop chronik.service chronik-whisper.service 2>/dev/null
   podman rm -f piper-ci >/dev/null 2>&1
   [ -n "${LEASE_PID:-}" ] && kill "$LEASE_PID" 2>/dev/null

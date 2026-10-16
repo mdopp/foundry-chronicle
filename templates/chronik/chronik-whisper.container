@@ -6,7 +6,10 @@ After=network-online.target
 # Das unveränderte Abbild bringt faster-whisper, CTranslate2 und CUDA mit; der Dienst ist
 # die eine Datei daneben (whisper_batch.py), schreibgeschützt eingehängt. Kein eigenes Abbild.
 Image=${WHISPER_IMAGE}
-Entrypoint=python3
+# Der Einstieg des Abbilds ist s6 (/init) und startete dessen Wyoming-Server; hier läuft
+# allein whisper_batch.py. PodmanArgs statt Entrypoint=: das kennt Quadlet erst ab Podman 5,
+# und der echte Start in der CI läuft auf dem Podman 4.9 des Runners.
+PodmanArgs=--entrypoint=python3
 Exec=/app/whisper_batch.py
 Environment=WHISPER_BATCH_ROOT=/aufnahmen
 Environment=WHISPER_BATCH_PORT=10301
