@@ -80,9 +80,10 @@ user-facing: keine Seite, keine Subdomain, kein veröffentlichter Port.
 Die Werte der **Runde** liegen in der SQLite und werden in Discord gepflegt; ein
 gepflegter Wert gewinnt über `FOUNDRY_URL` und `FOUNDRY_USER` aus der Umgebung. Die drei
 Werte der **Instanz** kommen seit [#230](../../issues/230) ausschließlich aus der
-Umgebung: `DISCORD_BOT_TOKEN`, `OLLAMA_URL`, `OLLAMA_MODEL`. Es gibt für sie keinen
+Umgebung: `DISCORD_BOT_TOKEN` und, seit [#362](../../issues/362), der Modelldienst der Box
+(`MODEL_URL`, `MODEL_PRESET`, `MODEL_LEASE`, `MODEL_KEY`). Es gibt für sie keinen
 Schreibweg in die Datei mehr — damit liegt **kein Geheimnis dieses Dienstes im Backup**.
-Das Box-Template setzt sie als Variablen (siehe unten).
+Die Laib-Vorlage setzt sie (siehe unten).
 
 **Woher die Spieldaten kommen, ist eine Auswahl je Runde:** *Echter Server* oder
 *Eingebaute Testwelt*. Die Testwelt ist eine Beispielwelt im Paket — 19 Konten, 91
@@ -122,13 +123,14 @@ ginge nicht: Foundry will es vorgezeigt, nicht geprüft. **Der Bot-Token wird se
 [#231](../../issues/231) noch gibt. Ob er gesetzt ist, sagt der Bot, indem er läuft oder
 nicht. Eine Wanderung räumt einen Bestand aus der Zeit davor aus der SQLite — aber
 erst, wenn die Variable gesetzt ist: gelöscht ohne Ersatz wäre der Token
-unwiederbringlich. Die Adresse des Modelldienstes hat eine zweite Stufe: ist `OLLAMA_URL`
-nicht gesetzt, gilt `http://127.0.0.1:11435` — der `llama-server` dieser Box. Offen bleibt
-dann allein die Modellwahl über `OLLAMA_MODEL`. Rein aus der Umgebung kommen weiterhin
-`CHRONICLE_DATA_DIR` (Vorgabe `./data`), `CHRONICLE_RECORDINGS_DIR` (Vorgabe
-`./recordings`), `CHRONICLE_WHISPER_URL` — die Adresse des Spracherkenners (Vorgabe
+unwiederbringlich. Die Adresse des Modelldienstes nennt seit [#362](../../issues/362) die
+Box (`MODEL_URL`, bei Laib ein eingebauter Wert samt `/v1`); eine Vorgabe gibt es nicht
+mehr, und ohne Adresse oder ohne `MODEL_PRESET` entsteht die Chronik geordnet statt
+formuliert. Rein aus der Umgebung kommen weiterhin `CHRONICLE_DATA_DIR` (Vorgabe `./data`),
+`CHRONICLE_RECORDINGS_DIR` (Vorgabe `./recordings`), `CHRONICLE_WHISPER_URL` und
+`CHRONICLE_WHISPER_KEY` — Adresse und Schlüssel des Spracherkenners (Vorgabe
 `http://127.0.0.1:10301`, siehe [Transkription](#transkription)) — sowie `TTS_URL`, die Adresse
-des Sprachdienstes, der die Ansage spricht (Vorgabe `http://127.0.0.1:8881`, siehe
+des Sprachdienstes, der die Ansage spricht (Wyoming, Vorgabe `tcp://127.0.0.1:10200`, siehe
 [Aufnahme per Discord](#aufnahme-per-discord)). Fehlt die
 Foundry-Konfiguration, startet der Dienst trotzdem und sagt es dort, wo jemand danach
 fragt: in `/chronicle setup` und in der Meldung des Abgleichs.
@@ -139,9 +141,9 @@ fragt: in `/chronicle setup` und in der Meldung des Abgleichs.
 **abgelöst** — es hörte auf `/api/chat` unter Port 11434 und ist auf der Box abgeschaltet
 (`mdopp/solarisbay#1332`). Der Schalter `CHRONICLE_LLM_BACKEND`, mit dem #316 zwischen
 beiden Wegen wählen ließ, ist mit dem zweiten Weg gefallen: einer mit genau einem gültigen
-Wert ist eine falsche Zusage. Adresse und Modellname heißen weiterhin `OLLAMA_URL` und
-`OLLAMA_MODEL`; die Namen sind aus der Ollama-Zeit geblieben, gemeint ist der Modelldienst
-dieser Box.
+Wert ist eine falsche Zusage. Bis [#362](../../issues/362) hießen Adresse und Modellname
+noch `OLLAMA_URL` und `OLLAMA_MODEL`; seit dem Umzug auf Laib heißen sie wie die Box sie
+nennt, `MODEL_URL` und `MODEL_PRESET`, und das Modell ist ein Preset der Lease.
 
 Der Server **ignoriert den angefragten Modellnamen** — welches Modell geladen ist,
 entscheidet das Profil des Sitzungsfensters. Ein `keep_alive` gibt es **nicht** — das Feld
