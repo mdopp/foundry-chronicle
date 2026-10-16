@@ -238,21 +238,16 @@ def test_ohne_registry_wird_kein_tag_geraten(repo: Wegwerfrepo, monkeypatch, cap
     assert "GHCR nicht erreichbar" in ausgabe.err
 
 
-def test_die_registry_adresse_stimmt_mit_dem_template_ueberein() -> None:
-    # Zwei Stellen, ein Image: sonst pinnt das Skript einen Tag, den das Manifest gar
-    # nicht zieht.
-    manifest = (WURZEL / "templates" / "daggerheart-chronik" / "template.yml").read_text(
-        encoding="utf-8"
-    )
-    assert re.findall(r"^\s*image: (\S+):", manifest, re.MULTILINE) == [tagskript.IMAGE]
+def test_die_registry_adresse_stimmt_mit_der_vorlage_ueberein() -> None:
+    # Zwei Stellen, ein Image: sonst pinnt das Skript einen Tag, den die Vorlage gar
+    # nicht zieht. Seit #362 steht es in der Laib-Vorlage, als Wert ``IMAGE``.
+    werte = (WURZEL / "templates" / "chronik" / "values.example.yml").read_text(encoding="utf-8")
+    assert re.findall(r"^IMAGE: (\S+):", werte, re.MULTILINE) == [tagskript.IMAGE]
 
 
-def test_die_variable_verweist_auf_das_skript() -> None:
-    # Der Assistent zeigt diese Beschreibung beim Ausrollen an; steht der Weg zum Tag
-    # nicht dort, wird wieder 'latest' eingetragen.
-    variablen = json.loads(
-        (WURZEL / "templates" / "daggerheart-chronik" / "variables.json").read_text(
-            encoding="utf-8"
-        )
-    )
-    assert "bestimme_image_tag.py" in variablen["CHRONICLE_IMAGE_TAG"]["description"]
+def test_der_wert_verweist_auf_das_skript() -> None:
+    # Wer ausrollt, liest diese Zeile; steht der Weg zum Tag nicht dort, wird wieder
+    # 'latest' eingetragen.
+    werte = (WURZEL / "templates" / "chronik" / "values.example.yml").read_text(encoding="utf-8")
+    zeile = next(z for z in werte.splitlines() if z.startswith("IMAGE:"))
+    assert "bestimme_image_tag.py" in zeile

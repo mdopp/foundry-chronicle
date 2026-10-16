@@ -130,11 +130,11 @@ def station_2_konfigurieren(config, mock_foundry, mock_modell):
         {"foundry_url": mock_foundry.url, "foundry_user": foundry_mock.BENUTZER},
     )
 
-    config = replace(config, ollama_url=mock_modell.url, ollama_model=modell_mock.MODELL)
+    config = replace(config, model_url=mock_modell.url + "/v1", model_preset=modell_mock.MODELL)
 
     aktuell = settings.effective(config, gruppe)
     assert aktuell.foundry_configured
-    assert aktuell.ollama_model == modell_mock.MODELL
+    assert aktuell.model_preset == modell_mock.MODELL
     # Das Passwort wird gereicht und nie abgelegt (#64) — auch nicht als Nebenwirkung
     # des Speicherns.
     assert foundry_mock.PASSWORT not in str(settings.stored(gruppe))

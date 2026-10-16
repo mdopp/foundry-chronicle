@@ -1,6 +1,9 @@
-"""Der Aufruf des Modelldienstes — ohne Netz, gegen eine nachgebaute HTTP-Sitzung."""
+"""Der Aufruf des Modelldienstes — ohne Netz, gegen eine nachgebaute HTTP-Sitzung.
 
-import ast
+Das Sitzungsfenster bei Laibs Lease steht seit #362 in ``test_laib_lease.py``: dort gegen
+eine Attrappe, die den Vertrag auf dem Draht spricht.
+"""
+
 import pathlib
 
 import pytest
@@ -9,35 +12,21 @@ import requests
 from chronicle import sprache as sprachen
 from chronicle.compose.client import (
     DEFAULT_TIMEOUT,
-    LEASE_ERNEUERUNG_FELD,
-    LEASE_ERNEUERUNG_S,
-    LEASE_HALTER,
-    LEASE_HALTER_FELD,
-    LEASE_MINDESTPAUSE_S,
-    LEASE_PATH,
-    LEASE_PROFIL,
-    LEASE_TTL_S,
-    LEASE_VORBEREITUNG,
-    LEASE_VORBEREITUNG_S,
-    LEASE_WARTEZEIT_S,
     OPENAI_CHAT_PATH,
     ZWISCHENSTAND_TIMEOUT,
     ModelNotConfigured,
     ModelUnreachable,
     OpenAIClient,
-    erneuerung,
-    fenster_oeffnen,
-    freigeben,
     from_config,
-    lease_offen,
-    verwaistes_fenster_schliessen,
 )
 from chronicle.compose.composer import SceneMaterial, SessionMaterial, compose
-from chronicle.config import DEFAULT_OLLAMA_URL, DEFAULT_SOLARIS_URL, Config
+from chronicle.config import Config
 
-ADRESSE = "http://modell.example:11435/"
+# Wie Laib sie nennt (``${MODEL_URL}``): die OpenAI-Basis samt ``/v1``.
+ADRESSE = "http://host.containers.internal:11435/v1/"
 BASIS = ADRESSE.rstrip("/")
-MODELL = "chronist-modell"
+MODELL = "gemma-4-12b"
+SCHLUESSEL = "modell-schluessel-nur-im-test"
 
 
 class Antwort:
@@ -72,14 +61,9 @@ class Http:
         return self.post(url, **kwargs)
 
 
-def config(tmp_path, *, url=ADRESSE, model=MODELL):
-    """Der Aufbau, den der Dienst seit #329 kennt — es gibt nur noch einen Weg.
-
-    Bis dahin stand hier ausdrücklich ``llm_backend``, damit ein auslaufender Weg in seinen
-    Tests benannt war und bei seiner Entfernung genau das wegfiel, was ihn geprüft hatte.
-    Genau das ist eingetreten; der Schalter ist mit ihm gefallen.
-    """
-    return Config(ollama_url=url, ollama_model=model, data_dir=tmp_path)
+def config(tmp_path, *, url=ADRESSE, model=MODELL, key=SCHLUESSEL):
+    """Der Aufbau, den der Dienst seit #362 kennt: Laibs Adresse, ihr Schlüssel, ein Preset."""
+    return Config(model_url=url, model_preset=model, model_key=key, data_dir=tmp_path)
 
 
 def klient(tmp_path, http, **kwargs):
@@ -96,8 +80,9 @@ def test_ruft_den_pfad_des_modelldienstes_und_traegt_keine_frist(tmp_path):
     text = klient(tmp_path, http).write(system="Ordne.", prompt="Szene 1")
 
     url, kwargs = http.aufrufe[0]
-    assert OPENAI_CHAT_PATH == "/v1/chat/completions"
+    assert url == "http://host.containers.internal:11435/v1/chat/completions"
     assert url == f"{BASIS}{OPENAI_CHAT_PATH}"
+    # Das Preset aus der Vorlage: Laibs Proxy lädt, was die Anfrage nennt (#362).
     assert kwargs["json"]["model"] == MODELL
     assert kwargs["json"]["stream"] is False
     assert kwargs["json"]["messages"] == [
@@ -116,10 +101,24 @@ def test_ohne_gewaehltes_modell_gibt_es_keinen_klienten(tmp_path):
     assert "OLLAMA" not in str(fehler.value)
 
 
-def test_ohne_eigene_adresse_redet_der_klient_mit_dem_dienst_dieser_box(tmp_path):
+def test_ohne_adresse_der_box_gibt_es_keinen_klienten_und_keine_geratene(tmp_path):
+    """#362: die Adresse nennt Laib (``${MODEL_URL}``); eine Vorgabe hier wäre geraten."""
+    assert from_config(config(tmp_path, url=None)) is None
+    with pytest.raises(ModelNotConfigured):
+        OpenAIClient(config(tmp_path, url=None))
+
+
+def test_der_schluessel_der_box_geht_als_bearer_mit(tmp_path):
+    """Der Proxy vor dem Modell nimmt denselben Schlüssel wie die Lease (laib #42)."""
     http = Http(v1_antwort())
-    klient(tmp_path, http, url=None).write(system="Ordne.", prompt="Szene 1")
-    assert http.aufrufe[0][0] == f"{DEFAULT_OLLAMA_URL}{OPENAI_CHAT_PATH}"
+    klient(tmp_path, http).write(system="Ordne.", prompt="Szene 1")
+    assert http.aufrufe[0][1]["headers"] == {"Authorization": f"Bearer {SCHLUESSEL}"}
+
+
+def test_ohne_schluessel_geht_keine_leere_kopfzeile_hinaus(tmp_path):
+    http = Http(v1_antwort())
+    klient(tmp_path, http, key=None).write(system="Ordne.", prompt="Szene 1")
+    assert "Authorization" not in http.aufrufe[0][1]["headers"]
 
 
 def test_ein_nicht_erreichbarer_dienst_ist_eine_verstaendliche_meldung(tmp_path):
@@ -209,517 +208,6 @@ def test_wer_den_klienten_baut_bestimmt_die_zeitgrenze(tmp_path):
     # #330 auf acht Minuten gewandert. Drei ist damit die Aussage, die noch trägt: knapper
     # bleibt knapper, aber nicht knapper als der Lauf, den sie zulassen soll.
     assert ZWISCHENSTAND_TIMEOUT * 3 < DEFAULT_TIMEOUT
-
-
-# ---------------------------------------------------------------------------
-# Das Sitzungsfenster gegen den Nachbardienst (#299)
-# ---------------------------------------------------------------------------
-
-
-class Fenster(Http):
-    """Wie ``Http``, kennt aber auch das Abmelden — und wer wohin gefragt hat."""
-
-    def __init__(self, antwort=None, fehler=None, delete_fehler=None):
-        super().__init__(antwort, fehler)
-        self._delete_fehler = delete_fehler
-        self.abmeldungen = []
-
-    def delete(self, url, **kwargs):
-        self.abmeldungen.append((url, kwargs))
-        if self._delete_fehler is not None:
-            raise self._delete_fehler
-        return self._antwort if self._antwort is not None else Antwort({})
-
-
-@pytest.fixture(autouse=True)
-def ohne_offenes_fenster(monkeypatch):
-    """Kein Test erbt das Fenster eines anderen — und keiner lässt eines stehen."""
-    monkeypatch.setattr("chronicle.compose.client._lease_bis", 0.0)
-    monkeypatch.setattr("chronicle.compose.client._lease_erneuerung_s", LEASE_ERNEUERUNG_S)
-
-
-def anmeldungen(http):
-    return [(url, kwargs) for url, kwargs in http.aufrufe if url.endswith(LEASE_PATH)]
-
-
-def test_der_beginn_meldet_das_fenster_mit_profil_und_frist_an(tmp_path):
-    """Genau ein POST, und die Nutzlast sagt nur, *was* geladen wird und *wie lange*.
-
-    Wer spielt, gehört nicht hinein: der Nachbar entscheidet daran nichts, und eine
-    Runden-, Gilden- oder Sitzungskennung wäre eine Preisgabe ohne Gegenwert.
-    """
-    http = Fenster(Antwort({}))
-    assert fenster_oeffnen(config(tmp_path), http=lambda: http) is True
-
-    ((url, kwargs),) = anmeldungen(http)
-    assert url == f"{DEFAULT_SOLARIS_URL}{LEASE_PATH}"
-    assert kwargs["json"] == {
-        "model": LEASE_PROFIL,
-        "ttl_s": LEASE_TTL_S,
-        LEASE_HALTER_FELD: LEASE_HALTER,
-    }
-    assert kwargs["timeout"] > 0
-
-
-def test_die_anmeldung_traegt_keine_kennung_und_kein_geheimnis(tmp_path):
-    http = Fenster(Antwort({}))
-    fenster_oeffnen(config(tmp_path), http=lambda: http)
-
-    ((_, kwargs),) = anmeldungen(http)
-    assert set(kwargs["json"]) == {"model", "ttl_s", LEASE_HALTER_FELD}
-    for verboten in ("runde", "runde_id", "guild", "guild_id", "session", "session_id"):
-        assert verboten not in kwargs["json"]
-    # Der Halter benennt den **Dienst**, nicht die Runde — sonst wäre er genau das Feld,
-    # durch das die Zusage aus #321 hinausliefe.
-    assert kwargs["json"][LEASE_HALTER_FELD] == "foundry-chronicle"
-    # Kein Token, kein Header, keine Anmeldung — die Schleife dieser Box ist der Beleg.
-    assert set(kwargs) == {"json", "timeout"}
-    assert DEFAULT_SOLARIS_URL.startswith("http://127.0.0.1:")
-
-
-def test_das_profil_benennt_die_arbeit_und_nicht_die_runde(tmp_path):
-    """Die Zusage aus #299 überlebt den neuen Vertrag: der Nachbar erfährt nicht, wer spielt.
-
-    Ein **Profil**, kein Modellname: ``llama-server`` ignoriert den Namen der Anfrage, und
-    der Nachbar schaltet am Profil, welches Modell er geladen hält. Bis #329 stand am
-    Ollama-Weg daneben der Modellname, weil ein Profil dort ein unbekanntes Modell gewesen
-    wäre; mit dem Weg ist auch diese Verzweigung gefallen.
-    """
-    http = Fenster(Antwort({}))
-    fenster_oeffnen(config(tmp_path), http=lambda: http)
-
-    ((_, kwargs),) = anmeldungen(http)
-    assert LEASE_PROFIL == "foundry"
-    assert kwargs["json"]["model"] == LEASE_PROFIL
-    assert MODELL not in str(kwargs["json"])
-
-
-def test_die_frist_des_fensters_und_ihr_erneuerungstakt_haengen_zusammen():
-    """Zwei Zahlen liefen auseinander; das Fenster fiele dann mitten im Abend zu.
-
-    Bis #329 war es *eine Zahl mit zwei Verwendungen*: dieselbe Frist ging als
-    ``keep_alive`` an Ollama und als ``ttl_s`` an den Nachbarn. Der Ablöser kennt kein
-    ``keep_alive``; geblieben ist die Verwendung, die den Vertrag trägt.
-    """
-    assert LEASE_TTL_S == 15 * 60
-    assert LEASE_ERNEUERUNG_S == LEASE_TTL_S / 3 == 5 * 60
-
-
-def test_der_pfad_liegt_nicht_im_token_pflichtigen_praefix_des_nachbarn():
-    """#306: ``/napi/*`` ist beim Nachbarn Authelia-umgangen und deshalb token-pflichtig.
-
-    Ein token-freier Endpunkt darin schlüge ein Loch in genau das Präfix, über das seine
-    App echte Geräte schaltet. Er hat den eigenen Vorschlag darum zurückgezogen.
-    """
-    assert LEASE_PATH == "/api/model-lease"
-    assert not LEASE_PATH.startswith("/napi/")
-
-
-def test_der_erneuerungstakt_kommt_aus_der_antwort_des_nachbarn(tmp_path):
-    """#306: abgeleitet stimmte er nur, solange beide Seiten zufällig dieselbe Zahl halten."""
-    http = Fenster(Antwort({LEASE_ERNEUERUNG_FELD: 120}))
-    assert fenster_oeffnen(config(tmp_path), http=lambda: http) is True
-    assert erneuerung() == 120
-
-
-@pytest.mark.parametrize(
-    "antwort",
-    [
-        Antwort({}),
-        Antwort({LEASE_ERNEUERUNG_FELD: None}),
-        Antwort({LEASE_ERNEUERUNG_FELD: "bald"}),
-        Antwort({LEASE_ERNEUERUNG_FELD: True}),
-        Antwort({LEASE_ERNEUERUNG_FELD: 0}),
-        Antwort({LEASE_ERNEUERUNG_FELD: -60}),
-        Antwort({LEASE_ERNEUERUNG_FELD: LEASE_TTL_S + 1}),
-        Antwort(["kein Rumpf"]),
-        Antwort(),
-    ],
-)
-def test_ein_fehlender_oder_unsinniger_takt_faellt_auf_die_eigene_ableitung_zurueck(
-    tmp_path, antwort
-):
-    """Bester Wille in beide Richtungen (#299/#306): das kostet den Takt, nie das Fenster."""
-    http = Fenster(antwort)
-    assert fenster_oeffnen(config(tmp_path), http=lambda: http) is True
-    assert erneuerung() == LEASE_ERNEUERUNG_S
-
-
-def test_die_anmeldung_ist_der_einzige_aufruf_des_beginns(tmp_path):
-    """Bis #329 lud sie das Modell gleich mit — ein ``keep_alive``-Aufruf an Ollama (#299).
-
-    Der Aufwärm-Aufruf hing an Ollamas Haltung und ist mit ihr gefallen; ``llama-server``
-    lädt auf die Anmeldung hin selbst, und was er geladen hält, entscheidet das Profil.
-    """
-    http = Fenster(Antwort({}))
-    assert fenster_oeffnen(config(tmp_path), http=lambda: http) is True
-
-    assert [url for url, _ in http.aufrufe] == [f"{DEFAULT_SOLARIS_URL}{LEASE_PATH}"]
-
-
-def test_ein_gescheitertes_fenster_haelt_den_beginn_nicht_auf(tmp_path, caplog):
-    """Bester Wille, in beide Richtungen: der Abend beginnt auch ohne Zusage."""
-    http = Fenster(fehler=requests.ConnectionError("weg"))
-    with caplog.at_level("WARNING"):
-        assert fenster_oeffnen(config(tmp_path), http=lambda: http) is False
-
-    assert not lease_offen()
-    assert klient(tmp_path, Fenster(v1_antwort("x"))).write(system="", prompt="")
-    gemeldet = " ".join(eintrag.getMessage() for eintrag in caplog.records)
-    assert "ConnectionError" in gemeldet
-    assert "127.0.0.1" not in gemeldet and MODELL not in gemeldet
-
-
-@pytest.mark.parametrize(
-    ("status", "rumpf"),
-    [
-        (400, {"ok": False, "reason": "ttl_s out of range"}),
-        (409, {"ok": False, "reason": "held", "holder": "coding", "expires_at": 1_000}),
-        (503, {"ok": False, "reason": "disabled"}),
-        (500, None),
-    ],
-)
-def test_eine_abgelehnte_anmeldung_zaehlt_als_gescheitert(tmp_path, caplog, status, rumpf):
-    """400, 409, 503 — jeder Ausgang außer ``ready`` ist derselbe: kein Fenster, kein Fehler.
-
-    Der Grund steht in der einen Logzeile, damit später erklärbar ist, warum eine Chronik
-    mit dem Haushaltsmodell geschrieben wurde — sagen tut das ohnehin ihr Kopf (#320).
-    """
-    http = Fenster(Antwort(rumpf, status_code=status))
-
-    with caplog.at_level("WARNING"):
-        assert fenster_oeffnen(config(tmp_path), http=lambda: http) is False
-
-    assert not lease_offen()
-    gemeldet = " ".join(eintrag.getMessage() for eintrag in caplog.records)
-    assert str(status) in gemeldet
-    assert "127.0.0.1" not in gemeldet
-
-
-def test_ohne_gewaehltes_modell_gibt_es_nichts_anzumelden(tmp_path):
-    http = Fenster(Antwort({}))
-    assert fenster_oeffnen(Config(data_dir=tmp_path), http=lambda: http) is False
-    assert http.aufrufe == []
-
-
-def test_der_abschalter_laesst_keinen_einzigen_aufruf_hinausgehen(tmp_path):
-    """#299: der Vertrag muss ohne Neubau zu verlassen sein — dann auch vollständig."""
-    from dataclasses import replace
-
-    aus = replace(config(tmp_path), gpu_lease=False)
-    http = Fenster(v1_antwort())
-
-    assert fenster_oeffnen(aus, http=lambda: http) is False
-    assert http.aufrufe == []
-    assert not lease_offen()
-
-    freigeben(aus, http=lambda: http)
-    assert http.abmeldungen == []
-
-    assert verwaistes_fenster_schliessen(aus, http=lambda: http) is False
-    assert http.aufrufe == [] and http.abmeldungen == []
-
-
-class Uhr:
-    """Eine Uhr, die nur durch Warten vorgeht — sonst liefe die Wartezeit in echt ab."""
-
-    def __init__(self) -> None:
-        self.jetzt = 1000.0
-        self.pausen: list[float] = []
-
-    def monotonic(self) -> float:
-        return self.jetzt
-
-    def warten(self, sekunden: float) -> None:
-        self.pausen.append(sekunden)
-        self.jetzt += sekunden
-
-
-class Vorbereitung(Fenster):
-    """Ein Nachbar, der erst vorbereitet und auf Nachfrage seinen Zustand nennt."""
-
-    def __init__(self, anmeldung, *staende):
-        super().__init__(anmeldung)
-        self._staende = list(staende)
-        self.fragen = []
-
-    def get(self, url, **kwargs):
-        self.fragen.append((url, kwargs))
-        return self._staende.pop(0) if len(self._staende) > 1 else self._staende[0]
-
-
-@pytest.fixture
-def uhr(monkeypatch):
-    gestellt = Uhr()
-    monkeypatch.setattr("chronicle.compose.client.time", gestellt)
-    return gestellt
-
-
-def test_ein_vorbereitetes_fenster_wird_gefragt_und_nicht_neu_angemeldet(tmp_path, uhr):
-    """202 ist kein Fehlschlag: der Nachbar lädt, und ein zweites POST setzte ihn zurück.
-
-    Beim ersten Mal dauert das Minuten — ein 12b will heruntergeladen werden. Gefragt wird
-    deshalb per GET, frühestens nach der genannten Wartezeit.
-    """
-    http = Vorbereitung(
-        Antwort({"state": "preparing", "retry_after": 30}, status_code=LEASE_VORBEREITUNG),
-        Antwort({"state": "preparing", "retry_after": 45}),
-        Antwort({"state": "ready", "alias": "gemma-4-12b"}),
-    )
-
-    assert fenster_oeffnen(config(tmp_path), http=lambda: http, warten=uhr.warten) is True
-
-    assert len(anmeldungen(http)) == 1
-    assert [url for url, _ in http.fragen] == [f"{DEFAULT_SOLARIS_URL}{LEASE_PATH}"] * 2
-    assert uhr.pausen == [30, 45]
-
-
-def test_die_frist_beginnt_erst_mit_ready(tmp_path, uhr):
-    """Der Vertrag ist ausdrücklich: gezählt wird ab ``ready``, nicht ab der Anmeldung."""
-    http = Vorbereitung(
-        Antwort({"state": "preparing", "retry_after": 600}, status_code=LEASE_VORBEREITUNG),
-        Antwort({"state": "ready"}),
-    )
-
-    fenster_oeffnen(config(tmp_path), http=lambda: http, warten=uhr.warten)
-    assert lease_offen()
-
-    uhr.jetzt += LEASE_TTL_S - 1
-    assert lease_offen()
-    uhr.jetzt += 2
-    assert not lease_offen()
-
-
-def test_ein_nachbar_der_nie_fertig_wird_bindet_den_abend_nicht_ewig(tmp_path, uhr, caplog):
-    """Ein Budget, und keine enge Schleife: gefragt wird selten, und irgendwann gar nicht mehr."""
-    http = Vorbereitung(
-        Antwort({"state": "preparing", "retry_after": 0.001}, status_code=LEASE_VORBEREITUNG),
-        Antwort({"state": "preparing", "retry_after": 0.001}),
-    )
-
-    with caplog.at_level("WARNING"):
-        assert fenster_oeffnen(config(tmp_path), http=lambda: http, warten=uhr.warten) is False
-
-    assert not lease_offen()
-    assert min(uhr.pausen) >= LEASE_MINDESTPAUSE_S
-    assert sum(uhr.pausen) <= LEASE_VORBEREITUNG_S
-    assert len(http.fragen) <= LEASE_VORBEREITUNG_S / LEASE_MINDESTPAUSE_S
-    assert "nicht rechtzeitig" in " ".join(e.getMessage() for e in caplog.records)
-
-
-def test_ein_nachbar_ohne_auskunft_kostet_genau_eine_frage(tmp_path, uhr):
-    """Gemessen am 2026-09-05: heute kennt ``/api/model-lease`` nur DELETE und POST.
-
-    Ein GET läuft dort in 405. Das ist derselbe Ausgang wie jede gescheiterte Anmeldung —
-    kein Fenster, kein Fehler, und vor allem kein zweiter Versuch gegen eine Wand.
-    """
-    http = Vorbereitung(
-        Antwort({"state": "preparing"}, status_code=LEASE_VORBEREITUNG),
-        Antwort(fehler=requests.HTTPError("405")),
-    )
-
-    assert fenster_oeffnen(config(tmp_path), http=lambda: http, warten=uhr.warten) is False
-
-    assert len(http.fragen) == 1
-    assert uhr.pausen == [LEASE_WARTEZEIT_S]
-    assert not lease_offen()
-
-
-@pytest.mark.parametrize(
-    ("genannt", "erwartet"),
-    [
-        ({}, LEASE_WARTEZEIT_S),
-        ({"retry_after": None}, LEASE_WARTEZEIT_S),
-        ({"retry_after": "bald"}, LEASE_WARTEZEIT_S),
-        ({"retry_after": True}, LEASE_WARTEZEIT_S),
-        ({"retry_after": 0}, LEASE_MINDESTPAUSE_S),
-        ({"retry_after": -5}, LEASE_MINDESTPAUSE_S),
-        ({"retry_after": 90}, 90),
-        ({"retry_after": LEASE_VORBEREITUNG_S * 10}, LEASE_VORBEREITUNG_S),
-    ],
-)
-def test_die_wartezeit_kommt_vom_nachbarn_und_bleibt_in_schranken(tmp_path, uhr, genannt, erwartet):
-    http = Vorbereitung(
-        Antwort(dict(genannt, state="preparing"), status_code=LEASE_VORBEREITUNG),
-        Antwort({"state": "ready"}),
-    )
-
-    fenster_oeffnen(config(tmp_path), http=lambda: http, warten=uhr.warten)
-
-    assert uhr.pausen[0] == erwartet
-
-
-def test_das_ende_meldet_das_fenster_genau_einmal_ab(tmp_path):
-    """Der Fensterschluss hängt an der Freigabe — und die gibt es nur einmal je Aufschrieb.
-
-    Bis #329 gab dieselbe Stelle davor Ollamas Haltung mit ``keep_alive: 0`` frei; der
-    Ablöser hat keine, die zu beenden wäre. Geblieben ist das Abmelden — und **nur** es:
-    kein Entladen, kein zweiter Aufruf.
-    """
-    http = Fenster(Antwort({}))
-    fenster_oeffnen(config(tmp_path), http=lambda: http)
-
-    assert freigeben(config(tmp_path), http=lambda: http) is True
-    ((url, kwargs),) = http.abmeldungen
-    assert url == f"{DEFAULT_SOLARIS_URL}{LEASE_PATH}"
-    assert set(kwargs) == {"json", "timeout"}
-    assert kwargs["json"] == {LEASE_HALTER_FELD: LEASE_HALTER}
-    assert not lease_offen()
-    assert len(anmeldungen(http)) == len(http.aufrufe) == 1
-
-    assert freigeben(config(tmp_path), http=lambda: http) is False
-    assert len(http.abmeldungen) == 1
-
-
-def test_ohne_offenes_fenster_wird_nichts_abgemeldet(tmp_path):
-    http = Fenster(Antwort({}))
-    assert freigeben(config(tmp_path), http=lambda: http) is False
-    assert http.abmeldungen == []
-    assert http.aufrufe == []
-
-
-def test_ein_gescheitertes_abmelden_haelt_den_abschluss_nicht_auf(tmp_path, caplog):
-    """Die andere Richtung: ein Abend darf auch am Abmelden nicht scheitern."""
-    http = Fenster(Antwort({}), delete_fehler=requests.ConnectionError("weg"))
-    fenster_oeffnen(config(tmp_path), http=lambda: http)
-
-    with caplog.at_level("WARNING"):
-        assert freigeben(config(tmp_path), http=lambda: http) is False
-
-    assert not lease_offen()
-    gemeldet = " ".join(eintrag.getMessage() for eintrag in caplog.records)
-    assert "ConnectionError" in gemeldet
-    assert "127.0.0.1" not in gemeldet
-
-
-class Verwaist(Fenster):
-    """Ein Nachbar, der auf ``GET`` einen Fensterstand nennt und das Abmelden quittiert."""
-
-    def __init__(self, stand):
-        super().__init__(Antwort({"ok": True, "state": "released"}))
-        self._stand = stand
-
-    def get(self, url, **kwargs):
-        self.aufrufe.append((url, kwargs))
-        return self._stand
-
-
-def test_der_halter_steht_als_wortwoertliche_konstante_im_modul():
-    """#333/#321: die Zusage trägt nur, solange hier nichts Berechnetes steht.
-
-    Der Nachbar validiert die Kennung ohnehin kurz und fest — aber seine Prüfung ist nicht
-    unsere Zusage. Ein aus der Runde abgeleiteter Wert käme durch sie hindurch und verriete
-    trotzdem, wer spielt; deshalb prüft dieser Test die **Quelle** und nicht nur den Wert.
-    """
-    quelle = pathlib.Path("src/chronicle/compose/client.py").read_text(encoding="utf-8")
-    assert '\nLEASE_HALTER = "foundry-chronicle"\n' in quelle
-    assert LEASE_HALTER == "foundry-chronicle"
-    baum = ast.parse(quelle)
-    ((wert,),) = [
-        [zuweisung.value]
-        for zuweisung in ast.walk(baum)
-        if isinstance(zuweisung, ast.Assign)
-        and any(
-            isinstance(ziel, ast.Name) and ziel.id == "LEASE_HALTER" for ziel in zuweisung.targets
-        )
-    ]
-    assert isinstance(wert, ast.Constant) and isinstance(wert.value, str)
-
-
-def test_kein_weg_schickt_ein_delete_ohne_rumpf():
-    """Der Notausgang gehört dem Betreiber, nicht unserem Normalbetrieb (#333).
-
-    Ein ``DELETE`` ohne Rumpf gibt beim Nachbarn frei, **ohne** den Halter zu prüfen. Bis
-    #333 hatte unser Normalweg zufällig genau diese Form — geprüft wird deshalb nicht die
-    eine Stelle, sondern dass es keine zweite ohne Rumpf gibt.
-    """
-    ohne_rumpf = []
-    for pfad in pathlib.Path("src/chronicle").rglob("*.py"):
-        for knoten in ast.walk(ast.parse(pfad.read_text(encoding="utf-8"))):
-            if not isinstance(knoten, ast.Call):
-                continue
-            if not (isinstance(knoten.func, ast.Attribute) and knoten.func.attr == "delete"):
-                continue
-            if not any(wort.arg == "json" for wort in knoten.keywords):
-                ohne_rumpf.append(f"{pfad.as_posix()}:{knoten.lineno}")
-    assert ohne_rumpf == []
-
-
-def test_ein_verwaistes_fenster_des_vorgaengers_wird_beim_start_geschlossen(tmp_path, caplog):
-    """#333: prozesslokaler Zustand stirbt mit dem Prozess — das Fenster beim Nachbarn nicht."""
-    http = Verwaist(Antwort({"state": "ready", "model": LEASE_PROFIL, "holder": LEASE_HALTER}))
-
-    with caplog.at_level("INFO"):
-        assert verwaistes_fenster_schliessen(config(tmp_path), http=lambda: http) is True
-
-    ((url, _),) = http.aufrufe
-    assert url == f"{DEFAULT_SOLARIS_URL}{LEASE_PATH}"
-    ((abmeldung, kwargs),) = http.abmeldungen
-    assert abmeldung == url
-    assert kwargs["json"] == {LEASE_HALTER_FELD: LEASE_HALTER}
-    assert "127.0.0.1" not in " ".join(eintrag.getMessage() for eintrag in caplog.records)
-
-
-@pytest.mark.parametrize(
-    "stand",
-    [
-        Antwort({"state": "none", "model": "", "holder": ""}),
-        Antwort({"state": "ready", "model": LEASE_PROFIL, "holder": "solaris-chat"}),
-        Antwort({"state": "ready", "model": LEASE_PROFIL, "holder": LEASE_PROFIL}),
-        Antwort({"state": "ready", "model": LEASE_PROFIL}),
-        Antwort(["kein Rumpf"]),
-        Antwort(),
-    ],
-)
-def test_was_nicht_uns_gehoert_bleibt_beim_start_stehen(tmp_path, stand):
-    """Ein fremdes Fenster zu schließen kostet einem anderen Dienst seinen laufenden Lauf.
-
-    ``holder == 'foundry'`` steht ausdrücklich mit dabei: das ist der Wert, den der Nachbar
-    ohne eigene Angabe einträgt — also gerade **kein** Beleg, dass das Fenster von uns ist.
-    """
-    http = Verwaist(stand)
-
-    assert verwaistes_fenster_schliessen(config(tmp_path), http=lambda: http) is False
-    assert http.abmeldungen == []
-
-
-@pytest.mark.parametrize(
-    "stand",
-    [
-        Antwort({"state": "releasing", "model": LEASE_PROFIL, "holder": LEASE_HALTER}),
-        Antwort({"state": "preparing", "model": LEASE_PROFIL, "holder": LEASE_HALTER}),
-    ],
-)
-def test_ein_eigenes_fenster_ausserhalb_von_ready_bleibt_beim_start_stehen(tmp_path, stand):
-    """#348: der Halter allein sagt nur »war einmal unseres«, nicht »nichts mehr abzuräumen«.
-
-    In ``releasing`` steht unser Halter noch in der Antwort, obwohl die Freigabe bereits
-    läuft — gemessen gegen v0.59.1: bis zu 12 s lang (Ticket-Kommentar). Ein zweites
-    ``DELETE`` wäre dort nicht bloß überflüssig, sondern beim Nachbarn ausdrücklich
-    unzulässig. Und ``preparing`` lädt gerade ein Modell für jemanden — möglicherweise für
-    einen Vorgänger von uns, dessen Lauf erst beginnt; auch das ist nicht unseres zu
-    schließen.
-    """
-    http = Verwaist(stand)
-
-    assert verwaistes_fenster_schliessen(config(tmp_path), http=lambda: http) is False
-    assert http.abmeldungen == []
-
-
-@pytest.mark.parametrize(
-    "http",
-    [
-        Verwaist(Antwort({"holder": LEASE_HALTER}, fehler=requests.HTTPError("kaputt"))),
-        Fenster(fehler=requests.ConnectionError("weg")),
-    ],
-)
-def test_ein_gescheitertes_aufraeumen_haelt_den_start_nicht_auf(tmp_path, caplog, http):
-    """Bester Wille auch hier: der Bot verbindet, das Fenster verfällt notfalls von selbst."""
-    with caplog.at_level("WARNING"):
-        assert verwaistes_fenster_schliessen(config(tmp_path), http=lambda: http) is False
-
-    gemeldet = " ".join(eintrag.getMessage() for eintrag in caplog.records)
-    assert "Error" in gemeldet and "127.0.0.1" not in gemeldet
 
 
 def test_es_gibt_weiterhin_nur_eine_freigabestelle():

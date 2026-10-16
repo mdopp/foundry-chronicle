@@ -1,290 +1,299 @@
-"""Das ServiceBay-Template — geprüft wie die Konsistenz-Suite der Plattform.
+"""Die Laib-Vorlage ``templates/chronik`` — geprüft, soweit es ohne Box geht (#362).
 
-Ein Template zeigt sich erst auf der Box vollständig als richtig. Was sich vorher
-mechanisch prüfen lässt, gehört aber hierher: die Platzhalter sind deklariert, das
-gerenderte Manifest ist ein gültiger Pod, Mounts treffen ihre Volumes — und keine
-Zugangsdaten kommen aus dem Assistenten.
+Was ``laib template lint`` prüft, prüft Laib: dieser Lauf steht im CI-Job ``laib`` neben
+dem Quadlet-``-dryrun`` und dem echten Start unter Podman (``scripts/laib_start.sh``).
+Hierher gehört, was nur dieses Repo wissen kann: dass die Vorlage genau die Namen setzt, die
+``Config.from_env`` liest, dass kein Geheimnis als Wert dasteht, dass die Daten in Laibs
+Ordnung liegen und kein Pfad der ServiceBay-Zeit übrig ist — und dass der Erkenner daneben
+ohne seinen Schlüssel niemanden hereinlässt.
 """
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import re
+import threading
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 import pytest
 import yaml
 
-TEMPLATE_DIR = Path(__file__).resolve().parents[1] / "templates" / "daggerheart-chronik"
+from chronicle import config as konfiguration
 
-# Deklariert ServiceBay global in templates/settings.json; ein Template darf sie
-# benutzen, aber nicht noch einmal deklarieren.
-GLOBALE_VARIABLEN = {"DATA_DIR", "PUBLIC_DOMAIN", "LAN_IP", "HOST_GATEWAY_IP"}
+WURZEL = Path(__file__).resolve().parents[1]
+VORLAGE = WURZEL / "templates" / "chronik"
 
-PLATZHALTER = re.compile(r"\{\{([A-Z_][A-Z0-9_]*)\}\}")
+# Was Laib jedem Dienst selbst gibt (laib ``internal/state/load.go``, ``Builtins``).
+EINGEBAUT = {
+    "DOMAIN",
+    "DATA_DIR",
+    "TZ",
+    "SERVICE",
+    "LAN_IP",
+    "MODEL_URL",
+    "MODEL_KEY",
+    "MODEL_LEASE",
+}
 
+PLATZHALTER = re.compile(r"\$\{([A-Z][A-Z0-9_]*)\}")
 
-@pytest.fixture
-def variablen() -> dict:
-    return json.loads((TEMPLATE_DIR / "variables.json").read_text(encoding="utf-8"))
-
-
-@pytest.fixture
-def rohtext() -> str:
-    return (TEMPLATE_DIR / "template.yml").read_text(encoding="utf-8")
-
-
-@pytest.fixture
-def manifest(rohtext: str, variablen: dict) -> dict:
-    ersatz = {name: "1" for name in GLOBALE_VARIABLEN}
-    ersatz.update({name: meta.get("default") or "x" for name, meta in variablen.items()})
-    gerendert = PLATZHALTER.sub(lambda treffer: ersatz[treffer.group(1)], rohtext)
-    return yaml.safe_load(gerendert)
+LESER = re.compile(r"_(?:value|port|flag|schalter)\(env, (\"[A-Z_]+\"|[A-Z_]+)")
 
 
-def test_jeder_platzhalter_ist_deklariert(rohtext: str, variablen: dict) -> None:
-    benutzt = set(PLATZHALTER.findall(rohtext))
-    assert benutzt - set(variablen) - GLOBALE_VARIABLEN == set()
+def _einheit(name: str) -> str:
+    return (VORLAGE / name).read_text(encoding="utf-8")
 
 
-def test_globale_variablen_nicht_neu_deklariert(variablen: dict) -> None:
-    assert set(variablen) & GLOBALE_VARIABLEN == set()
+def _umgebung(name: str) -> dict[str, str]:
+    paare = (
+        zeile.removeprefix("Environment=").split("=", 1)
+        for zeile in _einheit(name).splitlines()
+        if zeile.startswith("Environment=")
+    )
+    return dict(paare)
 
 
-def test_keine_subdomain_und_kein_proxy_host(rohtext: str, variablen: dict) -> None:
-    # Umkehrung des alten ``test_public_domain_wird_referenziert``: solange die
-    # Betreiber-Seite auf einer Subdomain stand, musste {{PUBLIC_DOMAIN}} irgendwo im
-    # Manifest vorkommen, sonst übersprang der Assembler den Proxy-Host still (Assist
-    # footgun-subdomain-needs-public-domain). Mit #231 gibt es keine Seite und keinen
-    # Proxy-Host mehr — eine stehengebliebene Referenz ließe die Plattform eine Subdomain
-    # auf einen Dienst zeigen, der nichts veröffentlicht.
-    assert "{{PUBLIC_DOMAIN}}" not in rohtext
-    assert not [name for name, meta in variablen.items() if meta["type"] == "subdomain"]
-
-
-def test_manifest_ist_ein_pod(manifest: dict) -> None:
-    assert manifest["kind"] == "Pod"
-    assert manifest["metadata"]["name"] == "daggerheart-chronik"
-
-
-def test_pflichtannotationen(manifest: dict) -> None:
-    annotationen = manifest["metadata"]["annotations"]
-    assert annotationen["servicebay.label"]
-    assert annotationen["servicebay.schema-version"] == "1"
-
-
-def test_dieser_dienst_veroeffentlicht_nichts_mehr(manifest: dict) -> None:
-    # #231: die Betreiber-Seite ist fort, bedient wird in Discord. Damit hat der Pod
-    # keinen veröffentlichten Port und braucht weder nginx noch Authelia davor. Ein
-    # ``servicebay.ports`` wäre eine Behauptung ohne Deckung, eine Abhängigkeit von
-    # nginx/auth hielte die Installation an etwas fest, das dieser Dienst nicht benutzt.
-    annotationen = manifest["metadata"]["annotations"]
-    assert "servicebay.ports" not in annotationen
-    assert "servicebay.dependencies" not in annotationen
-    for container in manifest["spec"]["containers"]:
-        assert "ports" not in container
-
-
-def test_healthcheck_zeigt_auf_das_gate_des_bots(manifest: dict, variablen: dict) -> None:
-    # Seit #228 bedient der Bot-Prozess das Install-Gate, nicht mehr die Betreiber-Seite:
-    # er ist der Prozess, der bleibt, und mit #231 der einzige. Der Poller läuft auf
-    # dieser Box, deshalb ``localhost`` — das Gate hört nirgendwo sonst.
-    probe = yaml.safe_load(manifest["metadata"]["annotations"]["servicebay.healthcheck"])
-    port = variablen["CHRONICLE_HEALTH_PORT"]["default"]
-    assert probe["url"] == f"http://localhost:{port}/healthz"
-
-
-def test_das_gate_hoert_nur_auf_der_schleife(manifest: dict, variablen: dict) -> None:
-    # Es hört auf 127.0.0.1 (``chronicle.bot.healthz``) und ist damit nicht aus dem LAN
-    # erreichbar. Ein containerPort behauptete das Gegenteil — die Zusicherung dazu steht
-    # in ``test_dieser_dienst_veroeffentlicht_nichts_mehr``.
-    port = variablen["CHRONICLE_HEALTH_PORT"]["default"]
-    container = manifest["spec"]["containers"][0]
-    umgebung = {eintrag["name"]: eintrag["value"] for eintrag in container["env"]}
-    assert umgebung["CHRONICLE_HEALTH_PORT"] == port
-
-
-def test_das_hostnetz_bleibt_samt_seiner_begruendung(manifest: dict, rohtext: str) -> None:
-    # Erklärte Abweichung von ServiceBay-ADR 0007 (#165): der Dienst erreicht llama-server
-    # (127.0.0.1:11435) und solaris-tts (127.0.0.1:8881) nur über die Schleife der Box,
-    # und beide binden nirgendwo sonst. Wer die Zeile herausnimmt, legt den Dienst still,
-    # ohne dass etwas fehlschlüge — deshalb steht sie hier fest. Die Begründung steht
-    # daneben und nicht nur im Kopf dessen, der sie geschrieben hat: eine Abweichung ohne
-    # erklärten Grund gilt als nicht gemeldet. Ein Umbau ist erlaubt, aber nicht
-    # versehentlich — er ändert diesen Test mit und braucht Verify auf der Box.
-    assert manifest["spec"]["hostNetwork"] is True
-    assert "ADR 0007" in rohtext
-    assert "servicebay#2518" in rohtext
-
-
-def test_erreichbar_ohne_stillen_fehlschlag(manifest: dict) -> None:
-    # Der Pod muss hostNetwork sein oder jeder containerPort einen hostPort tragen,
-    # sonst ist das Deployment still unerreichbar.
-    if manifest["spec"].get("hostNetwork"):
-        return
-    for container in manifest["spec"]["containers"]:
-        for port in container.get("ports", []):
-            assert "hostPort" in port
-
-
-def test_der_pod_traegt_genau_einen_container(manifest: dict) -> None:
-    # #231: der zweite Container trug die Betreiber-Seite; sie ist fort. Übrig ist der
-    # Bot — Gateway-Verbindung, nächtlicher Lauf (#229), Install-Gate (#228). Sein Befehl
-    # steht im Abbild und wird hier nicht überschrieben: es gibt keinen zweiten.
-    container = manifest["spec"]["containers"]
-    assert [eintrag["name"] for eintrag in container] == ["chronik"]
-    assert "command" not in container[0]
-
-
-def test_das_image_wird_nicht_fest_verdrahtet(rohtext: str) -> None:
-    # Der Tag gehört an die Variable, damit ein Rollout einen festen Stand ansteuern kann
-    # (#173). Ein hart eingetragenes ':latest' im Manifest nähme genau das wieder weg —
-    # und mit ihm den Weg zurück, denn 'latest' benennt keinen früheren Stand.
-    assert re.findall(r"^\s*image: \S+:(\S+)$", rohtext, re.MULTILINE) == [
-        "{{CHRONICLE_IMAGE_TAG}}"
-    ]
-
-
-def test_keine_wirkungslose_karten_durchreichung(manifest: dict) -> None:
-    # ``podman kube play`` (5.8.2) verwirft ``resources.limits`` für eine Pod-Spezifikation
-    # still — der Pod startet ohne Karte, ohne dass etwas fehlschlägt (servicebay#2517).
-    # Diese Zusicherung hält die wirkungslose Form draußen: der Weg zur Karte führt über
-    # den geteilten solaris-whisper der Box (#141), nicht über dieses Manifest. Die
-    # SELinux-Freigabe fällt mit ihr, weil sie ohne Durchreichung nur eine Lockerung ohne
-    # Gegenwert wäre.
-    for container in manifest["spec"]["containers"]:
-        assert "resources" not in container
-    annotationen = manifest["metadata"]["annotations"]
-    assert not [name for name in annotationen if name.startswith("io.podman.annotations.label")]
-
-
-def test_der_erkenner_wird_nicht_festgenagelt(manifest: dict) -> None:
-    # Seit #216 hält dieser Pod kein Modell mehr; verschriftet wird bei
-    # ``solaris-whisper-batch`` über die Schleife. Die Vorgabe steht im Code
-    # (``config.DEFAULT_WHISPER_URL``) — hier eine zweite Adresse zu setzen hieße, sie an
-    # zwei Stellen zu pflegen, und die Vorlage gewönne nichts dabei.
-    for container in manifest["spec"]["containers"]:
-        umgebung = {eintrag["name"] for eintrag in container["env"]}
-        assert not {name for name in umgebung if name.startswith("CHRONICLE_WHISPER")}
-
-
-def test_der_container_findet_beide_verzeichnisse(manifest: dict) -> None:
-    for eintrag in manifest["spec"]["containers"]:
-        umgebung = {wert["name"]: wert["value"] for wert in eintrag["env"]}
-        assert umgebung["CHRONICLE_RECORDINGS_DIR"] == "/aufnahmen"
-        pfade = {mount["mountPath"]: mount["name"] for mount in eintrag["volumeMounts"]}
-        assert pfade["/aufnahmen"] == "chronik-aufnahmen"
-        assert pfade["/data"] == "chronik-daten"
-
-
-def test_die_aufnahmen_liegen_nicht_im_gesicherten_datenverzeichnis(manifest: dict) -> None:
-    pfade = {
-        eintrag["name"]: eintrag["hostPath"]["path"] for eintrag in manifest["spec"]["volumes"]
+def _gelesen() -> set[str]:
+    """Jede Variable, die ``Config.from_env`` liest — als Literal oder über ihre Konstante."""
+    quelle = (WURZEL / "src/chronicle/config.py").read_text(encoding="utf-8")
+    return {
+        name.strip('"') if name.startswith('"') else getattr(konfiguration, name)
+        for name in LESER.findall(quelle)
     }
-    daten = pfade["chronik-daten"]
-    assert pfade["chronik-aufnahmen"] != daten
-    assert not pfade["chronik-aufnahmen"].startswith(daten + "/")
 
 
-def test_jedes_volume_ueberdauert_den_pod(manifest: dict) -> None:
-    # Der Fehler aus #27: ohne hostPath liegt das Aufnahmeverzeichnis in der
-    # beschreibbaren Container-Schicht und ist beim nächsten Neuaufbau des Pods weg.
-    for eintrag in manifest["spec"]["volumes"]:
-        assert "hostPath" in eintrag, eintrag["name"]
+@pytest.fixture
+def vertrag() -> dict:
+    return yaml.safe_load(_einheit("laib.yml"))
 
 
-def test_die_hostverzeichnisse_werden_bei_der_erstinstallation_angelegt(manifest: dict) -> None:
-    # Bei der Erstinstallation existiert noch keines der beiden Verzeichnisse; mit
-    # 'Directory' scheiterte der erste Start, statt sie anzulegen.
-    for eintrag in manifest["spec"]["volumes"]:
-        assert eintrag["hostPath"]["type"] == "DirectoryOrCreate", eintrag["name"]
+class _Werte(yaml.SafeLoader):
+    pass
 
 
-def test_der_bot_bekommt_die_datenbank(manifest: dict) -> None:
-    # Der Token kommt seit #230 aus der Umgebung; die Chronik liegt weiter in der SQLite.
-    bot = manifest["spec"]["containers"][0]
-    umgebung = {wert["name"]: wert["value"] for wert in bot["env"]}
-    assert umgebung["CHRONICLE_DATA_DIR"] == "/data"
+_Werte.add_constructor("!secret", lambda lader, knoten: ("!secret", lader.construct_scalar(knoten)))
 
 
-def test_mounts_treffen_ihre_volumes(manifest: dict) -> None:
-    volumes = {eintrag["name"] for eintrag in manifest["spec"]["volumes"]}
-    for container in manifest["spec"]["containers"]:
-        for mount in container.get("volumeMounts", []):
-            assert mount["name"] in volumes
+@pytest.fixture
+def werte() -> dict:
+    return yaml.load(_einheit("values.example.yml"), Loader=_Werte)  # noqa: S506 — SafeLoader
 
 
-def test_beide_hostpfade_liegen_unter_data_dir(rohtext: str) -> None:
-    # Die Entscheidung zu #27, festgenagelt: die Spuren liegen *neben* dem
-    # Datenverzeichnis, damit keine dienstbezogene Auswahlliste der Plattform sie je
-    # einsammeln kann — und trotzdem unter DATA_DIR, weil ein absoluter Host-Pfad aus
-    # deren Abdeckungsprüfung herausfiele und keiner der Box im Repo stehen soll.
-    assert re.findall(r"^\s*path: (\S+)$", rohtext, re.MULTILINE) == [
-        "{{DATA_DIR}}/daggerheart",
-        "{{DATA_DIR}}/daggerheart-aufnahmen",
-    ]
+def test_der_dienst_heisst_wie_sein_ordner_und_seine_daten(vertrag: dict) -> None:
+    """laib ADR 0021: ein Dienst ist ein deutsches Nomen, und das Nomen ist alles an ihm."""
+    assert vertrag["name"] == "chronik" == VORLAGE.name
+    assert {p.name for p in VORLAGE.glob("*.container")} == {
+        "chronik.container",
+        "chronik-whisper.container",
+    }
+    for daten in vertrag["data"]:
+        assert daten["path"].startswith("${DATA_DIR}/chronik/"), daten
 
 
-def test_kein_tuersteher_mehr_im_manifest(manifest: dict, rohtext: str) -> None:
-    # Bis #231 erzwang die Betreiber-Seite ``Remote-User`` und glaubte ihn nur von einer
-    # Adresse dieser Maschine (#190, ``chronicle.herkunft``). Beides ist mit ihr gefallen:
-    # es gibt keine Kopfzeile mehr zu prüfen und keinen Port im LAN, an dem sich jemand
-    # eine erfinden könnte. Eine stehengebliebene Variable versprächen einen Schutz, den
-    # kein Code mehr leistet.
-    assert "REMOTE_USER" not in rohtext
-    assert "TRUSTED_PROXIES" not in rohtext
-    for container in manifest["spec"]["containers"]:
-        umgebung = {eintrag["name"] for eintrag in container["env"]}
-        assert not {name for name in umgebung if name.startswith("CHRONICLE_HOST")}
+def test_kein_pfad_der_servicebay_zeit() -> None:
+    """Die Daten liegen in Laibs Ordnung; der Umzug kopiert sie einmal (README der Vorlage)."""
+    for datei in VORLAGE.iterdir():
+        if datei.suffix in (".container", ".yml"):
+            text = datei.read_text(encoding="utf-8")
+            assert "daggerheart" not in text, datei.name
+            assert "{{" not in text, datei.name
 
 
-def test_kein_zufallswert_fuer_fremde_zugangsdaten(variablen: dict) -> None:
-    # Der Assistent würfelt für 'type: secret' einen Wert aus. Für ein Geheimnis, das
-    # nur die Gegenstelle kennt, ist das kein Platzhalter, sondern ein falscher Wert:
-    # er meldete sich als Bot-Token bei Discord an und scheiterte in einer
-    # Neustart-Schleife (#33).
-    for meta in variablen.values():
-        assert meta["type"] not in ("secret", "password", "rsa-private", "bcrypt")
+def test_jeder_platzhalter_ist_ein_wert_oder_eingebaut(werte: dict) -> None:
+    for einheit in VORLAGE.glob("*.container"):
+        benutzt = set(PLATZHALTER.findall(einheit.read_text(encoding="utf-8")))
+        assert benutzt - set(werte) - EINGEBAUT == set(), einheit.name
 
 
-def test_der_foundry_zugang_kommt_nicht_aus_der_umgebung(variablen: dict, manifest: dict) -> None:
-    # Der Foundry-Zugang gehört der **Runde** und wird in Discord unter /chronicle setup gepflegt;
-    # das Passwort gibt es seit #64 überhaupt nirgends mehr. Deklariert das Template sie
-    # trotzdem, rendert es sie bestenfalls leer und schlimmstenfalls falsch.
-    # (Bis #230 stand hier auch der Bot-Token — der gehört der **Instanz** und kommt
-    # jetzt genau umgekehrt: ausschließlich aus der Umgebung, siehe unten.)
-    der_runde = {"FOUNDRY_URL", "FOUNDRY_USER", "FOUNDRY_PASSWORD"}
-    assert set(variablen) & der_runde == set()
-    for container in manifest["spec"]["containers"]:
-        umgebung = {eintrag["name"] for eintrag in container["env"]}
-        assert umgebung & der_runde == set()
+def test_kein_geheimnis_steht_als_wert_da(vertrag: dict, werte: dict) -> None:
+    """Der Bot-Token ist extern (``laib secret set``), der Schlüssel des Erkenners erzeugt."""
+    geheim = {s["name"]: s for s in vertrag["secrets"]}
+    assert geheim["CHRONIK_DISCORD_TOKEN"].get("external") is True
+    assert not geheim["CHRONIK_WHISPER_KEY"].get("external")
+    assert werte["DISCORD_BOT_TOKEN"] == ("!secret", "CHRONIK_DISCORD_TOKEN")
+    assert werte["WHISPER_KEY"] == ("!secret", "CHRONIK_WHISPER_KEY")
 
 
-def test_die_instanz_werte_kommen_aus_template_variablen(variablen: dict, manifest: dict) -> None:
-    # #230: die drei Werte der Instanz kommen ausschließlich aus der Umgebung. Fehlte
-    # einer hier, gäbe es für ihn gar keinen Ort mehr — den SQLite-Weg gibt es nicht.
-    for name in ("DISCORD_BOT_TOKEN", "OLLAMA_URL", "OLLAMA_MODEL"):
-        assert variablen[name]["default"] == ""
-    bot = {eintrag["name"] for eintrag in manifest["spec"]["containers"][0]["env"]}
-    assert {"DISCORD_BOT_TOKEN", "OLLAMA_URL", "OLLAMA_MODEL"} <= bot
+def test_die_vorlage_setzt_nur_was_die_konfiguration_liest() -> None:
+    """Ein Name, den niemand liest, ist eine Zusage ohne Deckung — und umgekehrt."""
+    bot = _umgebung("chronik.container")
+    gelesen = _gelesen()
+    assert set(bot) - gelesen == set()
+    for name in (
+        "DISCORD_BOT_TOKEN",
+        konfiguration.MODEL_URL_VARIABLE,
+        konfiguration.MODEL_LEASE_VARIABLE,
+        konfiguration.MODEL_KEY_VARIABLE,
+        konfiguration.MODEL_PRESET_VARIABLE,
+        konfiguration.WHISPER_KEY_VARIABLE,
+        konfiguration.HEALTH_PORT_VARIABLE,
+    ):
+        assert name in bot, name
 
 
-def test_es_gibt_keinen_backend_schalter_mehr(variablen: dict, manifest: dict) -> None:
-    # #316 stellte ihn auf, damit der Umzug eine Einstellung ist und kein Neubau; mit #329
-    # hat die Box Ollama abgeschaltet, und ein Schalter mit genau einem gültigen Wert ist
-    # eine falsche Zusage — »ollama« im Textfeld landete still auf dem einen Weg. Beide
-    # Hälften müssen zusammen fallen: bliebe {{CHRONICLE_LLM_BACKEND}} im Manifest ohne
-    # Deklaration stehen, löste der Assembler es ins Leere auf.
-    assert "CHRONICLE_LLM_BACKEND" not in variablen
-    bot = {eintrag["name"] for eintrag in manifest["spec"]["containers"][0]["env"]}
-    assert "CHRONICLE_LLM_BACKEND" not in bot
+def test_adresse_und_schluessel_kommen_aus_den_eingebauten_werten() -> None:
+    """Abnahme von #362: kein eigenes Geheimnis, kein Literal — Laibs ``${MODEL_*}``."""
+    bot = _umgebung("chronik.container")
+    assert bot["MODEL_URL"] == "${MODEL_URL}"
+    assert bot["MODEL_LEASE"] == "${MODEL_LEASE}"
+    assert bot["MODEL_KEY"] == "${MODEL_KEY}"
+    assert bot["MODEL_PRESET"] == "${MODEL_PRESET}"
 
 
-def test_keine_echte_adresse_im_manifest(rohtext: str) -> None:
-    # Host und Domain kommen zur Installationszeit; im Repo stehen nur Platzhalter.
-    fundstellen = re.findall(r"https?://([A-Za-z0-9.-]+)", rohtext)
-    assert set(fundstellen) <= {"localhost"}
+def test_das_preset_ist_ein_modell_und_kein_fenster(werte: dict) -> None:
+    assert werte["MODEL_PRESET"] == "gemma-4-12b"
+    assert werte["MODEL_PRESET"] not in {"foundry", "shared", "full", "exclusive"}
 
 
-def test_readme_vorhanden() -> None:
-    assert (TEMPLATE_DIR / "README.md").read_text(encoding="utf-8").strip()
+def test_kein_container_liegt_im_host_netz(vertrag: dict) -> None:
+    """Das Host-Netz der ServiceBay-Fassung (#165) fällt: die Nachbarn sind erreichbar."""
+    assert not vertrag.get("hostNetwork")
+    for einheit in VORLAGE.glob("*.container"):
+        assert "Network=host" not in einheit.read_text(encoding="utf-8"), einheit.name
+
+
+def test_das_gate_steht_nur_auf_der_schleife_und_ist_die_pruefung(vertrag: dict) -> None:
+    port = _umgebung("chronik.container")["CHRONICLE_HEALTH_PORT"]
+    assert vertrag["health"]["http"] == f"http://127.0.0.1:{port}/healthz"
+    assert f"PublishPort=127.0.0.1:{port}:{port}" in _einheit("chronik.container")
+    assert {"port": int(port), "lan": False} in vertrag["ports"]
+
+
+def test_der_erkenner_ist_nie_im_lan_und_nur_mit_schluessel(vertrag: dict) -> None:
+    erkenner = _umgebung("chronik-whisper.container")
+    port = int(erkenner["WHISPER_BATCH_PORT"])
+    assert {"port": port, "lan": False} in vertrag["ports"]
+    assert erkenner["WHISPER_BATCH_KEY"] == "${WHISPER_KEY}"
+    bot = _umgebung("chronik.container")
+    assert bot["CHRONICLE_WHISPER_KEY"] == "${WHISPER_KEY}"
+    assert bot["CHRONICLE_WHISPER_URL"] == f"http://host.containers.internal:{port}"
+
+
+def test_die_spuren_gehen_nie_ins_backup_und_der_erkenner_liest_sie_nur(vertrag: dict) -> None:
+    """§201 StGB: Stimmen echter Menschen, nach sieben Tagen gelöscht, nie gesichert."""
+    gesichert = {d["path"]: d.get("backup", True) for d in vertrag["data"]}
+    assert gesichert["${DATA_DIR}/chronik/data"] is True
+    assert gesichert["${DATA_DIR}/chronik/aufnahmen"] is False
+    assert "Volume=${DATA_DIR}/chronik/aufnahmen:/aufnahmen:ro,z" in _einheit(
+        "chronik-whisper.container"
+    )
+
+
+def test_der_bot_bleibt_liegen_wenn_er_mit_null_endet() -> None:
+    """``BotHaelt``: 0 heißt liegen lassen — ein Neustart wäre der nächste Anmeldeversuch."""
+    assert "Restart=on-failure" in _einheit("chronik.container")
+    assert "Restart=always" not in _einheit("chronik.container")
+
+
+def test_die_karte_haengt_nur_am_erkenner(vertrag: dict) -> None:
+    assert vertrag["gpu"] is True
+    assert "AddDevice=nvidia.com/gpu=all" in _einheit("chronik-whisper.container")
+    assert "AddDevice" not in _einheit("chronik.container")
+
+
+def test_das_image_nennt_den_weg_zum_tag(werte: dict) -> None:
+    """Zwei Stellen, ein Image — und der Weg zu einem festen Tag steht, wo man ihn einträgt."""
+    spec = importlib.util.spec_from_file_location(
+        "bestimme_image_tag", WURZEL / "scripts" / "bestimme_image_tag.py"
+    )
+    skript = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(skript)
+
+    assert werte["IMAGE"].rsplit(":", 1)[0] == skript.IMAGE
+    zeile = next(z for z in _einheit("values.example.yml").splitlines() if z.startswith("IMAGE:"))
+    assert "bestimme_image_tag.py" in zeile
+    assert "ohne führendes v" in zeile
+
+
+def test_readme_beschreibt_den_umzug() -> None:
+    text = (VORLAGE / "README.md").read_text(encoding="utf-8")
+    for muss in ("daggerheart-aufnahmen", "laib secret set CHRONIK_DISCORD_TOKEN", "Martin"):
+        assert muss in text, muss
+
+
+# --------------------------------------------------------------------------------------
+# Der Erkenner daneben: der Draht, ohne faster-whisper
+# --------------------------------------------------------------------------------------
+
+
+def _modul():
+    spec = importlib.util.spec_from_file_location("whisper_batch", VORLAGE / "whisper_batch.py")
+    modul = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(modul)
+    return modul
+
+
+@pytest.fixture
+def erkenner(monkeypatch, tmp_path):
+    modul = _modul()
+    (tmp_path / "mira.ogg").write_bytes(b"kein echtes Audio")
+    monkeypatch.setattr(modul, "ROOT", str(tmp_path))
+    monkeypatch.setattr(modul, "KEY", "erkenner-schluessel-nur-im-test")
+    auftraege = []
+
+    def rechnen(auftrag):
+        auftraege.append(auftrag)
+        return {"segments": [{"start": 0.5, "end": 1.5, "text": " Hallo."}]}
+
+    monkeypatch.setattr(modul, "run_job", rechnen)
+    server = modul.serve(port=0)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    modul.adresse = f"http://127.0.0.1:{server.server_address[1]}"
+    modul.auftraege = auftraege
+    yield modul
+    server.shutdown()
+    server.server_close()
+
+
+def _fragen(erkenner, *, pfad="/transcribe", schluessel=None, rumpf=None):
+    kopf = {"Content-Type": "application/json"}
+    if schluessel is not None:
+        kopf["Authorization"] = f"Bearer {schluessel}"
+    daten = None if rumpf is None else json.dumps(rumpf).encode()
+    anfrage = urllib.request.Request(erkenner.adresse + pfad, data=daten, headers=kopf)
+    try:
+        with urllib.request.urlopen(anfrage, timeout=5) as antwort:
+            return antwort.status, json.loads(antwort.read())
+    except urllib.error.HTTPError as fehler:
+        return fehler.code, json.loads(fehler.read())
+
+
+def test_ohne_schluessel_verschriftet_der_erkenner_nichts(erkenner) -> None:
+    assert _fragen(erkenner, rumpf={"path": "mira.ogg"})[0] == 401
+    assert _fragen(erkenner, schluessel="falsch", rumpf={"path": "mira.ogg"})[0] == 401
+    assert erkenner.auftraege == []
+
+
+def test_mit_schluessel_kommen_segmente_mit_zeitstempeln(erkenner) -> None:
+    code, antwort = _fragen(
+        erkenner,
+        schluessel="erkenner-schluessel-nur-im-test",
+        rumpf={"path": "mira.ogg", "language": "de", "hotwords": ["Mira"]},
+    )
+    assert code == 200
+    assert antwort["segments"] == [{"start": 0.5, "end": 1.5, "text": " Hallo."}]
+    (auftrag,) = erkenner.auftraege
+    assert auftrag["path"].endswith("/mira.ogg") and auftrag["hotwords"] == ["Mira"]
+
+
+def test_ausserhalb_der_spuren_liest_er_nichts(erkenner) -> None:
+    code, _ = _fragen(
+        erkenner, schluessel="erkenner-schluessel-nur-im-test", rumpf={"path": "../../etc/passwd"}
+    )
+    assert code == 403
+
+
+def test_das_gesundheitsgate_verschriftet_nichts(erkenner) -> None:
+    assert _fragen(erkenner, pfad="/healthz") == (200, {"status": "ok"})
+    assert erkenner.auftraege == []
+
+
+def test_ohne_schluessel_startet_er_gar_nicht(monkeypatch) -> None:
+    modul = _modul()
+    monkeypatch.setattr(modul, "ROOT", "/aufnahmen")
+    monkeypatch.setattr(modul, "PORT", 10301)
+    monkeypatch.setattr(modul, "KEY", "")
+    assert modul.main() == 1

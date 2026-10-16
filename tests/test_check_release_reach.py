@@ -107,7 +107,7 @@ def test_die_pfadliste_deckt_abbild_und_vorlage():
         "Dockerfile",
         ".dockerignore",
         "scripts/verify_e2e.py",
-        "templates/daggerheart-chronik/service.yaml",
+        "templates/chronik/chronik.container",
     ):
         assert check.ist_auslieferungspfad(pfad), pfad
     for pfad in ("README.md", "tests/test_db.py", "docs/architektur.md", "scripts/queue.py"):

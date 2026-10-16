@@ -17,8 +17,8 @@ def config(tmp_path):
     gesetzt = Config(
         foundry_url="https://umgebung.example",
         foundry_user="umgebungs-konto",
-        ollama_url="http://umgebung.example:11434",
-        ollama_model="umgebungs-modell",
+        model_url="http://umgebung.example:11435/v1",
+        model_preset="umgebungs-modell",
         data_dir=tmp_path,
     )
     db.init(gesetzt.database_path)
@@ -37,7 +37,7 @@ def test_ein_gesetzter_wert_schlaegt_die_umgebung(config):
     aktuell = settings.effective(config, runde(config))
     assert aktuell.foundry_url == "https://frontend.example"
     assert aktuell.foundry_user == AUS_DEM_FRONTEND
-    assert aktuell.ollama_model == "umgebungs-modell"
+    assert aktuell.model_preset == "umgebungs-modell"
 
 
 def test_ein_leerer_wert_nimmt_den_eintrag_zurueck(config):
@@ -69,14 +69,15 @@ def test_die_quelle_steht_je_wert_fest(config, tmp_path):
     assert settings.sources(leer, runde(leer))["foundry_url"] == settings.UNGESETZT
 
 
-def test_ohne_eigene_adresse_gilt_das_ollama_dieser_box(tmp_path):
+def test_ohne_adresse_der_box_raet_niemand_eine(tmp_path):
+    """#362: bis dahin galt die Schleife dieser Box; auf Laib nennt die Box die Adresse."""
     leer = Config(data_dir=tmp_path / "leer")
     db.init(leer.database_path)
-    assert settings.effective(leer, runde(leer)).ollama_url == settings.DEFAULT_OLLAMA_URL
+    assert settings.effective(leer, runde(leer)).model_url is None
 
 
-def test_eine_eigene_adresse_aus_der_umgebung_schlaegt_den_standard(config):
-    assert settings.effective(config, runde(config)).ollama_url == "http://umgebung.example:11434"
+def test_die_adresse_der_box_kommt_unveraendert_durch(config):
+    assert settings.effective(config, runde(config)).model_url == "http://umgebung.example:11435/v1"
 
 
 @pytest.mark.parametrize(
@@ -148,21 +149,30 @@ def test_der_bot_token_kommt_allein_aus_der_umgebung(config):
     assert settings.stored(runde(config)) == {}
 
 
-def test_die_ollama_werte_lassen_sich_nicht_mehr_pflegen(config):
+def test_die_modell_werte_lassen_sich_nicht_pflegen(config):
     settings.save(
-        runde(config), {"ollama_url": "http://untergeschoben.example:11434", "ollama_model": "x"}
+        runde(config),
+        {
+            "ollama_url": "http://untergeschoben.example:11434",
+            "ollama_model": "x",
+            "model_url": "http://untergeschoben.example:11435/v1",
+            "model_preset": "x",
+            "model_key": "untergeschoben",
+            "model_lease": "http://untergeschoben.example:11435/api/model-lease",
+        },
     )
     aktuell = settings.effective(config, runde(config))
-    assert aktuell.ollama_url == "http://umgebung.example:11434"
-    assert aktuell.ollama_model == "umgebungs-modell"
+    assert aktuell.model_url == "http://umgebung.example:11435/v1"
+    assert aktuell.model_preset == "umgebungs-modell"
+    assert aktuell.model_key is None and aktuell.model_lease is None
     assert settings.stored(runde(config)) == {}
 
 
 def test_is_set_sagt_ob_aber_nicht_was(config, tmp_path):
-    assert settings.is_set(config, runde(config), "ollama_model")
+    assert settings.is_set(config, runde(config), "model_preset")
     leer = Config(data_dir=tmp_path / "ohne-modell")
     db.init(leer.database_path)
-    assert not settings.is_set(leer, runde(leer), "ollama_model")
+    assert not settings.is_set(leer, runde(leer), "model_preset")
 
 
 def test_das_foundry_passwort_laesst_sich_gar_nicht_erst_speichern(config):

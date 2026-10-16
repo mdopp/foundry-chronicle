@@ -11,8 +11,9 @@ from chronicle import sprache as sprachen
 # der Umgebung steht, statt sich auf die des Entwicklers zu verlassen.
 ERSATZ = {
     "DISCORD_BOT_TOKEN": "token-nur-in-diesem-test",
-    "OLLAMA_URL": "http://neu.example:11434",
-    "OLLAMA_MODEL": "neues-modell",
+    # Seit #362 die Namen, unter denen Laib den Modelldienst nennt.
+    "MODEL_URL": "http://neu.example:11435/v1",
+    "MODEL_PRESET": "neues-modell",
 }
 
 
@@ -501,11 +502,11 @@ def test_der_ersatz_raeumt_den_wert_aus_der_datei(tmp_path):
 
 
 def test_geraeumt_wird_je_wert_und_nicht_im_ganzen(tmp_path):
-    """Ein gesetztes OLLAMA_MODEL nimmt nicht den Token mit, für den nichts dasteht."""
+    """Ein gesetztes MODEL_PRESET nimmt nicht den Token mit, für den nichts dasteht."""
     pfad = _mit_werten(
         tmp_path, discord_bot_token="token-nur-in-diesem-test", ollama_model="altes-modell"
     )
-    db.init(pfad, umgebung={"OLLAMA_MODEL": "neues-modell"})
+    db.init(pfad, umgebung={"MODEL_PRESET": "neues-modell"})
     liegt = _meta(pfad)
     assert "ollama_model" not in liegt
     assert liegt["discord_bot_token"] == "token-nur-in-diesem-test"

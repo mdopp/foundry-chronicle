@@ -26,7 +26,7 @@ from chronicle import (
 )
 from chronicle import runde as runden
 from chronicle.compose import client as modellklient
-from chronicle.config import DEFAULT_SOLARIS_URL, Config
+from chronicle.config import Config
 from chronicle.discord import rueckblick
 from chronicle.discord import service as diktat
 from chronicle.foundry.model import SyncState
@@ -390,7 +390,7 @@ class Beschaeftigt:
     def __init__(self):
         self.aufrufe = 0
 
-    def post(self, _url, *, json, timeout):
+    def post(self, _url, *, json, timeout, headers=None):
         self.aufrufe += 1
         if self.aufrufe == 1:
             return Antwort(200, {"segments": [{"start": 0.0, "end": 2.0, "text": GESPROCHEN}]})
@@ -494,8 +494,10 @@ def test_die_nacht_geht_durch_die_eine_freigabestelle(stelle, monkeypatch):
     # Die beiden Werte kommen seit #230 aus der Umgebung und nicht aus der Datei.
     mit_modell = replace(
         stelle,
-        ollama_url="http://modell.example:11435",
-        ollama_model="chronist-test",
+        model_url="http://modell.example:11435/v1",
+        model_preset="chronist-test",
+        model_lease="http://lease.example:11435/api/model-lease",
+        model_key="schluessel-nur-im-test",
     )
     draht = Draht()
     # An ``requests.Session`` und nicht an ``_http_session``: dessen Funktionsobjekt steckt
@@ -508,7 +510,7 @@ def test_die_nacht_geht_durch_die_eine_freigabestelle(stelle, monkeypatch):
     nightly.lauf(mit_modell, gastgeber)
 
     assert protocol.stored(gastgeber, 1) is not None
-    assert draht.abmeldungen == [DEFAULT_SOLARIS_URL + modellklient.LEASE_PATH]
+    assert draht.abmeldungen == ["http://lease.example:11435/api/model-lease"]
     assert not modellklient.lease_offen()
 
 

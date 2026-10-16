@@ -1,7 +1,6 @@
 from pathlib import Path
 
 from chronicle.config import (
-    DEFAULT_SOLARIS_URL,
     DEFAULT_TTS_URL,
     FOUNDRY_VARIABLES,
     Config,
@@ -11,8 +10,11 @@ VOLLSTAENDIG = {
     "FOUNDRY_URL": "https://foundry.example",
     "FOUNDRY_USER": "chronist",
     "DISCORD_BOT_TOKEN": "bot-token-aus-der-umgebung",
-    "OLLAMA_URL": "http://modell.example:11435",
-    "OLLAMA_MODEL": "chronist-modell",
+    "MODEL_URL": "http://host.containers.internal:11435/v1",
+    "MODEL_PRESET": "gemma-4-12b",
+    "MODEL_LEASE": "http://host.containers.internal:11435/api/model-lease",
+    "MODEL_KEY": "modell-schluessel-aus-der-umgebung",
+    "CHRONICLE_WHISPER_KEY": "erkenner-schluessel-aus-der-umgebung",
     "CHRONICLE_DATA_DIR": "/srv/chronicle",
 }
 
@@ -73,40 +75,52 @@ def test_discord_darf_fehlen():
     assert not config.discord_configured
 
 
-def test_ollama_kommt_aus_der_umgebung():
+def test_der_modelldienst_kommt_aus_den_eingebauten_werten_der_box():
+    """#362: Laib gibt jedem Dienst ``${MODEL_URL}``, ``${MODEL_LEASE}``, ``${MODEL_KEY}``."""
     config = Config.from_env(VOLLSTAENDIG)
-    assert config.ollama_url == "http://modell.example:11435"
-    assert config.ollama_model == "chronist-modell"
-    assert config.ollama_configured
+    assert config.model_url == "http://host.containers.internal:11435/v1"
+    assert config.model_lease == "http://host.containers.internal:11435/api/model-lease"
+    assert config.model_key == "modell-schluessel-aus-der-umgebung"
+    assert config.model_preset == "gemma-4-12b"
+    assert config.whisper_key == "erkenner-schluessel-aus-der-umgebung"
+    assert config.model_configured
+
+
+def test_die_alten_ollama_namen_liest_niemand_mehr():
+    """Keine zweite Quelle: was die Box nicht unter Laibs Namen nennt, gilt nicht."""
+    alt = Config.from_env({"OLLAMA_URL": "http://alt.example:11434", "OLLAMA_MODEL": "x"})
+    assert not alt.model_configured
+    assert alt.model_url is None and alt.model_preset is None
 
 
 def test_die_adresse_des_sprachdienstes_kommt_aus_der_umgebung():
-    config = Config.from_env(dict(VOLLSTAENDIG, TTS_URL="http://tts.example:8881"))
-    assert config.tts_url == "http://tts.example:8881"
+    config = Config.from_env(dict(VOLLSTAENDIG, TTS_URL="tcp://host.containers.internal:10200"))
+    assert config.tts_url == "tcp://host.containers.internal:10200"
 
 
 def test_ohne_gesetzte_adresse_gilt_der_sprachdienst_dieser_box():
     """Kein Wert heißt nicht »keine Ansage« — ``ansage.datei`` nimmt dann die Vorgabe."""
     assert Config.from_env({}).tts_url is None
-    assert DEFAULT_TTS_URL == "http://127.0.0.1:8881"
+    assert DEFAULT_TTS_URL == "tcp://127.0.0.1:10200"
 
 
-def test_ollama_darf_fehlen():
-    assert not Config.from_env({}).ollama_configured
+def test_der_modelldienst_darf_fehlen():
+    assert not Config.from_env({}).model_configured
 
 
-def test_ohne_modellnamen_ist_ollama_unkonfiguriert():
-    assert not Config.from_env(dict(VOLLSTAENDIG, OLLAMA_MODEL=" ")).ollama_configured
+def test_ohne_preset_ist_der_modelldienst_unkonfiguriert():
+    assert not Config.from_env(dict(VOLLSTAENDIG, MODEL_PRESET=" ")).model_configured
 
 
-def test_eine_fehlende_adresse_haelt_ollama_nicht_auf():
-    """Die Adresse löst immer auf — offen bleibt allein die Modellwahl."""
-    config = Config.from_env({"OLLAMA_MODEL": "chronist-modell"})
-    assert config.ollama_configured
+def test_ohne_adresse_wird_keine_geraten():
+    """Bis #362 löste die Adresse immer auf: die Schleife dieser Box. Laib nennt sie selbst."""
+    assert not Config.from_env({"MODEL_PRESET": "gemma-4-12b"}).model_configured
 
 
-def test_die_ollama_adresse_ist_konfiguration_und_wird_nicht_maskiert():
-    assert "http://modell.example:11435" in repr(Config.from_env(VOLLSTAENDIG))
+def test_die_adressen_sind_konfiguration_und_werden_nicht_maskiert():
+    text = repr(Config.from_env(VOLLSTAENDIG))
+    assert "http://host.containers.internal:11435/v1" in text
+    assert "http://host.containers.internal:11435/api/model-lease" in text
 
 
 def test_datenverzeichnis_hat_eine_vorgabe():
@@ -177,16 +191,13 @@ def test_es_gibt_keinen_backend_schalter_mehr():
     assert "llm_backend" not in repr(Config())
 
 
-def test_der_nachbardienst_wird_nur_ueber_die_schleife_angesprochen():
-    # Kein Token, kein Geheimnis, kein Weg ins LAN — der Vertrag gilt für den Nachbarn
-    # auf dieser Box (#299).
-    assert DEFAULT_SOLARIS_URL.startswith("http://127.0.0.1:")
-
-
 def test_repr_maskiert_den_token():
     text = repr(Config.from_env(VOLLSTAENDIG))
     assert "bot-token-aus-der-umgebung" not in text
-    assert text.count("'***'") == 1
+    # Der Bot-Token und die beiden Schlüssel (#362) — keiner davon im Klartext.
+    assert "modell-schluessel-aus-der-umgebung" not in text
+    assert "erkenner-schluessel-aus-der-umgebung" not in text
+    assert text.count("'***'") == 3
     assert "chronist" in text
 
 

@@ -73,8 +73,8 @@ class Gegenstelle:
         self.fehler = fehler
         self.aufruf = None
 
-    def post(self, url, *, json, timeout):
-        self.aufruf = {"url": url, "json": json, "timeout": timeout}
+    def post(self, url, *, json, timeout, headers=None):
+        self.aufruf = {"url": url, "json": json, "timeout": timeout, "headers": headers}
         if self.fehler is not None:
             raise self.fehler
         return self.antwort
@@ -750,3 +750,25 @@ def test_der_stapelaufruf_meldet_einen_abgeschalteten_erkenner(
 
     assert entry.main([str(sitzung_id), "mira.ogg"]) == 2
     assert "cannot be reached" in capsys.readouterr().out
+
+
+def test_der_schluessel_des_erkenners_geht_als_bearer_mit(config, spur):
+    """#362: der Port steht jedem Pod der Box offen — die Tür ist der Schlüssel."""
+    mit_schluessel = Config(
+        data_dir=config.data_dir,
+        recordings_dir=config.recordings_dir,
+        whisper_key="erkenner-schluessel-nur-im-test",
+    )
+    gegenstelle = Gegenstelle()
+
+    list(WhisperBatch(mit_schluessel, http=lambda: gegenstelle).transcribe(spur))
+
+    assert gegenstelle.aufruf["headers"] == {
+        "Authorization": "Bearer erkenner-schluessel-nur-im-test"
+    }
+
+
+def test_ohne_schluessel_geht_keine_leere_kopfzeile_hinaus(config, spur):
+    gegenstelle = Gegenstelle()
+    list(WhisperBatch(config, http=lambda: gegenstelle).transcribe(spur))
+    assert gegenstelle.aufruf["headers"] == {}

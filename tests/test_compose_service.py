@@ -12,7 +12,6 @@ from chronicle import runde as runden
 from chronicle import sprache as sprachen
 from chronicle.compose import client as modellklient
 from chronicle.compose.service import KIND, RUECKBLICK, compose_session, recap_session
-from chronicle.config import DEFAULT_SOLARIS_URL
 from chronicle.discord import rueckblick
 from chronicle.foundry import store
 from chronicle.foundry.model import NICHT_MEHR_VORHANDEN, WorldSnapshot
@@ -163,7 +162,7 @@ def test_ohne_sprachmodell_entsteht_die_chronik_trotzdem(config, scope, welt):
 
     ergebnis = compose_session(config, runde(config), sitzung_id)
 
-    assert not config.ollama_configured
+    assert not config.model_configured
     assert ergebnis.reason is not None
     assert VERBINDUNG_TITEL not in ergebnis.text
     assert "Knowledge Roll: Summe 7" in ergebnis.text
@@ -252,8 +251,8 @@ def test_der_rueckblick_bekommt_die_vorigen_rueckblicke_mit(config, scope, welt)
 def test_der_stapelaufruf_meldet_die_betriebsart(config, scope, welt, monkeypatch, capsys):
     sitzung_id = eine_runde(scope, welt)
     monkeypatch.setenv("CHRONICLE_DATA_DIR", str(config.data_dir))
-    monkeypatch.delenv("OLLAMA_URL", raising=False)
-    monkeypatch.delenv("OLLAMA_MODEL", raising=False)
+    monkeypatch.delenv("MODEL_URL", raising=False)
+    monkeypatch.delenv("MODEL_PRESET", raising=False)
 
     assert entry.main([str(sitzung_id)]) == 1
     assert "geordnet, nicht erzählt" in capsys.readouterr().out
@@ -262,8 +261,8 @@ def test_der_stapelaufruf_meldet_die_betriebsart(config, scope, welt, monkeypatc
 def test_der_stapelaufruf_schreibt_beides(config, scope, welt, monkeypatch, capsys):
     sitzung_id = eine_runde(scope, welt)
     monkeypatch.setenv("CHRONICLE_DATA_DIR", str(config.data_dir))
-    monkeypatch.delenv("OLLAMA_URL", raising=False)
-    monkeypatch.delenv("OLLAMA_MODEL", raising=False)
+    monkeypatch.delenv("MODEL_URL", raising=False)
+    monkeypatch.delenv("MODEL_PRESET", raising=False)
 
     entry.main([str(sitzung_id)])
 
@@ -294,8 +293,8 @@ def test_der_stapelaufruf_stellt_den_rueckblick_genau_einmal_zu(
     monkeypatch.setenv("CHRONICLE_DATA_DIR", str(config.data_dir))
     # Der Token kommt seit #230 aus der Umgebung und nirgends sonst her.
     monkeypatch.setenv("DISCORD_BOT_TOKEN", "bot-token-nur-fuer-den-test")
-    monkeypatch.delenv("OLLAMA_URL", raising=False)
-    monkeypatch.delenv("OLLAMA_MODEL", raising=False)
+    monkeypatch.delenv("MODEL_URL", raising=False)
+    monkeypatch.delenv("MODEL_PRESET", raising=False)
 
     entry.main([str(sitzung_id)])
     assert "delivered" in capsys.readouterr().out
@@ -342,8 +341,8 @@ def _fremde_protokolle(runde_der_anderen, sitzung_id):
 
 def _stapel_umgebung(config, monkeypatch):
     monkeypatch.setenv("CHRONICLE_DATA_DIR", str(config.data_dir))
-    monkeypatch.delenv("OLLAMA_URL", raising=False)
-    monkeypatch.delenv("OLLAMA_MODEL", raising=False)
+    monkeypatch.delenv("MODEL_URL", raising=False)
+    monkeypatch.delenv("MODEL_PRESET", raising=False)
 
 
 def test_der_stapelaufruf_erreicht_die_sitzung_der_zweiten_runde(
@@ -436,8 +435,10 @@ def am_draht(config, monkeypatch):
         return eines
 
     monkeypatch.setenv("CHRONICLE_DATA_DIR", str(config.data_dir))
-    monkeypatch.setenv("OLLAMA_URL", "http://modell.example:11435")
-    monkeypatch.setenv("OLLAMA_MODEL", "chronist-test")
+    monkeypatch.setenv("MODEL_URL", "http://modell.example:11435/v1")
+    monkeypatch.setenv("MODEL_PRESET", "chronist-test")
+    monkeypatch.setenv("MODEL_LEASE", "http://lease.example:11435/api/model-lease")
+    monkeypatch.setenv("MODEL_KEY", "schluessel-nur-im-test")
     return gegenstelle
 
 
@@ -459,7 +460,7 @@ def test_der_stapelaufruf_geht_durch_die_eine_freigabestelle(
 
     entry.main([str(sitzung_id)])
 
-    assert gegenstelle.abmeldungen == [DEFAULT_SOLARIS_URL + modellklient.LEASE_PATH]
+    assert gegenstelle.abmeldungen == ["http://lease.example:11435/api/model-lease"]
     assert not modellklient.lease_offen()
 
 

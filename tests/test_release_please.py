@@ -88,8 +88,7 @@ def test_dokumentierte_tag_form_ist_die_erzeugte():
     assert "type=semver,pattern={{version}},value=" in tags
     assert "pattern=v{{version}}" not in tags
 
-    beschreibung = _json("templates/daggerheart-chronik/variables.json")["CHRONICLE_IMAGE_TAG"][
-        "description"
-    ]
-    assert "ohne führendes 'v'" in beschreibung
-    assert "'0.3.1'" in beschreibung
+    werte = (WURZEL / "templates" / "chronik" / "values.example.yml").read_text(encoding="utf-8")
+    zeile = next(z for z in werte.splitlines() if z.startswith("IMAGE:"))
+    assert "ohne führendes v" in zeile
+    assert "v0.7.0 → 0.7.0" in zeile

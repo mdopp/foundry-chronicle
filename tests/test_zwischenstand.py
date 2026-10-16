@@ -123,7 +123,9 @@ def test_eine_leere_szene_ergibt_nichts():
 
 @pytest.fixture
 def stelle(tmp_path):
-    config = Config(data_dir=tmp_path, ollama_model="chronist-test")
+    config = Config(
+        data_dir=tmp_path, model_url="http://modell.example/v1", model_preset="chronist-test"
+    )
     db.init(config.database_path)
     return config
 
