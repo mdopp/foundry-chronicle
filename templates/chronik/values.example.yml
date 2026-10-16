@@ -1,0 +1,10 @@
+IMAGE: ghcr.io/mdopp/foundry-chronicle:latest        # fester Tag fürs Ausrollen: python scripts/bestimme_image_tag.py; ein Release ohne führendes v (v0.7.0 → 0.7.0)
+DISCORD_BOT_TOKEN: !secret CHRONIK_DISCORD_TOKEN
+MODEL_PRESET: gemma-4-12b                             # ein Preset der Lease (templates/llama/presets.json in laib), kein Fenstername
+GPU_LEASE: an                                         # aus: kein Aufruf an die Lease, der Haushalt behält sein Modell
+TTS_URL: tcp://host.containers.internal:10200         # Piper aus Laibs Stimme (Wyoming); leer: espeak-ng
+WHISPER_KEY: !secret CHRONIK_WHISPER_KEY
+WHISPER_IMAGE: lscr.io/linuxserver/faster-whisper:gpu  # eine Box ohne Karte: lscr.io/linuxserver/faster-whisper:latest
+WHISPER_MODEL: large-v3-turbo
+WHISPER_DEVICE: cuda                                  # eine Box ohne Karte: cpu
+WHISPER_COMPUTE: float16                              # eine Box ohne Karte: int8

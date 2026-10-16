@@ -13,9 +13,10 @@ from __future__ import annotations
 import asyncio
 import functools
 import inspect
-import io
+import json
 import logging
 import re
+import socket
 import sqlite3
 import sys
 import threading
@@ -89,14 +90,16 @@ SILDAR = consent.Member(id="4101", name="Sildar")
 # Eine Sekunde Ton in der Form, die espeak-ng liefert: 22050 Hz, Mono, 16 Bit.
 ESPEAK_RATE = 22050
 
-# Und in der Form, die der Sprachdienst der Box liefert — an ihm gemessen, nicht geraten.
-KOKORO_RATE = 24000
+# Und in der Form, die Piper liefert: 16 Bit Mono, die Rate je nach Stimme — die mittleren
+# deutschen Stimmen sprechen mit 22050 Hz, die »low«-Stimmen mit 16000. Die Attrappe nimmt
+# die zweite, damit sie sich von espeak-ng unterscheidet.
+PIPER_RATE = 16000
 
-TTS_BASIS = "http://tts.test:8881"
+TTS_BASIS = "tcp://tts.test:10200"
 
 # Woran im fertigen Stereo zu erkennen ist, wer gesprochen hat.
 ESPEAK_WERT = 100
-KOKORO_WERT = 1234
+PIPER_WERT = 1234
 
 
 def _mono_wav(ziel, rate: int, wert: int) -> None:
@@ -120,26 +123,76 @@ def _erster_wert(ziel: Path) -> int:
         return array("h", datei.readframes(1))[0]
 
 
-class FakerSprachdienst:
-    """Der Sprachdienst der Box: ein POST, eine WAV-Datei — oder Schweigen."""
+class FakerPiper:
+    """Piper aus Laibs Stimme, als Wyoming-Gegenstelle auf einem echten Socket (#362).
 
-    def __init__(self, *, antwort: bytes | None = None, fehler: Exception | None = None):
-        if antwort is None:
-            puffer = io.BytesIO()
-            _mono_wav(puffer, KOKORO_RATE, KOKORO_WERT)
-            antwort = puffer.getvalue()
-        self.antwort = antwort
-        self.fehler = fehler
-        self.aufrufe: list[types.SimpleNamespace] = []
+    Liest ein ``synthesize``, antwortet ``audio-start``, zwei ``audio-chunk`` und
+    ``audio-stop`` — die Daten hinter dem Kopf (``data_length``), wie Wyoming 1.x sie
+    schickt. ``art`` stellt die Fehlerbilder: ``schweigt`` (nimmt an und sagt nichts),
+    ``muell`` (keine Wyoming-Zeile), ``fehler`` (ein ``error``-Ereignis).
+    """
 
-    def __call__(self):
-        return self
+    def __init__(self, art: str = "spricht"):
+        self.art = art
+        self.fragen: list[dict] = []
+        self._server = socket.create_server(("127.0.0.1", 0))
+        self.basis = f"tcp://127.0.0.1:{self._server.getsockname()[1]}"
+        threading.Thread(target=self._bedienen, daemon=True).start()
 
-    def post(self, url, *, json, timeout):
-        self.aufrufe.append(types.SimpleNamespace(url=url, json=json, timeout=timeout))
-        if self.fehler is not None:
-            raise self.fehler
-        return types.SimpleNamespace(content=self.antwort, raise_for_status=lambda: None)
+    @staticmethod
+    def _ereignis(art: str, daten: dict | None = None, nutzlast: bytes = b"") -> bytes:
+        kopf: dict = {"type": art, "version": "1.6.0"}
+        rumpf = json.dumps(daten).encode() if daten else b""
+        if rumpf:
+            kopf["data_length"] = len(rumpf)
+        if nutzlast:
+            kopf["payload_length"] = len(nutzlast)
+        return json.dumps(kopf).encode() + b"\n" + rumpf + nutzlast
+
+    def _bedienen(self) -> None:
+        while True:
+            try:
+                verbindung, _ = self._server.accept()
+            except OSError:
+                return
+            with verbindung:
+                lesen = verbindung.makefile("rb")
+                kopf = json.loads(lesen.readline())
+                daten = json.loads(lesen.read(kopf.get("data_length") or 0) or b"{}")
+                self.fragen.append({"type": kopf["type"], **daten})
+                if self.art == "schweigt":
+                    time.sleep(ansage.TTS_TIMEOUT + 1)
+                    continue
+                if self.art == "muell":
+                    verbindung.sendall(b"<html>Ich bin kein Sprachdienst</html>\n")
+                    continue
+                if self.art == "fehler":
+                    verbindung.sendall(self._ereignis("error", {"text": "keine Stimme"}))
+                    continue
+                format_ = {"rate": PIPER_RATE, "width": 2, "channels": 1}
+                halb = array("h", [PIPER_WERT, -PIPER_WERT] * (PIPER_RATE // 4)).tobytes()
+                verbindung.sendall(
+                    self._ereignis("audio-start", format_)
+                    + self._ereignis("audio-chunk", format_, halb)
+                    + self._ereignis("audio-chunk", format_, halb)
+                    + self._ereignis("audio-stop")
+                )
+
+    def schliessen(self) -> None:
+        self._server.close()
+
+
+@pytest.fixture
+def piper():
+    gestellt = []
+
+    def stellen(art: str = "spricht") -> FakerPiper:
+        gestellt.append(FakerPiper(art))
+        return gestellt[-1]
+
+    yield stellen
+    for dienst in gestellt:
+        dienst.schliessen()
 
 
 def stille(rahmen: int) -> bytes:
@@ -384,23 +437,19 @@ def test_die_erzeugte_ansage_ist_was_discord_erwartet(tmp_path):
         assert datei.getnframes() == ansage.RATE
 
 
-def test_die_ansage_kommt_vom_sprachdienst_der_box(tmp_path, monkeypatch):
+def test_die_ansage_kommt_von_piper_aus_laibs_stimme(tmp_path, monkeypatch, piper):
+    """#362: ein ``synthesize`` mit dem Wortlaut, ohne Stimme — die hat die Box gewählt."""
     monkeypatch.setattr(ansage, "_espeak", verweigert)
-    dienst = FakerSprachdienst()
+    dienst = piper()
 
-    ziel = ansage.datei(tmp_path, sprecher=ansage.mit_rueckfall(TTS_BASIS, http=dienst))
+    ziel = ansage.datei(tmp_path, sprecher=ansage.mit_rueckfall(dienst.basis))
 
-    (aufruf,) = dienst.aufrufe
-    assert aufruf.url == TTS_BASIS + ansage.TTS_PFAD
-    assert aufruf.json["input"] == ansage.text_fuer(sprachen.DEFAULT)
-    assert aufruf.timeout == ansage.TTS_TIMEOUT
-    assert _erster_wert(ziel) == KOKORO_WERT
+    assert dienst.fragen == [{"type": "synthesize", "text": ansage.text_fuer(sprachen.DEFAULT)}]
+    assert _erster_wert(ziel) == PIPER_WERT
 
 
-def test_die_ansage_vom_sprachdienst_ist_was_discord_erwartet(tmp_path):
-    ziel = ansage.datei(
-        tmp_path, sprecher=ansage.mit_rueckfall(TTS_BASIS, http=FakerSprachdienst())
-    )
+def test_die_ansage_von_piper_ist_was_discord_erwartet(tmp_path, piper):
+    ziel = ansage.datei(tmp_path, sprecher=ansage.mit_rueckfall(piper().basis))
 
     with wave.open(str(ziel), "rb") as datei:
         assert datei.getframerate() == ansage.RATE
@@ -409,20 +458,25 @@ def test_die_ansage_vom_sprachdienst_ist_was_discord_erwartet(tmp_path):
         assert datei.getnframes() == ansage.RATE
 
 
-@pytest.mark.parametrize(
-    "dienst",
-    [
-        FakerSprachdienst(fehler=requests.ConnectionError("kein Dienst")),
-        FakerSprachdienst(fehler=requests.Timeout("zu langsam")),
-        FakerSprachdienst(antwort=b"<html>Ich bin kein Sprachdienst</html>"),
-    ],
-)
-def test_schweigt_der_sprachdienst_spricht_espeak(tmp_path, monkeypatch, dienst):
+@pytest.mark.parametrize("art", ["muell", "fehler", "schweigt"])
+def test_schweigt_der_sprachdienst_spricht_espeak(tmp_path, monkeypatch, piper, art):
     """Eine Ansage, die gar nicht kommt, verhindert die Aufnahme — das wiegt schwerer."""
     monkeypatch.setattr(ansage, "_espeak", spricht)
+    monkeypatch.setattr(ansage, "TTS_TIMEOUT", 0.5)
+    dienst = piper(art)
 
-    ziel = ansage.datei(tmp_path, sprecher=ansage.mit_rueckfall(TTS_BASIS, http=dienst))
+    ziel = ansage.datei(tmp_path, sprecher=ansage.mit_rueckfall(dienst.basis))
 
+    assert _erster_wert(ziel) == ESPEAK_WERT
+
+
+@pytest.mark.parametrize(
+    "basis", ["tcp://127.0.0.1:9", "http://tts.test:8881", "tcp://ohne-port", ""]
+)
+def test_ohne_erreichbares_piper_spricht_espeak(tmp_path, monkeypatch, basis):
+    """Kein Dienst, die alte Kokoro-Adresse oder Unsinn — dieselbe Antwort: espeak-ng."""
+    monkeypatch.setattr(ansage, "_espeak", spricht)
+    ziel = ansage.datei(tmp_path, sprecher=ansage.mit_rueckfall(basis))
     assert _erster_wert(ziel) == ESPEAK_WERT
 
 
@@ -433,9 +487,9 @@ def test_ohne_eigene_adresse_fragt_die_ansage_den_dienst_dieser_box(tmp_path, mo
     )
 
     ansage.datei(tmp_path)
-    ansage.datei(tmp_path / "andere", tts_url="http://tts.test:9999")
+    ansage.datei(tmp_path / "andere", tts_url="tcp://tts.test:9999")
 
-    assert gefragt == [DEFAULT_TTS_URL, "http://tts.test:9999"]
+    assert gefragt == [DEFAULT_TTS_URL, "tcp://tts.test:9999"]
 
 
 def test_ohne_espeak_gibt_es_keine_ansage_und_damit_keine_aufnahme(tmp_path):
@@ -1578,14 +1632,25 @@ def test_das_install_gate_antwortet_aus_dem_bot_prozess(gate):
     assert antwort.json() == {"status": "ok"}
 
 
-def test_das_gate_hoert_nur_auf_der_schleife(gate):
-    """#228/#190: der Pod liegt im Host-Netz — ein 0.0.0.0 stünde im ganzen LAN offen.
+def test_das_gate_hoert_im_eigenen_netz_namensraum_des_containers(gate):
+    """#362: auf Laib liegt der Container nicht mehr im Host-Netz, und wer ihn erreicht,
+    entscheidet die Vorlage (``PublishPort=127.0.0.1:…``).
 
-    Deshalb ist die Adresse keine Einstellung, sondern festgenagelt: es gäbe keinen
-    richtigen zweiten Wert. Der Poller der Box fragt ``localhost`` und liegt daneben.
+    Bis #362 hieß die Adresse ``127.0.0.1``, weil ein ``0.0.0.0`` im Host-Netz im ganzen LAN
+    stand (#228/#190). Im eigenen Namensraum ist die Schleife die falsche Tür: die
+    veröffentlichte Weiterleitung kommt nicht über sie herein. Festgenagelt bleibt die
+    Adresse trotzdem — es gibt keinen richtigen zweiten Wert.
     """
-    assert healthz.HOST == "127.0.0.1"
-    assert gate.adresse[0] == "127.0.0.1"
+    assert healthz.HOST == "0.0.0.0"
+    assert gate.adresse[0] == "0.0.0.0"
+
+
+def test_die_vorlage_veroeffentlicht_das_gate_nur_auf_der_schleife():
+    """Die andere Hälfte der Abmachung steht in der Vorlage, nicht im Code."""
+    einheit = (Path(__file__).parents[1] / "templates/chronik/chronik.container").read_text()
+    veroeffentlicht = [z for z in einheit.splitlines() if z.startswith("PublishPort=")]
+    assert veroeffentlicht == ["PublishPort=127.0.0.1:8701:8701"]
+    assert "Network=host" not in einheit
 
 
 def test_das_gate_kennt_nur_seinen_einen_pfad(gate):
@@ -2311,7 +2376,7 @@ def test_der_nachtlauf_faehrt_aus_dem_bot_prozess_und_haelt_das_gateway_nicht_au
     notes.add_note(gastgeber, szene.id, "Wir brechen bei Sonnenaufgang auf.")
     jetzt = datetime.now(ZoneInfo(settings.DEFAULT_NIGHTLY_ZONE))
     settings.save_nightly_time(gastgeber, jetzt.strftime("%H:%M"))
-    config = replace(konfiguration, ollama_url=modell.url, ollama_model=MODELL)
+    config = replace(konfiguration, model_url=modell.url + "/v1", model_preset=MODELL)
 
     schlaege = []
 
@@ -2460,11 +2525,13 @@ def test_der_start_meldet_das_sitzungsfenster_beim_nachbarn_an(
     angemeldet = []
 
     def anmelden(config):
-        angemeldet.append(config.ollama_model)
+        angemeldet.append(config.model_preset)
         return False
 
     monkeypatch.setattr(ollama, "fenster_oeffnen", anmelden)
-    mit_modell = replace(konfiguration, ollama_model="gemma4:12b")
+    mit_modell = replace(
+        konfiguration, model_url="http://modell.example/v1", model_preset="gemma-4-12b"
+    )
     bot = gateway.baue(mit_modell)
 
     ctx = FakeCtx(runde.mira)
@@ -2475,7 +2542,7 @@ def test_der_start_meldet_das_sitzungsfenster_beim_nachbarn_an(
 
     asyncio.run(start_und_fenster())
 
-    assert angemeldet == ["gemma4:12b"]
+    assert angemeldet == ["gemma-4-12b"]
     # Der Nachbar hat nicht zugesagt (``False``) — der Abend beginnt trotzdem und wird
     # auch nicht erneut angefragt: es gibt kein Fenster, das zu verlaengern waere.
     assert ctx.antworten == [recorder.GESTARTET]

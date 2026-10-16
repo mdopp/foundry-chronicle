@@ -80,9 +80,10 @@ user-facing: keine Seite, keine Subdomain, kein veröffentlichter Port.
 Die Werte der **Runde** liegen in der SQLite und werden in Discord gepflegt; ein
 gepflegter Wert gewinnt über `FOUNDRY_URL` und `FOUNDRY_USER` aus der Umgebung. Die drei
 Werte der **Instanz** kommen seit [#230](../../issues/230) ausschließlich aus der
-Umgebung: `DISCORD_BOT_TOKEN`, `OLLAMA_URL`, `OLLAMA_MODEL`. Es gibt für sie keinen
+Umgebung: `DISCORD_BOT_TOKEN` und, seit [#362](../../issues/362), der Modelldienst der Box
+(`MODEL_URL`, `MODEL_PRESET`, `MODEL_LEASE`, `MODEL_KEY`). Es gibt für sie keinen
 Schreibweg in die Datei mehr — damit liegt **kein Geheimnis dieses Dienstes im Backup**.
-Das Box-Template setzt sie als Variablen (siehe unten).
+Die Laib-Vorlage setzt sie (siehe unten).
 
 **Woher die Spieldaten kommen, ist eine Auswahl je Runde:** *Echter Server* oder
 *Eingebaute Testwelt*. Die Testwelt ist eine Beispielwelt im Paket — 19 Konten, 91
@@ -122,13 +123,14 @@ ginge nicht: Foundry will es vorgezeigt, nicht geprüft. **Der Bot-Token wird se
 [#231](../../issues/231) noch gibt. Ob er gesetzt ist, sagt der Bot, indem er läuft oder
 nicht. Eine Wanderung räumt einen Bestand aus der Zeit davor aus der SQLite — aber
 erst, wenn die Variable gesetzt ist: gelöscht ohne Ersatz wäre der Token
-unwiederbringlich. Die Adresse des Modelldienstes hat eine zweite Stufe: ist `OLLAMA_URL`
-nicht gesetzt, gilt `http://127.0.0.1:11435` — der `llama-server` dieser Box. Offen bleibt
-dann allein die Modellwahl über `OLLAMA_MODEL`. Rein aus der Umgebung kommen weiterhin
-`CHRONICLE_DATA_DIR` (Vorgabe `./data`), `CHRONICLE_RECORDINGS_DIR` (Vorgabe
-`./recordings`), `CHRONICLE_WHISPER_URL` — die Adresse des Spracherkenners (Vorgabe
+unwiederbringlich. Die Adresse des Modelldienstes nennt seit [#362](../../issues/362) die
+Box (`MODEL_URL`, bei Laib ein eingebauter Wert samt `/v1`); eine Vorgabe gibt es nicht
+mehr, und ohne Adresse oder ohne `MODEL_PRESET` entsteht die Chronik geordnet statt
+formuliert. Rein aus der Umgebung kommen weiterhin `CHRONICLE_DATA_DIR` (Vorgabe `./data`),
+`CHRONICLE_RECORDINGS_DIR` (Vorgabe `./recordings`), `CHRONICLE_WHISPER_URL` und
+`CHRONICLE_WHISPER_KEY` — Adresse und Schlüssel des Spracherkenners (Vorgabe
 `http://127.0.0.1:10301`, siehe [Transkription](#transkription)) — sowie `TTS_URL`, die Adresse
-des Sprachdienstes, der die Ansage spricht (Vorgabe `http://127.0.0.1:8881`, siehe
+des Sprachdienstes, der die Ansage spricht (Wyoming, Vorgabe `tcp://127.0.0.1:10200`, siehe
 [Aufnahme per Discord](#aufnahme-per-discord)). Fehlt die
 Foundry-Konfiguration, startet der Dienst trotzdem und sagt es dort, wo jemand danach
 fragt: in `/chronicle setup` und in der Meldung des Abgleichs.
@@ -139,9 +141,9 @@ fragt: in `/chronicle setup` und in der Meldung des Abgleichs.
 **abgelöst** — es hörte auf `/api/chat` unter Port 11434 und ist auf der Box abgeschaltet
 (`mdopp/solarisbay#1332`). Der Schalter `CHRONICLE_LLM_BACKEND`, mit dem #316 zwischen
 beiden Wegen wählen ließ, ist mit dem zweiten Weg gefallen: einer mit genau einem gültigen
-Wert ist eine falsche Zusage. Adresse und Modellname heißen weiterhin `OLLAMA_URL` und
-`OLLAMA_MODEL`; die Namen sind aus der Ollama-Zeit geblieben, gemeint ist der Modelldienst
-dieser Box.
+Wert ist eine falsche Zusage. Bis [#362](../../issues/362) hießen Adresse und Modellname
+noch `OLLAMA_URL` und `OLLAMA_MODEL`; seit dem Umzug auf Laib heißen sie wie die Box sie
+nennt, `MODEL_URL` und `MODEL_PRESET`, und das Modell ist ein Preset der Lease.
 
 Der Server **ignoriert den angefragten Modellnamen** — welches Modell geladen ist,
 entscheidet das Profil des Sitzungsfensters. Ein `keep_alive` gibt es **nicht** — das Feld
@@ -660,28 +662,27 @@ trotzdem weiter, weil es beides bedient und nichts kostet. Ein Test registriert 
 Senke gegen den **echten** Router — bricht das Protokoll wieder, ist der Test rot statt
 der Sitzung.
 
-## Betrieb auf ServiceBay
+## Betrieb auf Laib
 
-Dieses Repo ist zugleich eine **ServiceBay-Registry**: unter [`templates/`](templates/)
-liegt das Pod-Template `daggerheart-chronik`. Auf der Box wird das Repo einmal in
-`config.registries[]` eingetragen (Git-URL dieses Repos), danach steht das Template im
-Installations-Assistenten neben den mitgelieferten.
+Dieses Repo ist zugleich eine **Laib-Registry** ([#362](../../issues/362)): unter
+[`templates/chronik/`](templates/chronik/) liegt die Vorlage `chronik` — Quadlet-Einheiten,
+der Vertrag `laib.yml` und `values.example.yml` (laib ADR 0004). Auf der Box steht das Repo
+einmal in `box.yml registries`, `laib template sync` holt es, `laib propose --add chronik`
+schlägt den Dienst vor. Wie das im Einzelnen geht und was beim Umzug von ServiceBay einmal
+zu tun ist, steht in der [README der Vorlage](templates/chronik/README.md).
 
-Der Assistent fragt nach dem Port des Install-Gates, dem Image-Tag — und seit
-[#230](../../issues/230) nach `DISCORD_BOT_TOKEN`, `OLLAMA_URL` und `OLLAMA_MODEL`. Nach
-Subdomain und HTTP-Port fragt er seit [#231](../../issues/231) **nicht** mehr: der Dienst
-veröffentlicht nichts und braucht weder nginx noch Authelia davor. Der **Foundry-Zugang**
-wird weiterhin in Discord unter `/chronicle setup` eingerichtet: er gehört der Runde, nicht der
-Instanz.
+Zwei Container, beide in ihrem eigenen Netz-Namensraum: der Bot (`chronik`) und sein
+Spracherkenner mit Zeitstempeln (`chronik-whisper`). Das Modell und seine Lease kommen aus
+Laibs eingebauten Werten (`${MODEL_URL}`, `${MODEL_LEASE}`, `${MODEL_KEY}`), die Ansage
+spricht Piper aus Laibs Stimme, und der **Bot-Token** ist ein Geheimnis der Box:
+`laib secret set CHRONIK_DISCORD_TOKEN`, der Wert auf stdin, nie als Argument und nie als
+Literal in einer Datei. Der **Foundry-Zugang** wird weiterhin in Discord unter
+`/chronicle setup` eingerichtet: er gehört der Runde, nicht der Instanz.
 
-Die drei Instanz-Variablen sind bewusst vom Typ `text` und **nicht** `secret`: für ein
-`secret` würfelt der Assistent einen Zufallswert aus — richtig für ein internes
-Geheimnis, falsch für Zugangsdaten, die nur die Gegenstelle kennt. Ein solcher Wert
-meldete sich einmal als Bot-Token bei Discord an und scheiterte mit 401 in einer
-Neustart-Schleife. Leer heißt deshalb ehrlich »nicht gesetzt«: der Bot sagt einen Satz
-und bleibt liegen. Nachtragen oder wechseln lässt sich ein Wert jederzeit mit
-`install_template(names=["daggerheart-chronik"], variables={"DISCORD_BOT_TOKEN": "…"})`;
-der übergebene Wert gewinnt (ServiceBay-Rezept *rotate-a-service-secret*).
+Geprüft wird die Vorlage im CI-Job `laib` ([`scripts/laib_start.sh`](scripts/laib_start.sh)):
+`laib template lint`, gerendert durch `laib plan`, Quadlets durch `quadlet -dryrun` von
+Podman 5 — und ein **echter Start** unter Podman und Quadlet, mit dem Abbild dieses Commits,
+einer Attrappe der Lease, echtem Piper und echtem faster-whisper auf der CPU.
 
 Das Image baut [`.github/workflows/build-images.yml`](.github/workflows/build-images.yml)
 und veröffentlicht es nach GHCR — der Publish-Job hängt an `needs: test`, es wird also
@@ -696,6 +697,6 @@ waitress sind mit [#231](../../issues/231) aus dem Abhängigkeitsbaum verschwund
 podman build -t foundry-chronicle .
 # Ohne Token bleibt der Bot liegen und bedient nur das Gate — genau der Zustand einer
 # frischen Installation.
-podman run --rm --network host -e CHRONICLE_HEALTH_PORT=8701 foundry-chronicle
+podman run --rm -p 127.0.0.1:8701:8701 -e CHRONICLE_HEALTH_PORT=8701 foundry-chronicle
 curl -sf http://127.0.0.1:8701/healthz    # {"status": "ok"}
 ```

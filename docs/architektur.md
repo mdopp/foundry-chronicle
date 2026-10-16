@@ -308,7 +308,11 @@ passiert ist** — und Teile davon nacherzählen können.
   der Port lag im Host-Netz offen und die Kopfzeile schreibt sich jeder selbst. Jetzt gibt
   es weder Seite noch Port noch Kopfzeile; `chronicle.herkunft` und `chronicle.roles` sind
   mit ihr gefallen. ADR 0001 bindet den Dienst nicht mehr — er ist nicht user-facing.
-- **Dass der Pod im Host-Netz liegt, ist eine erklärte Abweichung** von ServiceBays
+- **Seit #362 liegt kein Container mehr im Host-Netz.** Auf Laib erreicht ein Pod den
+  Modelldienst und Piper über `host.containers.internal`, und der Erkenner gehört dem
+  Dienst selbst (`chronik-whisper`). Die Abweichung unten ist damit gefallen, wie sie es
+  vorsah; sie bleibt lesbar, weil sie erklärt, warum es sie gab.
+- **Dass der Pod im Host-Netz lag, war eine erklärte Abweichung** von ServiceBays
   ADR 0007 (#165) und keine Nachlässigkeit: der Dienst spricht die Nachbarn der Box über
   die Schleife an — `llama-server` (`127.0.0.1:11435`) schreibt die Chronik, `solaris-tts`
   (`127.0.0.1:8881`) spricht die Ansage, `solaris-whisper-batch` (`127.0.0.1:10301`)

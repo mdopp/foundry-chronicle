@@ -113,8 +113,10 @@ RUNDEN_SCHLUESSEL = ("discord_cursor", "foundry_last_error", "foundry_last_error
 # ``VERWORFENE_SCHLUESSEL``, weil sie **nicht** bedingungslos gelöscht werden dürfen.
 ABGELOESTE_SCHLUESSEL = (
     ("discord_bot_token", "DISCORD_BOT_TOKEN"),
-    ("ollama_url", "OLLAMA_URL"),
-    ("ollama_model", "OLLAMA_MODEL"),
+    # Seit #362 löst Laibs ``MODEL_URL`` die Adresse ab und ``MODEL_PRESET`` das Modell.
+    # Die Schlüssel links bleiben, wie sie in alten Dateien stehen.
+    ("ollama_url", "MODEL_URL"),
+    ("ollama_model", "MODEL_PRESET"),
 )
 
 # Kein Wert, nur zwei Namen: der Schlüssel und die Variable. Eine Logzeile ist der

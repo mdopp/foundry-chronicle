@@ -1135,17 +1135,17 @@ def test_ollama_gehoert_der_instanz_und_nicht_der_runde(zwei_runden):
     weder für sich noch — wie es der Instanz-Schlüsselraum zuließ — für alle anderen mit.
     """
     config, a, b, _ids = zwei_runden
-    settings.save(a, {"ollama_model": "gemma4:e4b"})
-    settings.save(b, {"ollama_model": "gemma4:12b", "ollama_url": "http://box.example:11434"})
-    assert settings.effective(config, a).ollama_model is None
-    assert settings.effective(config, a).ollama_url == settings.DEFAULT_OLLAMA_URL
+    settings.save(a, {"model_preset": "gemma-4-e4b"})
+    settings.save(b, {"model_preset": "gemma-4-12b", "model_url": "http://box.example:11435/v1"})
+    assert settings.effective(config, a).model_preset is None
+    assert settings.effective(config, a).model_url is None
     connection = db.connect(config.database_path)
     try:
         gepflegt = {zeile["key"] for zeile in connection.execute("SELECT key FROM settings")}
         merker = {zeile["key"] for zeile in connection.execute("SELECT key FROM meta")}
     finally:
         connection.close()
-    for schluessel in ("ollama_model", "ollama_url"):
+    for schluessel in ("model_preset", "model_url"):
         assert schluessel not in gepflegt, schluessel
         assert schluessel not in merker, schluessel
 

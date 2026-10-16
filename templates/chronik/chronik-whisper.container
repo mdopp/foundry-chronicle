@@ -1,0 +1,38 @@
+[Unit]
+Description=Chronik: Verschriftung der Spuren mit Zeitstempeln (faster-whisper, GPU nur je Auftrag)
+After=network-online.target
+
+[Container]
+# Das unveränderte Abbild bringt faster-whisper, CTranslate2 und CUDA mit; der Dienst ist
+# die eine Datei daneben (whisper_batch.py), schreibgeschützt eingehängt. Kein eigenes Abbild.
+Image=${WHISPER_IMAGE}
+# Der Einstieg des Abbilds ist s6 (/init) und startete dessen Wyoming-Server; hier läuft
+# allein whisper_batch.py. PodmanArgs statt Entrypoint=: das kennt Quadlet erst ab Podman 5,
+# und der echte Start in der CI läuft auf dem Podman 4.9 des Runners.
+PodmanArgs=--entrypoint=python3
+Exec=/app/whisper_batch.py
+Environment=WHISPER_BATCH_ROOT=/aufnahmen
+Environment=WHISPER_BATCH_PORT=10301
+Environment=WHISPER_BATCH_KEY=${WHISPER_KEY}
+Environment=WHISPER_BATCH_MODEL=${WHISPER_MODEL}
+Environment=WHISPER_BATCH_DEVICE=${WHISPER_DEVICE}
+Environment=WHISPER_BATCH_COMPUTE=${WHISPER_COMPUTE}
+Environment=WHISPER_BATCH_CACHE=/config
+Environment=HOME=/config
+Environment=TMPDIR=/tmp
+AddDevice=nvidia.com/gpu=all
+SecurityLabelDisable=true
+PublishPort=10301:10301
+Volume=./whisper_batch.py:/app/whisper_batch.py:ro,z
+Volume=${DATA_DIR}/chronik/aufnahmen:/aufnahmen:ro,z
+Volume=${DATA_DIR}/chronik/whisper:/config:z
+AutoUpdate=registry
+
+[Service]
+Restart=on-failure
+RestartSec=5
+# Der erste Start lädt das Modell in den leeren Zwischenspeicher, bevor er bindet.
+TimeoutStartSec=1800
+
+[Install]
+WantedBy=default.target

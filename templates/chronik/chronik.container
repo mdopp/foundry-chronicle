@@ -1,0 +1,39 @@
+[Unit]
+Description=Chronik: der Discord-Bot — Aufnahme, Befehle, nächtlicher Lauf und das Install-Gate
+After=network-online.target chronik-whisper.service
+
+[Container]
+Image=${IMAGE}
+# Container-uid 0 ist unter rootless Podman der unprivilegierte Benutzer der Box, dem die
+# Datenpfade gehören; ein eigener Benutzer im Abbild landete auf einer subuid ohne Schreibrecht.
+Environment=CHRONICLE_DATA_DIR=/data
+Environment=CHRONICLE_RECORDINGS_DIR=/aufnahmen
+Environment=CHRONICLE_HEALTH_PORT=8701
+# Der Bot-Token ist ein Geheimnis der Box (laib secret set CHRONIK_DISCORD_TOKEN) und
+# erreicht den Container als podman-Secret, nie über die Befehlszeile (laib #224).
+Environment=DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN}
+# Der Modelldienst und seine Lease: eingebaute Werte der Box (laib ADR 0011). Der Schlüssel
+# ist ebenfalls ein podman-Secret. Das Preset ist die eine Wahl, die hier zu treffen ist.
+Environment=MODEL_URL=${MODEL_URL}
+Environment=MODEL_LEASE=${MODEL_LEASE}
+Environment=MODEL_KEY=${MODEL_KEY}
+Environment=MODEL_PRESET=${MODEL_PRESET}
+Environment=CHRONICLE_GPU_LEASE=${GPU_LEASE}
+# Die Ansage spricht Piper aus Laibs Stimme (Wyoming); ohne Antwort spricht espeak-ng.
+Environment=TTS_URL=${TTS_URL}
+# Der eigene Erkenner, über seinen veröffentlichten Port, mit seinem Schlüssel.
+Environment=CHRONICLE_WHISPER_URL=http://host.containers.internal:10301
+Environment=CHRONICLE_WHISPER_KEY=${WHISPER_KEY}
+PublishPort=127.0.0.1:8701:8701
+Volume=${DATA_DIR}/chronik/data:/data:z
+Volume=${DATA_DIR}/chronik/aufnahmen:/aufnahmen:z
+
+[Service]
+# on-failure, nicht always: endet der Bot mit 0, fehlt ihm eine Freigabe im Discord-Portal
+# oder sein Token wurde abgelehnt — ein Neustart wäre bloß der nächste Anmeldeversuch, und
+# daraus wurde am 2026-08-10 ein tausendfacher, nach dem Discord den Token zurücksetzte.
+Restart=on-failure
+RestartSec=30
+
+[Install]
+WantedBy=default.target

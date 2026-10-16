@@ -1,4 +1,15 @@
-"""Der Zugang zum Spracherkenner: ein HTTP-Aufruf gegen ``solaris-whisper-batch``.
+"""Der Zugang zum Spracherkenner: ein HTTP-Aufruf gegen ``chronik-whisper``.
+
+**Seit #362 bringt dieser Dienst den Erkenner selbst mit** — als zweiten Container seiner
+Laib-Vorlage (``templates/chronik/whisper_batch.py``). Bis dahin stand er als
+``solaris-whisper-batch`` beim Nachbarn ``solaris`` (``mdopp/solarisbay#1161``), und der
+zieht mit uns um, weil er nur uns diente. Laibs eigener Whisper in der Stimme spricht
+Wyoming: ein Text je Äußerung, **ohne Zeitstempel** — und ohne Zeitstempel lassen sich die
+Spuren der Sprecher nicht zu einem Gespräch zusammenlegen (``transcribe.merge``).
+
+Er verlangt seit #362 einen **Schlüssel**: der Port steht jedem Pod der Box offen (nicht
+dem LAN), und wer ihn erreicht, könnte sonst jede Spur einer Runde verschriften lassen.
+Der Schlüssel ist ein Geheimnis dieses Dienstes, von Laib beim ersten Apply erzeugt.
 
 Wir halten **kein Whisper-Modell mehr im Prozess** (Betreiber-Entscheidung 2026-08-18,
 #216). Die Stapelarbeit macht der Nachbardienst auf seiner Karte; von faster-whisper,
@@ -53,7 +64,7 @@ TRANSCRIBE_PATH = "/transcribe"
 
 # Was in der Meldung steht, wenn jemand fragt, womit erkannt wurde. Der Dienst nennt
 # sein Modell nicht, und wir behaupten keins.
-NAME = "solaris-whisper-batch"
+NAME = "chronik-whisper"
 
 # Der Sprachcode reist mit der **Spur** und steht nicht mehr fest im Client (#268): der
 # Erkenner ist instanzweit, die Sprache gehört der Runde. Deutsche Rede englisch zu
@@ -155,6 +166,7 @@ class WhisperBatch:
     ) -> None:
         self._base = (config.whisper_url or DEFAULT_WHISPER_URL).rstrip("/")
         self._recordings_dir = config.recordings_dir
+        self._kopf = {"Authorization": f"Bearer {config.whisper_key}"} if config.whisper_key else {}
         self._http = http()
         self._timeout = timeout
 
@@ -181,6 +193,7 @@ class WhisperBatch:
             antwort = self._http.post(
                 self._base + TRANSCRIBE_PATH,
                 json={"path": pfad, "language": sprache, "hotwords": list(hotwords)},
+                headers=self._kopf,
                 timeout=self._timeout,
             )
         except requests.RequestException as fehler:

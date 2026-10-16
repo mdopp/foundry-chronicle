@@ -20,15 +20,18 @@ kein Hinweistext, sondern der Vorgang, der das Aufzeichnen zulässig macht — u
 sie nur, wenn die Anwesenden sie verstehen. Die Sätze stehen deshalb je Sprache in
 ``chronicle.sprache``.
 
-Gesprochen wird vom **Sprachdienst der Box** (Kokoro, OpenAI-kompatibles ``/v1/audio``);
-antwortet der nicht, spricht **espeak-ng**. Die Reihenfolge ist die ganze Abwägung: eine
-Ansage, die gar nicht kommt, verhindert die Aufnahme — das ist teurer als eine hässliche
-Stimme. Fehlt am Ende auch espeak-ng, wird **nicht** aufgenommen.
+Gesprochen wird vom **Sprachdienst der Box**: seit #362 **Piper aus Laibs Stimme**, über
+das Wyoming-Protokoll, mit der Stimme, die die Box für ihre Persona gewählt hat. Bis #362
+war es Kokoro mit der Stimme »Martin« (OpenAI-förmiges ``/v1/audio``) — ein Dienst des
+Nachbarn ``solaris``, den es auf Laib nicht gibt. Antwortet der Sprachdienst nicht,
+spricht **espeak-ng**. Die Reihenfolge ist die ganze Abwägung: eine Ansage, die gar nicht
+kommt, verhindert die Aufnahme — das ist teurer als eine hässliche Stimme. Fehlt am Ende
+auch espeak-ng, wird **nicht** aufgenommen.
 
-Discord will 48 kHz, Stereo, 16 Bit; der Dienst liefert 24 kHz Mono, espeak-ng 22050 Hz
-Mono. Beides ist eine WAV-Datei und geht durch dieselbe Umrechnung, von Hand mit dem
-nächstgelegenen Abtastwert: ffmpeg gehört nicht ins Image, und für eine einmal je Wortlaut
-erzeugte Ansage ist das hörbar genug.
+Discord will 48 kHz, Stereo, 16 Bit; Piper liefert je nach Stimme 16 oder 22050 Hz Mono,
+espeak-ng 22050 Hz Mono. Beides wird eine WAV-Datei und geht durch dieselbe Umrechnung,
+von Hand mit dem nächstgelegenen Abtastwert: ffmpeg gehört nicht ins Image, und für eine
+einmal je Wortlaut erzeugte Ansage ist das hörbar genug.
 
 Die Datei liegt im Aufnahmeverzeichnis. Sie ist jederzeit neu erzeugbar und gehört damit
 genau dorthin — zu dem, was nicht ins Backup muss.
@@ -37,15 +40,16 @@ genau dorthin — zu dem, was nicht ins Backup muss.
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
+import socket
 import subprocess
 import tempfile
 import wave
 from array import array
 from collections.abc import Callable
 from pathlib import Path
-
-import requests
+from urllib.parse import urlsplit
 
 from chronicle import sprache as sprachen
 from chronicle.bot import BotFehler
@@ -60,14 +64,24 @@ BREITE = 2
 
 ESPEAK = "espeak-ng"
 
-TTS_PFAD = "/v1/audio/speech"
-TTS_MODELL = "kokoro"
-
-# Box-gemessen 0,1 bis 0,5 s für diese Länge. Zehn Sekunden sind keine Geduldsprobe,
-# sondern die Grenze, hinter der espeak-ng schneller fertig ist als der Dienst.
+# Zehn Sekunden sind keine Geduldsprobe, sondern die Grenze, hinter der espeak-ng
+# schneller fertig ist als der Dienst. Sie gilt je Lesen vom Socket, nicht für die ganze
+# Ansage: Piper schickt seine Stücke, sobald sie fertig sind.
 TTS_TIMEOUT = 10.0
 
-WAV_KOPF = b"RIFF"
+# Die drei Ereignisse, aus denen Pipers Antwort besteht, und das eine Ereignis der Frage.
+# Mehr spricht dieser Client vom Wyoming-Protokoll nicht: kein ``describe``, keine
+# Stimmwahl — die Stimme hat die Box gewählt, und sie hier ein zweites Mal zu treffen
+# hieße, beim nächsten Wechsel dort falsch zu liegen.
+WYOMING_FRAGE = "synthesize"
+WYOMING_BEGINN = "audio-start"
+WYOMING_STUECK = "audio-chunk"
+WYOMING_ENDE = "audio-stop"
+WYOMING_FEHLER = "error"
+
+# Mehr Ansage gibt es nicht: ein Satz mit Frist, einmal je Wortlaut. Was darüber liegt,
+# ist kein Sprachdienst, sondern einer, der nicht aufhört.
+WYOMING_HOECHSTENS = 32 * 1024 * 1024
 
 PRAEFIX = "ansage-"
 
@@ -121,10 +135,6 @@ def kennung(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:12]
 
 
-def _http_session() -> requests.Session:
-    return requests.Session()
-
-
 def _espeak(text: str, ziel: Path, *, stimme: str) -> None:
     subprocess.run(
         [ESPEAK, "-v", stimme, "-b", "1", "-w", str(ziel)],
@@ -134,36 +144,80 @@ def _espeak(text: str, ziel: Path, *, stimme: str) -> None:
     )
 
 
-def _kokoro(
-    text: str,
-    ziel: Path,
-    *,
-    basis: str,
-    http: Callable[[], object] = _http_session,
-    timeout: float = TTS_TIMEOUT,
-) -> None:
-    """Ein Aufruf, eine WAV-Datei.
+def _zeile(lesen) -> dict:
+    """Ein Wyoming-Kopf: eine JSON-Zeile, dahinter ihre Daten und ihre Nutzlast.
 
-    Ohne ``voice``: der Dienst trägt seine Stimme in der eigenen Umgebung und ignoriert das
-    Feld. Einen Namen mitzuschicken hieße, die Wahl des Betreibers hier ein zweites Mal zu
-    treffen — und beim nächsten Wechsel dort läge sie hier falsch.
+    Die Daten stehen entweder im Kopf (``data``) oder dahinter (``data_length`` Bytes JSON);
+    seit Wyoming 1.x schicken Server das Zweite. Beides wird zusammengelegt.
     """
-    antwort = http().post(
-        basis.rstrip("/") + TTS_PFAD,
-        json={"model": TTS_MODELL, "input": text, "response_format": "wav"},
-        timeout=timeout,
-    )
-    antwort.raise_for_status()
-    if not antwort.content.startswith(WAV_KOPF):
-        raise ValueError("not a WAV file")
-    ziel.write_bytes(antwort.content)
+    zeile = lesen.readline(WYOMING_HOECHSTENS)
+    if not zeile:
+        raise ValueError("the speech service closed the connection")
+    kopf = json.loads(zeile)
+    if not isinstance(kopf, dict) or not isinstance(kopf.get("type"), str):
+        raise ValueError("not a Wyoming event")
+    daten = dict(kopf.get("data") or {})
+    for feld in ("data_length", "payload_length"):
+        laenge = kopf.get(feld) or 0
+        if not isinstance(laenge, int) or not 0 <= laenge <= WYOMING_HOECHSTENS:
+            raise ValueError("not a Wyoming event")
+    if kopf.get("data_length"):
+        daten.update(json.loads(_genau(lesen, kopf["data_length"])))
+    nutzlast = _genau(lesen, kopf["payload_length"]) if kopf.get("payload_length") else b""
+    return {"type": kopf["type"], "data": daten, "payload": nutzlast}
+
+
+def _genau(lesen, laenge: int) -> bytes:
+    stueck = lesen.read(laenge)
+    if len(stueck) != laenge:
+        raise ValueError("the speech service closed the connection mid-event")
+    return stueck
+
+
+def _piper(text: str, ziel: Path, *, basis: str, timeout: float = TTS_TIMEOUT) -> None:
+    """Ein ``synthesize`` hin, ``audio-start``/``audio-chunk``…/``audio-stop`` zurück.
+
+    Ohne Stimme: Piper spricht mit der, die die Box gewählt hat (``PERSONA_VOICE``). Die
+    Teile werden gesammelt und als eine WAV-Datei abgelegt, damit derselbe Weg sie umrechnet
+    wie espeak-ngs.
+    """
+    adresse = urlsplit(basis)
+    if adresse.scheme != "tcp" or not adresse.hostname or not adresse.port:
+        raise ValueError("the speech service address is not tcp://host:port")
+    daten = json.dumps({"text": text}, ensure_ascii=False).encode("utf-8")
+    kopf = {"type": WYOMING_FRAGE, "version": "1.0.0", "data_length": len(daten)}
+    with socket.create_connection((adresse.hostname, adresse.port), timeout=timeout) as draht:
+        draht.sendall(json.dumps(kopf).encode("utf-8") + b"\n" + daten)
+        lesen = draht.makefile("rb")
+        format_ = None
+        pcm = bytearray()
+        while True:
+            ereignis = _zeile(lesen)
+            art, angaben = ereignis["type"], ereignis["data"]
+            if art == WYOMING_FEHLER:
+                raise ValueError("the speech service refused")
+            if art == WYOMING_BEGINN:
+                format_ = (int(angaben["rate"]), int(angaben["width"]), int(angaben["channels"]))
+            elif art == WYOMING_STUECK:
+                pcm += ereignis["payload"]
+                if len(pcm) > WYOMING_HOECHSTENS:
+                    raise ValueError("the speech service does not stop")
+            elif art == WYOMING_ENDE:
+                break
+    if format_ is None or not pcm:
+        raise ValueError("the speech service sent no audio")
+    rate, breite, kanaele = format_
+    with wave.open(str(ziel), "wb") as datei:
+        datei.setnchannels(kanaele)
+        datei.setsampwidth(breite)
+        datei.setframerate(rate)
+        datei.writeframes(bytes(pcm))
 
 
 def mit_rueckfall(
     basis: str,
     *,
     stimme: str = sprachen.ESPEAK[sprachen.DEFAULT],
-    http: Callable[[], object] = _http_session,
 ) -> Sprecher:
     """Der Dienst spricht; schweigt er, spricht espeak-ng.
 
@@ -175,8 +229,8 @@ def mit_rueckfall(
 
     def sprich(text: str, ziel: Path) -> None:
         try:
-            _kokoro(text, ziel, basis=basis, http=http)
-        except (requests.RequestException, ValueError) as fehler:
+            _piper(text, ziel, basis=basis)
+        except (OSError, ValueError, KeyError, TypeError, wave.Error) as fehler:
             logger.warning(
                 "Der Sprachdienst auf %s antwortet nicht (%s) — die Ansage spricht %s.",
                 basis,

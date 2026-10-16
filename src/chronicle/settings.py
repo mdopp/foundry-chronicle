@@ -11,9 +11,10 @@ die spielt — was ihr Spiel betrifft.
 fremden Server, und eine Instanz, die mehrere Runden trägt, hält kein fremdes Geheimnis
 vor. Es lebt im Arbeitsspeicher (``chronicle.zugang``) und wird vom Abgleich verbraucht.
 
-**Der Bot-Token und Ollama sind seit #230 gar nicht mehr hier.** Sie gehören der Instanz
-(#87), und was der Instanz gehört, kommt aus der Umgebung: ``DISCORD_BOT_TOKEN``,
-``OLLAMA_URL``, ``OLLAMA_MODEL``. Gepflegt wird an ihnen nichts mehr — damit liegt kein
+**Der Bot-Token und der Modelldienst sind seit #230 gar nicht mehr hier.** Sie gehören der
+Instanz (#87), und was der Instanz gehört, kommt aus der Umgebung: ``DISCORD_BOT_TOKEN``,
+seit #362 ``MODEL_URL``, ``MODEL_PRESET`` und die beiden eingebauten Werte der Box für die
+Lease. Gepflegt wird an ihnen nichts mehr — damit liegt kein
 Geheimnis dieses Dienstes in der SQLite und keines im Backup. Eine Runde konnte sie nie
 schreiben, und jetzt kann es niemand mehr. Für die Anzeige gibt es ``is_set`` — *ob*
 etwas gesetzt ist, nie *was*.
@@ -29,10 +30,10 @@ from zoneinfo import available_timezones
 
 from chronicle import db
 from chronicle import sprache as sprachen
-from chronicle.config import DEFAULT_OLLAMA_URL, Config
+from chronicle.config import Config
 from chronicle.runde import Runde
 
-# Was eine Runde pflegt — und nichts sonst. Der Bot-Token und die beiden Ollama-Werte
+# Was eine Runde pflegt — und nichts sonst. Der Bot-Token und die beiden Modell-Werte
 # standen hier bis #230; sie kommen jetzt aus der Umgebung und werden nirgends gespeichert.
 KEYS = (
     "foundry_url",
@@ -114,16 +115,14 @@ def stored(runde: Runde) -> dict[str, str]:
 
 
 def effective(config: Config, runde: Runde) -> Config:
-    """Gepflegtes schlägt die Umgebung, die Umgebung schlägt den Box-Standard.
+    """Gepflegtes schlägt die Umgebung.
 
-    Der Standard ist hier Verhalten und nicht bloß Formulartext: wer keine Adresse
-    einträgt, bekommt das Ollama dieser Box — sonst versprächen die Einstellungen etwas,
-    das der Lauf dann nicht tut.
+    Bis #362 stand dahinter noch ein Box-Standard für die Modell-Adresse — das Ollama, später
+    ``llama-server`` dieser Box auf der Schleife. Auf Laib nennt die Box die Adresse selbst
+    (``MODEL_URL``), und eine geratene Vorgabe wäre eine Behauptung über eine Box, die dieser
+    Prozess nicht kennt.
     """
-    zusammen = replace(config, **stored(runde))
-    if zusammen.ollama_url:
-        return zusammen
-    return replace(zusammen, ollama_url=DEFAULT_OLLAMA_URL)
+    return replace(config, **stored(runde))
 
 
 def sources(config: Config, runde: Runde) -> dict[str, str]:

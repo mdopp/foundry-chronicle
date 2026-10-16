@@ -91,6 +91,32 @@ Diese Regeln gelten für jede Sitzung, Mensch oder Agent.
   von ihm genannten Wartezeit, mit Obergrenze, und die Frist beginnt erst mit `ready`.
   Ohne Fenster wäre der Leerlauf auf diesem Weg nicht »wir warten auf einen Vertrag«,
   sondern »still schreibt das Haushaltsmodell«.
+  **Seit #362 ist der Vertragspartner Laibs Lease, und der Aufruf trägt einen Schlüssel.**
+  Die Box zieht auf Laib (mdopp/laib, `docs/ZIELBILD.md` Phase 4); die Karte vergibt dort
+  nicht mehr der Nachbar `solaris` auf `127.0.0.1:8787`, sondern die Lease im
+  `llama`-Dienst, nach ihrem eigenen, geschriebenen Vertrag (laib ADR 0011, Ergänzung
+  2026-10-14, mdopp/laib#157). Er ist **nicht** rückwärtskompatibel, und Laib passt sich
+  nicht an — wir ziehen nach. Was sich ändert: Adresse und Schlüssel sind **eingebaute
+  Werte der Box** (`${MODEL_LEASE}`, `${MODEL_KEY}`), die jeder Dienst in seinen Units
+  bekommt; die Nutzlast ist genau `{model, ttl_s, holder}`, und `model` ist ein **Preset**
+  aus der Template-Variablen `MODEL_PRESET` — kein Profil, kein Fenster. Welches Fenster
+  das Preset erlaubt, entscheidet die Lease; `foundry` weist sie ab. Beim Start gibt der
+  Bot ein Fenster seines Halters zurück, ob `ready` oder `preparing`: bei einem
+  Prozessstart kann es nur von einem Vorgänger stammen, und `releasing` gibt es bei Laib
+  nicht.
+  **Die benannte Ausnahme »Schlüssel für die Lease«.** `POST` und `DELETE` verlangen
+  `Authorization: Bearer <MODEL_KEY>`; ohne Schlüssel nimmt die Lease die Karte nicht her.
+  Das bricht die Zusage »ohne gemeinsames Geheimnis« oben an genau dieser einen Stelle, und
+  zwar aus diesem Grund: die Lease steht auf Laib nicht mehr auf der Schleife eines
+  Nachbarn, sondern auf einem Port, den jeder Pod der Box erreicht — wer die Karte nehmen
+  oder fremde Fenster schließen darf, kann dort keine Adresse mehr entscheiden. Der
+  Schlüssel ist **kein Geheimnis dieser Instanz**: die Box erzeugt ihn, gibt ihn jedem ihrer
+  Dienste als podman-Secret (nie auf die Befehlszeile, laib #224) und hält ihn in ihrem
+  eigenen Geheimnisspeicher. Hier steht er in keiner Datei, keiner Zeile der SQLite und
+  keiner Logzeile; `Config.__repr__` maskiert ihn. Dieselbe Ausnahme gilt für den Proxy vor
+  dem Modell, der denselben Schlüssel nimmt. Der Lesezugriff (`GET`) bleibt ohne Schlüssel.
+  Die Zusage »keine Runden-, Gilden- oder Sitzungskennung« bleibt wörtlich: der Halter ist
+  die Konstante `foundry-chronicle`, und Laib weist jedes weitere Feld ab.
   **Ein Zeittakt wäre die falsche Grenze gewesen.** Erwogen und verworfen wurde ein
   Fenster alle zehn Minuten: es endet mitten im Satz, und ein Modell, das über eine
   unfertige Szene schreibt, erfindet den Abschluss — genau der Fehler, der hier der
@@ -265,6 +291,12 @@ Wanderung räumt einen Bestand aus der Zeit davor fort. Damit gilt für ihn dies
 Regel wie seit #64 für das Foundry-Passwort: **gar nicht erst vorhalten.** Eine Instanz
 speichert danach **kein Geheimnis mehr** — weder ein fremdes noch ihr eigenes —, und die
 SQLite geht ohne eines ins Backup.
+
+**Seit #362 ist der Bot-Token ein Geheimnis der Box, kein Template-Wert.** Auf Laib gibt es
+keinen Installations-Assistenten, der würfeln könnte (#33): der Token ist in `laib.yml`
+als `external: true` erklärt, der Betreiber setzt ihn mit `laib secret set
+CHRONIK_DISCORD_TOKEN` (der Wert auf stdin, nie als Argument), und er erreicht den
+Container als podman-Secret. Der Variablenname im Container bleibt `DISCORD_BOT_TOKEN`.
 
 Damit sind die drei Bedingungen der abgelösten Entscheidung **gegenstandslos, nicht
 gelockert**: sie schützten einen Wert, den es dort nicht mehr gibt. Geblieben ist die

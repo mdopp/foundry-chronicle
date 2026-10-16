@@ -761,7 +761,7 @@ def zwischenstand_starten(
     dem kleinsten Wert von allen; er darf keinem anderen die Karte wegnehmen und sich
     auch nicht selbst überholen.
     """
-    if not settings.effective(config, runde).ollama_configured:
+    if not settings.effective(config, runde).model_configured:
         return
     jobs.start(
         config,
