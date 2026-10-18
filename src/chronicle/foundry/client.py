@@ -13,6 +13,9 @@ Es gibt keinen API-Token: der Zugang ist Benutzer und Passwort eines echten Kont
 Adresse und Benutzer kommen aus der Konfiguration, **das Passwort als Argument** — es wird
 nirgends gespeichert und lebt nur im Arbeitsspeicher (``chronicle.zugang``).
 
+``journal_anlegen`` ist der erste **schreibende** Weg hierhin und deshalb eigens
+gekennzeichnet: seine Aufrufform ist ungeprüft, siehe dort.
+
 ``fetch_world`` fragt einmal und legt auf. ``verbindung`` macht denselben Handschlag und
 lässt die Leitung offen, damit ein Aufrufer hören kann, was der Server von sich aus
 schickt — was das ist, weiß hier noch niemand (#146).
@@ -119,6 +122,44 @@ class FoundryClient:
         finally:
             socket.disconnect()
 
+    def journal_anlegen(self, dokument: Mapping) -> str:
+        """Ein JournalEntry in der Welt anlegen — derselbe Handschlag, andere Richtung.
+
+        **Ungeprüft gegen eine echte Welt** (#327). Die Form des Aufrufs ist aus dem
+        Client-Bundle gelesen wie der Handschlag selbst, aber anders als der wurde sie
+        nie gegen einen laufenden Server ausgeführt: dafür braucht es das
+        Foundry-Passwort, und das speichern wir nicht (#64). Bis dieser Aufruf einmal an
+        einer echten Welt gelaufen ist, ist er eine begründete Annahme und kein Befund —
+        deshalb liegt der PR als Draft.
+
+        Anders als ``world`` trägt dieser Ruf eine Nutzlast, ``socket.call`` also mit
+        ``data``. Foundry antwortet mit dem angelegten Dokument oder mit einem ``error``;
+        beides ist ein Mapping, und nur das zweite ist ein Fehlschlag.
+        """
+        http = self._http_factory()
+        socket = self._angemeldet(http, self._handschlag(http))
+        try:
+            antwort = self._call(
+                socket,
+                "modifyDocument",
+                data={
+                    "type": "JournalEntry",
+                    "action": "create",
+                    "operation": {
+                        "data": [dict(dokument)],
+                        "render": True,
+                        "renderSheet": False,
+                        "parentUuid": None,
+                        "pack": None,
+                    },
+                },
+            )
+        finally:
+            socket.disconnect()
+        if antwort.get("error"):
+            raise FoundryUnreachable(f"Foundry lehnte den Journaleintrag ab: {antwort['error']}")
+        return str(antwort.get("_id") or "")
+
     @contextmanager
     def verbindung(self, *, mithoeren: Callable[..., None] | None = None) -> Iterator:
         """Dieselbe angemeldete Leitung, aber offen — der Aufrufer hört zu, statt zu fragen.
@@ -177,9 +218,12 @@ class FoundryClient:
             ) from None
         return socket
 
-    def _call(self, socket, event: str) -> Mapping:
+    def _call(self, socket, event: str, *, data: Mapping | None = None) -> Mapping:
         try:
-            antwort = socket.call(event, timeout=self._timeout)
+            if data is None:
+                antwort = socket.call(event, timeout=self._timeout)
+            else:
+                antwort = socket.call(event, data=dict(data), timeout=self._timeout)
         except socketio.exceptions.SocketIOError:
             raise FoundryUnreachable(f"Foundry hat auf {event!r} nicht geantwortet") from None
         if not isinstance(antwort, Mapping):
