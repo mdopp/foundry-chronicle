@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.6.1](https://github.com/mdopp/foundry-chronicle/compare/v0.6.0...v0.6.1) (2026-10-19)
+
+
+### Bug Fixes
+
+* **compose:** das Sitzungsfenster geht an Laibs Lease, mit dem Modell als Preset ([6cab999](https://github.com/mdopp/foundry-chronicle/commit/6cab9991f03d7a80f353e03ea2c17286622bde2e))
+* **compose:** das Sitzungsfenster geht an Laibs Lease, mit dem Modell als Preset ([344225e](https://github.com/mdopp/foundry-chronicle/commit/344225e9fefa5dca06e4871471e1788016680e2f))
+
 ## [0.6.0](https://github.com/mdopp/foundry-chronicle/compare/v0.5.2...v0.6.0) (2026-09-08)
 
 
