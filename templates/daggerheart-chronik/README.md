@@ -101,9 +101,11 @@ in einen eigenen Netz-Namensraum stellen will (#165). Der Grund sind die Nachbar
 derselben Box, die dieser Dienst über die Schleife anspricht: **`llama-server`** auf
 `127.0.0.1:11435` schreibt die Chronik, **`solaris-tts`** auf `127.0.0.1:8881` spricht die
 Ansage im Sprachkanal, **`solaris-whisper-batch`** auf `127.0.0.1:10301` verschriftet die
-Spuren, und **`solaris`** auf `127.0.0.1:8787` nimmt das Sitzungsfenster entgegen (#299:
-`POST`/`DELETE /api/model-lease`, damit der Nachbar das große Modell während eines
-Spielabends nicht wegzieht — abschaltbar mit `CHRONICLE_GPU_LEASE`). Alle vier binden nur
+Spuren, und **Laibs Lease** auf `127.0.0.1:11435` (neben dem Modell) nimmt das
+Sitzungsfenster entgegen (#299, seit dem Umzug auf Laib `mdopp/laib#422`:
+`POST`/`DELETE /api/model-lease` mit dem Modell als Preset und `MODEL_KEY` als Bearer,
+damit niemand das große Modell während eines Spielabends wegzieht — abschaltbar mit
+`CHRONICLE_GPU_LEASE`). Alle binden nur
 an Loopback — aus einem eigenen Namensraum wären sie nicht
 erreichbar, auch nicht über `host.containers.internal`: das führt an das Gateway der Box
 und nicht an ihre Schleife.

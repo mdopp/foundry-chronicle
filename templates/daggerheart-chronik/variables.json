@@ -11,7 +11,7 @@
   },
   "CHRONICLE_GPU_LEASE": {
     "type": "text",
-    "description": "Schalter fuer das Sitzungsfenster gegen den Nachbardienst solaris (#299, Gegenstueck mdopp/solarisbay#1260). 'an' (Vorgabe) meldet den Beginn eines Spielabends ueber die Schleife bei 127.0.0.1:8787 an und am Ende wieder ab; solaris antwortet dann fuer eine Viertelstunde mit dem grossen Modell, statt es bei jeder Haushaltsanfrage zu verdraengen — jeder Wechsel kostet auf dieser Karte rund 56 s. Die Anmeldung traegt nur Frist und Profil ('foundry'), kein Geheimnis und keine Runden-, Gilden- oder Sitzungskennung. 'aus' verlaesst den Vertrag ohne Neubau: es geht kein Aufruf mehr hinaus, und der Nachbar behaelt sein Haushaltsmodell auf der Karte. Leer heisst 'an' — eine Box, die die Variable nicht kennt, soll den Vertrag nicht stillschweigend abschalten.",
+    "description": "Schalter fuer das Sitzungsfenster (#299). 'an' (Vorgabe) meldet den Beginn eines Spielabends bei Laibs Lease neben dem Modell an (OLLAMA_URL + /api/model-lease, mdopp/laib#422) und am Ende wieder ab, mit dem Modell als Preset: die Lease nimmt das engste Fenster, das es erlaubt, und Sprache bleibt auf der Karte. Die Anmeldung traegt nur Frist, Modell und Halter, keine Runden-, Gilden- oder Sitzungskennung. 'aus' verlaesst den Vertrag ohne Neubau. Leer heisst 'an'.",
     "default": "an"
   },
   "DISCORD_BOT_TOKEN": {
@@ -27,6 +27,11 @@
   "OLLAMA_MODEL": {
     "type": "text",
     "description": "Name des Textmodells, das die Chronik formuliert. Er ist eine Bitte und kein Beleg: llama-server ignoriert ihn und antwortet mit dem Modell, das er geladen hat — welches das ist, entscheidet das Profil des Sitzungsfensters, und der Herkunftsvermerk der Chronik nimmt den Namen aus der Antwort (#320). Leer heisst: die Chronik entsteht trotzdem, dann geordnet statt formuliert.",
+    "default": ""
+  },
+  "MODEL_KEY": {
+    "type": "text",
+    "description": "Der Modellschluessel der Box (Laibs MODEL_KEY, der LEASE_TOKEN von llama-lease): Laibs Lease will ihn als Bearer fuer Anmelden und Abmelden des Sitzungsfensters (mdopp/laib#422). Ohne ihn lehnt die Lease mit 401 ab und der Abend laeuft ohne Fenster. 'text', weil nur die Box ihn kennt: ein ausgewuerfelter Wert passte nicht.",
     "default": ""
   }
 }

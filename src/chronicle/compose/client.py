@@ -32,7 +32,6 @@ import requests
 
 from chronicle.config import (
     DEFAULT_OLLAMA_URL,
-    DEFAULT_SOLARIS_URL,
     Config,
 )
 
@@ -116,12 +115,17 @@ LEASE_PATH = "/api/model-lease"
 # Abend schon begonnen — eine Anmeldung, die sich Zeit lässt, hält niemanden auf.
 LEASE_TIMEOUT = 5.0
 
-# Das Profil, das der Nachbar für uns lädt (Vertrag zu ``mdopp/solarisbay#1333``, im
-# Kommentar an #321). Ein **Profil**, kein Modellname: ``llama-server`` ignoriert den
-# Namen der Anfrage, und der Nachbar schaltet daran, welches Modell er geladen hält. Die
-# Zusage aus #299 bleibt damit wörtlich erfüllt — keine Runden-, Gilden- oder
-# Sitzungskennung; »foundry« sagt, *wessen Arbeit* ansteht, nicht *wer* spielt.
-LEASE_PROFIL = "foundry"
+# **Was angemeldet wird: das Modell selbst, als Preset** (``mdopp/laib#422``). Laibs Lease
+# nimmt dafür das engste Fenster, das es erlaubt (``gemma-4-12b`` → ``shared``): Sprache
+# und Einbettungen bleiben auf der Karte. Bis zum Umzug stand hier das Profil ``foundry``
+# für Solaris' Makler, das Laib nicht kennt. Die Zusage aus #299 bleibt wörtlich erfüllt:
+# der Modellname sagt, *welche Arbeit* ansteht, nicht *wer* spielt.
+
+
+def _schluessel(config: Config) -> dict:
+    """Der Modellschlüssel als Bearer — Laibs Lease will ihn für Anmelden und Abmelden."""
+    return {"Authorization": f"Bearer {config.model_key}"} if config.model_key else {}
+
 
 # **Wer das Fenster hält.** Seit ``mdopp/solarisbay#1347`` prüft der Nachbar den Halter bei
 # jedem ``DELETE``: nur wer eingetragen ist, gibt frei, jeder andere bekommt ``409`` mit
@@ -374,15 +378,16 @@ def fenster_oeffnen(
     """
     if not config.gpu_lease or not config.ollama_configured:
         return False
-    basis = DEFAULT_SOLARIS_URL.rstrip("/")
+    ziel = config.lease_url
     try:
         antwort = http().post(
-            basis + LEASE_PATH,
+            ziel,
             json={
-                "model": LEASE_PROFIL,
+                "model": config.ollama_model,
                 "ttl_s": LEASE_TTL_S,
                 LEASE_HALTER_FELD: LEASE_HALTER,
             },
+            headers=_schluessel(config),
             timeout=timeout,
         )
     except requests.RequestException as fehler:
@@ -392,7 +397,7 @@ def fenster_oeffnen(
         )
         return False
     if antwort.status_code == LEASE_VORBEREITUNG:
-        if not _bereit_abwarten(antwort, basis, http=http, timeout=timeout, warten=warten):
+        if not _bereit_abwarten(antwort, ziel, http=http, timeout=timeout, warten=warten):
             return False
     elif antwort.status_code != LEASE_STEHT:
         logger.warning(
@@ -432,7 +437,7 @@ def _wartezeit(antwort) -> float:
 
 def _bereit_abwarten(
     antwort,
-    basis: str,
+    ziel: str,
     *,
     http: Callable[[], object],
     timeout: float,
@@ -450,7 +455,7 @@ def _bereit_abwarten(
     while time.monotonic() + pause <= ende:
         warten(pause)
         try:
-            stand = http().get(basis + LEASE_PATH, timeout=timeout)
+            stand = http().get(ziel, timeout=timeout)
             stand.raise_for_status()
         except requests.RequestException as fehler:
             logger.warning(
@@ -510,8 +515,9 @@ def freigeben(config: Config, *, http: Callable[[], object] = _http_session) -> 
     _lease_bis = 0.0
     try:
         antwort = http().delete(
-            DEFAULT_SOLARIS_URL.rstrip("/") + LEASE_PATH,
+            config.lease_url,
             json={LEASE_HALTER_FELD: LEASE_HALTER},
+            headers=_schluessel(config),
             timeout=LEASE_TIMEOUT,
         )
         antwort.raise_for_status()
@@ -562,7 +568,7 @@ def verwaistes_fenster_schliessen(
     """
     if not config.gpu_lease:
         return False
-    ziel = DEFAULT_SOLARIS_URL.rstrip("/") + LEASE_PATH
+    ziel = config.lease_url
     try:
         stand = http().get(ziel, timeout=timeout)
         stand.raise_for_status()
@@ -572,7 +578,12 @@ def verwaistes_fenster_schliessen(
             or rumpf.get(LEASE_ZUSTAND_FELD) != LEASE_BEREIT
         ):
             return False
-        antwort = http().delete(ziel, json={LEASE_HALTER_FELD: LEASE_HALTER}, timeout=timeout)
+        antwort = http().delete(
+            ziel,
+            json={LEASE_HALTER_FELD: LEASE_HALTER},
+            headers=_schluessel(config),
+            timeout=timeout,
+        )
         antwort.raise_for_status()
     except requests.RequestException as fehler:
         logger.warning(

@@ -15,7 +15,6 @@ from chronicle.compose.client import (
     LEASE_HALTER_FELD,
     LEASE_MINDESTPAUSE_S,
     LEASE_PATH,
-    LEASE_PROFIL,
     LEASE_TTL_S,
     LEASE_VORBEREITUNG,
     LEASE_VORBEREITUNG_S,
@@ -33,7 +32,7 @@ from chronicle.compose.client import (
     verwaistes_fenster_schliessen,
 )
 from chronicle.compose.composer import SceneMaterial, SessionMaterial, compose
-from chronicle.config import DEFAULT_OLLAMA_URL, DEFAULT_SOLARIS_URL, Config
+from chronicle.config import DEFAULT_OLLAMA_URL, Config
 
 ADRESSE = "http://modell.example:11435/"
 BASIS = ADRESSE.rstrip("/")
@@ -252,9 +251,9 @@ def test_der_beginn_meldet_das_fenster_mit_profil_und_frist_an(tmp_path):
     assert fenster_oeffnen(config(tmp_path), http=lambda: http) is True
 
     ((url, kwargs),) = anmeldungen(http)
-    assert url == f"{DEFAULT_SOLARIS_URL}{LEASE_PATH}"
+    assert url == f"{BASIS}{LEASE_PATH}"
     assert kwargs["json"] == {
-        "model": LEASE_PROFIL,
+        "model": MODELL,
         "ttl_s": LEASE_TTL_S,
         LEASE_HALTER_FELD: LEASE_HALTER,
     }
@@ -272,26 +271,23 @@ def test_die_anmeldung_traegt_keine_kennung_und_kein_geheimnis(tmp_path):
     # Der Halter benennt den **Dienst**, nicht die Runde — sonst wäre er genau das Feld,
     # durch das die Zusage aus #321 hinausliefe.
     assert kwargs["json"][LEASE_HALTER_FELD] == "foundry-chronicle"
-    # Kein Token, kein Header, keine Anmeldung — die Schleife dieser Box ist der Beleg.
-    assert set(kwargs) == {"json", "timeout"}
-    assert DEFAULT_SOLARIS_URL.startswith("http://127.0.0.1:")
+    # Ohne Modellschlüssel kein Header (laib#422: mit ihm der Bearer, test_lease_laib.py).
+    assert set(kwargs) == {"json", "headers", "timeout"}
+    assert kwargs["headers"] == {}
 
 
-def test_das_profil_benennt_die_arbeit_und_nicht_die_runde(tmp_path):
-    """Die Zusage aus #299 überlebt den neuen Vertrag: der Nachbar erfährt nicht, wer spielt.
+def test_das_fenster_nennt_das_modell_als_preset(tmp_path):
+    """Laibs Lease nimmt das engste Fenster, das das Modell erlaubt (laib#422).
 
-    Ein **Profil**, kein Modellname: ``llama-server`` ignoriert den Namen der Anfrage, und
-    der Nachbar schaltet am Profil, welches Modell er geladen hält. Bis #329 stand am
-    Ollama-Weg daneben der Modellname, weil ein Profil dort ein unbekanntes Modell gewesen
-    wäre; mit dem Weg ist auch diese Verzweigung gefallen.
+    Bis zum Umzug stand hier das Profil ``foundry`` für Solaris' Makler. Laib kennt Presets
+    und Fenster, keine Profile: mit dem Modellnamen bleibt Sprache auf der Karte. Die
+    Zusage aus #299 bleibt: der Name sagt, welche Arbeit ansteht, nicht wer spielt.
     """
     http = Fenster(Antwort({}))
     fenster_oeffnen(config(tmp_path), http=lambda: http)
 
     ((_, kwargs),) = anmeldungen(http)
-    assert LEASE_PROFIL == "foundry"
-    assert kwargs["json"]["model"] == LEASE_PROFIL
-    assert MODELL not in str(kwargs["json"])
+    assert kwargs["json"]["model"] == MODELL
 
 
 def test_die_frist_des_fensters_und_ihr_erneuerungstakt_haengen_zusammen():
@@ -354,7 +350,7 @@ def test_die_anmeldung_ist_der_einzige_aufruf_des_beginns(tmp_path):
     http = Fenster(Antwort({}))
     assert fenster_oeffnen(config(tmp_path), http=lambda: http) is True
 
-    assert [url for url, _ in http.aufrufe] == [f"{DEFAULT_SOLARIS_URL}{LEASE_PATH}"]
+    assert [url for url, _ in http.aufrufe] == [f"{BASIS}{LEASE_PATH}"]
 
 
 def test_ein_gescheitertes_fenster_haelt_den_beginn_nicht_auf(tmp_path, caplog):
@@ -470,7 +466,7 @@ def test_ein_vorbereitetes_fenster_wird_gefragt_und_nicht_neu_angemeldet(tmp_pat
     assert fenster_oeffnen(config(tmp_path), http=lambda: http, warten=uhr.warten) is True
 
     assert len(anmeldungen(http)) == 1
-    assert [url for url, _ in http.fragen] == [f"{DEFAULT_SOLARIS_URL}{LEASE_PATH}"] * 2
+    assert [url for url, _ in http.fragen] == [f"{BASIS}{LEASE_PATH}"] * 2
     assert uhr.pausen == [30, 45]
 
 
@@ -561,8 +557,8 @@ def test_das_ende_meldet_das_fenster_genau_einmal_ab(tmp_path):
 
     assert freigeben(config(tmp_path), http=lambda: http) is True
     ((url, kwargs),) = http.abmeldungen
-    assert url == f"{DEFAULT_SOLARIS_URL}{LEASE_PATH}"
-    assert set(kwargs) == {"json", "timeout"}
+    assert url == f"{BASIS}{LEASE_PATH}"
+    assert set(kwargs) == {"json", "headers", "timeout"}
     assert kwargs["json"] == {LEASE_HALTER_FELD: LEASE_HALTER}
     assert not lease_offen()
     assert len(anmeldungen(http)) == len(http.aufrufe) == 1
@@ -647,13 +643,13 @@ def test_kein_weg_schickt_ein_delete_ohne_rumpf():
 
 def test_ein_verwaistes_fenster_des_vorgaengers_wird_beim_start_geschlossen(tmp_path, caplog):
     """#333: prozesslokaler Zustand stirbt mit dem Prozess — das Fenster beim Nachbarn nicht."""
-    http = Verwaist(Antwort({"state": "ready", "model": LEASE_PROFIL, "holder": LEASE_HALTER}))
+    http = Verwaist(Antwort({"state": "ready", "model": MODELL, "holder": LEASE_HALTER}))
 
     with caplog.at_level("INFO"):
         assert verwaistes_fenster_schliessen(config(tmp_path), http=lambda: http) is True
 
     ((url, _),) = http.aufrufe
-    assert url == f"{DEFAULT_SOLARIS_URL}{LEASE_PATH}"
+    assert url == f"{BASIS}{LEASE_PATH}"
     ((abmeldung, kwargs),) = http.abmeldungen
     assert abmeldung == url
     assert kwargs["json"] == {LEASE_HALTER_FELD: LEASE_HALTER}
@@ -664,9 +660,9 @@ def test_ein_verwaistes_fenster_des_vorgaengers_wird_beim_start_geschlossen(tmp_
     "stand",
     [
         Antwort({"state": "none", "model": "", "holder": ""}),
-        Antwort({"state": "ready", "model": LEASE_PROFIL, "holder": "solaris-chat"}),
-        Antwort({"state": "ready", "model": LEASE_PROFIL, "holder": LEASE_PROFIL}),
-        Antwort({"state": "ready", "model": LEASE_PROFIL}),
+        Antwort({"state": "ready", "model": MODELL, "holder": "solaris-chat"}),
+        Antwort({"state": "ready", "model": MODELL, "holder": "foundry"}),
+        Antwort({"state": "ready", "model": MODELL}),
         Antwort(["kein Rumpf"]),
         Antwort(),
     ],
@@ -686,8 +682,8 @@ def test_was_nicht_uns_gehoert_bleibt_beim_start_stehen(tmp_path, stand):
 @pytest.mark.parametrize(
     "stand",
     [
-        Antwort({"state": "releasing", "model": LEASE_PROFIL, "holder": LEASE_HALTER}),
-        Antwort({"state": "preparing", "model": LEASE_PROFIL, "holder": LEASE_HALTER}),
+        Antwort({"state": "releasing", "model": MODELL, "holder": LEASE_HALTER}),
+        Antwort({"state": "preparing", "model": MODELL, "holder": LEASE_HALTER}),
     ],
 )
 def test_ein_eigenes_fenster_ausserhalb_von_ready_bleibt_beim_start_stehen(tmp_path, stand):

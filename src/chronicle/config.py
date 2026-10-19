@@ -73,13 +73,13 @@ DEFAULT_TTS_URL = "http://127.0.0.1:8881"
 # nichts zu wählen: welches Modell rechnet, entscheidet seine eigene Unit.
 DEFAULT_WHISPER_URL = "http://127.0.0.1:10301"
 
-# Und die vierte: der Nachbardienst ``solaris`` teilt sich die Karte dieser Box mit uns
-# und nimmt unter ``/napi`` Anmeldungen entgegen — im Host-Netz auf 8787. Dorthin geht das
-# Sitzungsfenster (#299): »dieses Modell ist für die nächste Viertelstunde geladen«.
-# Auch er bekommt keine eigene Template-Variable, denn es gibt nichts zu wählen: der
-# Vertrag gilt für den Nachbarn auf *dieser* Schleife oder gar nicht. Was es gibt, ist der
-# Abschalter darunter.
-DEFAULT_SOLARIS_URL = "http://127.0.0.1:8787"
+# Und die vierte: das Sitzungsfenster (#299). **Seit dem Umzug der Box auf Laib**
+# (2026-10-19, ``mdopp/laib#422``) hält ``laib-lease`` die Karte, auf demselben Port wie das
+# Modell: ``/api/model-lease`` neben ``/v1``. Solaris' Makler auf 8787 regiert nichts
+# mehr. Die Adresse nennt ``MODEL_LEASE`` (Laibs Name dafür), sonst folgt sie der des
+# Modells; den Schlüssel für Anmelden und Abmelden ``MODEL_KEY``.
+MODEL_LEASE_VARIABLE = "MODEL_LEASE"
+MODEL_KEY_VARIABLE = "MODEL_KEY"
 
 # Ob das Sitzungsfenster überhaupt angemeldet wird (#299). An, weil der Vertrag mit
 # ``mdopp/solarisbay#1260`` von beiden Betreibern entschieden ist. Der Schalter steht
@@ -147,6 +147,8 @@ class Config:
     health_port: int | None = None
     foundry_mitschnitt: bool = False
     gpu_lease: bool = True
+    model_lease: str | None = None
+    model_key: str | None = None
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> Config:
@@ -165,6 +167,8 @@ class Config:
             health_port=_port(env, HEALTH_PORT_VARIABLE),
             foundry_mitschnitt=_flag(env, MITSCHNITT_VARIABLE),
             gpu_lease=_schalter(env, GPU_LEASE_VARIABLE, vorgabe=True),
+            model_lease=_value(env, MODEL_LEASE_VARIABLE),
+            model_key=_value(env, MODEL_KEY_VARIABLE),
         )
 
     @property
@@ -196,6 +200,13 @@ class Config:
         return bool(self.ollama_model)
 
     @property
+    def lease_url(self) -> str:
+        """Wo das Sitzungsfenster angemeldet wird: Laibs Lease neben dem Modell (laib#422)."""
+        if self.model_lease:
+            return self.model_lease
+        return (self.ollama_url or DEFAULT_OLLAMA_URL).rstrip("/") + "/api/model-lease"
+
+    @property
     def database_path(self) -> Path:
         return self.data_dir / DATABASE_NAME
 
@@ -214,5 +225,7 @@ class Config:
             f"whisper_url={self.whisper_url!r}, "
             f"health_port={self.health_port!r}, "
             f"foundry_mitschnitt={self.foundry_mitschnitt!r}, "
-            f"gpu_lease={self.gpu_lease!r})"
+            f"gpu_lease={self.gpu_lease!r}, "
+            f"model_lease={self.model_lease!r}, "
+            f"model_key={masked(self.model_key)})"
         )

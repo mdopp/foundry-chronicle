@@ -1,7 +1,6 @@
 from pathlib import Path
 
 from chronicle.config import (
-    DEFAULT_SOLARIS_URL,
     DEFAULT_TTS_URL,
     FOUNDRY_VARIABLES,
     Config,
@@ -177,10 +176,14 @@ def test_es_gibt_keinen_backend_schalter_mehr():
     assert "llm_backend" not in repr(Config())
 
 
-def test_der_nachbardienst_wird_nur_ueber_die_schleife_angesprochen():
-    # Kein Token, kein Geheimnis, kein Weg ins LAN — der Vertrag gilt für den Nachbarn
-    # auf dieser Box (#299).
-    assert DEFAULT_SOLARIS_URL.startswith("http://127.0.0.1:")
+def test_das_fenster_folgt_dem_modell_auf_dieser_box():
+    # Laibs Lease steht neben dem Modell auf dieser Schleife (laib#422): ohne eigene
+    # Angabe dieselbe Adresse wie das Modell, nie ein Weg ins LAN.
+    assert Config().lease_url == "http://127.0.0.1:11435/api/model-lease"
+    assert (
+        Config(ollama_url="http://127.0.0.1:11435/").lease_url
+        == "http://127.0.0.1:11435/api/model-lease"
+    )
 
 
 def test_repr_maskiert_den_token():

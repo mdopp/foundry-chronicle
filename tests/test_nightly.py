@@ -26,7 +26,7 @@ from chronicle import (
 )
 from chronicle import runde as runden
 from chronicle.compose import client as modellklient
-from chronicle.config import DEFAULT_SOLARIS_URL, Config
+from chronicle.config import Config
 from chronicle.discord import rueckblick
 from chronicle.discord import service as diktat
 from chronicle.foundry.model import SyncState
@@ -508,7 +508,7 @@ def test_die_nacht_geht_durch_die_eine_freigabestelle(stelle, monkeypatch):
     nightly.lauf(mit_modell, gastgeber)
 
     assert protocol.stored(gastgeber, 1) is not None
-    assert draht.abmeldungen == [DEFAULT_SOLARIS_URL + modellklient.LEASE_PATH]
+    assert draht.abmeldungen == ["http://modell.example:11435" + modellklient.LEASE_PATH]
     assert not modellklient.lease_offen()
 
 
