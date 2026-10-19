@@ -12,7 +12,7 @@ from chronicle import runde as runden
 from chronicle import sprache as sprachen
 from chronicle.compose import client as modellklient
 from chronicle.compose.service import KIND, RUECKBLICK, compose_session, recap_session
-from chronicle.config import DEFAULT_SOLARIS_URL
+from chronicle.config import Config
 from chronicle.discord import rueckblick
 from chronicle.foundry import store
 from chronicle.foundry.model import NICHT_MEHR_VORHANDEN, WorldSnapshot
@@ -459,7 +459,7 @@ def test_der_stapelaufruf_geht_durch_die_eine_freigabestelle(
 
     entry.main([str(sitzung_id)])
 
-    assert gegenstelle.abmeldungen == [DEFAULT_SOLARIS_URL + modellklient.LEASE_PATH]
+    assert gegenstelle.abmeldungen == [Config.from_env().lease_url]
     assert not modellklient.lease_offen()
 
 
